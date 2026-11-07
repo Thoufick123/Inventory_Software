@@ -19,6 +19,86 @@
         </div>
     </div>
 
+
+    <!-- Production Assets & Expenses Operational Architecture Guide -->
+    <div class="card border-0 shadow-sm rounded-3 mb-4 bg-light-subtle border-start border-4 border-primary">
+        <div class="card-body p-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-primary text-white px-2 py-1"><i class="bi bi-info-circle me-1"></i>Operational Architecture Guide</span>
+                    <h6 class="fw-bold text-dark mb-0">Production Assets &amp; Cost Tracking Key Pillars</h6>
+                </div>
+                <button class="btn btn-sm btn-outline-secondary py-0 px-2 small" type="button" data-bs-toggle="collapse" data-bs-target="#assetGuideCollapse" aria-expanded="true">
+                    <i class="bi bi-chevron-down"></i> Toggle Guide
+                </button>
+            </div>
+            <div class="collapse show" id="assetGuideCollapse">
+                <div class="row g-3 pt-2">
+                    <div class="col-md-4 col-sm-6">
+                        <div class="p-3 rounded-3 bg-white border h-100 shadow-sm">
+                            <div class="fw-semibold text-primary mb-1 small d-flex align-items-center gap-2">
+                                <i class="bi bi-cpu fs-5"></i> 1. Fixed Machinery Assets
+                            </div>
+                            <p class="text-muted small mb-0 lh-sm">
+                                Tracks capital equipment (Juki sewing machines, Eastman fabric cutters, steam boilers) with serial numbers, warranty, and designated factory location (Unit 1 or Unit 2).
+                            </p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 col-sm-6">
+                        <div class="p-3 rounded-3 bg-white border h-100 shadow-sm">
+                            <div class="fw-semibold text-success mb-1 small d-flex align-items-center gap-2">
+                                <i class="bi bi-scissors fs-5"></i> 2. Sewing Consumables &amp; Trims
+                            </div>
+                            <p class="text-muted small mb-0 lh-sm">
+                                Monitors variable production consumables: sewing threads, YKK zippers, organ needles, elastic bands, care labels, and polybags, linked to vendor bills and lots.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 col-sm-6">
+                        <div class="p-3 rounded-3 bg-white border h-100 shadow-sm">
+                            <div class="fw-semibold text-warning mb-1 small d-flex align-items-center gap-2">
+                                <i class="bi bi-tools fs-5"></i> 3. Machine Maintenance &amp; Repairs
+                            </div>
+                            <p class="text-muted small mb-0 lh-sm">
+                                Logs preventative servicing, mechanic labor charges, motor rewinding, and replacement spare parts for each machine to eliminate assembly line stoppages.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 col-sm-6">
+                        <div class="p-3 rounded-3 bg-white border h-100 shadow-sm">
+                            <div class="fw-semibold text-danger mb-1 small d-flex align-items-center gap-2">
+                                <i class="bi bi-lightning-charge fs-5"></i> 4. Factory Utilities &amp; Overheads
+                            </div>
+                            <p class="text-muted small mb-0 lh-sm">
+                                Captures plant operating overheads: EB power tariffs, diesel generator fuel, factory rental, and water supply required to compute accurate garment landed cost per piece.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 col-sm-6">
+                        <div class="p-3 rounded-3 bg-white border h-100 shadow-sm">
+                            <div class="fw-semibold text-info mb-1 small d-flex align-items-center gap-2">
+                                <i class="bi bi-diagram-3 fs-5"></i> 5. Multi-Unit Cost Allocation
+                            </div>
+                            <p class="text-muted small mb-0 lh-sm">
+                                Segregates expenses strictly between <strong>Unit 1</strong>, <strong>Unit 2</strong>, or <strong>Common Facility</strong>, giving leadership precise per-unit profitability and overhead burn.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="col-md-4 col-sm-6">
+                        <div class="p-3 rounded-3 bg-white border h-100 shadow-sm">
+                            <div class="fw-semibold text-secondary mb-1 small d-flex align-items-center gap-2">
+                                <i class="bi bi-cash-coin fs-5"></i> 6. Vendor Payables &amp; Settlement
+                            </div>
+                            <p class="text-muted small mb-0 lh-sm">
+                                Tracks paid amounts, vendor credit balances, payment modes (Cash, UPI, NEFT, Cheque), and invoice due dates to ensure clear vendor accounting and credit control.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- KPI Summary Analytics Cards -->
     <div class="row g-3 mb-4">
         <!-- 1. Total Production Expense Spend -->

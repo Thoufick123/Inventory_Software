@@ -7,10 +7,15 @@
         <h2 class="mb-1"><i class="bi bi-box2-heart me-2 text-success"></i>Production Inventory &amp; QC Outcomes</h2>
         <span class="text-muted">QC-passed inventory, outward dispatches, rework, and rejected quantities shown separately</span>
     </div>
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 flex-wrap">
         <?php if (hasPermission('batches', 'create')): ?>
-        <a href="<?= url('production/batches/create') ?>" class="btn btn-success">
-            <i class="bi bi-box-seam me-1"></i> Create Packing Batch
+        <a href="<?= url('production/batches/create') ?>" class="btn btn-success shadow-sm">
+            <i class="bi bi-box-seam me-1"></i> Option A: Pack for Central Warehouse
+        </a>
+        <?php endif; ?>
+        <?php if (hasPermission('production_billing', 'create')): ?>
+        <a href="<?= url('production/billing/create') ?>" class="btn btn-primary shadow-sm">
+            <i class="bi bi-receipt me-1"></i> Option B: Direct Factory B2B / Outlet Bill
         </a>
         <?php endif; ?>
     </div>
@@ -263,13 +268,19 @@ $inventoryVariantCount = array_sum(array_map(
                     <td class="text-end">
                         <div class="d-flex justify-content-end gap-1">
                             <a href="<?= url('production/inventory/batch/' . $batch['qc_batch_id']) ?>"
-                               class="btn btn-sm btn-outline-primary text-nowrap">
-                                <i class="bi bi-eye me-1"></i>View Items
+                               class="btn btn-sm btn-outline-secondary text-nowrap" title="View Batch Items">
+                                <i class="bi bi-eye"></i>
                             </a>
                             <?php if (hasPermission('batches', 'create') && $variant['remaining_qty'] > 0): ?>
                                 <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id']) ?>"
-                                   class="btn btn-sm btn-outline-success" title="Pack Remaining Stock">
-                                    <i class="bi bi-box-seam"></i>
+                                   class="btn btn-sm btn-outline-success text-nowrap" title="Option A: Pack into Boxes for Central Warehouse">
+                                    <i class="bi bi-box-seam me-1"></i>Pack (WH)
+                                </a>
+                            <?php endif; ?>
+                            <?php if (hasPermission('production_billing', 'create') && $variant['remaining_qty'] > 0): ?>
+                                <a href="<?= url('production/billing/create?qc_batch_id=' . $batch['qc_batch_id']) ?>"
+                                   class="btn btn-sm btn-outline-primary text-nowrap" title="Option B: Direct Factory B2B Sale / Outlet Bill">
+                                    <i class="bi bi-receipt me-1"></i>Bill (Direct)
                                 </a>
                             <?php endif; ?>
                         </div>
@@ -444,16 +455,22 @@ $inventoryVariantCount = array_sum(array_map(
                 <?php endif; ?>
                 </div>
 
-                <!-- Actions -->
-                <div class="d-flex gap-2 batch-list-actions">
+                <!-- Actions (Both Option A & Option B) -->
+                <div class="d-flex gap-1.5 batch-list-actions flex-wrap">
                     <a href="<?= url('production/inventory/batch/' . $batch['qc_batch_id']) ?>" 
-                       class="btn btn-<?= ($stockStatus === 'FULLY_OUTWARDED') ? 'outline-secondary' : $colorClass ?> btn-sm flex-grow-1 fw-semibold">
-                        <i class="bi bi-eye me-1"></i> View Products &amp; History
+                       class="btn btn-outline-secondary btn-sm flex-grow-1 fw-semibold">
+                        <i class="bi bi-eye me-1"></i> View Items
                     </a>
                     <?php if (hasPermission('batches', 'create') && $batch['remaining_pieces'] > 0): ?>
                     <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id']) ?>" 
-                       class="btn btn-outline-success btn-sm" title="Pack Remaining Stock into Box Batch">
-                        <i class="bi bi-box-seam"></i>
+                       class="btn btn-outline-success btn-sm fw-semibold" title="Option A: Pack Remaining Stock into Box Batch for Warehouse">
+                        <i class="bi bi-box-seam me-1"></i>Pack (WH)
+                    </a>
+                    <?php endif; ?>
+                    <?php if (hasPermission('production_billing', 'create') && $batch['remaining_pieces'] > 0): ?>
+                    <a href="<?= url('production/billing/create?qc_batch_id=' . $batch['qc_batch_id']) ?>" 
+                       class="btn btn-outline-primary btn-sm fw-semibold" title="Option B: Direct Factory B2B Sale / Outlet Bill">
+                        <i class="bi bi-receipt me-1"></i>Bill (Direct)
                     </a>
                     <?php endif; ?>
                 </div>
