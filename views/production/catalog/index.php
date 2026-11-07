@@ -165,6 +165,7 @@
                             <?php endif; ?>
                             <?php if (!empty($p['material'])): ?>
                                 &bull; <span class="badge bg-light text-dark border"><?= e($p['material']) ?></span>
+                                <?php if (!empty($p['hsn_code'])): ?>&bull; <span class="badge bg-info-subtle text-info border">HSN: <?= e($p['hsn_code']) ?></span><?php endif; ?>
                             <?php endif; ?>
                         </div>
 

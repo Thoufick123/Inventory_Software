@@ -38,14 +38,14 @@
 <div class="card border-0 shadow-sm mb-3">
     <div class="table-responsive">
         <table class="table align-middle mb-0">
-            <thead class="table-light"><tr><th>Item / QR codes</th><th class="text-center">Qty</th><th class="text-end">MRP</th><th class="text-end">Discount</th><th class="text-end">Taxable</th><th>GST details</th><th class="text-end">Tax</th><th class="text-end">Total</th></tr></thead>
+            <thead class="table-light"><tr><th>Item / QR codes</th><th>HSN</th><th class="text-center">Qty</th><th class="text-end">MRP</th><th class="text-end">Discount</th><th class="text-end">Taxable</th><th>GST details</th><th class="text-end">Tax</th><th class="text-end">Total</th></tr></thead>
             <tbody>
                 <?php foreach ($billItems as $item): ?>
                     <tr>
                         <td><div class="fw-semibold"><?= htmlspecialchars($item['product_name']) ?></div>
                             <div class="small text-muted"><?= htmlspecialchars(trim(($item['sku'] ?? '') . ' ' . ($item['size_name'] ?? '') . ' ' . ($item['color_name'] ?? ''))) ?></div>
                             <div class="small font-monospace text-muted"><?= htmlspecialchars(implode(', ', $item['tags'])) ?></div></td>
-                        <td class="text-center"><?= (int)$item['quantity'] ?></td>
+                        <td><span class="badge bg-light text-dark border font-monospace"><?= htmlspecialchars($item['hsn_code'] ?? '6109') ?></span></td><td class="text-center"><?= (int)$item['quantity'] ?></td>
                         <td class="text-end">₹<?= number_format((float)$item['mrp'] * (int)$item['quantity'], 2) ?></td>
                         <td class="text-end">₹<?= number_format((float)$item['discount_amount'], 2) ?></td>
                         <td class="text-end">₹<?= number_format((float)$item['taxable_amount'], 2) ?></td>

@@ -33,6 +33,56 @@ class ProductionController {
         ]));
     }
 
+
+    /**
+     * Export Comprehensive Production Reports (CSV / Print).
+     */
+    public function exportReports(): void {
+        require_once BASE_PATH . '/app/Services/ProductionReportService.php';
+
+        $periodType = trim((string)($_REQUEST['period_type'] ?? 'MONTH'));
+        $format = strtoupper(trim((string)($_REQUEST['format'] ?? 'CSV')));
+
+        if ($periodType === 'MONTH') {
+            $month = (int)($_REQUEST['selected_month'] ?? date('n'));
+            $year = (int)($_REQUEST['selected_year'] ?? date('Y'));
+            $month = max(1, min(12, $month));
+            $year = max(2020, min(2035, $year));
+            $startDate = sprintf('%04d-%02d-01', $year, $month);
+            $endDate = date('Y-m-t', strtotime($startDate));
+            $periodLabel = date('F Y', strtotime($startDate));
+        } else {
+            $startDate = trim((string)($_REQUEST['date_from'] ?? date('Y-m-01')));
+            $endDate = trim((string)($_REQUEST['date_to'] ?? date('Y-m-d')));
+            $periodLabel = date('d M Y', strtotime($startDate)) . ' to ' . date('d M Y', strtotime($endDate));
+        }
+
+        $allModules = ['rolls', 'programs', 'cuttings', 'stitching', 'qc', 'billing', 'returns', 'stock_requests', 'wastage', 'expenses'];
+        $selectedModules = !empty($_REQUEST['modules']) && is_array($_REQUEST['modules'])
+            ? array_values(array_intersect($_REQUEST['modules'], $allModules))
+            : $allModules;
+
+        if (empty($selectedModules)) {
+            $selectedModules = $allModules;
+        }
+
+        $data = \App\Services\ProductionReportService::getReportData($startDate, $endDate, $selectedModules);
+
+        if ($format === 'PRINT') {
+            Response::viewOnly('production.reports.print', [
+                'periodLabel'     => $periodLabel,
+                'startDate'       => $startDate,
+                'endDate'         => $endDate,
+                'selectedModules' => $selectedModules,
+                'data'            => $data,
+                'sellerCompany'   => SettingsService::getGroup('company'),
+            ]);
+            return;
+        }
+
+        \App\Services\ProductionReportService::streamCsv($periodLabel, $startDate, $endDate, $data);
+    }
+
     // =========================================================================
     // SELLERS (Material Suppliers)
     // =========================================================================

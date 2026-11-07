@@ -198,7 +198,7 @@ class ProductionBillingController
                     qi.base_price AS qc_base_price, qi.discount_price AS qc_discount_price,
                     pp.program_number, pp.name AS program_name,
                     COALESCE(p.name, pp.name, 'Finished Product') AS product_name,
-                    p.code AS product_code, p.gst_percentage,
+                    p.code AS product_code, p.gst_percentage, p.hsn_code,
                     pv.sku, pv.mrp AS variant_mrp, pv.selling_price,
                     c.name AS color_from_variant, sz.name AS size_from_variant
              FROM qc_items qi
@@ -264,6 +264,7 @@ class ProductionBillingController
                 'mrp' => $mrp,
                 'unit_price' => $defaultPrice,
                 'gst_percentage' => max(0, (float)($row['gst_percentage'] ?? 0)),
+                'hsn_code' => (string)($row['hsn_code'] ?? '6109'),
                 'available_tags' => $tags,
             ];
         }
@@ -397,6 +398,7 @@ class ProductionBillingController
                 'tags' => $tags,
                 'quantity' => count($tags),
                 'unit_price' => round((float)$unitPrice, 2),
+                'hsn_code' => trim((string)($submitted['hsn_code'] ?? $stock['hsn_code'] ?? '6109')),
                 'gst_type' => $gstType,
                 'tax_input_type' => $taxInputType,
                 'sgst_rate' => round((float)$sgstRate, 3),

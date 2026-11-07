@@ -359,7 +359,26 @@ class Router {
         $this->post('production/billing/update/{id}', 'ProductionBillingController', 'updateBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'edit']]);
         $this->post('production/billing/delete/{id}', 'ProductionBillingController', 'deleteBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'delete']]);
         $this->get('production/billing/print/{id}', 'ProductionBillingController', 'printBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'print']]);
-        $this->get('api/production/billing/search', 'ProductionBillingController', 'searchInventory', ['AuthMiddleware']);
+                $this->get('api/production/billing/search', 'ProductionBillingController', 'searchInventory', ['AuthMiddleware']);
+
+        // Production Customer Returns & Exchanges
+        $this->get('production/returns', 'ProductionReturnController', 'index', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'view']]);
+        $this->get('production/returns/create', 'ProductionReturnController', 'create', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'create']]);
+        $this->get('production/returns/lookup', 'ProductionReturnController', 'ajaxLookupBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'view']]);
+        $this->post('production/returns/store', 'ProductionReturnController', 'store', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'create']]);
+        $this->get('production/returns/view/{id}', 'ProductionReturnController', 'view', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'view']]);
+        $this->get('production/returns/print/{id}', 'ProductionReturnController', 'print', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'print']]);
+
+        // Warehouse Stock Requisitions & Requests to Production
+        $this->get('production/stock-requests', 'ProductionStockRequestController', 'index', ['AuthMiddleware']);
+        $this->get('production/stock-requests/create', 'ProductionStockRequestController', 'create', ['AuthMiddleware']);
+        $this->post('production/stock-requests/store', 'ProductionStockRequestController', 'store', ['AuthMiddleware']);
+        $this->get('production/stock-requests/view/{id}', 'ProductionStockRequestController', 'view', ['AuthMiddleware']);
+        $this->post('production/stock-requests/update-status/{id}', 'ProductionStockRequestController', 'updateStatus', ['AuthMiddleware']);
+
+        // Production Reports & CSV / Excel Export
+        $this->get('production/reports/export', 'ProductionController', 'exportReports', ['AuthMiddleware']);
+        $this->post('production/reports/export', 'ProductionController', 'exportReports', ['AuthMiddleware']);
 
         // Production Fabric & Roll Damages
         $this->get('production/damages', 'ProductionController', 'damageList', ['AuthMiddleware', ['PermissionMiddleware', 'damages', 'view']]);

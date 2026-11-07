@@ -136,6 +136,42 @@ $existingColorIds = array_filter(array_unique(array_column($variants ?? [], 'col
                             </div>
                         </div>
                         <div id="qrCodeFeedback" class="mt-2"></div>
+                    <!-- HSN Code & GST Tax Classification -->
+                    <div class="mt-3 pt-3 border-top">
+                        <label class="form-label fw-bold text-dark mb-2">
+                            <i class="bi bi-receipt-cutoff text-success me-1"></i> HSN Code &amp; GST Tax Classification
+                        </label>
+                        <div class="row g-3">
+                            <div class="col-md-5">
+                                <label class="form-label small fw-semibold text-dark mb-1">Textile HSN Quick Preset</label>
+                                <select class="form-select form-select-sm" id="hsn_preset_select" onchange="applyHsnPreset(this.value)">
+                                    <option value="">-- Choose Standard HSN Preset --</option>
+                                    <option value="6109|5.00">HSN 6109 — T-Shirts, Singlets & Vests (Knitted) [5% GST]</option>
+                                    <option value="6205|5.00">HSN 6205 — Men's / Boys' Woven Shirts [5% GST]</option>
+                                    <option value="6203|5.00">HSN 6203 — Men's Trousers, Suits & Shorts [5% GST]</option>
+                                    <option value="6204|5.00">HSN 6204 — Women's Dresses, Kurtis & Skirts [5% GST]</option>
+                                    <option value="6104|5.00">HSN 6104 — Women's Knitted Suits & Nightwear [5% GST]</option>
+                                    <option value="6115|5.00">HSN 6115 — Socks & Pantyhose [5% GST]</option>
+                                    <option value="6211|5.00">HSN 6211 — Tracksuits & Sportswear [5% GST]</option>
+                                    <option value="5208|5.00">HSN 5208 — Woven Cotton Fabrics [5% GST]</option>
+                                    <option value="6302|5.00">HSN 6302 — Bed, Table & Toilet Linen [5% GST]</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small fw-semibold text-dark mb-1">HSN Code <span class="text-danger">*</span></label>
+                                <input type="text" name="hsn_code" id="hsn_code" class="form-control text-uppercase fw-bold" placeholder="e.g. 6109" maxlength="10" value="<?= e($product['hsn_code'] ?? '') ?>">
+                                <small class="text-muted" style="font-size:0.75rem;">Harmonized System of Nomenclature code for tax invoices</small>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small fw-semibold text-dark mb-1">Default GST Rate (%)</label>
+                                <div class="input-group">
+                                    <input type="number" step="0.01" min="0" max="28" name="gst_percentage" id="gst_percentage" class="form-control fw-bold" value="<?= e((float)($product['gst_percentage'] ?? 5.00)) ?>" placeholder="5.00">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                                <small class="text-muted" style="font-size:0.75rem;">Standard 5% / 12% GST</small>
+                            </div>
+                        </div>
+                    </div>
                     </div>
                 </div>
             </div>
@@ -1806,4 +1842,15 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+</script>
+
+<script>
+function applyHsnPreset(val) {
+    if (!val) return;
+    const parts = val.split('|');
+    if (parts.length === 2) {
+        document.getElementById('hsn_code').value = parts[0];
+        document.getElementById('gst_percentage').value = parts[1];
+    }
+}
 </script>
