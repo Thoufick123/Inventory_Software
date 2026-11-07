@@ -1155,6 +1155,99 @@ class ProductionService {
              ORDER BY po.created_at DESC LIMIT 5"
         );
 
+        // QC Quality Breakdown
+        $qcBreakdown = Database::fetchOne(
+            "SELECT 
+                COALESCE(SUM(qb.passed_qty), 0) as total_passed,
+                COALESCE(SUM(qb.rework_qty), 0) as total_rework,
+                COALESCE(SUM(qb.rejected_qty), 0) as total_rejected,
+                COALESCE(SUM(qb.total_qty), 0) as total_inspected
+             FROM qc_batches qb
+             LEFT JOIN production_programs pp ON qb.program_id = pp.id
+             WHERE 1=1$unitClausePP"
+        );
+
+        // Daily Throughput Trends (Last 7 Days)
+        $dailyTrends = [];
+        for ($i = 6; $i >= 0; $i--) {
+            $date = date('Y-m-d', strtotime("-$i days"));
+            $dailyTrends[$date] = [
+                'date'      => $date,
+                'label'     => date('d M', strtotime("-$i days")),
+                'cut'       => 0,
+                'stitched'  => 0,
+                'qc_passed' => 0,
+                'outward'   => 0,
+            ];
+        }
+
+        // Daily Cutting Quantities
+        $cutRows = Database::fetchAll(
+            "SELECT DATE(cb.created_at) as log_date, COALESCE(SUM(cb.cut_qty), SUM(cb.planned_qty), 0) as qty
+             FROM cutting_batches cb
+             LEFT JOIN production_programs pp ON cb.program_id = pp.id
+             WHERE cb.created_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 DAY)$unitClausePP
+             GROUP BY DATE(cb.created_at)"
+        );
+        foreach ($cutRows as $r) {
+            if (isset($dailyTrends[$r['log_date']])) {
+                $dailyTrends[$r['log_date']]['cut'] = (int)$r['qty'];
+            }
+        }
+
+        // Daily Stitching Quantities
+        $stitchRows = Database::fetchAll(
+            "SELECT DATE(sb.created_at) as log_date, COALESCE(SUM(sb.stitched_qty), SUM(sb.received_qty), 0) as qty
+             FROM stitching_batches sb
+             LEFT JOIN production_programs pp ON sb.program_id = pp.id
+             WHERE sb.created_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 DAY)$unitClausePP
+             GROUP BY DATE(sb.created_at)"
+        );
+        foreach ($stitchRows as $r) {
+            if (isset($dailyTrends[$r['log_date']])) {
+                $dailyTrends[$r['log_date']]['stitched'] = (int)$r['qty'];
+            }
+        }
+
+        // Daily QC Passed
+        $qcRows = Database::fetchAll(
+            "SELECT DATE(qb.created_at) as log_date, COALESCE(SUM(qb.passed_qty), 0) as qty
+             FROM qc_batches qb
+             LEFT JOIN production_programs pp ON qb.program_id = pp.id
+             WHERE qb.created_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 DAY)$unitClausePP
+             GROUP BY DATE(qb.created_at)"
+        );
+        foreach ($qcRows as $r) {
+            if (isset($dailyTrends[$r['log_date']])) {
+                $dailyTrends[$r['log_date']]['qc_passed'] = (int)$r['qty'];
+            }
+        }
+
+        // Daily Outward Dispatched
+        $outRows = Database::fetchAll(
+            "SELECT DATE(po.created_at) as log_date, COALESCE(SUM(pb.total_qty), SUM(po.quantity), 0) as qty
+             FROM production_outwards po
+             JOIN production_batches pb ON po.production_batch_id = pb.id
+             LEFT JOIN production_programs pp ON pb.program_id = pp.id
+             WHERE po.created_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 DAY)$unitClausePP
+             GROUP BY DATE(po.created_at)"
+        );
+        foreach ($outRows as $r) {
+            if (isset($dailyTrends[$r['log_date']])) {
+                $dailyTrends[$r['log_date']]['outward'] = (int)$r['qty'];
+            }
+        }
+
+        // WIP volume per stage
+        $wipDistribution = [
+            'Planned'         => (int)($activePrograms['total_planned'] ?? 0),
+            'Cutting'         => (int)($pendingCutting['total_qty'] ?? 0),
+            'Stitching'       => (int)($pendingStitching['total_qty'] ?? 0),
+            'QC Inspection'   => (int)($pendingQC['total_qty'] ?? 0),
+            'Ready Dispatch'  => (int)($readyDispatch['total_qty'] ?? 0),
+            'Dispatched'      => (int)($monthOutward['total_qty'] ?? 0),
+        ];
+
         return [
             'activePrograms'   => $activePrograms,
             'pendingCutting'   => $pendingCutting,
@@ -1165,6 +1258,9 @@ class ProductionService {
             'recentPrograms'   => $recentPrograms,
             'recentQC'         => $recentQC,
             'recentOutwards'   => $recentOutwards,
+            'qcBreakdown'      => $qcBreakdown ?: ['total_passed' => 0, 'total_rework' => 0, 'total_rejected' => 0, 'total_inspected' => 0],
+            'dailyTrends'      => array_values($dailyTrends),
+            'wipDistribution'  => $wipDistribution,
         ];
     }
 
