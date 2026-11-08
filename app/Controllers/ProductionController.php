@@ -490,7 +490,7 @@ class ProductionController {
 
     private function refreshSupplierRollTotals(int $sellerId): void {
         $totals = Database::fetchOne(
-            "SELECT COUNT(*) AS roll_count, COALESCE(SUM(weight), 0) AS roll_weight,
+            "SELECT COALESCE(SUM(quantity), 0) AS roll_count, COALESCE(SUM(weight), 0) AS roll_weight,
                     COALESCE(SUM(price), 0) AS roll_price
              FROM seller_rolls
              WHERE seller_id = ?",
@@ -868,10 +868,10 @@ class ProductionController {
                     if ($item['type'] === 'FABRIC_ROLL' && $item['seller_roll_id'] > 0) {
                         Database::execute(
                             "UPDATE seller_rolls SET roll_number = ?, color = ?, design_name = ?, design_count = ?,
-                                    weight = ?, price = ?, material_type = ?, photo_url = ?
+                                     quantity = ?, weight = ?, price = ?, material_type = ?, photo_url = ?
                              WHERE id = ?",
                             [$item['roll_number'], $item['color'], $item['design_name'], $item['design_count'],
-                                $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'], $item['seller_roll_id']]
+                                $item['quantity'], $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'], $item['seller_roll_id']]
                         );
                     }
                     continue;
@@ -1255,6 +1255,7 @@ class ProductionController {
                 'total_amount' => $totalAmount,
                 'item_count' => count($items),
             ]);
+            $this->refreshSupplierRollTotals($sellerId);
             Session::flash('success', "Purchase {$purchaseNumber} recorded successfully.");
             Response::redirect(url('production/purchases'));
         } catch (\Throwable $e) {
@@ -1415,82 +1416,327 @@ class ProductionController {
     public function ajaxLookupDamageRoll(): void {
         $rawScan = trim((string)($_GET['code'] ?? ''));
         $scanCode = strtoupper(trim(explode('|', $rawScan, 2)[0]));
+        $scanCode = ltrim($scanCode, '#');
+        $scanCode = trim($scanCode);
 
-        if (!preg_match('/^([A-Z]{2}\d{4})(\d+)$/', $scanCode, $matches)) {
-            Response::json(['success' => false, 'message' => 'QR code is not a recognized fabric roll label.'], 400);
+        if ($scanCode === '') {
+            Response::json(['success' => false, 'message' => 'Please provide a valid QR label or barcode.'], 400);
             return;
         }
 
-        $prefix = $matches[1];
-        $sequence = (int)$matches[2];
-        $rolls = Database::fetchAll(
-            "SELECT sr.id, sr.seller_id, sr.roll_number, sr.color, sr.design_name, sr.quantity, sr.weight, sr.price,
-                    sr.start_seq, sr.end_seq, sr.start_code, sr.end_code,
-                    s.name as seller_name, s.company as seller_company
-             FROM seller_rolls sr
-             JOIN sellers s ON s.id = sr.seller_id
-             WHERE sr.start_code LIKE ? AND sr.end_code LIKE ?
-             ORDER BY sr.id ASC",
-            [$prefix . '%', $prefix . '%']
-        );
-
-        $matchesForCode = array_values(array_filter($rolls, static function (array $roll) use ($prefix, $sequence): bool {
-            return strtoupper(substr((string)$roll['start_code'], 0, 6)) === $prefix
-                && strtoupper(substr((string)$roll['end_code'], 0, 6)) === $prefix
-                && $sequence >= (int)$roll['start_seq']
-                && $sequence <= (int)$roll['end_seq'];
-        }));
-
-        if (count($matchesForCode) !== 1) {
-            Response::json([
-                'success' => false,
-                'message' => count($matchesForCode) > 1
-                    ? 'This QR code matches more than one fabric roll. Select the roll manually.'
-                    : 'No fabric roll was found for this QR code.',
-            ], count($matchesForCode) > 1 ? 409 : 404);
-            return;
-        }
-
-        $roll = $matchesForCode[0];
-        $deletedLabel = Database::fetchOne(
-            "SELECT id FROM seller_roll_deleted_labels WHERE seller_roll_id = ? AND `sequence` = ?",
-            [(int)$roll['id'], $sequence]
-        );
-        if ($deletedLabel) {
-            Response::json(['success' => false, 'message' => 'This QR label was deleted and cannot be used to report damage.'], 404);
-            return;
-        }
-
+        // 1. Check if already recorded in Production Damage Management
         $existingDamage = Database::fetchOne(
-            "SELECT damage_number FROM roll_damages WHERE qr_code = ? LIMIT 1",
+            "SELECT damage_number, damage_reason, status FROM roll_damages WHERE qr_code = ? LIMIT 1",
             [$scanCode]
         );
         if ($existingDamage) {
             Response::json([
                 'success' => false,
-                'message' => "QR label {$scanCode} is already recorded in damage report {$existingDamage['damage_number']}.",
+                'is_damaged' => true,
+                'message' => "QR label {$scanCode} is already recorded in damage report {$existingDamage['damage_number']} ({$existingDamage['damage_reason']}). Damaged items cannot be re-scanned as damage!",
             ], 409);
             return;
         }
 
+        // 2. Check if already recorded in Warehouse Damage Management
+        $existingWhDamage = Database::fetchOne(
+            "SELECT damage_number, damage_reason, status FROM warehouse_damages WHERE tag_code = ? LIMIT 1",
+            [$scanCode]
+        );
+        if ($existingWhDamage) {
+            Response::json([
+                'success' => false,
+                'is_damaged' => true,
+                'message' => "QR label {$scanCode} is already recorded in warehouse damage report {$existingWhDamage['damage_number']} ({$existingWhDamage['damage_reason']}).",
+            ], 409);
+            return;
+        }
+
+        // 3. Check if roll or piece has already been outwarded to warehouse
+        $outwardedTag = Database::fetchOne(
+            "SELECT po.outward_number, po.dispatch_date, pb.batch_number, w.name as warehouse_name
+             FROM production_batch_items pbi
+             JOIN production_batches pb ON pb.id = pbi.production_batch_id
+             JOIN production_outwards po ON po.production_batch_id = pb.id
+             LEFT JOIN warehouses w ON (w.id = po.warehouse_id OR w.id = pb.destination_warehouse_id)
+             WHERE (pbi.piece_tags LIKE ? OR pbi.received_qr_codes LIKE ?)
+               AND (po.status IN ('DISPATCHED', 'RECEIVED') OR pb.status IN ('DISPATCHED', 'RECEIVED'))
+             LIMIT 1",
+            ['%' . $scanCode . '%', '%' . $scanCode . '%']
+        );
+        if ($outwardedTag) {
+            $whName = $outwardedTag['warehouse_name'] ?: 'Warehouse';
+            Response::json([
+                'success' => false,
+                'is_outwarded' => true,
+                'message' => "QR label {$scanCode} has already been outwarded to {$whName} under Outward #{$outwardedTag['outward_number']} (Batch {$outwardedTag['batch_number']}). Items already outwarded to warehouse cannot be reported as production damage!",
+            ], 409);
+            return;
+        }
+
+        $warehouseTag = Database::fetchOne(
+            "SELECT wq.qr_code, wq.inwarded_at, w.name as warehouse_name
+             FROM warehouse_qr_codes wq
+             LEFT JOIN warehouses w ON w.id = wq.warehouse_id
+             WHERE wq.qr_code = ? AND wq.inwarded_at IS NOT NULL
+             LIMIT 1",
+            [$scanCode]
+        );
+        if ($warehouseTag) {
+            $whName = $warehouseTag['warehouse_name'] ?: 'Warehouse';
+            Response::json([
+                'success' => false,
+                'is_outwarded' => true,
+                'message' => "QR label {$scanCode} is already located in {$whName}. Items already in the warehouse cannot be reported as production damage!",
+            ], 409);
+            return;
+        }
+
+        // 4. Check if piece has already been billed / sold
+        $billedTag = Database::fetchOne(
+            "SELECT pb.bill_number, pb.created_at
+             FROM production_bill_item_tags pbit
+             JOIN production_bills pb ON pb.id = pbit.bill_id
+             WHERE pbit.tag_code = ?
+             LIMIT 1",
+            [$scanCode]
+        );
+        if ($billedTag) {
+            Response::json([
+                'success' => false,
+                'is_damaged' => true,
+                'message' => "QR label {$scanCode} has already been sold and invoiced under Bill #{$billedTag['bill_number']}. Sold items cannot be reported as damage!",
+            ], 409);
+            return;
+        }
+
+        // =========================================================
+        // CASE A: Fabric Roll Lookup
+        // =========================================================
+        if (preg_match('/^([A-Z]{2}\d{4})(\d+)$/', $scanCode, $matches)) {
+            $prefix = $matches[1];
+            $sequence = (int)$matches[2];
+            $rolls = Database::fetchAll(
+                "SELECT sr.id, sr.seller_id, sr.roll_number, sr.color, sr.design_name, sr.quantity, sr.weight, sr.price,
+                        sr.start_seq, sr.end_seq, sr.start_code, sr.end_code,
+                        s.name as seller_name, s.company as seller_company
+                 FROM seller_rolls sr
+                 JOIN sellers s ON s.id = sr.seller_id
+                 WHERE sr.start_code LIKE ? AND sr.end_code LIKE ?
+                 ORDER BY sr.id ASC",
+                [$prefix . '%', $prefix . '%']
+            );
+
+            $matchesForCode = array_values(array_filter($rolls, static function (array $roll) use ($prefix, $sequence): bool {
+                return strtoupper(substr((string)$roll['start_code'], 0, 6)) === $prefix
+                    && strtoupper(substr((string)$roll['end_code'], 0, 6)) === $prefix
+                    && $sequence >= (int)$roll['start_seq']
+                    && $sequence <= (int)$roll['end_seq'];
+            }));
+
+            if (count($matchesForCode) === 1) {
+                $roll = $matchesForCode[0];
+                $deletedLabel = Database::fetchOne(
+                    "SELECT id FROM seller_roll_deleted_labels WHERE seller_roll_id = ? AND `sequence` = ?",
+                    [(int)$roll['id'], $sequence]
+                );
+                if ($deletedLabel) {
+                    Response::json(['success' => false, 'message' => 'This QR label was deleted and cannot be used to report damage.'], 404);
+                    return;
+                }
+
+                // Check if roll outwarded
+                $outwardedRoll = Database::fetchOne(
+                    "SELECT po.outward_number, po.dispatch_date, pb.batch_number, w.name as warehouse_name
+                     FROM production_program_rolls ppr
+                     JOIN production_programs pp ON pp.id = ppr.production_program_id
+                     JOIN production_batches pb ON pb.program_id = pp.id
+                     JOIN production_outwards po ON po.production_batch_id = pb.id
+                     LEFT JOIN warehouses w ON (w.id = po.warehouse_id OR w.id = pb.destination_warehouse_id)
+                     WHERE ppr.seller_roll_id = ?
+                       AND (po.status IN ('DISPATCHED', 'RECEIVED') OR pb.status IN ('DISPATCHED', 'RECEIVED'))
+                     LIMIT 1",
+                    [(int)$roll['id']]
+                );
+                if ($outwardedRoll) {
+                    $whName = $outwardedRoll['warehouse_name'] ?: 'Warehouse';
+                    Response::json([
+                        'success' => false,
+                        'is_outwarded' => true,
+                        'message' => "Fabric roll {$roll['roll_number']} (QR: {$scanCode}) has already been outwarded to {$whName} under Outward #{$outwardedRoll['outward_number']} (Batch {$outwardedRoll['batch_number']}). Items already outwarded to warehouse cannot be reported as production damage!",
+                    ], 409);
+                    return;
+                }
+
+                $totQty = max(1, (int)$roll['quantity']);
+                $rollWeight = (float)$roll['weight'];
+                $rollPrice = (float)$roll['price'];
+                $pieceWeight = round($rollWeight / $totQty, 2);
+                $pieceLoss = round($pieceWeight * ($rollWeight > 0 ? $rollPrice / $rollWeight : 0), 2);
+                if ($pieceLoss <= 0) {
+                    $pieceLoss = round($rollPrice / $totQty, 2);
+                }
+
+                Response::json([
+                    'success' => true,
+                    'item_type' => 'FABRIC_ROLL',
+                    'seller_id' => (int)$roll['seller_id'],
+                    'seller_name' => $roll['seller_company'] ?: $roll['seller_name'],
+                    'roll_id' => (int)$roll['id'],
+                    'roll_number' => $roll['roll_number'],
+                    'color' => $roll['color'],
+                    'design_name' => $roll['design_name'],
+                    'quantity' => $totQty,
+                    'weight' => $pieceWeight,
+                    'price' => $pieceLoss,
+                    'loss' => $pieceLoss,
+                    'code' => $scanCode,
+                ]);
+                return;
+            }
+        }
+
+        // =========================================================
+        // CASE B: Finished Product / Garment Piece Lookup
+        // =========================================================
+        $prodItem = null;
+
+        // 1. Check QC Items
+        $qcItem = Database::fetchOne(
+            "SELECT qi.*, qb.batch_number as qc_batch_number,
+                    p.id as product_id, p.name as product_name, p.code as product_code,
+                    pv.id as variant_id, pv.sku, pv.mrp, pv.selling_price, pv.production_cost, pv.weight as variant_weight,
+                    COALESCE(qi.size_name, sz.name) as size_name,
+                    COALESCE(qi.color_name, cl.name) as color_name
+             FROM qc_items qi
+             JOIN qc_batches qb ON qb.id = qi.qc_batch_id
+             LEFT JOIN product_variants pv ON pv.id = qi.variant_id
+             LEFT JOIN products p ON (p.id = pv.product_id OR p.category_id = qi.category_id)
+             LEFT JOIN sizes sz ON sz.id = pv.size_id
+             LEFT JOIN colors cl ON cl.id = pv.color_id
+             WHERE qi.tag_code = ?
+             LIMIT 1",
+            [$scanCode]
+        );
+        if ($qcItem) {
+            $prodItem = $qcItem;
+        }
+
+        // 2. Check Production Batch Items
+        if (!$prodItem) {
+            $batchItem = Database::fetchOne(
+                "SELECT pbi.*, pb.batch_number,
+                        p.id as product_id, p.name as product_name, p.code as product_code,
+                        pv.id as variant_id, pv.sku, pv.mrp, pv.selling_price, pv.production_cost, pv.weight as variant_weight,
+                        sz.name as size_name, cl.name as color_name
+                 FROM production_batch_items pbi
+                 JOIN production_batches pb ON pb.id = pbi.production_batch_id
+                 LEFT JOIN product_variants pv ON pv.id = pbi.variant_id
+                 LEFT JOIN products p ON p.id = pv.product_id
+                 LEFT JOIN sizes sz ON sz.id = pv.size_id
+                 LEFT JOIN colors cl ON cl.id = pv.color_id
+                 WHERE pbi.piece_tags LIKE ? OR pbi.received_qr_codes LIKE ?
+                 LIMIT 1",
+                ['%' . $scanCode . '%', '%' . $scanCode . '%']
+            );
+            if ($batchItem) {
+                $prodItem = $batchItem;
+            }
+        }
+
+        // 3. Check Warehouse QR Codes
+        if (!$prodItem) {
+            $whQr = Database::fetchOne(
+                "SELECT wq.*,
+                        p.id as product_id, p.name as product_name, p.code as product_code,
+                        pv.id as variant_id, pv.sku, pv.mrp, pv.selling_price, pv.production_cost, pv.weight as variant_weight,
+                        sz.name as size_name, cl.name as color_name
+                 FROM warehouse_qr_codes wq
+                 LEFT JOIN product_variants pv ON pv.id = wq.variant_id
+                 LEFT JOIN products p ON p.id = pv.product_id
+                 LEFT JOIN sizes sz ON sz.id = pv.size_id
+                 LEFT JOIN colors cl ON cl.id = pv.color_id
+                 WHERE wq.qr_code = ?
+                 LIMIT 1",
+                [$scanCode]
+            );
+            if ($whQr) {
+                $prodItem = $whQr;
+            }
+        }
+
+        // 4. Check Product Variants by SKU or QR
+        if (!$prodItem) {
+            $varItem = Database::fetchOne(
+                "SELECT pv.*,
+                        p.id as product_id, p.name as product_name, p.code as product_code,
+                        pv.id as variant_id, pv.sku, pv.mrp, pv.selling_price, pv.production_cost, pv.weight as variant_weight,
+                        sz.name as size_name, cl.name as color_name
+                 FROM product_variants pv
+                 JOIN products p ON p.id = pv.product_id
+                 LEFT JOIN sizes sz ON sz.id = pv.size_id
+                 LEFT JOIN colors cl ON cl.id = pv.color_id
+                 WHERE pv.sku = ? OR pv.qr_code = ?
+                 LIMIT 1",
+                [$scanCode, $scanCode]
+            );
+            if ($varItem) {
+                $prodItem = $varItem;
+            }
+        }
+
+        if ($prodItem) {
+            $loss = (float)(!empty($prodItem['selling_price']) && $prodItem['selling_price'] > 0
+                ? $prodItem['selling_price']
+                : (!empty($prodItem['mrp']) && $prodItem['mrp'] > 0
+                    ? $prodItem['mrp']
+                    : (!empty($prodItem['base_price']) && $prodItem['base_price'] > 0
+                        ? $prodItem['base_price']
+                        : (!empty($prodItem['discount_price']) && $prodItem['discount_price'] > 0
+                            ? $prodItem['discount_price']
+                            : (!empty($prodItem['production_cost']) && $prodItem['production_cost'] > 0
+                                ? $prodItem['production_cost']
+                                : 500.00)))));
+
+            $weight = (float)(!empty($prodItem['variant_weight']) && $prodItem['variant_weight'] > 0
+                ? $prodItem['variant_weight']
+                : (!empty($prodItem['weight']) && $prodItem['weight'] > 0
+                    ? $prodItem['weight']
+                    : 0.25));
+
+            $prodName = $prodItem['product_name'] ?: 'Garment Product';
+            $sizeStr = $prodItem['size_name'] ?? '';
+            $colorStr = $prodItem['color_name'] ?? '';
+            $rollDesc = $prodName . ($sizeStr || $colorStr ? " ({$sizeStr}" . ($colorStr ? "/{$colorStr}" : '') . ")" : '');
+
+            Response::json([
+                'success' => true,
+                'item_type' => 'PRODUCT',
+                'product_id' => (int)$prodItem['product_id'],
+                'variant_id' => !empty($prodItem['variant_id']) ? (int)$prodItem['variant_id'] : null,
+                'product_name' => $prodName,
+                'sku' => $prodItem['sku'] ?? $scanCode,
+                'size' => $sizeStr,
+                'color' => $colorStr,
+                'seller_id' => null,
+                'seller_name' => 'Own Production',
+                'roll_id' => null,
+                'roll_number' => $rollDesc,
+                'quantity' => 1,
+                'weight' => $weight,
+                'price' => $loss,
+                'loss' => $loss,
+                'code' => $scanCode,
+            ]);
+            return;
+        }
+
         Response::json([
-            'success' => true,
-            'seller_id' => (int)$roll['seller_id'],
-            'seller_name' => $roll['seller_name'],
-            'roll_id' => (int)$roll['id'],
-            'roll_number' => $roll['roll_number'],
-            'color' => $roll['color'],
-            'design_name' => $roll['design_name'],
-            'quantity' => (int)$roll['quantity'],
-            'weight' => (float)$roll['weight'],
-            'price' => (float)$roll['price'],
-            'code' => $scanCode,
-        ]);
+            'success' => false,
+            'message' => "QR code {$scanCode} was not found as a fabric roll or finished product in the system.",
+        ], 404);
     }
 
-    /**
-     * Download or stream bill / invoice document for a supplier.
-     */
     public function downloadBill(string $id): void {
         $sellerId = (int)$id;
         $seller = Database::fetchOne(
@@ -2232,12 +2478,20 @@ class ProductionController {
                        sr.qr_code as roll_qr_code,
                        sr.start_code as roll_start_code,
                        sr.end_code as roll_end_code,
+                       p.name as catalog_product_name,
+                       pv.sku as variant_sku,
+                       sz.name as variant_size_name,
+                       cl.name as variant_color_name,
                        u_rep.full_name as reported_by_name,
                        u_res.full_name as resolved_by_name,
                        repl_sr.roll_number as replacement_roll_code
                 FROM roll_damages rd
-                JOIN sellers s ON rd.seller_id = s.id
-                JOIN seller_rolls sr ON rd.seller_roll_id = sr.id
+                LEFT JOIN sellers s ON rd.seller_id = s.id
+                LEFT JOIN seller_rolls sr ON rd.seller_roll_id = sr.id
+                LEFT JOIN product_variants pv ON rd.variant_id = pv.id
+                LEFT JOIN products p ON (rd.product_id = p.id OR pv.product_id = p.id)
+                LEFT JOIN sizes sz ON pv.size_id = sz.id
+                LEFT JOIN colors cl ON pv.color_id = cl.id
                 LEFT JOIN users u_rep ON rd.reported_by = u_rep.id
                 LEFT JOIN users u_res ON rd.resolved_by = u_res.id
                 LEFT JOIN seller_rolls repl_sr ON rd.replacement_roll_id = repl_sr.id
@@ -2248,18 +2502,22 @@ class ProductionController {
         if ($search !== '') {
             $sql .= " AND (
                 rd.damage_number LIKE ?
+                OR rd.qr_code LIKE ?
                 OR s.name LIKE ?
                 OR s.company LIKE ?
                 OR sr.roll_number LIKE ?
                 OR sr.color LIKE ?
                 OR sr.design_name LIKE ?
+                OR rd.product_name LIKE ?
+                OR p.name LIKE ?
+                OR pv.sku LIKE ?
                 OR rd.damage_reason LIKE ?
                 OR rd.defect_notes LIKE ?
                 OR rd.debit_note_number LIKE ?
                 OR rd.replacement_roll_number LIKE ?
             )";
             $s = '%' . $search . '%';
-            $params = array_merge($params, [$s, $s, $s, $s, $s, $s, $s, $s, $s, $s]);
+            $params = array_merge($params, [$s, $s, $s, $s, $s, $s, $s, $s, $s, $s, $s, $s, $s, $s]);
         }
 
         if ($sellerId) {
@@ -2373,6 +2631,8 @@ class ProductionController {
         $qrCodes = [];
         foreach ($submittedQrCodes as $submittedCode) {
             $code = strtoupper(trim(explode('|', trim((string)$submittedCode), 2)[0]));
+            $code = ltrim($code, '#');
+            $code = trim($code);
             if ($code !== '' && !in_array($code, $qrCodes, true)) {
                 $qrCodes[] = $code;
             }
@@ -2381,7 +2641,7 @@ class ProductionController {
         $defectNotes = trim($_POST['defect_notes'] ?? '');
 
         if (empty($qrCodes)) {
-            Session::flash('error', 'Scan at least one valid fabric QR label before recording damage.');
+            Session::flash('error', 'Scan at least one valid fabric roll or finished product QR label before recording damage.');
             Response::back();
             return;
         }
@@ -2400,47 +2660,6 @@ class ProductionController {
         $damageItems = [];
         $newDamageCountByRoll = [];
         foreach ($qrCodes as $qrCode) {
-            if (!preg_match('/^([A-Z]{2}\d{4})(\d+)$/', $qrCode, $qrMatches)) {
-                Session::flash('error', "QR code {$qrCode} is not a recognized fabric label.");
-                Response::back();
-                return;
-            }
-
-            $qrPrefix = $qrMatches[1];
-            $qrSequence = (int)$qrMatches[2];
-            $candidates = Database::fetchAll(
-                "SELECT sr.*, s.name AS seller_name
-                 FROM seller_rolls sr
-                 JOIN sellers s ON s.id = sr.seller_id
-                 WHERE sr.start_code LIKE ? AND sr.end_code LIKE ?",
-                [$qrPrefix . '%', $qrPrefix . '%']
-            );
-            $matchingRolls = array_values(array_filter($candidates, static function (array $candidate) use ($qrPrefix, $qrSequence): bool {
-                return strtoupper(substr((string)$candidate['start_code'], 0, 6)) === $qrPrefix
-                    && strtoupper(substr((string)$candidate['end_code'], 0, 6)) === $qrPrefix
-                    && $qrSequence >= (int)$candidate['start_seq']
-                    && $qrSequence <= (int)$candidate['end_seq'];
-            }));
-            if (count($matchingRolls) !== 1) {
-                Session::flash('error', count($matchingRolls) > 1
-                    ? "QR code {$qrCode} matches more than one fabric roll."
-                    : "No fabric roll was found for QR code {$qrCode}.");
-                Response::back();
-                return;
-            }
-
-            $roll = $matchingRolls[0];
-            $sellerRollId = (int)$roll['id'];
-            $deletedLabel = Database::fetchOne(
-                "SELECT id FROM seller_roll_deleted_labels WHERE seller_roll_id = ? AND `sequence` = ?",
-                [$sellerRollId, $qrSequence]
-            );
-            if ($deletedLabel) {
-                Session::flash('error', "QR label {$qrCode} was deleted and cannot be used to report damage.");
-                Response::back();
-                return;
-            }
-
             $existingQrDamage = Database::fetchOne(
                 "SELECT damage_number FROM roll_damages WHERE qr_code = ? LIMIT 1",
                 [$qrCode]
@@ -2451,25 +2670,159 @@ class ProductionController {
                 return;
             }
 
-            $rollQty = max(1, (int)($roll['quantity'] ?? 1));
-            $rollWeight = (float)$roll['weight'];
-            $rollPrice = (float)$roll['price'];
-            $damagedWeight = round($rollWeight / $rollQty, 2);
-            $ratePerKg = $rollWeight > 0 ? ($rollPrice / $rollWeight) : 0.0;
-            $lossAmount = round($damagedWeight * $ratePerKg, 2);
-            if ($lossAmount <= 0) {
-                $lossAmount = round($rollPrice / $rollQty, 2);
+            // A. Check Fabric Roll
+            $isRoll = false;
+            if (preg_match('/^([A-Z]{2}\d{4})(\d+)$/', $qrCode, $qrMatches)) {
+                $qrPrefix = $qrMatches[1];
+                $qrSequence = (int)$qrMatches[2];
+                $candidates = Database::fetchAll(
+                    "SELECT sr.*, s.name AS seller_name, s.company AS seller_company
+                     FROM seller_rolls sr
+                     JOIN sellers s ON s.id = sr.seller_id
+                     WHERE sr.start_code LIKE ? AND sr.end_code LIKE ?",
+                    [$qrPrefix . '%', $qrPrefix . '%']
+                );
+                $matchingRolls = array_values(array_filter($candidates, static function (array $candidate) use ($qrPrefix, $qrSequence): bool {
+                    return strtoupper(substr((string)$candidate['start_code'], 0, 6)) === $qrPrefix
+                        && strtoupper(substr((string)$candidate['end_code'], 0, 6)) === $qrPrefix
+                        && $qrSequence >= (int)$candidate['start_seq']
+                        && $qrSequence <= (int)$candidate['end_seq'];
+                }));
+
+                if (count($matchingRolls) === 1) {
+                    $roll = $matchingRolls[0];
+                    $sellerRollId = (int)$roll['id'];
+                    $deletedLabel = Database::fetchOne(
+                        "SELECT id FROM seller_roll_deleted_labels WHERE seller_roll_id = ? AND `sequence` = ?",
+                        [$sellerRollId, $qrSequence]
+                    );
+                    if ($deletedLabel) {
+                        Session::flash('error', "QR label {$qrCode} was deleted and cannot be used to report damage.");
+                        Response::back();
+                        return;
+                    }
+
+                    $rollQty = max(1, (int)($roll['quantity'] ?? 1));
+                    $rollWeight = (float)$roll['weight'];
+                    $rollPrice = (float)$roll['price'];
+                    $damagedWeight = round($rollWeight / $rollQty, 2);
+                    $ratePerKg = $rollWeight > 0 ? ($rollPrice / $rollWeight) : 0.0;
+                    $lossAmount = round($damagedWeight * $ratePerKg, 2);
+                    if ($lossAmount <= 0) {
+                        $lossAmount = round($rollPrice / $rollQty, 2);
+                    }
+
+                    $damageItems[] = [
+                        'item_type' => 'FABRIC_ROLL',
+                        'qr_code' => $qrCode,
+                        'seller_id' => (int)$roll['seller_id'],
+                        'seller_roll_id' => $sellerRollId,
+                        'product_id' => null,
+                        'variant_id' => null,
+                        'product_name' => null,
+                        'variant_info' => null,
+                        'roll_number' => $roll['roll_number'],
+                        'damaged_weight' => $damagedWeight,
+                        'loss_amount' => $lossAmount,
+                    ];
+                    $newDamageCountByRoll[$sellerRollId] = ($newDamageCountByRoll[$sellerRollId] ?? 0) + 1;
+                    $isRoll = true;
+                }
             }
 
-            $damageItems[] = [
-                'qr_code' => $qrCode,
-                'seller_id' => (int)$roll['seller_id'],
-                'seller_roll_id' => $sellerRollId,
-                'roll_number' => $roll['roll_number'],
-                'damaged_weight' => $damagedWeight,
-                'loss_amount' => $lossAmount,
-            ];
-            $newDamageCountByRoll[$sellerRollId] = ($newDamageCountByRoll[$sellerRollId] ?? 0) + 1;
+            // B. Check Finished Products if not a roll
+            if (!$isRoll) {
+                $prodItem = Database::fetchOne(
+                    "SELECT qi.*, p.id as product_id, p.name as product_name, pv.id as variant_id, pv.sku, pv.mrp, pv.selling_price, pv.production_cost, pv.weight as variant_weight,
+                            COALESCE(qi.size_name, sz.name) as size_name, COALESCE(qi.color_name, cl.name) as color_name
+                     FROM qc_items qi
+                     JOIN qc_batches qb ON qb.id = qi.qc_batch_id
+                     LEFT JOIN product_variants pv ON pv.id = qi.variant_id
+                     LEFT JOIN products p ON (p.id = pv.product_id OR p.category_id = qi.category_id)
+                     LEFT JOIN sizes sz ON sz.id = pv.size_id
+                     LEFT JOIN colors cl ON cl.id = pv.color_id
+                     WHERE qi.tag_code = ? LIMIT 1",
+                    [$qrCode]
+                );
+
+                if (!$prodItem) {
+                    $prodItem = Database::fetchOne(
+                        "SELECT pbi.*, p.id as product_id, p.name as product_name, pv.id as variant_id, pv.sku, pv.mrp, pv.selling_price, pv.production_cost, pv.weight as variant_weight,
+                                sz.name as size_name, cl.name as color_name
+                         FROM production_batch_items pbi
+                         JOIN production_batches pb ON pb.id = pbi.production_batch_id
+                         LEFT JOIN product_variants pv ON pv.id = pbi.variant_id
+                         LEFT JOIN products p ON p.id = pv.product_id
+                         LEFT JOIN sizes sz ON sz.id = pv.size_id
+                         LEFT JOIN colors cl ON cl.id = pv.color_id
+                         WHERE pbi.piece_tags LIKE ? OR pbi.received_qr_codes LIKE ? LIMIT 1",
+                        ['%' . $qrCode . '%', '%' . $qrCode . '%']
+                    );
+                }
+
+                if (!$prodItem) {
+                    $prodItem = Database::fetchOne(
+                        "SELECT wq.*, p.id as product_id, p.name as product_name, pv.id as variant_id, pv.sku, pv.mrp, pv.selling_price, pv.production_cost, pv.weight as variant_weight,
+                                sz.name as size_name, cl.name as color_name
+                         FROM warehouse_qr_codes wq
+                         LEFT JOIN product_variants pv ON pv.id = wq.variant_id
+                         LEFT JOIN products p ON p.id = pv.product_id
+                         LEFT JOIN sizes sz ON sz.id = pv.size_id
+                         LEFT JOIN colors cl ON cl.id = pv.color_id
+                         WHERE wq.qr_code = ? LIMIT 1",
+                        [$qrCode]
+                    );
+                }
+
+                if (!$prodItem) {
+                    $prodItem = Database::fetchOne(
+                        "SELECT pv.*, p.id as product_id, p.name as product_name, pv.id as variant_id, pv.sku, pv.mrp, pv.selling_price, pv.production_cost, pv.weight as variant_weight,
+                                sz.name as size_name, cl.name as color_name
+                         FROM product_variants pv
+                         JOIN products p ON p.id = pv.product_id
+                         LEFT JOIN sizes sz ON sz.id = pv.size_id
+                         LEFT JOIN colors cl ON cl.id = pv.color_id
+                         WHERE pv.sku = ? OR pv.qr_code = ? LIMIT 1",
+                        [$qrCode, $qrCode]
+                    );
+                }
+
+                if (!$prodItem) {
+                    Session::flash('error', "QR code {$qrCode} is not recognized as a fabric roll or finished garment.");
+                    Response::back();
+                    return;
+                }
+
+                $lossAmount = (float)(!empty($prodItem['selling_price']) && $prodItem['selling_price'] > 0
+                    ? $prodItem['selling_price']
+                    : (!empty($prodItem['mrp']) && $prodItem['mrp'] > 0
+                        ? $prodItem['mrp']
+                        : (!empty($prodItem['base_price']) && $prodItem['base_price'] > 0
+                            ? $prodItem['base_price']
+                            : (!empty($prodItem['discount_price']) && $prodItem['discount_price'] > 0
+                                ? $prodItem['discount_price']
+                                : 500.00))));
+
+                $weight = (float)(!empty($prodItem['variant_weight']) && $prodItem['variant_weight'] > 0
+                    ? $prodItem['variant_weight']
+                    : (!empty($prodItem['weight']) && $prodItem['weight'] > 0
+                        ? $prodItem['weight']
+                        : 0.25));
+
+                $damageItems[] = [
+                    'item_type' => 'PRODUCT',
+                    'qr_code' => $qrCode,
+                    'seller_id' => null,
+                    'seller_roll_id' => null,
+                    'product_id' => (int)$prodItem['product_id'],
+                    'variant_id' => !empty($prodItem['variant_id']) ? (int)$prodItem['variant_id'] : null,
+                    'product_name' => $prodItem['product_name'] ?: 'Garment Product',
+                    'variant_info' => trim(($prodItem['size_name'] ?? '') . ' ' . ($prodItem['color_name'] ?? '') . ' ' . ($prodItem['sku'] ?? '')),
+                    'roll_number' => $prodItem['product_name'] . (!empty($prodItem['size_name']) ? " ({$prodItem['size_name']})" : ''),
+                    'damaged_weight' => $weight,
+                    'loss_amount' => $lossAmount,
+                ];
+            }
         }
 
         foreach ($newDamageCountByRoll as $sellerRollId => $newCount) {
@@ -2517,15 +2870,21 @@ class ProductionController {
             Database::beginTransaction();
             $createdAt = date('Y-m-d H:i:s');
             foreach ($damageItems as $item) {
-                $temporaryDamageNumber = 'TMP-ROL-' . bin2hex(random_bytes(16));
+                $tempPrefix = ($item['item_type'] === 'PRODUCT') ? 'TMP-PRD-' : 'TMP-ROL-';
+                $temporaryDamageNumber = $tempPrefix . bin2hex(random_bytes(16));
                 Database::execute(
                     "INSERT INTO roll_damages
-                        (damage_number, seller_id, seller_roll_id, qr_code, damaged_quantity, damaged_weight, loss_amount, damage_reason, defect_notes, photo_url, status, resolution_type, reported_by, created_at, updated_at)
-                     VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, 'LOGGED', 'NONE', ?, ?, ?)",
+                        (damage_number, item_type, seller_id, seller_roll_id, product_id, variant_id, product_name, variant_info, qr_code, damaged_quantity, damaged_weight, loss_amount, damage_reason, defect_notes, photo_url, status, resolution_type, reported_by, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, 'LOGGED', 'NONE', ?, ?, ?)",
                     [
                         $temporaryDamageNumber,
+                        $item['item_type'],
                         $item['seller_id'],
                         $item['seller_roll_id'],
+                        $item['product_id'],
+                        $item['variant_id'],
+                        $item['product_name'],
+                        $item['variant_info'],
                         $item['qr_code'],
                         $item['damaged_weight'],
                         $item['loss_amount'],
@@ -2538,7 +2897,8 @@ class ProductionController {
                     ]
                 );
                 $damageId = (int)Database::lastInsertId();
-                $damageNumber = 'DMG-ROL-' . date('Y') . '-' . sprintf('%06d', $damageId) . '-ID' . $damageId;
+                $prefix = ($item['item_type'] === 'PRODUCT') ? 'DMG-PRD-' : 'DMG-ROL-';
+                $damageNumber = $prefix . date('Y') . '-' . sprintf('%06d', $damageId) . '-ID' . $damageId;
                 Database::execute(
                     "UPDATE roll_damages SET damage_number = ? WHERE id = ?",
                     [$damageNumber, $damageId]
@@ -2547,21 +2907,21 @@ class ProductionController {
 
                 AuditService::log('production', 'create', 'roll_damages', $damageId, null, [
                     'damage_number' => $damageNumber,
+                    'item_type' => $item['item_type'],
                     'qr_code' => $item['qr_code'],
-                    'seller_roll_id' => $item['seller_roll_id'],
                     'loss_amount' => $item['loss_amount'],
                     'reason' => $damageReason
                 ]);
             }
             Database::commit();
             $redirectUrl = !empty($_POST['redirect_url']) ? $_POST['redirect_url'] : url('production/damages');
-            Session::flash('success', count($damageItems) . ' scanned fabric piece(s) recorded as damage across ' . count($newDamageCountByRoll) . ' roll(s). Total loss valuation: ₹' . number_format($totalLossAmount, 2));
+            Session::flash('success', count($damageItems) . ' scanned item(s) (rolls & products) recorded as damage. Total loss valuation: ₹' . number_format($totalLossAmount, 2));
             Response::redirect($redirectUrl);
         } catch (\Throwable $e) {
             if (Database::inTransaction()) {
                 Database::rollback();
             }
-            Session::flash('error', 'Error logging roll damage: ' . $e->getMessage());
+            Session::flash('error', 'Error logging damage: ' . $e->getMessage());
             Response::back();
         }
     }
@@ -10366,7 +10726,7 @@ class ProductionController {
     }
 
     // =========================================================================
-    // PRODUCTION EXPENSES & ASSETS MANAGEMENT (Unit 1 & Unit 2)
+    // PRODUCTION EXPENSES MANAGEMENT (Unit 1 & Unit 2)
     // =========================================================================
 
     public function expensesList(): void {
@@ -10394,11 +10754,10 @@ class ProductionController {
                 OR pe.vendor_name LIKE ?
                 OR pe.vendor_company LIKE ?
                 OR pe.invoice_number LIKE ?
-                OR pe.asset_tag_or_serial LIKE ?
                 OR pe.notes LIKE ?
             )";
             $s = '%' . $search . '%';
-            $params = array_merge($params, [$s, $s, $s, $s, $s, $s, $s]);
+            $params = array_merge($params, [$s, $s, $s, $s, $s, $s]);
         }
 
         if ($unitFilter !== '' && $unitFilter !== 'ALL') {
@@ -10468,11 +10827,11 @@ class ProductionController {
         );
         $expenseCategoryOptions = [];
         $knownCategoryLabels = [
-            'MACHINERY_ASSET'     => 'Machinery & Equipment',
             'SEWING_MATERIALS'    => 'Sewing Materials & Trims',
             'MAINTENANCE_REPAIR'  => 'Maintenance & Repairs',
             'OPERATIONAL_UTILITY' => 'Operations & Utilities',
-            'OTHER'               => 'Other Expenses',
+            'MACHINERY_ASSET'     => 'Machine Maintenance & Parts',
+            'OTHER'               => 'Other Floor Expenses',
             'GENERAL'             => 'General',
         ];
         foreach ($savedExpenseCategories as $savedCategory) {
@@ -10492,7 +10851,7 @@ class ProductionController {
         $unit2Cost = (float)array_sum(array_column(array_filter($allExpenses, fn($e) => $e['production_unit'] === 'PRODUCTION_2'), 'total_cost'));
         $bothUnitsCost = (float)array_sum(array_column(array_filter($allExpenses, fn($e) => in_array($e['production_unit'], ['BOTH_UNITS', 'GENERAL'])), 'total_cost'));
 
-        $machineryCost = (float)array_sum(array_column(array_filter($allExpenses, fn($e) => $e['category'] === 'MACHINERY_ASSET'), 'total_cost'));
+        $machineryCost = (float)array_sum(array_column(array_filter($allExpenses, fn($e) => in_array($e['category'], ['MACHINERY_ASSET', 'MAINTENANCE_REPAIR'])), 'total_cost'));
         $sewingMaterialsCost = (float)array_sum(array_column(array_filter($allExpenses, fn($e) => $e['category'] === 'SEWING_MATERIALS'), 'total_cost'));
         $maintenanceCost = (float)array_sum(array_column(array_filter($allExpenses, fn($e) => $e['category'] === 'MAINTENANCE_REPAIR'), 'total_cost'));
         $operationsCost = (float)array_sum(array_column(array_filter($allExpenses, fn($e) => $e['category'] === 'OPERATIONAL_UTILITY'), 'total_cost'));
@@ -10518,7 +10877,7 @@ class ProductionController {
         $expenseItems = Database::fetchAll("SELECT id, name, category, unit_type, default_rate FROM production_expense_items ORDER BY name ASC");
 
         Response::view('production.expenses.index', [
-            'pageTitle'      => 'Production Expenses & Assets Management',
+            'pageTitle'      => 'Production Expenses',
             'activeModule'   => 'production',
             'activeMenu'     => 'production-expenses',
             'expenses'       => $expenses,
@@ -10535,7 +10894,7 @@ class ProductionController {
             'dateTo'         => $dateTo,
             'breadcrumb'     => [
                 ['label' => 'Production', 'url' => url('production/dashboard')],
-                ['label' => 'Expenses & Assets'],
+                ['label' => 'Expenses'],
             ],
         ]);
     }
@@ -10549,12 +10908,14 @@ class ProductionController {
 
         $itemNames = $_POST['item_name'] ?? [];
         $quantities = $_POST['quantity'] ?? [];
+        $unitTypes = $_POST['unit_type'] ?? [];
         $unitCosts = $_POST['unit_cost'] ?? [];
         $notesList = $_POST['notes'] ?? [];
 
         if (!is_array($itemNames)) {
             $itemNames = (string)$itemNames !== '' ? [$itemNames] : [];
             $quantities = is_array($quantities) ? $quantities : [$quantities];
+            $unitTypes = is_array($unitTypes) ? $unitTypes : [$unitTypes];
             $unitCosts = is_array($unitCosts) ? $unitCosts : [$unitCosts];
             $notesList = is_array($notesList) ? $notesList : [$notesList];
         }
@@ -10565,11 +10926,15 @@ class ProductionController {
             return;
         }
 
+        $defaultUnitType = strtoupper(trim($_POST['default_unit_type'] ?? 'PCS')) ?: 'PCS';
+
         $expenseLines = [];
         foreach ($itemNames as $index => $submittedName) {
             $itemName = trim((string)$submittedName);
             $quantityValue = $quantities[$index] ?? null;
             $unitCostValue = $unitCosts[$index] ?? null;
+            $lineUnitType = !empty($unitTypes[$index]) ? strtoupper(trim((string)$unitTypes[$index])) : $defaultUnitType;
+            if ($lineUnitType === '') $lineUnitType = 'PCS';
             $noteText = trim((string)($notesList[$index] ?? ''));
             if ($itemName === '' || !is_numeric($quantityValue) || !is_finite((float)$quantityValue)
                 || !is_numeric($unitCostValue) || !is_finite((float)$unitCostValue)) {
@@ -10589,6 +10954,7 @@ class ProductionController {
             $expenseLines[] = [
                 'item_name' => $itemName,
                 'quantity' => $quantity,
+                'unit_type' => $lineUnitType,
                 'unit_cost' => $unitCost,
                 'total_cost' => round($quantity * $unitCost, 2),
                 'notes' => $noteText,
@@ -10602,12 +10968,27 @@ class ProductionController {
         }
 
         $productionUnit = trim($_POST['production_unit'] ?? 'PRODUCTION_1');
-        $category = 'GENERAL';
-        $unitType = 'PCS';
-        $vendorName = 'Direct';
-        $paymentStatus = 'PAID';
-        $paymentMethod = 'CASH';
+        if ($productionUnit === '') $productionUnit = 'PRODUCTION_1';
+
+        $category = trim($_POST['category'] ?? 'SEWING_MATERIALS');
+        if ($category === '') $category = 'SEWING_MATERIALS';
+
+        $vendorName = trim($_POST['vendor_name'] ?? '');
+        if ($vendorName === '') $vendorName = 'Direct / Floor Expense';
+
+        $paymentStatus = trim($_POST['payment_status'] ?? 'PAID');
+        if (!in_array($paymentStatus, ['PAID', 'PENDING', 'PARTIAL', 'CANCELLED'], true)) {
+            $paymentStatus = 'PAID';
+        }
+
+        $paymentMethod = trim($_POST['payment_method'] ?? 'CASH');
+        if ($paymentMethod === '') $paymentMethod = 'CASH';
+
+        $invoiceNumber = trim($_POST['invoice_number'] ?? '');
         $expenseDate = trim($_POST['expense_date'] ?? date('Y-m-d'));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $expenseDate)) {
+            $expenseDate = date('Y-m-d');
+        }
 
         // Generate sequential expense number e.g. EXP-2026-0001
         $userId = (int)(Session::get('user_id') ?? 1);
@@ -10644,25 +11025,29 @@ class ProductionController {
 
             foreach ($expenseLines as $line) {
                 $expenseNumber = 'EXP-' . date('Y') . '-' . sprintf("%04d", $nextSeq++);
+                $lineTotal = (float)$line['total_cost'];
+                $paidAmt = ($paymentStatus === 'PAID') ? $lineTotal : 0.00;
+
                 Database::execute(
                     "INSERT INTO production_expenses
                         (expense_number, production_unit, category, item_name,
                          quantity, unit_type, unit_cost, total_cost, paid_amount, payment_status,
-                         payment_method, vendor_name, expense_date, photo_url, notes, created_by, created_at, updated_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
+                         payment_method, vendor_name, invoice_number, expense_date, photo_url, notes, created_by, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
                     [
                         $expenseNumber,
                         $productionUnit,
                         $category,
                         $line['item_name'],
                         $line['quantity'],
-                        $unitType,
+                        $line['unit_type'],
                         $line['unit_cost'],
-                        $line['total_cost'],
-                        $line['total_cost'],
+                        $lineTotal,
+                        $paidAmt,
                         $paymentStatus,
                         $paymentMethod,
                         $vendorName,
+                        $invoiceNumber ?: null,
                         $expenseDate,
                         $photoUrl,
                         $line['notes'] ?: null,
@@ -10673,9 +11058,9 @@ class ProductionController {
 
                 Database::execute(
                     "INSERT INTO production_expense_items (name, category, unit_type, default_rate)
-                     VALUES (?, 'GENERAL', 'PCS', ?)
-                     ON DUPLICATE KEY UPDATE name = VALUES(name)",
-                    [$line['item_name'], $line['unit_cost']]
+                     VALUES (?, ?, ?, ?)
+                     ON DUPLICATE KEY UPDATE name = VALUES(name), category = VALUES(category), default_rate = VALUES(default_rate)",
+                    [$line['item_name'], $category, $line['unit_type'], $line['unit_cost']]
                 );
             }
 
@@ -10708,11 +11093,33 @@ class ProductionController {
 
         $itemName = trim($_POST['item_name'] ?? $existing['item_name']);
         $quantity = max(0.01, (float)($_POST['quantity'] ?? $existing['quantity']));
+        $unitType = strtoupper(trim($_POST['unit_type'] ?? $existing['unit_type'])) ?: 'PCS';
         $unitCost = max(0.0, (float)($_POST['unit_cost'] ?? $existing['unit_cost']));
         $totalCost = max(0.0, (float)($_POST['total_cost'] ?? round($quantity * $unitCost, 2)));
         if ($totalCost <= 0.0 && $quantity > 0 && $unitCost > 0) {
             $totalCost = round($quantity * $unitCost, 2);
         }
+
+        $productionUnit = trim($_POST['production_unit'] ?? $existing['production_unit']);
+        if ($productionUnit === '') $productionUnit = 'PRODUCTION_1';
+
+        $category = trim($_POST['category'] ?? $existing['category']);
+        if ($category === '') $category = 'SEWING_MATERIALS';
+
+        $vendorName = trim($_POST['vendor_name'] ?? $existing['vendor_name']);
+        $paymentStatus = trim($_POST['payment_status'] ?? $existing['payment_status']);
+        if (!in_array($paymentStatus, ['PAID', 'PENDING', 'PARTIAL', 'CANCELLED'], true)) {
+            $paymentStatus = $existing['payment_status'];
+        }
+
+        $paymentMethod = trim($_POST['payment_method'] ?? $existing['payment_method']);
+        $expenseDate = trim($_POST['expense_date'] ?? $existing['expense_date']);
+        $invoiceNumber = trim($_POST['invoice_number'] ?? $existing['invoice_number']);
+        $notes = trim($_POST['notes'] ?? $existing['notes']);
+
+        $paidAmount = ($paymentStatus === 'PAID')
+            ? $totalCost
+            : (($paymentStatus === 'PENDING') ? 0.00 : (float)($existing['paid_amount'] ?? 0.00));
 
         if (empty($itemName)) {
             Session::flash('error', 'Expense Type is required.');
@@ -10749,20 +11156,38 @@ class ProductionController {
         try {
             Database::execute(
                 "UPDATE production_expenses SET
+                    production_unit = ?,
+                    category = ?,
                     item_name = ?,
                     quantity = ?,
+                    unit_type = ?,
                     unit_cost = ?,
                     total_cost = ?,
                     paid_amount = ?,
+                    payment_status = ?,
+                    payment_method = ?,
+                    vendor_name = ?,
+                    invoice_number = ?,
+                    expense_date = ?,
+                    notes = ?,
                     photo_url = ?,
                     updated_at = NOW()
                  WHERE id = ?",
                 [
+                    $productionUnit,
+                    $category,
                     $itemName,
                     $quantity,
+                    $unitType,
                     $unitCost,
                     $totalCost,
-                    $totalCost,
+                    $paidAmount,
+                    $paymentStatus,
+                    $paymentMethod,
+                    $vendorName,
+                    $invoiceNumber ?: null,
+                    $expenseDate,
+                    $notes ?: null,
                     $photoUrl,
                     $expenseId
                 ]
@@ -10878,11 +11303,17 @@ class ProductionController {
         $damage = Database::fetchOne(
             "SELECT rd.*, s.name AS seller_name, s.company AS seller_company,
                     sr.roll_number, sr.color AS roll_color, sr.design_name AS roll_design,
+                    p.name AS catalog_product_name, pv.sku AS variant_sku,
+                    sz.name AS variant_size_name, cl.name AS variant_color_name,
                     u_rep.full_name AS reported_by_name, u_res.full_name AS resolved_by_name,
                     repl_sr.roll_number AS replacement_roll_code
              FROM roll_damages rd
-             JOIN sellers s ON rd.seller_id = s.id
-             JOIN seller_rolls sr ON rd.seller_roll_id = sr.id
+             LEFT JOIN sellers s ON rd.seller_id = s.id
+             LEFT JOIN seller_rolls sr ON rd.seller_roll_id = sr.id
+             LEFT JOIN product_variants pv ON rd.variant_id = pv.id
+             LEFT JOIN products p ON (rd.product_id = p.id OR pv.product_id = p.id)
+             LEFT JOIN sizes sz ON pv.size_id = sz.id
+             LEFT JOIN colors cl ON pv.color_id = cl.id
              LEFT JOIN users u_rep ON rd.reported_by = u_rep.id
              LEFT JOIN users u_res ON rd.resolved_by = u_res.id
              LEFT JOIN seller_rolls repl_sr ON rd.replacement_roll_id = repl_sr.id
@@ -10894,7 +11325,9 @@ class ProductionController {
             return;
         }
 
-        $qrCodeVal = !empty($damage['qr_code']) ? $damage['qr_code'] : ($damage['roll_number'] ?: ('DMG-' . ($damage['damage_number'] ?? $damage['id'])));
+        $isProd = (($damage['item_type'] ?? '') === 'PRODUCT' || !empty($damage['product_id']) || !empty($damage['variant_id']) || empty($damage['seller_roll_id']));
+        $qrCodeVal = !empty($damage['qr_code']) ? $damage['qr_code'] : (!empty($damage['roll_number']) ? $damage['roll_number'] : ('DMG-' . ($damage['damage_number'] ?? $damage['id'])));
+        $prodDisplayName = !empty($damage['product_name']) ? $damage['product_name'] : ($damage['catalog_product_name'] ?: 'Garment Product');
 
         $this->renderProductionRecord(
             'Damage Record ' . ($damage['damage_number'] ?? ('#' . $damage['id'])),
@@ -10902,17 +11335,18 @@ class ProductionController {
             'Damages',
             url('production/damages'),
             [
-                'Supplier'          => $damage['seller_name'] ?? '—',
-                'Company'           => $damage['seller_company'] ?? '—',
-                'Roll Number'       => $damage['roll_number'] ?? '—',
-                'Scanned QR Label'  => $qrCodeVal,
-                'Color'             => $damage['roll_color'] ?? '—',
-                'Design'            => $damage['roll_design'] ?? '—',
-                'Damaged Quantity'  => number_format((int)($damage['damaged_quantity'] ?? 0)) . ' piece(s)',
-                'Damaged Weight'    => number_format((float)($damage['damaged_weight'] ?? 0), 2) . ' kg',
-                'Reason'            => $damage['damage_reason'] ?? '—',
-                'Notes'             => $damage['defect_notes'] ?? '—',
-                'Status'            => $damage['status'] ?? '—',
+                'Item Type'         => $isProd ? 'Finished Garment Product' : 'Fabric Roll Piece',
+            'Origin / Supplier' => $isProd ? 'Own Production Unit' : ($damage['seller_company'] ?: ($damage['seller_name'] ?? '—')),
+            'Item / Roll'       => $isProd ? $prodDisplayName : ($damage['roll_number'] ?? '—'),
+            'Scanned QR Label'  => $qrCodeVal,
+            'Variant / Color'   => $isProd ? trim(($damage['variant_size_name'] ? 'Size: ' . $damage['variant_size_name'] . ' ' : '') . ($damage['variant_color_name'] ? 'Color: ' . $damage['variant_color_name'] : '')) : ($damage['roll_color'] ?? '—'),
+            'SKU / Design'      => $isProd ? ($damage['variant_sku'] ?? '—') : ($damage['roll_design'] ?? '—'),
+            'Damaged Quantity'  => number_format((int)($damage['damaged_quantity'] ?? 0)) . ($isProd ? ' piece(s)' : ' roll(s)'),
+            'Damaged Weight'    => number_format((float)($damage['damaged_weight'] ?? 0), 2) . ' kg',
+            'Loss Amount'       => '₹ ' . number_format((float)($damage['loss_amount'] ?? 0), 2),
+            'Reason'            => $damage['damage_reason'] ?? '—',
+            'Notes'             => $damage['defect_notes'] ?? '—',
+            'Status'            => $damage['status'] ?? '—',
                 'Resolution'        => $damage['resolution_type'] ?? '—',
                 'Debit Note'        => $damage['debit_note_number'] ?? '—',
                 'Replacement Roll'  => $damage['replacement_roll_code'] ?? ($damage['replacement_roll_number'] ?? '—'),
@@ -11205,7 +11639,8 @@ class ProductionController {
         $items = Database::fetchAll(
             "SELECT ppi.*, sr.roll_number AS sr_roll_number, sr.start_code, sr.end_code, sr.start_seq, sr.end_seq,
                     sr.qr_code, sr.weight AS sr_weight, sr.material_type AS sr_material_type, sr.color AS sr_color,
-                    sr.design_name AS sr_design_name, sr.price AS sr_price, sr.photo_url AS sr_photo_url
+                    sr.design_name AS sr_design_name, sr.price AS sr_price, sr.photo_url AS sr_photo_url,
+                    sr.quantity AS sr_quantity
              FROM production_purchase_items ppi
              LEFT JOIN seller_rolls sr ON sr.id = ppi.seller_roll_id
              WHERE ppi.purchase_id = ?
@@ -11221,42 +11656,119 @@ class ProductionController {
             'material_type' => $purchase['seller_material_type'],
         ];
 
-        // Collect fabric rolls and generate QR stickers
+        // Collect fabric rolls and generate QR stickers per roll quantity
         $rolls = [];
         $stickers = [];
         $supplierTitle = mb_strtoupper(trim($purchase['supplier_company'] ?: ($purchase['supplier_name'] ?? 'SUPPLIER')));
+        $globalStickerIndex = 1;
 
         foreach ($items as $idx => $it) {
             if ($it['item_type'] === 'FABRIC_ROLL') {
                 $rollNum = $it['sr_roll_number'] ?: ($it['roll_number'] ?: ('ROLL-' . ($idx + 1)));
-                $weight = (float)($it['sr_weight'] ?: ($it['weight_kg'] ?: 0));
-                $price = (float)($it['sr_price'] ?: ($it['unit_price'] ?: ($it['total_price'] ?: 0)));
+                $totalWeight = (float)($it['sr_weight'] ?: ($it['weight_kg'] ?: 0));
+                $totalPrice = (float)($it['sr_price'] ?: ($it['unit_price'] ?: ($it['total_price'] ?: 0)));
                 $color = mb_strtoupper(trim($it['sr_color'] ?: ($it['color'] ?? '')));
                 $design = mb_strtoupper(trim($it['sr_design_name'] ?: ($it['design_name'] ?? '')));
                 $materialType = mb_strtoupper(trim($it['sr_material_type'] ?: ($it['item_name'] ?? 'FABRIC')));
-                $code = $it['start_code'] ?: ('FB' . date('my', strtotime($purchase['purchase_date'])) . sprintf('%02d', $idx + 1));
-                
-                // Clean, high-readability roll barcode/QR payload (standard concise format for crisp industrial scanning)
-                $qrPayload = $rollNum;
 
-                $sticker = [
-                    'index'           => $idx + 1,
-                    'roll_id'         => $it['seller_roll_id'] ?? 0,
-                    'roll_number'     => $rollNum,
-                    'po_number'       => $purchase['purchase_number'],
-                    'invoice_number'  => $purchase['invoice_number'] ?? '-',
-                    'supplier_name'   => $supplierTitle,
-                    'fabric_type'     => $materialType,
-                    'color'           => $color,
-                    'design_name'     => $design,
-                    'weight'          => $weight,
-                    'price'           => $price,
-                    'code'            => $code,
-                    'qr_payload'      => $qrPayload,
-                    'purchase_date'   => date('d M Y', strtotime($purchase['purchase_date'])),
-                ];
+                // Roll quantity
+                $itemQty = max(1, (int)($it['quantity'] ?: ($it['sr_quantity'] ?? 1)));
 
-                $stickers[] = $sticker;
+                // Prefix determination (default 'FB' + month + 2-digit year)
+                $prefix = '';
+                $padLen = 2;
+                if (!empty($it['start_code']) && preg_match('/^([A-Za-z]{2}\d{4})(\d+)$/', $it['start_code'], $m)) {
+                    $prefix = $m[1];
+                    $padLen = max(2, strlen($m[2]));
+                } elseif (!empty($it['start_code']) && preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $it['start_code'], $m)) {
+                    $prefix = $m[1];
+                    $padLen = max(2, strlen($m[2]));
+                } else {
+                    $prefix = 'FB' . date('my', strtotime($purchase['purchase_date']));
+                    $padLen = 2;
+                }
+
+                // Sequence determination
+                $startSeq = !empty($it['start_seq']) ? (int)$it['start_seq'] : null;
+                $endSeq = !empty($it['end_seq']) ? (int)$it['end_seq'] : null;
+
+                if ($startSeq === null && !empty($it['start_code']) && preg_match('/(\d+)$/', $it['start_code'], $m)) {
+                    $startSeq = (int)$m[1];
+                }
+                if ($startSeq === null) {
+                    $startSeq = 1;
+                }
+                if ($endSeq === null || $endSeq < $startSeq) {
+                    $endSeq = $startSeq + $itemQty - 1;
+                }
+
+                // Check deleted labels if any
+                $deletedSeqs = [];
+                if (!empty($it['seller_roll_id'])) {
+                    $deletedRows = Database::fetchAll(
+                        "SELECT `sequence` FROM seller_roll_deleted_labels WHERE seller_roll_id = ?",
+                        [(int)$it['seller_roll_id']]
+                    );
+                    $deletedSeqs = array_fill_keys(array_map('intval', array_column($deletedRows, 'sequence')), true);
+                }
+
+                // Check damaged codes if any
+                $damagedCodes = [];
+                if (!empty($it['seller_roll_id'])) {
+                    $damagedRows = Database::fetchAll(
+                        "SELECT qr_code FROM roll_damages WHERE seller_roll_id = ? AND qr_code IS NOT NULL AND TRIM(qr_code) <> ''",
+                        [(int)$it['seller_roll_id']]
+                    );
+                    $damagedCodes = array_fill_keys(array_map(static fn($r) => strtoupper(trim((string)$r['qr_code'])), $damagedRows), true);
+                }
+
+                $activeSequences = [];
+                for ($s = $startSeq; $s <= $endSeq; $s++) {
+                    if (!isset($deletedSeqs[$s])) {
+                        $activeSequences[] = $s;
+                    }
+                }
+                if (empty($activeSequences)) {
+                    for ($s = $startSeq; $s < $startSeq + $itemQty; $s++) {
+                        $activeSequences[] = $s;
+                    }
+                }
+
+                $totalPieces = count($activeSequences);
+                $pieceWeight = $totalPieces > 0 ? round($totalWeight / $totalPieces, 2) : $totalWeight;
+                $piecePrice = $totalPieces > 0 ? round($totalPrice / $totalPieces, 2) : $totalPrice;
+
+                foreach ($activeSequences as $pieceIdx => $seq) {
+                    $pieceCode = sprintf('%s%0' . $padLen . 'd', $prefix, $seq);
+                    $qrPayload = $pieceCode;
+                    $pieceLabel = $totalPieces > 1 ? ($rollNum . ' (' . ($pieceIdx + 1) . '/' . $totalPieces . ')') : $rollNum;
+
+                    $sticker = [
+                        'index'            => $globalStickerIndex++,
+                        'item_index'       => $idx + 1,
+                        'piece_index'      => $pieceIdx + 1,
+                        'total_qty'        => $totalPieces,
+                        'roll_id'          => $it['seller_roll_id'] ?? 0,
+                        'roll_number'      => $pieceLabel,
+                        'base_roll_number' => $rollNum,
+                        'po_number'        => $purchase['purchase_number'],
+                        'invoice_number'   => $purchase['invoice_number'] ?? '-',
+                        'supplier_name'    => $supplierTitle,
+                        'fabric_type'      => $materialType,
+                        'color'            => $color,
+                        'design_name'      => $design,
+                        'weight'           => $pieceWeight,
+                        'total_weight'     => $totalWeight,
+                        'price'            => $piecePrice,
+                        'code'             => $pieceCode,
+                        'qr_payload'       => $qrPayload,
+                        'is_damaged'       => isset($damagedCodes[strtoupper($pieceCode)]),
+                        'purchase_date'    => date('d M Y', strtotime($purchase['purchase_date'])),
+                    ];
+
+                    $stickers[] = $sticker;
+                }
+
                 $rolls[] = $it;
             }
         }

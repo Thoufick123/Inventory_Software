@@ -1,7 +1,6 @@
 <div class="page-header mb-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
     <div>
         <h2 class="mb-1"><i class="bi bi-pencil-square me-2 text-primary"></i>Edit <?= e($purchase['purchase_number']) ?></h2>
-        <span class="text-muted">Update this purchase and review its fabric, supply, and tax totals.</span>
     </div>
 </div>
 
@@ -87,8 +86,22 @@ $taxValueForItem = static function (array $item, string $type): float {
                     $gstType = $taxTypeForItem($item);
                     $taxValue = $taxValueForItem($item, $gstType);
                     $cgstValue = $gstType === 'BOTH' ? (float)($item['cgst_value'] ?? 0) : 0;
+                    $startCode = $item['start_code'] ?? '';
+                    $prefix = '';
+                    if (!empty($startCode) && preg_match('/^([A-Za-z]{2}\d{4})/', $startCode, $m)) {
+                        $prefix = $m[1];
+                    } elseif (!empty($startCode) && preg_match('/^([A-Za-z0-9_-]+?)(\d{2,})$/', $startCode, $m)) {
+                        $prefix = $m[1];
+                    } else {
+                        $prefix = 'FB' . date('my', strtotime($purchase['purchase_date']));
+                    }
+                    $startSeq = (int)($item['start_seq'] ?? 0);
+                    if ($startSeq <= 0 && !empty($startCode) && preg_match('/(\d+)$/', $startCode, $m)) {
+                        $startSeq = (int)$m[1];
+                    }
+                    if ($startSeq <= 0) $startSeq = 1;
                     ?>
-                    <div class="roll-card card border shadow-sm" data-item-key="<?= $key ?>" data-item-id="<?= $key ?>" data-sequence-start="<?= (int)($item['start_seq'] ?? 0) ?>" data-start-code="<?= e($item['start_code'] ?? '') ?>" data-photo-url="<?= e(!empty($item['photo_url']) ? uploadUrl($item['photo_url']) : '') ?>">
+                    <div class="roll-card card border shadow-sm" data-item-key="<?= $key ?>" data-item-id="<?= $key ?>" data-sequence-start="<?= $startSeq ?>" data-code-prefix="<?= e($prefix) ?>" data-start-code="<?= e($item['start_code'] ?? '') ?>" data-photo-url="<?= e(!empty($item['photo_url']) ? uploadUrl($item['photo_url']) : '') ?>">
                         <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
                             <strong><i class="bi bi-layers text-primary me-1"></i><span class="roll-title">ROLL #<?= $index + 1 ?></span>
                                 <span class="badge bg-dark roll-code-text"><?= e($item['start_code'] ?? '') ?><?= !empty($item['end_code']) && $item['end_code'] !== ($item['start_code'] ?? '') ? '–' . e($item['end_code']) : '' ?></span>
@@ -218,11 +231,107 @@ $taxValueForItem = static function (array $item, string $type): float {
     </div>
 </div>
 <style>
-.purchase-label-card{width:250px;min-height:130px;border:1.5px solid #0f172a;border-radius:6px;background:#fff;padding:8px;display:flex;gap:8px;align-items:center}
-.purchase-label-qr{width:76px;height:76px;flex-shrink:0}
-.purchase-label-qr img,.purchase-label-qr canvas{width:100%!important;height:100%!important}
-.purchase-label-code{font-family:monospace;font-size:10px;font-weight:800;word-break:break-all}
-.purchase-label-info{font-size:9px;overflow-wrap:anywhere}
+.roll-label-card {
+    width: 275px;
+    min-height: 155px;
+    background: #ffffff;
+    border: 1.5px solid #0f172a;
+    border-radius: 8px;
+    padding: 10px 12px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: relative;
+    box-sizing: border-box;
+}
+.label-header {
+    border-bottom: 1px dashed #cbd5e1;
+    padding-bottom: 4px;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+.company-tag {
+    font-size: 8.5px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    color: #1e293b;
+    text-transform: uppercase;
+    line-height: 1.2;
+    max-width: 175px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.po-tag {
+    font-size: 8px;
+    font-weight: 700;
+    color: #0284c7;
+    font-family: monospace;
+    background: #e0f2fe;
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+.label-body {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.qr-box {
+    width: 72px;
+    height: 72px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    padding: 2px;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+}
+.qr-box img, .qr-box canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+.label-meta {
+    flex-grow: 1;
+    font-size: 9.5px;
+    line-height: 1.35;
+    min-width: 0;
+}
+.roll-badge-num {
+    font-family: monospace;
+    font-size: 11px;
+    font-weight: 900;
+    color: #0f172a;
+    display: block;
+    margin-bottom: 2px;
+    letter-spacing: 0.5px;
+}
+.meta-line {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: #334155;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.meta-line strong {
+    color: #0f172a;
+}
+.label-footer {
+    border-top: 1px dashed #cbd5e1;
+    padding-top: 4px;
+    margin-top: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 8px;
+    color: #64748b;
+}
 </style>
 <template id="editSupplyTemplate">
     <div class="row g-2 align-items-end supply-row mb-3">
@@ -371,22 +480,65 @@ $taxValueForItem = static function (array $item, string $type): float {
         const cards = document.getElementById('editPurchaseLabelCards');
         cards.innerHTML = '';
         let labelCount = 0;
-        const material = document.getElementById('editFabricDescription').value.trim().toUpperCase();
-        const supplier = <?= json_encode($purchase['seller_company'] ?: $purchase['seller_name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+        const material = document.getElementById('editFabricDescription').value.trim().toUpperCase() || 'FABRIC';
+        const supplier = <?= json_encode($purchase['seller_company'] ?: ($purchase['seller_name'] ?? 'SUPPLIER'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+        const poNumber = <?= json_encode($purchase['purchase_number'] ?? '', JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+        const purchaseDate = <?= json_encode(date('d M Y', strtotime($purchase['purchase_date'])), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+
         rollsContainer.querySelectorAll('.roll-card').forEach((card, index) => {
-            const quantity = Number(card.querySelector(`[name="items[${card.dataset.itemKey}][quantity]"]`).value) || 0;
-            const start = Number(card.dataset.sequenceStart) || 0;
-            const startCode = card.dataset.startCode;
-            const prefix = startCode.replace(/\d+$/, '');
+            const quantity = Number(card.querySelector(`[name="items[${card.dataset.itemKey}][quantity]"]`)?.value) || 1;
+            const start = Number(card.dataset.sequenceStart) || 1;
+            let prefix = card.dataset.codePrefix;
+            if (!prefix) {
+                const sc = card.dataset.startCode || '';
+                const m = sc.match(/^([A-Za-z]{2}\d{4})/);
+                prefix = m ? m[1] : (sc.replace(/\d{2,}$/, '') || 'FB');
+            }
+            const rollNum = card.querySelector('.roll-number')?.value?.trim() || `ROLL #${index + 1}`;
+            const color = (card.querySelector('.roll-color')?.value?.trim() || 'STANDARD').toUpperCase();
+            const design = (card.querySelector('.roll-design')?.value?.trim() || '').toUpperCase();
+            const totalWeight = Number(card.querySelector('.roll-weight')?.value) || 0;
+            const pieceWeight = quantity > 0 ? (totalWeight / quantity).toFixed(2) : totalWeight.toFixed(2);
+
             for (let piece = 0; piece < quantity; piece++) {
                 const code = `${prefix}${String(start + piece).padStart(2, '0')}`;
+                const pieceLabel = quantity > 1 ? `${rollNum} (${piece + 1}/${quantity})` : rollNum;
+
                 const sticker = document.createElement('div');
-                sticker.className = 'purchase-label-card';
-                sticker.innerHTML = `<div class="purchase-label-qr"></div><div class="purchase-label-info"><div class="fw-bold">${safe(supplier)}</div><div class="purchase-label-code">${safe(code)}</div><div>${safe(card.querySelector('.roll-number').value || `ROLL #${index + 1}`)}</div><div>${safe(material)}</div><div>${safe(card.querySelector('.roll-color').value)} · ${safe(card.querySelector('.roll-design').value)}</div><div>${(Number(card.querySelector('.roll-weight').value) || 0).toFixed(2)} kg · Piece ${piece + 1} of ${quantity}</div></div>`;
+                sticker.className = 'roll-label-card';
+                sticker.innerHTML = `
+                    <div class="label-header">
+                        <div class="company-tag" title="${safe(supplier)}">${safe(supplier)}</div>
+                        <div class="po-tag">${safe(poNumber)}</div>
+                    </div>
+                    <div class="label-body">
+                        <div class="qr-box"></div>
+                        <div class="label-meta">
+                            <span class="roll-badge-num">${safe(pieceLabel)}</span>
+                            <div class="meta-line"><span>Fabric:</span> <strong>${safe(material.length > 16 ? material.substring(0, 16) + '...' : material)}</strong></div>
+                            <div class="meta-line"><span>Color:</span> <strong>${safe(color)}</strong></div>
+                            <div class="meta-line"><span>Weight:</span> <strong style="color:#0284c7">${pieceWeight} kg</strong></div>
+                            <div class="meta-line"><span>Code:</span> <span class="font-monospace text-muted" style="font-size:8px">${safe(code)}</span></div>
+                        </div>
+                    </div>
+                    <div class="label-footer">
+                        <span>GRM MFG · ${safe(purchaseDate)}</span>
+                    </div>
+                `;
                 cards.appendChild(sticker);
-                const qrTarget = sticker.querySelector('.purchase-label-qr');
-                if (window.QRCode) new QRCode(qrTarget, {text: `${code}|${supplier}|${card.querySelector('.roll-number').value}|${material}`, width: 76, height: 76, correctLevel: QRCode.CorrectLevel.M});
-                else qrTarget.textContent = code;
+                const qrTarget = sticker.querySelector('.qr-box');
+                if (window.QRCode) {
+                    new QRCode(qrTarget, {
+                        text: code,
+                        width: 72,
+                        height: 72,
+                        colorDark: "#000000",
+                        colorLight: "#ffffff",
+                        correctLevel: QRCode.CorrectLevel.L
+                    });
+                } else {
+                    qrTarget.textContent = code;
+                }
                 labelCount++;
             }
         });

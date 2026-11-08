@@ -67,11 +67,13 @@ $returnQrDate = !empty($return['created_at']) ? date('my', strtotime($return['cr
                                         $clean = trim((string)$value);
                                         return $clean !== '' ? strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $clean), 0, 1)) : 'X';
                                     };
-                                    $returnQrPrefix = $initial($item['category_name'] ?? '')
+                                    $returnQrPrefix = 'R' . $initial($item['category_name'] ?? '')
                                         . $initial($item['subcategory_name'] ?? '')
                                         . $initial($item['sub_subcategory_name'] ?? '');
-                                    $returnQrValue = trim((string)($item['returned_tag_code'] ?? '')) !== ''
-                                        ? $item['returned_tag_code']
+                                    if (strlen($returnQrPrefix) < 2) $returnQrPrefix = 'RTTS';
+                                    $rawTagCode = trim((string)($item['returned_tag_code'] ?? ''));
+                                    $returnQrValue = $rawTagCode !== ''
+                                        ? ((str_starts_with(strtoupper($rawTagCode), 'R') ? '' : 'R') . $rawTagCode)
                                         : $returnQrPrefix . $returnQrDate . str_pad((string)$item['id'], 3, '0', STR_PAD_LEFT);
                                 ?>
                                 <div class="return-item-qr border rounded p-1 bg-white" data-qr-value="<?= htmlspecialchars($returnQrValue) ?>" style="width:58px;height:58px;"></div>

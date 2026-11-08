@@ -1483,4 +1483,17 @@ class AdminController {
             Response::redirect(url('admin/dashboard'), 'error', 'Channel not found.');
         }
     }
+
+    /**
+     * Universal QR & Barcode Status Finder API endpoint.
+     */
+    public function ajaxQrStatusFinder(): void {
+        $rawCode = trim((string)($_GET['code'] ?? ''));
+        $result = QrFinderService::trace($rawCode);
+        if (empty($result['success'])) {
+            Response::json($result, 404);
+            return;
+        }
+        Response::json($result);
+    }
 }

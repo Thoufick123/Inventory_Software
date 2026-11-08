@@ -671,11 +671,23 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function supportsAdjustableAllocationQty(product) {
+        if (!product) return false;
         const categoryType = getAllocationProductType(product);
         const qrType = String(product.qr_type || product.qrType || product.dataset?.qrType || '').trim().toUpperCase();
+        const isSeries = product.is_series === true || product.is_series === 1 || product.is_series === '1'
+            || product.isSeries === true || product.isSeries === 1 || product.isSeries === '1'
+            || product.dataset?.isSeries === '1';
+        const isComp = product.is_complementary === true || product.is_complementary === 1 || product.is_complementary === '1'
+            || product.isComplementary === true || product.isComplementary === 1 || product.isComplementary === '1'
+            || product.dataset?.isComplementary === '1';
+        const packQty = parseInt(product.pack_quantity || product.dataset?.packQuantity || 1) || 1;
+
         return categoryType === 'SERIES'
             || categoryType === 'COMPLEMENTARY'
-            || qrType === 'SERIES_BATCH';
+            || qrType === 'SERIES_BATCH'
+            || isSeries
+            || isComp
+            || packQty > 1;
     }
 
     function getAllocationProductType(product) {
@@ -1116,7 +1128,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     const sel = r.querySelector('.variant-select');
                     const vId = sel ? sel.value : null;
                     const vObj = variantsList.find(v => String(v.id) === String(vId));
-                    if (vObj && supportsAdjustableAllocationQty(vObj)) {
+                    const opt = sel ? sel.options[sel.selectedIndex] : null;
+                    if ((vObj && supportsAdjustableAllocationQty(vObj)) || (opt && supportsAdjustableAllocationQty(opt.dataset))) {
                         existingPackRow = r;
                     }
                 }
@@ -1294,6 +1307,10 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(data => {
                 if (data.success) {
                     applyScannedVariant(data, (data.tag_code || tagCode).toUpperCase());
+                } else if (data.is_damaged) {
+                    playDuplicateSound();
+                    showScanAlert('danger', `🚨 <strong>Damaged Product Blocked:</strong> ${data.message}`);
+                    clearAndRefocusScanInput();
                 } else if (data.is_already_allocated) {
                     playDuplicateSound();
                     showScanAlert('duplicate', `🚫 <strong>Piece Already Allocated:</strong> Tag <code class="fw-bold">${data.tag_code || tagCode}</code> has ALREADY been allocated in Pass <strong>#${data.allocation_number}</strong> (${data.allocation_status}) at <em>${data.allocated_warehouse || 'Warehouse'}</em> for ${data.allocated_product || 'item'}. Cannot allocate the same piece QR twice!`);

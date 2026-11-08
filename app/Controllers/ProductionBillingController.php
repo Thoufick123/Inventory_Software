@@ -108,6 +108,99 @@ class ProductionBillingController
             return;
         }
 
+        // Check if scanned tag matches Warehouse Damage Management
+        $whDamageMatch = Database::fetchOne(
+            "SELECT wd.damage_number, wd.damage_reason, wd.tag_code, w.name as warehouse_name
+             FROM warehouse_damages wd
+             LEFT JOIN warehouses w ON w.id = wd.warehouse_id
+             WHERE UPPER(TRIM(wd.tag_code)) = ?
+               AND wd.status NOT IN ('SALVAGED', 'REPAIRED')",
+            [$needle]
+        );
+        if ($whDamageMatch) {
+            Response::jsonSuccess('Damaged item in warehouse.', [
+                'items'         => [],
+                'is_damaged'    => true,
+                'damage_number' => $whDamageMatch['damage_number'],
+                'damage_reason' => $whDamageMatch['damage_reason'],
+                'qr_code'       => $needle,
+                'message'       => "Cannot bill QR item '{$needle}'! This item is quarantined in the Warehouse Damage module (Damage #{$whDamageMatch['damage_number']} — {$whDamageMatch['damage_reason']}). Damaged items cannot be sold or billed!"
+            ]);
+            return;
+        }
+
+        // Check if scanned QR / roll has already been outwarded to warehouse
+        $outwardedRoll = null;
+        if (preg_match('/^([A-Z]{2}\d{4})(\d+)$/', $needle, $m)) {
+            $pfx = $m[1];
+            $seq = (int)$m[2];
+            $outwardedRoll = Database::fetchOne(
+                "SELECT po.outward_number, po.dispatch_date, pb.batch_number, w.name as warehouse_name, sr.roll_number
+                 FROM seller_rolls sr
+                 JOIN production_program_rolls ppr ON ppr.seller_roll_id = sr.id
+                 JOIN production_programs pp ON pp.id = ppr.production_program_id
+                 JOIN production_batches pb ON pb.program_id = pp.id
+                 JOIN production_outwards po ON po.production_batch_id = pb.id
+                 LEFT JOIN warehouses w ON (w.id = po.warehouse_id OR w.id = pb.destination_warehouse_id)
+                 WHERE sr.start_code LIKE ? AND sr.end_code LIKE ?
+                   AND ? >= sr.start_seq AND ? <= sr.end_seq
+                   AND (po.status IN ('DISPATCHED', 'RECEIVED') OR pb.status IN ('DISPATCHED', 'RECEIVED'))
+                 LIMIT 1",
+                [$pfx . '%', $pfx . '%', $seq, $seq]
+            );
+        }
+        if (!$outwardedRoll) {
+            $outwardedRoll = Database::fetchOne(
+                "SELECT po.outward_number, po.dispatch_date, pb.batch_number, w.name as warehouse_name, sr.roll_number
+                 FROM seller_rolls sr
+                 JOIN production_program_rolls ppr ON ppr.seller_roll_id = sr.id
+                 JOIN production_programs pp ON pp.id = ppr.production_program_id
+                 JOIN production_batches pb ON pb.program_id = pp.id
+                 JOIN production_outwards po ON po.production_batch_id = pb.id
+                 LEFT JOIN warehouses w ON (w.id = po.warehouse_id OR w.id = pb.destination_warehouse_id)
+                 WHERE (UPPER(TRIM(sr.roll_number)) = ? OR UPPER(TRIM(sr.start_code)) = ? OR UPPER(TRIM(sr.qr_code)) = ?)
+                   AND (po.status IN ('DISPATCHED', 'RECEIVED') OR pb.status IN ('DISPATCHED', 'RECEIVED'))
+                 LIMIT 1",
+                [$needle, $needle, $needle]
+            );
+        }
+
+        $outwardedBatchTag = Database::fetchOne(
+            "SELECT po.outward_number, po.dispatch_date, pb.batch_number, w.name as warehouse_name
+             FROM production_batch_items pbi
+             JOIN production_batches pb ON pb.id = pbi.production_batch_id
+             JOIN production_outwards po ON po.production_batch_id = pb.id
+             LEFT JOIN warehouses w ON (w.id = po.warehouse_id OR w.id = pb.destination_warehouse_id)
+             WHERE (pbi.piece_tags LIKE ? OR pbi.received_qr_codes LIKE ? OR UPPER(TRIM(pb.batch_number)) = ?)
+               AND (po.status IN ('DISPATCHED', 'RECEIVED') OR pb.status IN ('DISPATCHED', 'RECEIVED'))
+             LIMIT 1",
+            ['%' . $needle . '%', '%' . $needle . '%', $needle]
+        );
+
+        $warehouseQr = Database::fetchOne(
+            "SELECT wq.qr_code, w.name as warehouse_name
+             FROM warehouse_qr_codes wq
+             LEFT JOIN warehouses w ON w.id = wq.warehouse_id
+             WHERE UPPER(TRIM(wq.qr_code)) = ?
+             LIMIT 1",
+            [$needle]
+        );
+
+        $outwardMatch = $outwardedRoll ?: ($outwardedBatchTag ?: null);
+        if ($outwardMatch || $warehouseQr) {
+            $outNum = $outwardMatch['outward_number'] ?? 'OUTWARD';
+            $whName = $outwardMatch['warehouse_name'] ?? ($warehouseQr['warehouse_name'] ?? 'Warehouse');
+            Response::jsonSuccess('Product already outwarded.', [
+                'items'          => [],
+                'is_outwarded'   => true,
+                'outward_number' => $outNum,
+                'warehouse_name' => $whName,
+                'qr_code'        => $needle,
+                'message'        => "Cannot bill QR item '{$needle}'! This product/roll has already been outwarded to the warehouse ({$whName} under Outward #{$outNum}). Outwarded products cannot be billed in production!"
+            ]);
+            return;
+        }
+
         $items = $this->getAvailableInventory($billId);
         $matches = [];
 
@@ -265,12 +358,39 @@ class ProductionBillingController
             $damagedRows
         ), true);
 
+        // Get all piece tags that were already packed into dispatched batches
+        $outwardedTagRows = Database::fetchAll(
+            "SELECT pbi.piece_tags
+             FROM production_batch_items pbi
+             JOIN production_batches pb ON pb.id = pbi.production_batch_id
+             JOIN production_outwards po ON po.production_batch_id = pb.id
+             WHERE po.status IN ('DISPATCHED', 'RECEIVED') OR pb.status IN ('DISPATCHED', 'RECEIVED')"
+        );
+        $outwardedTags = [];
+        foreach ($outwardedTagRows as $otRow) {
+            if (!empty($otRow['piece_tags'])) {
+                $decoded = json_decode($otRow['piece_tags'], true);
+                $tagList = is_array($decoded) ? $decoded : explode(',', $otRow['piece_tags']);
+                foreach ($tagList as $t) {
+                    $tClean = strtoupper(trim((string)$t));
+                    if ($tClean !== '') $outwardedTags[$tClean] = true;
+                }
+            }
+        }
+        $whQrRows = Database::fetchAll("SELECT qr_code FROM warehouse_qr_codes");
+        foreach ($whQrRows as $wqRow) {
+            $t = strtoupper(trim((string)$wqRow['qr_code']));
+            if ($t !== '') $outwardedTags[$t] = true;
+        }
+
         $available = [];
         foreach ($rows as $row) {
             $qcItemId = (int)$row['qc_item_id'];
             $tags = array_values(array_filter(
                 $tagsByItem[$qcItemId] ?? [],
-                static fn(string $tag): bool => !isset($soldTags[strtoupper(trim($tag))]) && !isset($damagedTags[strtoupper(trim($tag))])
+                static fn(string $tag): bool => !isset($soldTags[strtoupper(trim($tag))])
+                    && !isset($damagedTags[strtoupper(trim($tag))])
+                    && !isset($outwardedTags[strtoupper(trim($tag))])
             ));
             if (!$tags) {
                 continue;
@@ -402,11 +522,43 @@ class ProductionBillingController
                 if (!empty($dCR['roll_number'])) $damagedLookup[strtoupper(trim($dCR['roll_number']))] = $dCR;
             }
 
+            // Check against Outward Dispatches to warehouse
+            $outwardCheckRows = Database::fetchAll(
+                "SELECT po.outward_number, w.name as warehouse_name, pbi.piece_tags
+                 FROM production_batch_items pbi
+                 JOIN production_batches pb ON pb.id = pbi.production_batch_id
+                 JOIN production_outwards po ON po.production_batch_id = pb.id
+                 LEFT JOIN warehouses w ON (w.id = po.warehouse_id OR w.id = pb.destination_warehouse_id)
+                 WHERE po.status IN ('DISPATCHED', 'RECEIVED') OR pb.status IN ('DISPATCHED', 'RECEIVED')"
+            );
+            $outwardLookup = [];
+            foreach ($outwardCheckRows as $oCR) {
+                if (!empty($oCR['piece_tags'])) {
+                    $decoded = json_decode($oCR['piece_tags'], true);
+                    $tagList = is_array($decoded) ? $decoded : explode(',', $oCR['piece_tags']);
+                    foreach ($tagList as $t) {
+                        $tClean = strtoupper(trim((string)$t));
+                        if ($tClean !== '') $outwardLookup[$tClean] = $oCR;
+                    }
+                }
+            }
+            $whQrCheck = Database::fetchAll("SELECT wq.qr_code, w.name as warehouse_name FROM warehouse_qr_codes wq LEFT JOIN warehouses w ON w.id = wq.warehouse_id");
+            foreach ($whQrCheck as $wQC) {
+                $tClean = strtoupper(trim((string)$wQC['qr_code']));
+                if ($tClean !== '') $outwardLookup[$tClean] = ['outward_number' => 'WAREHOUSE_STOCK', 'warehouse_name' => $wQC['warehouse_name']];
+            }
+
             foreach ($tags as $tag) {
                 $normalized = strtoupper($tag);
                 if (isset($damagedLookup[$normalized])) {
                     $d = $damagedLookup[$normalized];
                     Session::flash('error', "Cannot bill QR item '{$tag}'! It has been quarantined in Damage Management (Damage #{$d['damage_number']} — {$d['damage_reason']}).");
+                    Response::redirect($billId ? 'production/billing/edit/' . $billId : 'production/billing/create');
+                    return;
+                }
+                if (isset($outwardLookup[$normalized])) {
+                    $o = $outwardLookup[$normalized];
+                    Session::flash('error', "Cannot bill QR item '{$tag}'! It has already been outwarded to warehouse ({$o['warehouse_name']} under Outward #{$o['outward_number']}).");
                     Response::redirect($billId ? 'production/billing/edit/' . $billId : 'production/billing/create');
                     return;
                 }

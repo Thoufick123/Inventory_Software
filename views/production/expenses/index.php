@@ -1,101 +1,21 @@
 <?php
-// Production Expenses & Assets Management View (Unit 1 & Unit 2)
+// Production Expenses Management View (Unit 1 & Unit 2)
 ?>
 <div class="container-fluid py-3">
     <!-- Header -->
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
         <div>
             <h4 class="fw-bold text-dark mb-1">
-                <i class="bi bi-wallet2 text-primary me-2"></i>Production Expenses &amp; Assets Management
+                <i class="bi bi-wallet2 text-primary me-2"></i>Production Expenses
             </h4>
-            <span class="text-muted small">Maintain machinery assets, sewing consumables (threads, zips, needles), machine repairs, and costs for Production Unit 1 &amp; Unit 2</span>
+            <span class="text-muted small">Manage Unit 1 &amp; Unit 2 factory floor expenses, machine maintenance, sewing trims, and utilities</span>
         </div>
         <div class="d-flex gap-2">
             <?php if (hasPermission('production_expenses', 'create')): ?>
             <button type="button" class="btn btn-primary btn-sm fw-semibold shadow-sm px-3" data-bs-toggle="modal" data-bs-target="#recordExpenseModal">
-                <i class="bi bi-plus-circle me-1"></i> Record Production Expense / Asset
+                <i class="bi bi-plus-circle me-1"></i> Record Production Expense
             </button>
             <?php endif; ?>
-        </div>
-    </div>
-
-
-    <!-- Production Assets & Expenses Operational Architecture Guide -->
-    <div class="card border-0 shadow-sm rounded-3 mb-4 bg-light-subtle border-start border-4 border-primary">
-        <div class="card-body p-3">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <div class="d-flex align-items-center gap-2">
-                    <span class="badge bg-primary text-white px-2 py-1"><i class="bi bi-info-circle me-1"></i>Operational Architecture Guide</span>
-                    <h6 class="fw-bold text-dark mb-0">Production Assets &amp; Cost Tracking Key Pillars</h6>
-                </div>
-                <button class="btn btn-sm btn-outline-secondary py-0 px-2 small" type="button" data-bs-toggle="collapse" data-bs-target="#assetGuideCollapse" aria-expanded="true">
-                    <i class="bi bi-chevron-down"></i> Toggle Guide
-                </button>
-            </div>
-            <div class="collapse show" id="assetGuideCollapse">
-                <div class="row g-3 pt-2">
-                    <div class="col-md-4 col-sm-6">
-                        <div class="p-3 rounded-3 bg-white border h-100 shadow-sm">
-                            <div class="fw-semibold text-primary mb-1 small d-flex align-items-center gap-2">
-                                <i class="bi bi-cpu fs-5"></i> 1. Fixed Machinery Assets
-                            </div>
-                            <p class="text-muted small mb-0 lh-sm">
-                                Tracks capital equipment (Juki sewing machines, Eastman fabric cutters, steam boilers) with serial numbers, warranty, and designated factory location (Unit 1 or Unit 2).
-                            </p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 col-sm-6">
-                        <div class="p-3 rounded-3 bg-white border h-100 shadow-sm">
-                            <div class="fw-semibold text-success mb-1 small d-flex align-items-center gap-2">
-                                <i class="bi bi-scissors fs-5"></i> 2. Sewing Consumables &amp; Trims
-                            </div>
-                            <p class="text-muted small mb-0 lh-sm">
-                                Monitors variable production consumables: sewing threads, YKK zippers, organ needles, elastic bands, care labels, and polybags, linked to vendor bills and lots.
-                            </p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 col-sm-6">
-                        <div class="p-3 rounded-3 bg-white border h-100 shadow-sm">
-                            <div class="fw-semibold text-warning mb-1 small d-flex align-items-center gap-2">
-                                <i class="bi bi-tools fs-5"></i> 3. Machine Maintenance &amp; Repairs
-                            </div>
-                            <p class="text-muted small mb-0 lh-sm">
-                                Logs preventative servicing, mechanic labor charges, motor rewinding, and replacement spare parts for each machine to eliminate assembly line stoppages.
-                            </p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 col-sm-6">
-                        <div class="p-3 rounded-3 bg-white border h-100 shadow-sm">
-                            <div class="fw-semibold text-danger mb-1 small d-flex align-items-center gap-2">
-                                <i class="bi bi-lightning-charge fs-5"></i> 4. Factory Utilities &amp; Overheads
-                            </div>
-                            <p class="text-muted small mb-0 lh-sm">
-                                Captures plant operating overheads: EB power tariffs, diesel generator fuel, factory rental, and water supply required to compute accurate garment landed cost per piece.
-                            </p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 col-sm-6">
-                        <div class="p-3 rounded-3 bg-white border h-100 shadow-sm">
-                            <div class="fw-semibold text-info mb-1 small d-flex align-items-center gap-2">
-                                <i class="bi bi-diagram-3 fs-5"></i> 5. Multi-Unit Cost Allocation
-                            </div>
-                            <p class="text-muted small mb-0 lh-sm">
-                                Segregates expenses strictly between <strong>Unit 1</strong>, <strong>Unit 2</strong>, or <strong>Common Facility</strong>, giving leadership precise per-unit profitability and overhead burn.
-                            </p>
-                        </div>
-                    </div>
-                    <div class="col-md-4 col-sm-6">
-                        <div class="p-3 rounded-3 bg-white border h-100 shadow-sm">
-                            <div class="fw-semibold text-secondary mb-1 small d-flex align-items-center gap-2">
-                                <i class="bi bi-cash-coin fs-5"></i> 6. Vendor Payables &amp; Settlement
-                            </div>
-                            <p class="text-muted small mb-0 lh-sm">
-                                Tracks paid amounts, vendor credit balances, payment modes (Cash, UPI, NEFT, Cheque), and invoice due dates to ensure clear vendor accounting and credit control.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 
@@ -148,35 +68,35 @@
             </div>
         </div>
 
-        <!-- 3. Machinery vs Consumables (Threads/Zips/Needles) -->
+        <!-- 3. Materials & Maintenance -->
         <div class="col-xl-3 col-md-6">
             <div class="card border-0 shadow-sm rounded-3 h-100 bg-white">
                 <div class="card-body p-3">
                     <div class="d-flex align-items-center justify-content-between mb-2">
-                        <span class="text-muted small fw-semibold text-uppercase">Machinery &amp; Materials</span>
+                        <span class="text-muted small fw-semibold text-uppercase">Materials &amp; Maintenance</span>
                         <div class="p-2 rounded-circle bg-success-subtle text-success">
                             <i class="bi bi-scissors fs-5"></i>
                         </div>
                     </div>
                     <div class="d-flex justify-content-between align-items-baseline mb-1">
                         <div>
-                            <small class="text-muted d-block">Machinery Assets</small>
-                            <strong class="text-warning text-dark">₹<?= number_format($stats['machinery_cost'], 2) ?></strong>
+                            <small class="text-muted d-block">Maintenance &amp; Repairs</small>
+                            <strong class="text-danger">₹<?= number_format($stats['maintenance_cost'] + ($stats['machinery_cost'] ?? 0), 2) ?></strong>
                         </div>
                         <div class="text-end">
-                            <small class="text-muted d-block">Threads / Zips / Needles</small>
+                            <small class="text-muted d-block">Threads / Needles / Trims</small>
                             <strong class="text-success">₹<?= number_format($stats['sewing_materials_cost'], 2) ?></strong>
                         </div>
                     </div>
                     <div class="small text-muted d-flex justify-content-between align-items-center mt-2 pt-1 border-top">
-                        <span>Repairs: ₹<?= number_format($stats['maintenance_cost'], 2) ?></span>
-                        <span class="badge bg-success-subtle text-success border">Assets &amp; Trims</span>
+                        <span>Operations &amp; Utilities: ₹<?= number_format($stats['operations_cost'], 2) ?></span>
+                        <span class="badge bg-success-subtle text-success border">Floor Breakdown</span>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- 4. Paid vs Pending Payables -->
+        <!-- 4. Settlement & Payables -->
         <div class="col-xl-3 col-md-6">
             <div class="card border-0 shadow-sm rounded-3 h-100 bg-white">
                 <div class="card-body p-3">
@@ -213,7 +133,7 @@
                 <div class="col-lg-3 col-md-6">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
-                        <input type="text" name="search" id="expensesSearchInput" class="form-control form-control-sm border-start-0" placeholder="Search item, vendor, invoice, serial..." value="<?= e($search) ?>" autocomplete="off">
+                        <input type="text" name="search" id="expensesSearchInput" class="form-control form-control-sm border-start-0" placeholder="Search item, vendor, invoice..." value="<?= e($search) ?>" autocomplete="off">
                     </div>
                 </div>
 
@@ -265,13 +185,13 @@
         </div>
     </div>
 
-    <!-- Expenses & Assets Table Log -->
+    <!-- Production Expenses Table Log -->
     <div class="card border-0 shadow-sm rounded-3">
         <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
             <h6 class="fw-bold text-dark mb-0">
-                <i class="bi bi-card-list text-primary me-2"></i>Production Expenses &amp; Assets Log (<?= count($expenses) ?>)
+                <i class="bi bi-card-list text-primary me-2"></i>Production Expenses Log (<?= count($expenses) ?>)
             </h6>
-            <span class="text-muted small">Unit 1 &amp; Unit 2 asset tracking, material purchases, and cost management</span>
+            <span class="text-muted small">Unit 1 &amp; Unit 2 floor expenses, maintenance, and material purchases</span>
         </div>
         <div class="card-body p-0">
             <?php if (empty($expenses)): ?>
@@ -279,8 +199,8 @@
                     <div class="d-inline-flex p-3 rounded-circle bg-light mb-2">
                         <i class="bi bi-inbox fs-1 text-secondary"></i>
                     </div>
-                    <h5 class="fw-bold text-dark mb-1">No Production Expenses or Assets Found</h5>
-                    <p class="text-muted small mb-0">No records match your filters. Click "Record Production Expense / Asset" to add a new machinery, material, or maintenance record.</p>
+                    <h5 class="fw-bold text-dark mb-1">No Production Expenses Found</h5>
+                    <p class="text-muted small mb-0">No records match your filters. Click "Record Production Expense" to add a new floor or maintenance expense.</p>
                 </div>
             <?php else: ?>
                 <div class="table-responsive">
@@ -289,8 +209,8 @@
                             <tr>
                                 <th>Expense # &amp; Date</th>
                                 <th>Unit &amp; Category</th>
-                                <th>Item Name &amp; Serial / Tag</th>
-                                <th>Vendor / Supplier</th>
+                                <th>Item &amp; Reason</th>
+                                <th>Paid To / Vendor</th>
                                 <th class="text-end">Quantity &amp; Rate</th>
                                 <th class="text-end">Total Amount</th>
                                 <th class="text-center">Payment Status</th>
@@ -323,10 +243,10 @@
                                             default        => 'bg-secondary text-white'
                                         };
                                         $unitLabel = match($e['production_unit']) {
-                                            'PRODUCTION_1' => 'Production Unit 1',
-                                            'PRODUCTION_2' => 'Production Unit 2',
-                                            'BOTH_UNITS'   => 'Both Units / Common',
-                                            default        => 'General Facility'
+                                            'PRODUCTION_1' => 'Unit 1',
+                                            'PRODUCTION_2' => 'Unit 2',
+                                            'BOTH_UNITS'   => 'Both Units',
+                                            default        => 'General'
                                         };
                                         ?>
                                         <span class="badge <?= $unitBadge ?> px-2 py-1 mb-1 d-inline-block">
@@ -337,20 +257,23 @@
                                         <div>
                                             <?php
                                             $catBadge = match($e['category']) {
-                                                'MACHINERY_ASSET'    => 'bg-warning-subtle text-dark border-warning-subtle',
-                                                'SEWING_MATERIALS'   => 'bg-success-subtle text-success border-success-subtle',
-                                                'MAINTENANCE_REPAIR' => 'bg-danger-subtle text-danger border-danger-subtle',
-                                                'OPERATIONAL_UTILITY'=> 'bg-primary-subtle text-primary border-primary-subtle',
-                                                default              => 'bg-secondary-subtle text-secondary border-secondary-subtle'
+                                                'MACHINERY_ASSET', 'MAINTENANCE_REPAIR' => 'bg-danger-subtle text-danger border-danger-subtle',
+                                                'SEWING_MATERIALS'                      => 'bg-success-subtle text-success border-success-subtle',
+                                                'OPERATIONAL_UTILITY'                   => 'bg-primary-subtle text-primary border-primary-subtle',
+                                                default                                 => 'bg-secondary-subtle text-secondary border-secondary-subtle'
                                             };
                                             $catIcon = match($e['category']) {
-                                                'MACHINERY_ASSET'    => 'bi-gear-wide-connected',
-                                                'SEWING_MATERIALS'   => 'bi-thread',
-                                                'MAINTENANCE_REPAIR' => 'bi-tools',
-                                                'OPERATIONAL_UTILITY'=> 'bi-lightning-charge',
-                                                default              => 'bi-tag'
+                                                'MACHINERY_ASSET', 'MAINTENANCE_REPAIR' => 'bi-tools',
+                                                'SEWING_MATERIALS'                      => 'bi-scissors',
+                                                'OPERATIONAL_UTILITY'                   => 'bi-lightning-charge',
+                                                default                                 => 'bi-tag'
                                             };
-                                            $catLabel = str_replace('_', ' ', $e['category']);
+                                            $catLabel = match($e['category']) {
+                                                'MACHINERY_ASSET', 'MAINTENANCE_REPAIR' => 'Maintenance & Repairs',
+                                                'SEWING_MATERIALS'                      => 'Sewing Materials & Trims',
+                                                'OPERATIONAL_UTILITY'                   => 'Operations & Utilities',
+                                                default                                 => str_replace('_', ' ', $e['category'])
+                                            };
                                             ?>
                                             <span class="badge <?= $catBadge ?> border small fw-semibold">
                                                 <i class="bi <?= $catIcon ?> me-1"></i><?= e($catLabel) ?>
@@ -358,16 +281,11 @@
                                         </div>
                                     </td>
 
-                                    <!-- Item Name & Serial / Tag -->
+                                    <!-- Item Name & Reason -->
                                     <td>
                                         <strong class="text-dark d-block"><?= e($e['item_name']) ?></strong>
                                         <?php if (!empty($e['notes'])): ?>
                                             <small class="text-muted d-block"><i class="bi bi-chat-left-text me-1 text-primary"></i><?= e($e['notes']) ?></small>
-                                        <?php endif; ?>
-                                        <?php if (!empty($e['asset_tag_or_serial'])): ?>
-                                            <small class="text-muted d-block">
-                                                <i class="bi bi-upc-scan me-1"></i>Serial: <span class="font-monospace text-dark"><?= e($e['asset_tag_or_serial']) ?></span>
-                                            </small>
                                         <?php endif; ?>
                                         <?php if (!empty($e['program_number'])): ?>
                                             <small class="text-primary d-block">
@@ -378,7 +296,7 @@
 
                                     <!-- Vendor Details -->
                                     <td>
-                                        <strong class="text-dark d-block"><?= e($e['vendor_name']) ?></strong>
+                                        <strong class="text-dark d-block"><?= e($e['vendor_name'] ?: 'Direct / Floor') ?></strong>
                                         <?php if (!empty($e['vendor_company'])): ?>
                                             <span class="text-muted small d-block"><i class="bi bi-building me-1"></i><?= e($e['vendor_company']) ?></span>
                                         <?php endif; ?>
@@ -389,8 +307,8 @@
 
                                     <!-- Quantity & Rate -->
                                     <td class="text-end">
-                                        <div class="fw-bold text-dark fs-7"><?= number_format($e['quantity'], 2) ?> <?= e($e['unit_type']) ?></div>
-                                        <small class="text-muted">@ ₹<?= number_format($e['unit_cost'], 2) ?> / <?= e($e['unit_type']) ?></small>
+                                        <div class="fw-bold text-dark fs-7"><?= number_format($e['quantity'], 2) ?> <?= e($e['unit_type'] ?: 'PCS') ?></div>
+                                        <small class="text-muted">@ ₹<?= number_format($e['unit_cost'], 2) ?> / <?= e($e['unit_type'] ?: 'PCS') ?></small>
                                     </td>
 
                                     <!-- Total Cost -->
@@ -422,7 +340,7 @@
                                     <!-- Proof Photo / Bill -->
                                     <td class="text-center">
                                         <?php if (!empty($e['photo_url'])): ?>
-                                            <a href="<?= uploadUrl($e['photo_url']) ?>" target="_blank" title="View bill slip or asset photo">
+                                            <a href="<?= uploadUrl($e['photo_url']) ?>" target="_blank" title="View bill slip or receipt photo">
                                                 <img src="<?= uploadUrl($e['photo_url']) ?>" alt="Proof" class="rounded border shadow-sm" style="width: 36px; height: 36px; object-fit: cover;">
                                             </a>
                                         <?php else: ?>
@@ -448,7 +366,7 @@
 
                                             <?php if (hasPermission('production_expenses', 'edit')): ?>
                                             <!-- Edit Button -->
-                                            <button type="button" class="btn btn-outline-primary" title="Edit Expense / Asset Details" onclick='openEditExpenseModal(<?= json_encode($e) ?>)'>
+                                            <button type="button" class="btn btn-outline-primary" title="Edit Expense Details" onclick='openEditExpenseModal(<?= json_encode($e) ?>)'>
                                                 <i class="bi bi-pencil"></i>
                                             </button>
                                             <?php endif; ?>
@@ -469,6 +387,7 @@
                         </tbody>
                     </table>
                 </div>
+
                 <!-- Pagination Controls Footer -->
                 <div class="card-footer bg-white py-3 border-top d-flex align-items-center justify-content-between flex-wrap gap-3" id="expensesPaginationFooter">
                     <div class="d-flex align-items-center gap-3 flex-wrap">
@@ -482,12 +401,12 @@
                                 <option value="25">25 per page</option>
                                 <option value="50">50 per page</option>
                                 <option value="100">100 per page</option>
-                                <option value="all">All</option>
                             </select>
                         </div>
                     </div>
-                    <nav aria-label="Expenses Pagination">
-                        <ul class="pagination pagination-modern mb-0" id="expensesPaginationList">
+                    <nav aria-label="Expenses table pagination">
+                        <ul class="pagination pagination-sm mb-0 gap-1" id="expensesPaginationNav">
+                            <!-- Populated dynamically via JavaScript -->
                         </ul>
                     </nav>
                 </div>
@@ -497,8 +416,7 @@
 </div>
 
 <!-- ========================================================================= -->
-<!-- ========================================================================= -->
-<!-- 1. RECORD EXPENSE MODAL (Streamlined: Expense Type + Qty & Price)         -->
+<!-- 1. RECORD EXPENSE MODAL (Comprehensive Production Expense Form)           -->
 <!-- ========================================================================= -->
 <div class="modal fade" id="recordExpenseModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -512,41 +430,66 @@
             <form method="POST" action="<?= url('production/expenses/store') ?>" id="recordExpenseForm" enctype="multipart/form-data">
                 <?= CSRF::field() ?>
                 <div class="modal-body p-4">
-                    <!-- 1. ENTRY SECTION FOR ADDING ITEMS -->
+                    <!-- SECTION 1: VOUCHER CONTEXT (Production Unit, Date & Category) -->
+                    <div class="row g-2 mb-3 p-3 bg-white rounded-3 border">
+                        <div class="col-md-4 col-sm-6">
+                            <label class="form-label small fw-bold text-dark required mb-1">Production Unit</label>
+                            <select name="production_unit" id="newProductionUnit" class="form-select form-select-sm fw-bold">
+                                <?php foreach ($productionUnitOptions as $uVal => $uLbl): ?>
+                                    <option value="<?= e($uVal) ?>" <?= $uVal === 'PRODUCTION_1' ? 'selected' : '' ?>><?= e($uLbl) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-4 col-sm-6">
+                            <label class="form-label small fw-bold text-dark required mb-1">Expense Date</label>
+                            <input type="date" name="expense_date" id="newExpenseDate" class="form-control form-control-sm fw-bold" value="<?= date('Y-m-d') ?>">
+                        </div>
+                        <div class="col-md-4 col-sm-12">
+                            <label class="form-label small fw-bold text-dark required mb-1">Expense Category</label>
+                            <select name="category" id="newCategory" class="form-select form-select-sm fw-bold">
+                                <option value="SEWING_MATERIALS" selected>Sewing Materials &amp; Trims (Threads, Needles, Zips)</option>
+                                <option value="MAINTENANCE_REPAIR">Machine Maintenance &amp; Repairs (Oil, Spares, Belts)</option>
+                                <option value="OPERATIONAL_UTILITY">Operational &amp; Utilities (Electricity, Fuel, Polybags)</option>
+                                <option value="OTHER">Other Floor Expenses</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- SECTION 2: ENTRY SECTION FOR ADDING EXPENSE ITEMS -->
                     <div class="p-3 bg-light rounded-3 border mb-3">
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <span class="small fw-bold text-uppercase text-secondary">
-                                <i class="bi bi-plus-square text-primary me-1"></i> Add Expense Need / Item
+                                <i class="bi bi-plus-square text-primary me-1"></i> Add Expense Item(s)
                             </span>
-                            <span class="small text-muted">Add 1, 2, 3 or 4+ items in this voucher</span>
+                            <span class="small text-muted">Add 1 or more items to this voucher</span>
                         </div>
 
-                        <!-- Expense Type Input with Side (+) Button -->
+                        <!-- Item Name Input with Side (+) Button -->
                         <div class="mb-2">
-                            <label class="form-label small fw-bold text-dark required mb-1">Expense Type / Item</label>
-                            <div class="input-group">
+                            <label class="form-label small fw-bold text-dark required mb-1">Item / Expense Type</label>
+                            <div class="input-group input-group-sm">
                                 <input type="text" 
                                        id="newItemName" 
                                        class="form-control fw-bold" 
                                        list="expenseTypesList" 
-                                       placeholder="Select or enter expense type (e.g. Thread Cones, Needles, Servicing)..." 
+                                       placeholder="e.g. White Sewing Thread Cones, Machine Servicing, Overlock Needles..." 
                                        autocomplete="off" 
                                        oninput="onExpenseTypeSelect(this.value)">
                                 <button type="button" 
                                         class="btn btn-primary px-3 fw-bold" 
                                         id="btnAddExpenseType" 
                                         onclick="toggleQuickAddTypeBox()" 
-                                        title="Create New Expense Type">
+                                        title="Quick Add New Expense Type">
                                     <i class="bi bi-plus-lg"></i>
                                 </button>
                             </div>
                             <datalist id="expenseTypesList">
                                 <?php foreach ($expenseItems ?? [] as $item): ?>
-                                    <option value="<?= htmlspecialchars($item['name']) ?>" data-rate="<?= (float)($item['default_rate'] ?? 0) ?>">
+                                    <option value="<?= htmlspecialchars($item['name']) ?>" data-rate="<?= (float)($item['default_rate'] ?? 0) ?>" data-unit="<?= htmlspecialchars($item['unit_type'] ?? 'PCS') ?>">
                                 <?php endforeach; ?>
                             </datalist>
 
-                            <!-- Quick Add Type Inline Form (Toggled by + Button) -->
+                            <!-- Quick Add Type Inline Drawer -->
                             <div id="quickAddTypeDrawer" class="mt-2 p-2 bg-white rounded-3 border border-primary-subtle d-none">
                                 <label class="form-label small fw-bold text-dark mb-1">
                                     <i class="bi bi-plus-circle-fill text-primary me-1"></i>Create New Expense Type
@@ -555,7 +498,7 @@
                                     <input type="text" 
                                            id="quickTypeNameInput" 
                                            class="form-control fw-bold" 
-                                           placeholder="e.g. Thread Cones, Machine Servicing"
+                                           placeholder="e.g. Juki Machine Oil, Elastic 1-inch, Cutting Blades"
                                            onkeydown="if(event.key==='Enter'){event.preventDefault();saveQuickType();}">
                                     <button type="button" class="btn btn-primary px-3 fw-bold" id="btnSaveQuickType" onclick="saveQuickType()">
                                         <i class="bi bi-check-lg me-1"></i> Add
@@ -567,7 +510,7 @@
                             </div>
                         </div>
 
-                        <!-- Row with Quantity, Price, and Reason -->
+                        <!-- Row: Quantity, Unit, Rate, and Reason -->
                         <div class="row g-2 mb-2">
                             <div class="col-sm-3 col-6">
                                 <label class="form-label small fw-bold text-dark required mb-1">Quantity</label>
@@ -575,38 +518,53 @@
                                        step="any" 
                                        min="0.01" 
                                        id="newQuantity" 
-                                       class="form-control fw-bold text-center" 
+                                       class="form-control form-control-sm fw-bold text-center" 
                                        value="1" 
                                        oninput="calculateNewExpenseTotal()">
                             </div>
 
                             <div class="col-sm-3 col-6">
+                                <label class="form-label small fw-bold text-dark mb-1">Unit</label>
+                                <select id="newUnitType" class="form-select form-select-sm fw-semibold">
+                                    <option value="PCS" selected>PCS</option>
+                                    <option value="CONE">CONE</option>
+                                    <option value="PKT">PKT</option>
+                                    <option value="BOX">BOX</option>
+                                    <option value="LTR">LTR</option>
+                                    <option value="MTR">MTR</option>
+                                    <option value="SET">SET</option>
+                                    <option value="ROLL">ROLL</option>
+                                    <option value="KG">KG</option>
+                                </select>
+                            </div>
+
+                            <div class="col-sm-3 col-6">
                                 <label class="form-label small fw-bold text-dark required mb-1">Price (₹)</label>
-                                <div class="input-group">
+                                <div class="input-group input-group-sm">
                                     <span class="input-group-text bg-white fw-bold text-muted small">₹</span>
                                     <input type="number" 
                                            step="any" 
                                            min="0" 
                                            id="newUnitCost" 
-                                           class="form-control fw-bold text-primary" 
+                                           class="form-control form-control-sm fw-bold text-primary" 
                                            placeholder="0.00" 
                                            oninput="calculateNewExpenseTotal()">
                                 </div>
                             </div>
 
-                            <div class="col-sm-6 col-12">
+                            <div class="col-sm-3 col-6">
                                 <label class="form-label small fw-bold text-dark mb-1">Reason / Purpose</label>
                                 <input type="text" 
                                        id="newReason" 
-                                       class="form-control" 
-                                       placeholder="Reason for expense (e.g. Overtime maintenance, Urgent trims)...">
+                                       class="form-control form-control-sm" 
+                                       placeholder="e.g. Urgent trims, Routine service">
                             </div>
                         </div>
 
                         <!-- Subtotal Preview & Action Buttons -->
                         <div class="d-flex justify-content-between align-items-center pt-2 border-top">
                             <div class="d-flex align-items-baseline gap-2">
-                                <span class="small text-muted fw-bold">ITEM AMOUNT:</span>
+                                <span class="small text-muted fw-bold">ITEM SUBTOTAL:</span>
                                 <span class="fw-bold text-primary fs-6 font-monospace" id="newItemSubtotal">₹ 0.00</span>
                             </div>
                             <div class="d-flex gap-2">
@@ -620,22 +578,22 @@
                         </div>
                     </div>
 
-                    <!-- 2. STAGED EXPENSE ITEMS LIST (Shows Added Types, Amounts & Reasons) -->
+                    <!-- SECTION 3: STAGED EXPENSE ITEMS LIST -->
                     <div id="stagedExpensesContainer" class="card border rounded-3 mb-3 overflow-hidden shadow-xs d-none">
                         <div class="card-header bg-white py-2 px-3 d-flex justify-content-between align-items-center border-bottom">
                             <span class="small fw-bold text-dark text-uppercase">
-                                <i class="bi bi-list-check text-primary me-1"></i> Added Expense Items (<span id="stagedItemCount">0</span>)
+                                <i class="bi bi-list-check text-primary me-1"></i> Added Items in Voucher (<span id="stagedItemCount">0</span>)
                             </span>
                             <span class="small fw-bold text-primary font-monospace" id="stagedGrandTotalHeader">₹ 0.00</span>
                         </div>
-                        <div class="table-responsive" style="max-height: 220px;">
+                        <div class="table-responsive" style="max-height: 200px;">
                             <table class="table table-sm table-hover align-middle mb-0">
                                 <thead class="table-light small">
                                     <tr>
                                         <th style="width: 35px;" class="text-center">#</th>
-                                        <th>Expense Type</th>
-                                        <th class="text-center">Qty</th>
-                                        <th class="text-end">Price</th>
+                                        <th>Expense Item</th>
+                                        <th class="text-center">Qty &amp; Unit</th>
+                                        <th class="text-end">Rate</th>
                                         <th class="text-end">Amount (₹)</th>
                                         <th>Reason / Remarks</th>
                                         <th style="width: 45px;" class="text-center">Action</th>
@@ -646,7 +604,7 @@
                             </table>
                         </div>
                         <div class="card-footer bg-light py-2 px-3 d-flex justify-content-between align-items-center border-top">
-                            <span class="fw-bold text-muted small text-uppercase">Grand Total Cost:</span>
+                            <span class="fw-bold text-muted small text-uppercase">Total Voucher Amount:</span>
                             <div class="d-flex align-items-center">
                                 <span class="fs-4 fw-bolder text-primary font-monospace" id="stagedGrandTotal">₹ 0.00</span>
                                 <input type="hidden" name="total_cost" id="newTotalCost" value="0.00">
@@ -654,20 +612,47 @@
                         </div>
                     </div>
 
-                    <!-- 3. Image Upload Input with Live Preview -->
-                    <div class="mb-2">
-                        <label class="form-label fw-bold text-dark mb-1">
-                            <i class="bi bi-image text-primary me-1"></i>Image Upload (Receipt / Bill / Item Photo)
-                        </label>
-                        <input type="file" 
-                               name="photo" 
-                               id="newPhoto" 
-                               class="form-control form-control-sm" 
-                               accept="image/*,.pdf" 
-                               onchange="previewExpenseImage(this, 'newPhotoPreview')">
-                        <div id="newPhotoPreview" class="mt-2 text-center d-none p-2 bg-light rounded border">
-                            <img src="" class="img-thumbnail rounded shadow-sm border" style="max-height: 120px;" alt="Selected receipt / photo">
-                            <div class="small text-muted mt-1" id="newPhotoFilename"></div>
+                    <!-- SECTION 4: PAYMENT & VENDOR DOCUMENTATION -->
+                    <div class="row g-2 mb-2 p-3 bg-white rounded-3 border">
+                        <div class="col-md-4 col-sm-6">
+                            <label class="form-label small fw-bold text-dark mb-1">Paid To / Vendor</label>
+                            <input type="text" name="vendor_name" id="newVendorName" class="form-control form-control-sm" placeholder="e.g. Local Hardware, Singer Service, Sri Murugan">
+                        </div>
+                        <div class="col-md-4 col-sm-6">
+                            <label class="form-label small fw-bold text-dark mb-1">Payment Method</label>
+                            <select name="payment_method" id="newPaymentMethod" class="form-select form-select-sm">
+                                <option value="CASH" selected>Cash</option>
+                                <option value="UPI">UPI / GPay / PhonePe</option>
+                                <option value="BANK_TRANSFER">Bank Transfer / NEFT</option>
+                                <option value="CREDIT">Credit / Due</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 col-sm-6">
+                            <label class="form-label small fw-bold text-dark mb-1">Payment Status</label>
+                            <select name="payment_status" id="newPaymentStatus" class="form-select form-select-sm">
+                                <option value="PAID" selected>Paid / Settled</option>
+                                <option value="PENDING">Pending Payment</option>
+                                <option value="PARTIAL">Partially Paid</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 col-sm-6">
+                            <label class="form-label small fw-bold text-dark mb-1">Bill / Invoice Number</label>
+                            <input type="text" name="invoice_number" id="newInvoiceNumber" class="form-control form-control-sm" placeholder="e.g. INV-10492 / Slip #">
+                        </div>
+                        <div class="col-md-8 col-sm-12">
+                            <label class="form-label small fw-bold text-dark mb-1">
+                                <i class="bi bi-image text-primary me-1"></i>Receipt / Bill Proof Image (Optional)
+                            </label>
+                            <input type="file" 
+                                   name="photo" 
+                                   id="newPhoto" 
+                                   class="form-control form-control-sm" 
+                                   accept="image/*,.pdf" 
+                                   onchange="previewExpenseImage(this, 'newPhotoPreview')">
+                            <div id="newPhotoPreview" class="mt-2 text-center d-none p-2 bg-light rounded border">
+                                <img src="" class="img-thumbnail rounded shadow-sm border" style="max-height: 100px;" alt="Selected receipt">
+                                <div class="small text-muted mt-1" id="newPhotoFilename"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -684,10 +669,10 @@
 </div>
 
 <!-- ========================================================================= -->
-<!-- 2. EDIT EXPENSE MODAL (Streamlined: Expense Type + Qty & Price)           -->
+<!-- 2. EDIT EXPENSE MODAL                                                     -->
 <!-- ========================================================================= -->
 <div class="modal fade" id="editExpenseModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content shadow-lg border-0 rounded-4 overflow-hidden">
             <div class="modal-header bg-primary text-white py-3 px-4">
                 <h5 class="modal-title fw-bold fs-6">
@@ -698,34 +683,70 @@
             <form method="POST" id="editExpenseForm" enctype="multipart/form-data">
                 <?= CSRF::field() ?>
                 <div class="modal-body p-4">
-                    <!-- Expense Type -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4 col-sm-6">
+                            <label class="form-label fw-bold text-dark required mb-1">Production Unit</label>
+                            <select name="production_unit" id="editProductionUnit" class="form-select form-select-sm fw-bold">
+                                <?php foreach ($productionUnitOptions as $uVal => $uLbl): ?>
+                                    <option value="<?= e($uVal) ?>"><?= e($uLbl) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-4 col-sm-6">
+                            <label class="form-label fw-bold text-dark required mb-1">Expense Date</label>
+                            <input type="date" name="expense_date" id="editExpenseDate" class="form-control form-control-sm fw-bold" required>
+                        </div>
+                        <div class="col-md-4 col-sm-12">
+                            <label class="form-label fw-bold text-dark required mb-1">Category</label>
+                            <select name="category" id="editCategory" class="form-select form-select-sm fw-bold">
+                                <option value="SEWING_MATERIALS">Sewing Materials &amp; Trims</option>
+                                <option value="MAINTENANCE_REPAIR">Machine Maintenance &amp; Repairs</option>
+                                <option value="OPERATIONAL_UTILITY">Operations &amp; Utilities</option>
+                                <option value="OTHER">Other Floor Expenses</option>
+                            </select>
+                        </div>
+                    </div>
+
                     <div class="mb-3">
-                        <label class="form-label fw-bold text-dark required mb-1">Expense Type</label>
+                        <label class="form-label fw-bold text-dark required mb-1">Expense Item Name</label>
                         <input type="text" 
                                name="item_name" 
                                id="editItemName" 
-                               class="form-control form-control-lg fw-bold" 
+                               class="form-control fw-bold" 
                                list="expenseTypesList" 
-                               placeholder="Select or enter expense type..." 
+                               placeholder="Item or expense description..." 
                                required>
                     </div>
 
-                    <!-- Row with Two Input Fields: Quantity and Price -->
                     <div class="row g-3 mb-3">
-                        <div class="col-6">
+                        <div class="col-md-4 col-6">
                             <label class="form-label fw-bold text-dark required mb-1">Quantity</label>
                             <input type="number" 
                                    step="any" 
                                    min="0.01" 
                                    name="quantity" 
                                    id="editQuantity" 
-                                   class="form-control form-control-lg fw-bold text-center" 
+                                   class="form-control fw-bold text-center" 
                                    required 
                                    oninput="calculateEditExpenseTotal()">
                         </div>
-                        <div class="col-6">
+                        <div class="col-md-4 col-6">
+                            <label class="form-label fw-bold text-dark mb-1">Unit</label>
+                            <select name="unit_type" id="editUnitType" class="form-select fw-semibold">
+                                <option value="PCS">PCS</option>
+                                <option value="CONE">CONE</option>
+                                <option value="PKT">PKT</option>
+                                <option value="BOX">BOX</option>
+                                <option value="LTR">LTR</option>
+                                <option value="MTR">MTR</option>
+                                <option value="SET">SET</option>
+                                <option value="ROLL">ROLL</option>
+                                <option value="KG">KG</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 col-12">
                             <label class="form-label fw-bold text-dark required mb-1">Price (₹)</label>
-                            <div class="input-group input-group-lg">
+                            <div class="input-group">
                                 <span class="input-group-text bg-light fw-bold text-muted">₹</span>
                                 <input type="number" 
                                        step="any" 
@@ -745,24 +766,56 @@
                         <span class="fw-bold text-muted small text-uppercase">Total Cost:</span>
                         <div class="d-flex align-items-center">
                             <span class="fs-5 fw-bold text-primary me-1">₹</span>
-                            <span class="fs-3 fw-bolder text-primary font-monospace" id="editDisplayTotal">0.00</span>
+                            <span class="fs-4 fw-bolder text-primary font-monospace" id="editDisplayTotal">0.00</span>
                             <input type="hidden" name="total_cost" id="editTotalCost" value="0.00">
                         </div>
                     </div>
 
-                    <!-- 4. Image Upload Input with Live Preview -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4 col-sm-6">
+                            <label class="form-label small fw-bold text-dark mb-1">Paid To / Vendor</label>
+                            <input type="text" name="vendor_name" id="editVendorName" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-4 col-sm-6">
+                            <label class="form-label small fw-bold text-dark mb-1">Payment Method</label>
+                            <select name="payment_method" id="editPaymentMethod" class="form-select form-select-sm">
+                                <option value="CASH">Cash</option>
+                                <option value="UPI">UPI / GPay / PhonePe</option>
+                                <option value="BANK_TRANSFER">Bank Transfer / NEFT</option>
+                                <option value="CREDIT">Credit / Due</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 col-sm-12">
+                            <label class="form-label small fw-bold text-dark mb-1">Payment Status</label>
+                            <select name="payment_status" id="editPaymentStatus" class="form-select form-select-sm">
+                                <option value="PAID">Paid / Settled</option>
+                                <option value="PENDING">Pending</option>
+                                <option value="PARTIAL">Partial</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 col-sm-6">
+                            <label class="form-label small fw-bold text-dark mb-1">Bill / Invoice #</label>
+                            <input type="text" name="invoice_number" id="editInvoiceNumber" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-8 col-sm-6">
+                            <label class="form-label small fw-bold text-dark mb-1">Reason / Notes</label>
+                            <input type="text" name="notes" id="editNotes" class="form-control form-control-sm" placeholder="Reason or remarks">
+                        </div>
+                    </div>
+
+                    <!-- Image Upload -->
                     <div class="mb-2">
                         <label class="form-label fw-bold text-dark mb-1">
-                            <i class="bi bi-image text-primary me-1"></i>Image Upload (Receipt / Bill / Item Photo)
+                            <i class="bi bi-image text-primary me-1"></i>Receipt / Bill Proof Image
                         </label>
                         <input type="file" 
                                name="photo" 
                                id="editPhoto" 
-                               class="form-control" 
+                               class="form-control form-control-sm" 
                                accept="image/*,.pdf" 
                                onchange="previewExpenseImage(this, 'editPhotoPreview')">
                         <div id="editPhotoPreview" class="mt-2 text-center d-none p-2 bg-light rounded border">
-                            <img src="" class="img-thumbnail rounded shadow-sm border" style="max-height: 120px;" alt="Selected receipt / photo">
+                            <img src="" class="img-thumbnail rounded shadow-sm border" style="max-height: 100px;" alt="Selected receipt">
                             <div class="small text-muted mt-1" id="editPhotoStatus">Current Image</div>
                         </div>
                     </div>
@@ -787,14 +840,14 @@
         <div class="modal-content shadow-lg">
             <div class="modal-header bg-dark text-white py-2">
                 <h6 class="modal-title fw-bold">
-                    <i class="bi bi-receipt me-1"></i>Production Expense / Asset Voucher
+                    <i class="bi bi-receipt me-1"></i>Production Expense Voucher
                 </h6>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-4" id="printableExpenseVoucherArea">
                 <div class="text-center mb-3">
                     <h5 class="fw-bold mb-0 text-dark">GRM APPARELS</h5>
-                    <small class="text-muted d-block">Production Expense &amp; Asset Voucher</small>
+                    <small class="text-muted d-block">Production Expense Voucher</small>
                     <span class="badge bg-light text-dark border mt-1" id="recExpNo">EXP-2026-0001</span>
                 </div>
                 <hr class="my-2">
@@ -803,9 +856,8 @@
                     <div class="col-6 text-end"><strong>Status:</strong> <span id="recExpStatus">-</span></div>
                     <div class="col-12"><strong>Production Unit:</strong> <span id="recExpUnit">-</span></div>
                     <div class="col-12"><strong>Category:</strong> <span id="recExpCategory">-</span></div>
-                    <div class="col-12"><strong>Vendor / Supplier:</strong> <span id="recExpVendor">-</span></div>
+                    <div class="col-12"><strong>Paid To / Vendor:</strong> <span id="recExpVendor">-</span></div>
                     <div class="col-12" id="recExpCompanyRow"><strong>Company:</strong> <span id="recExpCompany">-</span></div>
-                    <div class="col-12" id="recExpSerialRow"><strong>Serial / Asset Tag:</strong> <span id="recExpSerial">-</span></div>
                     <div class="col-12" id="recExpProgramRow"><strong>Linked Program:</strong> <span id="recExpProgram">-</span></div>
                 </div>
                 <div class="table-responsive mb-3">
@@ -884,13 +936,15 @@ function calculateNewExpenseTotal() {
 function addExpenseItemToList() {
     const nameInput = document.getElementById('newItemName');
     const qtyInput = document.getElementById('newQuantity');
+    const unitInput = document.getElementById('newUnitType');
     const priceInput = document.getElementById('newUnitCost');
     const reasonInput = document.getElementById('newReason');
 
     const name = nameInput.value.trim();
     const qty = parseFloat(qtyInput.value) || 0;
+    const unit = unitInput ? unitInput.value.trim() : 'PCS';
     const price = parseFloat(priceInput.value);
-    const reason = reasonInput.value.trim();
+    const reason = reasonInput ? reasonInput.value.trim() : '';
 
     if (!name) {
         alert('Please select or enter an Expense Type.');
@@ -908,10 +962,11 @@ function addExpenseItemToList() {
         return false;
     }
 
-    const amount = qty * price;
+    const amount = Math.round(qty * price * 100) / 100;
     stagedExpenseItems.push({
         name: name,
         qty: qty,
+        unit: unit,
         price: price,
         amount: amount,
         reason: reason
@@ -923,7 +978,7 @@ function addExpenseItemToList() {
     nameInput.value = '';
     qtyInput.value = '1';
     priceInput.value = '';
-    reasonInput.value = '';
+    if (reasonInput) reasonInput.value = '';
     toggleQuickAddTypeBox(false);
     calculateNewExpenseTotal();
     nameInput.focus();
@@ -972,10 +1027,11 @@ function renderStagedExpenses() {
                 <span class="fw-bold text-dark">${escapeHtml(item.name)}</span>
                 <input type="hidden" name="item_name[]" value="${escapeHtml(item.name)}">
                 <input type="hidden" name="quantity[]" value="${item.qty}">
+                <input type="hidden" name="unit_type[]" value="${escapeHtml(item.unit)}">
                 <input type="hidden" name="unit_cost[]" value="${item.price.toFixed(2)}">
                 <input type="hidden" name="notes[]" value="${escapeHtml(item.reason)}">
             </td>
-            <td class="text-center font-monospace">${item.qty}</td>
+            <td class="text-center font-monospace">${item.qty} ${escapeHtml(item.unit)}</td>
             <td class="text-end font-monospace">₹${item.price.toFixed(2)}</td>
             <td class="text-end fw-bold text-primary font-monospace">₹${item.amount.toFixed(2)}</td>
             <td>
@@ -1011,7 +1067,7 @@ function cancelExpenseEntry() {
 }
 
 document.getElementById('recordExpenseForm')?.addEventListener('submit', function(event) {
-    const itemName = document.getElementById('newItemName').value.trim();
+    const itemName = document.getElementById('newItemName')?.value.trim();
     if (itemName) {
         // Auto-add active inputs before submitting so single or final item is captured
         addExpenseItemToList();
@@ -1020,21 +1076,18 @@ document.getElementById('recordExpenseForm')?.addEventListener('submit', functio
     if (stagedExpenseItems.length === 0) {
         event.preventDefault();
         alert('Please enter and add at least one expense item.');
-        document.getElementById('newItemName').focus();
+        document.getElementById('newItemName')?.focus();
     }
 });
-    const p = parseFloat(document.getElementById('newUnitCost').value) || 0;
-    const total = q * p;
-    document.getElementById('newTotalCost').value = total.toFixed(2);
-    document.getElementById('newDisplayTotal').textContent = total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 function calculateEditExpenseTotal() {
-    const q = parseFloat(document.getElementById('editQuantity').value) || 0;
-    const p = parseFloat(document.getElementById('editUnitCost').value) || 0;
+    const q = parseFloat(document.getElementById('editQuantity')?.value) || 0;
+    const p = parseFloat(document.getElementById('editUnitCost')?.value) || 0;
     const total = q * p;
-    document.getElementById('editTotalCost').value = total.toFixed(2);
-    document.getElementById('editDisplayTotal').textContent = total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const totalHidden = document.getElementById('editTotalCost');
+    const totalDisplay = document.getElementById('editDisplayTotal');
+    if (totalHidden) totalHidden.value = total.toFixed(2);
+    if (totalDisplay) totalDisplay.textContent = total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function previewExpenseImage(input, previewContainerId) {
@@ -1062,10 +1115,40 @@ function previewExpenseImage(input, previewContainerId) {
 
 function openEditExpenseModal(data) {
     document.getElementById('editExpenseForm').action = '<?= url('production/expenses/update') ?>/' + data.id;
+    
+    if (document.getElementById('editProductionUnit')) {
+        document.getElementById('editProductionUnit').value = data.production_unit || 'PRODUCTION_1';
+    }
+    if (document.getElementById('editExpenseDate')) {
+        document.getElementById('editExpenseDate').value = data.expense_date || '';
+    }
+    if (document.getElementById('editCategory')) {
+        document.getElementById('editCategory').value = data.category || 'SEWING_MATERIALS';
+    }
+    
     document.getElementById('editItemName').value = data.item_name || '';
     document.getElementById('editQuantity').value = parseFloat(data.quantity || 1).toString();
+    if (document.getElementById('editUnitType')) {
+        document.getElementById('editUnitType').value = (data.unit_type || 'PCS').toUpperCase();
+    }
     document.getElementById('editUnitCost').value = parseFloat(data.unit_cost || 0).toFixed(2);
     calculateEditExpenseTotal();
+
+    if (document.getElementById('editVendorName')) {
+        document.getElementById('editVendorName').value = data.vendor_name || '';
+    }
+    if (document.getElementById('editPaymentMethod')) {
+        document.getElementById('editPaymentMethod').value = data.payment_method || 'CASH';
+    }
+    if (document.getElementById('editPaymentStatus')) {
+        document.getElementById('editPaymentStatus').value = data.payment_status || 'PAID';
+    }
+    if (document.getElementById('editInvoiceNumber')) {
+        document.getElementById('editInvoiceNumber').value = data.invoice_number || '';
+    }
+    if (document.getElementById('editNotes')) {
+        document.getElementById('editNotes').value = data.notes || '';
+    }
 
     const preview = document.getElementById('editPhotoPreview');
     const img = preview ? preview.querySelector('img') : null;
@@ -1108,20 +1191,13 @@ function openExpenseReceipt(id) {
                 };
                 document.getElementById('recExpUnit').textContent = unitLabels[e.production_unit] || e.production_unit;
                 document.getElementById('recExpCategory').textContent = (e.category || '').replace(/_/g, ' ');
-                document.getElementById('recExpVendor').textContent = e.vendor_name;
+                document.getElementById('recExpVendor').textContent = e.vendor_name || 'Direct';
 
                 if (e.vendor_company) {
                     document.getElementById('recExpCompanyRow').classList.remove('d-none');
                     document.getElementById('recExpCompany').textContent = e.vendor_company;
                 } else {
                     document.getElementById('recExpCompanyRow').classList.add('d-none');
-                }
-
-                if (e.asset_tag_or_serial) {
-                    document.getElementById('recExpSerialRow').classList.remove('d-none');
-                    document.getElementById('recExpSerial').textContent = e.asset_tag_or_serial;
-                } else {
-                    document.getElementById('recExpSerialRow').classList.add('d-none');
                 }
 
                 if (e.program_number) {
@@ -1132,63 +1208,220 @@ function openExpenseReceipt(id) {
                 }
 
                 document.getElementById('recExpItem').textContent = e.item_name;
-                document.getElementById('recExpQty').textContent = parseFloat(e.quantity).toFixed(2) + ' ' + (e.unit_type || 'PCS');
-                document.getElementById('recExpRate').textContent = '₹' + parseFloat(e.unit_cost).toFixed(2);
-                document.getElementById('recExpTotal').textContent = '₹' + parseFloat(e.total_cost).toFixed(2);
-                document.getElementById('recExpTotalFooter').textContent = '₹' + parseFloat(e.total_cost).toFixed(2);
-                document.getElementById('recExpPaid').textContent = '₹' + parseFloat(e.paid_amount).toFixed(2);
-                const due = Math.max(0, parseFloat(e.total_cost) - parseFloat(e.paid_amount));
+                document.getElementById('recExpQty').textContent = parseFloat(e.quantity || 1) + ' ' + (e.unit_type || 'PCS');
+                document.getElementById('recExpRate').textContent = '₹' + parseFloat(e.unit_cost || 0).toFixed(2);
+                document.getElementById('recExpTotal').textContent = '₹' + parseFloat(e.total_cost || 0).toFixed(2);
+                document.getElementById('recExpTotalFooter').textContent = '₹' + parseFloat(e.total_cost || 0).toFixed(2);
+                document.getElementById('recExpPaid').textContent = '₹' + parseFloat(e.paid_amount || 0).toFixed(2);
+                
+                const due = Math.max(0, parseFloat(e.total_cost || 0) - parseFloat(e.paid_amount || 0));
                 document.getElementById('recExpDue').textContent = '₹' + due.toFixed(2);
                 document.getElementById('recExpNotes').textContent = e.notes ? ('Remarks: ' + e.notes) : '';
 
                 const modal = new bootstrap.Modal(document.getElementById('expenseReceiptModal'));
                 modal.show();
+            } else {
+                alert('Could not load expense voucher details.');
             }
         })
         .catch(err => {
-            console.error('Error fetching expense voucher data:', err);
-            alert('Failed to load expense voucher.');
+            console.error('Error loading voucher:', err);
+            alert('Error loading expense voucher.');
         });
 }
 
 function printExpenseVoucherArea() {
-    const printContents = document.getElementById('printableExpenseVoucherArea').innerHTML;
-    const origContents = document.body.innerHTML;
-    document.body.innerHTML = printContents;
-    window.print();
-    document.body.innerHTML = origContents;
-    window.location.reload();
+    const printContent = document.getElementById('printableExpenseVoucherArea').innerHTML;
+    const printWin = window.open('', '_blank', 'width=750,height=600');
+    printWin.document.write('<html><head><title>Print Voucher</title>');
+    printWin.document.write('<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">');
+    printWin.document.write('<style>body{padding:20px;font-family:sans-serif;} @media print{.no-print{display:none;}}</style>');
+    printWin.document.write('</head><body>');
+    printWin.document.write(printContent);
+    printWin.document.write('</body></html>');
+    printWin.document.close();
+    printWin.focus();
+    setTimeout(() => {
+        printWin.print();
+        printWin.close();
+    }, 400);
 }
 
-// Initialize Expenses & Assets Table Pagination
-document.addEventListener('DOMContentLoaded', function() {
-    if (typeof window.initClientPagination === 'function' && document.getElementById('expensesTable')) {
-        const expensesPagination = window.initClientPagination({
-            container: '#expensesTable tbody',
-            itemSelector: 'tr.expense-row',
-            footer: '#expensesPaginationFooter',
-            infoEl: '#expensesPageInfo',
-            paginationList: '#expensesPaginationList',
-            pageSizeSelect: '#expensesPageSizeSelect',
-            pageSize: 10,
-            itemName: 'expenses'
-        });
+function onExpenseTypeSelect(val) {
+    if (!val) return;
+    const clean = val.trim().toLowerCase();
+    const match = expenseTypesMaster.find(it => it.name.toLowerCase() === clean);
+    if (match) {
+        if (match.default_rate && parseFloat(match.default_rate) > 0) {
+            document.getElementById('newUnitCost').value = parseFloat(match.default_rate).toFixed(2);
+        }
+        if (match.unit_type && document.getElementById('newUnitType')) {
+            document.getElementById('newUnitType').value = match.unit_type.toUpperCase();
+        }
+        calculateNewExpenseTotal();
+    }
+}
 
-        const searchInput = document.getElementById('expensesSearchInput');
-        if (searchInput && expensesPagination) {
-            let debounceTimer;
-            searchInput.addEventListener('input', function() {
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(() => {
-                    const q = searchInput.value.trim().toLowerCase();
-                    expensesPagination.filter(row => {
-                        if (!q) return true;
-                        const text = (row.textContent || '').toLowerCase();
-                        return text.includes(q);
-                    });
-                }, 150);
+function toggleQuickAddTypeBox(show) {
+    const drawer = document.getElementById('quickAddTypeDrawer');
+    if (!drawer) return;
+    if (typeof show === 'boolean') {
+        if (show) drawer.classList.remove('d-none');
+        else drawer.classList.add('d-none');
+    } else {
+        drawer.classList.toggle('d-none');
+    }
+    if (!drawer.classList.contains('d-none')) {
+        document.getElementById('quickTypeNameInput')?.focus();
+    }
+}
+
+function saveQuickType() {
+    const input = document.getElementById('quickTypeNameInput');
+    const name = input ? input.value.trim() : '';
+    if (!name) {
+        alert('Please enter an Expense Type name.');
+        return;
+    }
+
+    const btn = document.getElementById('btnSaveQuickType');
+    if (btn) btn.disabled = true;
+
+    fetch('<?= url('api/production/expenses/quick-add-item') ?>', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({
+            name: name,
+            category: document.getElementById('newCategory')?.value || 'SEWING_MATERIALS',
+            unit_type: document.getElementById('newUnitType')?.value || 'PCS',
+            default_rate: parseFloat(document.getElementById('newUnitCost')?.value || 0)
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (btn) btn.disabled = false;
+        if (data.success && data.item) {
+            expenseTypesMaster.push(data.item);
+            const dl = document.getElementById('expenseTypesList');
+            if (dl) {
+                const opt = document.createElement('option');
+                opt.value = data.item.name;
+                opt.dataset.rate = data.item.default_rate || 0;
+                dl.appendChild(opt);
+            }
+            document.getElementById('newItemName').value = data.item.name;
+            input.value = '';
+            toggleQuickAddTypeBox(false);
+            calculateNewExpenseTotal();
+        } else {
+            alert(data.message || 'Could not save expense type.');
+        }
+    })
+    .catch(err => {
+        if (btn) btn.disabled = false;
+        console.error(err);
+        document.getElementById('newItemName').value = name;
+        input.value = '';
+        toggleQuickAddTypeBox(false);
+    });
+}
+
+// Table Pagination System
+let currentPage = 1;
+let pageSize = 10;
+const tableRows = Array.from(document.querySelectorAll('#expensesTable tbody tr.expense-row'));
+
+function initExpensesTablePagination() {
+    const sizeSelect = document.getElementById('expensesPageSizeSelect');
+    if (sizeSelect) {
+        sizeSelect.addEventListener('change', function() {
+            pageSize = parseInt(this.value, 10) || 10;
+            currentPage = 1;
+            renderExpensesTablePage();
+        });
+    }
+    renderExpensesTablePage();
+}
+
+function renderExpensesTablePage() {
+    const totalRows = tableRows.length;
+    if (totalRows === 0) return;
+
+    const totalPages = Math.ceil(totalRows / pageSize);
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = Math.min(startIndex + pageSize, totalRows);
+
+    tableRows.forEach((row, idx) => {
+        row.style.display = (idx >= startIndex && idx < endIndex) ? '' : 'none';
+    });
+
+    const infoSpan = document.getElementById('expensesPageInfo');
+    if (infoSpan) {
+        infoSpan.textContent = `Showing ${startIndex + 1} to ${endIndex} of ${totalRows} expenses`;
+    }
+
+    const nav = document.getElementById('expensesPaginationNav');
+    if (nav) {
+        nav.innerHTML = '';
+        
+        // Previous Button
+        const prevLi = document.createElement('li');
+        prevLi.className = `page-item ${currentPage === 1 ? 'disabled' : ''}`;
+        prevLi.innerHTML = `<button class="page-link" type="button" aria-label="Previous">&laquo;</button>`;
+        if (currentPage > 1) {
+            prevLi.querySelector('button').addEventListener('click', () => {
+                currentPage--;
+                renderExpensesTablePage();
             });
         }
+        nav.appendChild(prevLi);
+
+        // Page Numbers
+        for (let i = 1; i <= totalPages; i++) {
+            if (totalPages > 7) {
+                if (i !== 1 && i !== totalPages && Math.abs(i - currentPage) > 2) {
+                    if (i === 2 || i === totalPages - 1) {
+                        const dotsLi = document.createElement('li');
+                        dotsLi.className = 'page-item disabled';
+                        dotsLi.innerHTML = '<span class="page-link">...</span>';
+                        nav.appendChild(dotsLi);
+                    }
+                    continue;
+                }
+            }
+
+            const pageLi = document.createElement('li');
+            pageLi.className = `page-item ${i === currentPage ? 'active' : ''}`;
+            pageLi.innerHTML = `<button class="page-link" type="button">${i}</button>`;
+            const pageNum = i;
+            pageLi.querySelector('button').addEventListener('click', () => {
+                currentPage = pageNum;
+                renderExpensesTablePage();
+            });
+            nav.appendChild(pageLi);
+        }
+
+        // Next Button
+        const nextLi = document.createElement('li');
+        nextLi.className = `page-item ${currentPage === totalPages ? 'disabled' : ''}`;
+        nextLi.innerHTML = `<button class="page-link" type="button" aria-label="Next">&raquo;</button>`;
+        if (currentPage < totalPages) {
+            nextLi.querySelector('button').addEventListener('click', () => {
+                currentPage++;
+                renderExpensesTablePage();
+            });
+        }
+        nav.appendChild(nextLi);
     }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    initExpensesTablePagination();
 });
 </script>

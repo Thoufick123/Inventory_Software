@@ -9,14 +9,11 @@
                 <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2.5 py-1.5 rounded-pill fs-7 d-inline-flex align-items-center">
                     <i class="bi bi-building-fill-check me-1"></i> Warehouse: <?= e($assignedWH) ?>
                 </span>
-            <?php elseif (isSuperAdmin()): ?>
-                <span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25 px-2.5 py-1.5 rounded-pill fs-7 d-inline-flex align-items-center">
-                    <i class="bi bi-globe-americas me-1"></i> All Warehouses (Admin Scope)
-                </span>
             <?php endif; ?>
         </div>
     </div>
     <div class="d-flex align-items-center gap-2">
+        <button type="button" class="btn btn-outline-dark btn-sm fw-semibold shadow-sm px-3 d-flex align-items-center gap-1.5" data-bs-toggle="modal" data-bs-target="#qrStatusFinderModal"><i class="bi bi-qr-code-scan text-primary"></i><span>QR Status Finder</span></button>
         <button type="button" class="btn btn-primary btn-sm fw-semibold shadow-sm px-3 d-flex align-items-center gap-1.5" data-bs-toggle="modal" data-bs-target="#warehouseReportExportModal">
             <i class="bi bi-file-earmark-arrow-down"></i> Export Reports
         </button>

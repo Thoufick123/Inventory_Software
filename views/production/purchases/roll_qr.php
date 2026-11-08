@@ -264,7 +264,12 @@
                         <div class="qr-box" id="qr-box-<?= $stk['index'] ?>" data-qr='<?= htmlspecialchars($stk['qr_payload'], ENT_QUOTES, 'UTF-8') ?>'></div>
 
                         <div class="label-meta">
-                            <span class="roll-badge-num"><?= htmlspecialchars($stk['roll_number']) ?></span>
+                            <div class="d-flex align-items-center justify-content-between">
+                                <span class="roll-badge-num"><?= htmlspecialchars($stk['roll_number']) ?></span>
+                                <?php if (!empty($stk['is_damaged'])): ?>
+                                    <span class="badge bg-danger text-white py-0 px-1" style="font-size:7.5px">DAMAGED</span>
+                                <?php endif; ?>
+                            </div>
                             <div class="meta-line">
                                 <span>Fabric:</span> <strong><?= htmlspecialchars(mb_strimwidth($stk['fabric_type'], 0, 16, '...')) ?></strong>
                             </div>
@@ -273,6 +278,9 @@
                             </div>
                             <div class="meta-line">
                                 <span>Weight:</span> <strong style="color:#0284c7"><?= number_format((float)$stk['weight'], 2) ?> kg</strong>
+                                <?php if ($stk['total_qty'] > 1): ?>
+                                    <small class="text-muted" style="font-size:8px">(piece)</small>
+                                <?php endif; ?>
                             </div>
                             <div class="meta-line">
                                 <span>Code:</span> <span class="font-monospace text-muted" style="font-size:8px"><?= htmlspecialchars($stk['code']) ?></span>

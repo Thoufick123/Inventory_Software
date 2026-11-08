@@ -169,40 +169,60 @@
                                     <small class="text-muted d-block">By: <?= e($d['reported_by_name'] ?? 'Staff') ?></small>
                                 </td>
 
-                                <!-- Supplier & Mill -->
+                                <!-- Supplier & Mill / Origin -->
                                 <td>
-                                    <a href="<?= url('production/sellers/view/' . $d['seller_id']) ?>" class="fw-bold text-decoration-none text-dark d-block">
-                                        <?= e($d['seller_name']) ?>
-                                    </a>
-                                    <?php if (!empty($d['seller_company'])): ?>
-                                        <small class="text-muted"><i class="bi bi-building me-1"></i><?= e($d['seller_company']) ?></small>
+                                    <?php if (!empty($d['seller_name'])): ?>
+                                        <a href="<?= url('production/sellers/view/' . $d['seller_id']) ?>" class="fw-bold text-decoration-none text-dark d-block">
+                                            <?= e($d['seller_name']) ?>
+                                        </a>
+                                        <?php if (!empty($d['seller_company'])): ?>
+                                            <small class="text-muted"><i class="bi bi-building me-1"></i><?= e($d['seller_company']) ?></small>
+                                        <?php endif; ?>
+                                    <?php else: ?>
+                                        <span class="badge bg-primary-subtle text-primary border"><i class="bi bi-box-seam me-1"></i>Finished Garment</span>
+                                        <small class="text-muted d-block mt-0.5">Own Production</small>
                                     <?php endif; ?>
                                 </td>
 
-                                <!-- Roll Details, Photo & QR Code -->
+                                <!-- Roll / Product Details, Photo & QR Code -->
                                 <td>
                                     <?php 
-                                        $qrCodeVal = !empty($d['qr_code']) ? $d['qr_code'] : (!empty($d['roll_qr_code']) ? $d['roll_qr_code'] : (!empty($d['roll_start_code']) ? $d['roll_start_code'] : $d['roll_number']));
+                                        $isProductDamage = (($d['item_type'] ?? '') === 'PRODUCT' || !empty($d['product_id']) || !empty($d['variant_id']) || empty($d['seller_roll_id']));
+                                        $qrCodeVal = !empty($d['qr_code']) ? $d['qr_code'] : (!empty($d['roll_qr_code']) ? $d['roll_qr_code'] : (!empty($d['roll_start_code']) ? $d['roll_start_code'] : ($d['roll_number'] ?? 'QR')));
+                                        $displayName = $isProductDamage ? (!empty($d['product_name']) ? $d['product_name'] : ($d['catalog_product_name'] ?: 'Garment Product')) : ($d['roll_number'] ?: 'Fabric Roll');
+                                        $supplierOrOrigin = !empty($d['seller_company']) ? $d['seller_company'] : (!empty($d['seller_name']) ? $d['seller_name'] : 'Production Floor');
                                     ?>
                                     <div class="d-flex align-items-center gap-2">
                                         <!-- Scannable QR Code Thumbnail -->
-                                        <div class="damage-qr-thumb position-relative" style="width: 46px; height: 46px; background: #fff; border: 1.5px solid #0f172a; border-radius: 6px; padding: 2px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;" title="Click to view & scan Damaged Item QR Code" onclick="showDamageQrModal('<?= e($d['damage_number']) ?>', '<?= e($qrCodeVal) ?>', '<?= e($d['roll_number']) ?>', '<?= e(addslashes($d['damage_reason'])) ?>', '<?= number_format($d['damaged_weight'], 2) ?> kg', '<?= e(addslashes($d['seller_company'] ?: $d['seller_name'])) ?>')">
+                                        <div class="damage-qr-thumb position-relative" style="width: 46px; height: 46px; background: #fff; border: 1.5px solid #0f172a; border-radius: 6px; padding: 2px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;" title="Click to view & scan Damaged Item QR Code" onclick="showDamageQrModal('<?= e($d['damage_number']) ?>', '<?= e($qrCodeVal) ?>', '<?= e(addslashes($displayName)) ?>', '<?= e(addslashes($d['damage_reason'])) ?>', '<?= number_format($d['damaged_weight'], 2) ?> kg', '<?= e(addslashes($supplierOrOrigin)) ?>')">
                                             <div id="damage-qr-<?= $d['id'] ?>" class="damage-qr-canvas" data-qr="<?= e($qrCodeVal) ?>" style="width: 40px; height: 40px;"></div>
                                         </div>
 
                                         <div>
                                             <div class="d-flex align-items-center gap-1.5 flex-wrap">
-                                                <span class="fw-bold text-dark fs-7"><?= e($d['roll_number']) ?></span>
-                                                <span class="badge bg-danger text-white font-monospace" style="font-size: 10px; cursor: pointer;" title="Quarantined Damage QR - Click to inspect" onclick="showDamageQrModal('<?= e($d['damage_number']) ?>', '<?= e($qrCodeVal) ?>', '<?= e($d['roll_number']) ?>', '<?= e(addslashes($d['damage_reason'])) ?>', '<?= number_format($d['damaged_weight'], 2) ?> kg', '<?= e(addslashes($d['seller_company'] ?: $d['seller_name'])) ?>')">
+                                                <span class="fw-bold text-dark fs-7"><?= e($displayName) ?></span>
+                                                <span class="badge bg-danger text-white font-monospace" style="font-size: 10px; cursor: pointer;" title="Quarantined Damage QR - Click to inspect" onclick="showDamageQrModal('<?= e($d['damage_number']) ?>', '<?= e($qrCodeVal) ?>', '<?= e(addslashes($displayName)) ?>', '<?= e(addslashes($d['damage_reason'])) ?>', '<?= number_format($d['damaged_weight'], 2) ?> kg', '<?= e(addslashes($supplierOrOrigin)) ?>')">
                                                     <i class="bi bi-qr-code me-1"></i><?= e($qrCodeVal) ?>
                                                 </span>
                                             </div>
                                             <div class="d-flex gap-1 flex-wrap mt-1">
-                                                <?php if (!empty($d['roll_color'])): ?>
-                                                    <span class="badge bg-info-subtle text-info border px-1"><?= e($d['roll_color']) ?></span>
-                                                <?php endif; ?>
-                                                <?php if (!empty($d['roll_design'])): ?>
-                                                    <span class="badge bg-warning-subtle text-warning border px-1"><?= e($d['roll_design']) ?></span>
+                                                <?php if ($isProductDamage): ?>
+                                                    <?php if (!empty($d['variant_size_name'])): ?>
+                                                        <span class="badge bg-light text-dark border px-1">Size: <?= e($d['variant_size_name']) ?></span>
+                                                    <?php endif; ?>
+                                                    <?php if (!empty($d['variant_color_name'])): ?>
+                                                        <span class="badge bg-info-subtle text-info border px-1"><?= e($d['variant_color_name']) ?></span>
+                                                    <?php endif; ?>
+                                                    <?php if (!empty($d['variant_sku'])): ?>
+                                                        <span class="badge bg-secondary-subtle text-secondary border px-1"><?= e($d['variant_sku']) ?></span>
+                                                    <?php endif; ?>
+                                                <?php else: ?>
+                                                    <?php if (!empty($d['roll_color'])): ?>
+                                                        <span class="badge bg-info-subtle text-info border px-1"><?= e($d['roll_color']) ?></span>
+                                                    <?php endif; ?>
+                                                    <?php if (!empty($d['roll_design'])): ?>
+                                                        <span class="badge bg-warning-subtle text-warning border px-1"><?= e($d['roll_design']) ?></span>
+                                                    <?php endif; ?>
                                                 <?php endif; ?>
                                                 <?php if (!empty($d['photo_url'])): ?>
                                                     <a href="<?= uploadUrl($d['photo_url']) ?>" target="_blank" class="badge bg-light text-secondary border text-decoration-none px-1" title="View Defect Photo">
@@ -229,7 +249,7 @@
                                 <!-- Damaged Qty & Weight -->
                                 <td class="text-end">
                                     <div class="fw-bold text-danger"><?= number_format($d['damaged_weight'], 2) ?> kg</div>
-                                    <small class="text-muted"><?= (int)$d['damaged_quantity'] ?> Roll(s)</small>
+                                    <small class="text-muted"><?= (int)$d['damaged_quantity'] ?> <?= $isProductDamage ? 'Pc(s)' : 'Roll(s)' ?></small>
                                 </td>
 
                                 <!-- Loss Valuation -->
@@ -336,7 +356,7 @@
         <div class="modal-content shadow-lg border-danger">
             <div class="modal-header bg-danger text-white py-3">
                 <h5 class="modal-title fw-bold fs-6">
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i>Report Fabric Roll Damage / Defect
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>Report Damage / Defect (Rolls &amp; Finished Products)
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -345,8 +365,8 @@
                 <div class="modal-body p-4">
                     <div class="row g-3">
                         <div class="col-12">
-                            <label for="damageRollQrScan" class="form-label fw-bold">Scan Fabric Piece QR Labels</label>
-                            <input type="text" id="damageRollQrScan" class="form-control form-control-lg" placeholder="Scan a QR and press Enter; repeat for labels from any roll" autocomplete="off">
+                            <label for="damageRollQrScan" class="form-label fw-bold">Scan Fabric Roll QR or Finished Product Tag</label>
+                            <input type="text" id="damageRollQrScan" class="form-control form-control-lg" placeholder="Scan a Roll QR or Garment Tag and press Enter; repeat for multiple items" autocomplete="off">
                             <div id="damageRollScanStatus" class="small mt-1" role="status" aria-live="polite"></div>
                             <div class="border rounded mt-2 p-2">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
@@ -706,7 +726,7 @@ function renderDamageScannedLabels() {
     list.replaceChildren();
     inputs.replaceChildren();
     const count = document.getElementById('damageScannedCount');
-    if (count) count.textContent = `${damageScannedLabels.length} ${damageScannedLabels.length === 1 ? 'piece' : 'pieces'}`;
+    if (count) count.textContent = `${damageScannedLabels.length} ${damageScannedLabels.length === 1 ? 'item' : 'items'}`;
 
     if (damageScannedLabels.length === 0) {
         const empty = document.createElement('div');
@@ -728,8 +748,14 @@ function renderDamageScannedLabels() {
         const code = document.createElement('strong');
         code.textContent = item.code;
         const metadata = document.createElement('div');
-        metadata.className = 'text-muted';
-        metadata.textContent = `${item.sellerName} • ${item.rollNumber} • ${item.weight.toFixed(2)} kg`;
+        metadata.className = 'text-muted small mt-0.5';
+
+        const isProd = (item.itemType === 'PRODUCT');
+        const typeBadge = isProd
+            ? '<span class="badge bg-primary-subtle text-primary border me-1"><i class="bi bi-box-seam me-1"></i>Product</span>'
+            : '<span class="badge bg-secondary-subtle text-secondary border me-1"><i class="bi bi-disc me-1"></i>Roll</span>';
+
+        metadata.innerHTML = `${typeBadge} <span>${item.sellerName} • ${item.rollNumber} • ${item.weight.toFixed(2)} kg • ₹${item.loss.toFixed(2)}</span>`;
         details.append(code, metadata);
 
         const remove = document.createElement('button');
@@ -754,11 +780,11 @@ function renderDamageScannedLabels() {
     document.getElementById('inputDamagedWeight').value = totalWeight.toFixed(2);
     document.getElementById('inputEstimatedLoss').value = totalLoss.toFixed(2);
     const weightHelp = document.getElementById('reportWeightHelp');
-    if (weightHelp) weightHelp.textContent = `${damageScannedLabels.length} scanned piece(s)`;
+    if (weightHelp) weightHelp.textContent = `${damageScannedLabels.length} scanned item(s)`;
     const rateBadge = document.getElementById('reportRateBadge');
     if (rateBadge) rateBadge.textContent = totalWeight > 0 ? `₹${(totalLoss / totalWeight).toFixed(2)} / kg` : '₹0.00 / kg';
     const lossHelp = document.getElementById('reportLossCalcHelp');
-    if (lossHelp) lossHelp.textContent = `Estimated loss for ${damageScannedLabels.length} scanned piece(s): ₹${totalLoss.toFixed(2)}`;
+    if (lossHelp) lossHelp.textContent = `Estimated loss for ${damageScannedLabels.length} scanned item(s): ₹${totalLoss.toFixed(2)}`;
 }
 
 function scanDamageRollQr() {
@@ -766,7 +792,7 @@ function scanDamageRollQr() {
     const scannedCode = scanInput ? scanInput.value.trim() : '';
     if (!scannedCode || damageScanInProgress) return;
 
-    const normalizedCode = scannedCode.split('|', 1)[0].trim().toUpperCase();
+    const normalizedCode = scannedCode.split('|', 1)[0].trim().toUpperCase().replace(/^#/, '');
     if (damageScannedLabels.some(item => item.code === normalizedCode)) {
         setDamageRollScanStatus(`QR label ${normalizedCode} is already in this damage list.`, true);
         scanInput.select();
@@ -774,35 +800,39 @@ function scanDamageRollQr() {
     }
 
     damageScanInProgress = true;
-    setDamageRollScanStatus('Looking up fabric roll…');
+    setDamageRollScanStatus('Looking up item QR (roll or garment)…');
     fetch('<?= url('api/production/damages/scan-roll') ?>?code=' + encodeURIComponent(scannedCode))
         .then(async response => {
             const data = await response.json();
             if (!response.ok || !data.success) {
-                throw new Error(data.message || 'Unable to find this fabric roll.');
+                throw new Error(data.message || 'Unable to find this item.');
             }
             return data;
         })
         .then(data => {
+            const isProd = (data.item_type === 'PRODUCT');
             const quantity = Math.max(1, parseInt(data.quantity, 10) || 1);
             const rollWeight = parseFloat(data.weight) || 0;
             const rollPrice = parseFloat(data.price) || 0;
-            const pieceWeight = Math.round((rollWeight / quantity) * 100) / 100;
-            const loss = Math.round(pieceWeight * (rollWeight > 0 ? rollPrice / rollWeight : 0) * 100) / 100;
+            const pieceWeight = isProd ? rollWeight : (Math.round((rollWeight / quantity) * 100) / 100);
+            const loss = isProd ? (parseFloat(data.loss) || rollPrice) : (Math.round(pieceWeight * (rollWeight > 0 ? rollPrice / rollWeight : 0) * 100) / 100);
+
             damageScannedLabels.push({
                 code: data.code,
-                sellerName: data.seller_name,
+                itemType: data.item_type || 'FABRIC_ROLL',
+                sellerName: data.seller_name || 'Own Production',
                 rollNumber: data.roll_number,
                 weight: pieceWeight,
-                loss
+                loss: loss
             });
             renderDamageScannedLabels();
-            setDamageRollScanStatus(`Added ${data.code} — ${data.seller_name}, ${data.roll_number}. Scan another label or submit.`);
+            const badgeType = isProd ? 'Finished Product' : 'Fabric Roll';
+            setDamageRollScanStatus(`Added [${badgeType}] ${data.code} — ${data.roll_number}. Scan another label or submit.`);
             scanInput.value = '';
             scanInput.focus();
         })
         .catch(error => {
-            setDamageRollScanStatus(error.message || 'Unable to scan this fabric roll.', true);
+            setDamageRollScanStatus(error.message || 'Unable to scan this item.', true);
         })
         .finally(() => {
             damageScanInProgress = false;

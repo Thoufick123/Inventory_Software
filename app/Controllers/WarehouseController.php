@@ -997,7 +997,15 @@ class WarehouseController {
                        col.name as color_name, col.hex_code as color_hex,
                        w.name as warehouse_name, w.code as warehouse_code,
                        sel.name as seller_name, sel.company as seller_company,
-                       b.name as brand_name
+                       b.name as brand_name,
+                       COALESCE((
+                           SELECT SUM(ai.requested_qty)
+                           FROM allocation_items ai
+                           JOIN warehouse_allocations wa ON ai.allocation_id = wa.id
+                           WHERE ai.variant_id = sb.variant_id
+                             AND wa.warehouse_id = sb.location_id
+                             AND wa.status IN ('PENDING', 'APPROVED', 'PICKING', 'PACKED')
+                       ), 0) as allocated_quantity
                 FROM stock_balances sb
                 JOIN product_variants pv ON sb.variant_id = pv.id
                 JOIN products p ON pv.product_id = p.id
@@ -1081,6 +1089,19 @@ class WarehouseController {
         $compValuation = 0.0;
 
         foreach ($stockItems as $item) {
+            $allocatedQty = (float)($item['allocated_quantity'] ?? 0);
+            $rawQty = (float)($item['quantity'] ?? 0);
+            $netAvailableQty = max(0, $rawQty - $allocatedQty);
+            $item['allocated_quantity'] = $allocatedQty;
+
+            // Once allocated product, don't show in available stock
+            if (($item['stock_state'] ?? '') === 'AVAILABLE') {
+                if ($netAvailableQty <= 0) {
+                    continue;
+                }
+                $item['quantity'] = $netAvailableQty;
+            }
+
             $item['display_stock_state'] = (
                 ($item['stock_state'] ?? '') === 'AVAILABLE' && (float)($item['quantity'] ?? 0) <= 0
             ) ? 'OUT OF STOCK' : ($item['stock_state'] ?? '');
@@ -5223,6 +5244,25 @@ class WarehouseController {
             LEFT JOIN sub_subcategories subsubcat ON p.sub_subcategory_id = subsubcat.id
         ";
 
+        // Strategy 0: Direct Match in warehouse_qr_codes (handles Series, Complementary, 3rd-Party & Return QR tags)
+        foreach ($candidateCodes as $c) {
+            if (empty($c)) continue;
+            $whQr = Database::fetchOne(
+                "SELECT wq.variant_id, wq.qr_code, wq.warehouse_id 
+                 FROM warehouse_qr_codes wq 
+                 WHERE UPPER(wq.qr_code) = UPPER(?) 
+                 LIMIT 1",
+                [$c]
+            );
+            if ($whQr && !empty($whQr['variant_id'])) {
+                $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [(int)$whQr['variant_id']]);
+                if ($variant) {
+                    $extractedTag = $whQr['qr_code'];
+                    break;
+                }
+            }
+        }
+
         // Strategy 1: Exact match on candidate codes against product_variants or products
         foreach ($candidateCodes as $c) {
             if (empty($c)) continue;
@@ -5510,7 +5550,31 @@ class WarehouseController {
         }
 
         if ($isAdjustmentScan === false) {
-            $adjustmentUsage = StockAdjustment::findQrCodeUsage($extractedTag);
+            // Check if the resolved variant is marked with active unresolved damage in this warehouse
+        $activeDmgVariant = Database::fetchOne(
+            "SELECT wd.id, wd.damage_number, wd.damage_reason, wd.defect_type, wd.status
+             FROM warehouse_damages wd
+             WHERE wd.variant_id = ? " . ($warehouseId > 0 ? "AND wd.warehouse_id = {$warehouseId}" : "") . "
+               AND wd.status NOT IN ('REPAIRED', 'RESTOCKED', 'SALVAGED', 'WRITTEN_OFF')
+             LIMIT 1",
+            [(int)$variant['id']]
+        );
+        if ($activeDmgVariant) {
+            $variantDmgQty = (float)($activeDmgVariant['quantity'] ?? 0);
+            $totalWhAvail = (float)($avail['qty'] ?? 0);
+            if ($totalWhAvail <= 0 || !empty($extractedTag) && str_starts_with(strtoupper($extractedTag), 'DMG-')) {
+                echo json_encode([
+                    'success'       => false,
+                    'is_damaged'     => true,
+                    'damage_number' => $activeDmgVariant['damage_number'],
+                    'damage_reason' => $activeDmgVariant['damage_reason'],
+                    'message'       => "This product is marked as DAMAGED! (Case #{$activeDmgVariant['damage_number']} - Reason: {$activeDmgVariant['damage_reason']}). Damaged products cannot be allocated!"
+                ]);
+                exit;
+            }
+        }
+
+        $adjustmentUsage = StockAdjustment::findQrCodeUsage($extractedTag);
             if ($adjustmentUsage) {
                 echo json_encode([
                     'success' => false,
@@ -7165,6 +7229,32 @@ class WarehouseController {
                 ]);
                 exit;
             }
+
+            // Damage Module Protection: Check if this piece tag is actively recorded as DAMAGED
+            $dmgCheck = Database::fetchOne(
+                "SELECT wd.id, wd.damage_number, wd.damage_reason, wd.defect_type, wd.status,
+                        p.name as product_name, pv.sku
+                 FROM warehouse_damages wd
+                 JOIN product_variants pv ON wd.variant_id = pv.id
+                 JOIN products p ON pv.product_id = p.id
+                 WHERE (wd.tag_code = ? OR wd.tag_code LIKE ? OR wd.tag_code LIKE ? OR wd.tag_code LIKE ?)
+                   AND wd.status NOT IN ('REPAIRED', 'RESTOCKED', 'SALVAGED', 'WRITTEN_OFF')
+                 LIMIT 1",
+                [$scannedPieceTag, $scannedPieceTag . ',%', '%,' . $scannedPieceTag, '%,' . $scannedPieceTag . ',%']
+            );
+            if ($dmgCheck) {
+                echo json_encode([
+                    'success'       => false,
+                    'is_damaged'     => true,
+                    'damage_number' => $dmgCheck['damage_number'],
+                    'damage_reason' => $dmgCheck['damage_reason'],
+                    'product_name'  => $dmgCheck['product_name'],
+                    'sku'           => $dmgCheck['sku'],
+                    'tag_code'      => $scannedPieceTag,
+                    'message'       => "This product is marked as DAMAGED! (Case #{$dmgCheck['damage_number']} - Reason: {$dmgCheck['damage_reason']}). Damaged products cannot be allocated!"
+                ]);
+                exit;
+            }
         }
 
         // Guardrail: Check if this piece tag or candidate code is already allocated in ANY active/dispatched/delivered allocation
@@ -7272,6 +7362,25 @@ class WarehouseController {
             LEFT JOIN subcategories subcat ON p.subcategory_id = subcat.id
             LEFT JOIN sub_subcategories subsubcat ON p.sub_subcategory_id = subsubcat.id
         ";
+
+        // Strategy 0: Direct Match in warehouse_qr_codes (handles Series, Complementary, 3rd-Party & Return QR tags)
+        foreach ($candidateCodes as $c) {
+            if (empty($c)) continue;
+            $whQr = Database::fetchOne(
+                "SELECT wq.variant_id, wq.qr_code, wq.warehouse_id 
+                 FROM warehouse_qr_codes wq 
+                 WHERE UPPER(wq.qr_code) = UPPER(?) 
+                 LIMIT 1",
+                [$c]
+            );
+            if ($whQr && !empty($whQr['variant_id'])) {
+                $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [(int)$whQr['variant_id']]);
+                if ($variant) {
+                    $extractedTag = $whQr['qr_code'];
+                    break;
+                }
+            }
+        }
 
         // Strategy 1: Exact match on candidate codes against product_variants or products
         foreach ($candidateCodes as $c) {
@@ -7711,6 +7820,30 @@ class WarehouseController {
                 'message' => 'No matching product variant found for scanned code "' . htmlspecialchars($rawCode) . '"'
             ]);
             exit;
+        }
+
+        // Check if the resolved variant is marked with active unresolved damage in this warehouse
+        $activeDmgVariant = Database::fetchOne(
+            "SELECT wd.id, wd.damage_number, wd.damage_reason, wd.defect_type, wd.status
+             FROM warehouse_damages wd
+             WHERE wd.variant_id = ? " . ($warehouseId > 0 ? "AND wd.warehouse_id = {$warehouseId}" : "") . "
+               AND wd.status NOT IN ('REPAIRED', 'RESTOCKED', 'SALVAGED', 'WRITTEN_OFF')
+             LIMIT 1",
+            [(int)$variant['id']]
+        );
+        if ($activeDmgVariant) {
+            $variantDmgQty = (float)($activeDmgVariant['quantity'] ?? 0);
+            $totalWhAvail = (float)($avail['qty'] ?? 0);
+            if ($totalWhAvail <= 0 || !empty($extractedTag) && str_starts_with(strtoupper($extractedTag), 'DMG-')) {
+                echo json_encode([
+                    'success'       => false,
+                    'is_damaged'     => true,
+                    'damage_number' => $activeDmgVariant['damage_number'],
+                    'damage_reason' => $activeDmgVariant['damage_reason'],
+                    'message'       => "This product is marked as DAMAGED! (Case #{$activeDmgVariant['damage_number']} - Reason: {$activeDmgVariant['damage_reason']}). Damaged products cannot be allocated!"
+                ]);
+                exit;
+            }
         }
 
         $adjustmentUsage = StockAdjustment::findQrCodeUsage($extractedTag);

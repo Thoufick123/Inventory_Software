@@ -285,7 +285,7 @@ class Role {
                     'wastage'             => ['name' => 'Wastage Selling', 'icon' => 'bi-recycle', 'desc' => 'Fabric scrap selling tickets, scrap weights, and scrap invoices', 'department' => 'PRODUCTION'],
                     'stitching'           => ['name' => 'Stitching', 'icon' => 'bi-bounding-box', 'desc' => 'Line allocation, tailor piece-rate tracking, and bundle stitching', 'department' => 'PRODUCTION'],
                     'stitching_wastage'   => ['name' => 'Stitching Wastage', 'icon' => 'bi-trash3', 'desc' => 'Thread/trimming scrap, defect logs, and floor disposal', 'department' => 'PRODUCTION'],
-                    'production_expenses' => ['name' => 'Expenses & Assets', 'icon' => 'bi-currency-rupee', 'desc' => 'Machine spare parts, repair costs, and daily floor expenses', 'department' => 'PRODUCTION'],
+                    'production_expenses' => ['name' => 'Expenses', 'icon' => 'bi-currency-rupee', 'desc' => 'Machine maintenance, repair costs, threads, needles, and daily floor expenses', 'department' => 'PRODUCTION'],
                     'labels'              => ['name' => 'Labels', 'icon' => 'bi-tag', 'desc' => 'Brand tags, care labels, barcode sticker print batches', 'department' => 'PRODUCTION'],
                     'qc'                  => ['name' => 'QC', 'icon' => 'bi-shield-check', 'desc' => 'AQL inspections, passed/failed piece audits, and rework queues', 'department' => 'PRODUCTION'],
                     'inventory'           => ['name' => 'Inventory', 'icon' => 'bi-boxes', 'desc' => 'Unassigned lot staging bays and finished goods floor storage', 'department' => 'PRODUCTION'],

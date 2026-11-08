@@ -1,7 +1,6 @@
 <div class="page-header mb-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
     <div>
         <h2 class="mb-1"><i class="bi bi-bag-check me-2 text-primary"></i>Production Purchases</h2>
-        <span class="text-muted small">Manage supplier material purchases, fabric roll inwards, and procurement history</span>
     </div>
     <?php if (hasPermission('sellers', 'create')): ?>
         <a href="<?= url('production/purchases/create') ?>" class="btn btn-primary shadow-sm">
@@ -9,6 +8,11 @@
         </a>
     <?php endif; ?>
 </div>
+
+<?php
+$totalRollCount = count($fabricRollInventory);
+$totalInwardQty = (int)array_sum(array_map(fn($r) => max(1, (int)($r['quantity'] ?? 1)), $fabricRollInventory));
+?>
 
 <!-- Metrics Cards -->
 <div class="row g-3 mb-4">
@@ -34,8 +38,8 @@
         <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
                 <div class="text-muted small text-uppercase fw-semibold">Inward Fabric Rolls</div>
-                <div class="fs-3 fw-bold text-primary"><?= number_format(count($fabricRollInventory)) ?></div>
-                <div class="small text-muted">Total rolls received</div>
+                <div class="fs-3 fw-bold text-primary"><?= number_format($totalRollCount) ?></div>
+                <div class="small text-muted"><?= number_format($totalInwardQty) ?> pieces / total qty</div>
             </div>
         </div>
     </div>
@@ -61,7 +65,7 @@
     <li class="nav-item" role="presentation">
         <button class="nav-link fw-bold py-3 text-start text-sm-center" id="tab-details-link" data-bs-toggle="tab" data-bs-target="#tab-details" type="button" role="tab" aria-controls="tab-details" aria-selected="false">
             <i class="bi bi-layers-half me-2 text-success"></i>Roll &amp; Inward Details
-            <span class="badge bg-success-subtle text-success border ms-2"><?= count($fabricRollInventory) ?> Rolls</span>
+            <span class="badge bg-success-subtle text-success border ms-2"><?= $totalRollCount ?> Rolls (<?= $totalInwardQty ?> Qty)</span>
         </button>
     </li>
 </ul>
@@ -100,7 +104,8 @@
                 <?php else: foreach ($purchases as $idx => $purchase): 
                     $rollItems = array_filter($purchase['items'] ?? [], fn($it) => ($it['item_type'] ?? '') === 'FABRIC_ROLL');
                     $supplyItems = array_filter($purchase['items'] ?? [], fn($it) => ($it['item_type'] ?? '') === 'GENERAL_SUPPLY');
-                    $rollCount = count($rollItems);
+                    $rollItemCount = count($rollItems);
+                    $rollQtySum = (int)array_sum(array_map(fn($it) => max(1, (int)($it['quantity'] ?? 1)), $rollItems));
                     $supplyCount = count($supplyItems);
                     $totalWeight = array_sum(array_column($rollItems, 'weight_kg'));
                 ?>
@@ -118,9 +123,9 @@
                         </td>
                         <td>
                             <div class="d-flex align-items-center gap-1 flex-wrap mb-1">
-                                <?php if ($rollCount > 0): ?>
+                                <?php if ($rollItemCount > 0): ?>
                                     <span class="badge bg-primary-subtle text-primary border fw-semibold">
-                                        <i class="bi bi-layers me-1"></i><?= $rollCount ?> <?= $rollCount === 1 ? 'Roll' : 'Rolls' ?>
+                                        <i class="bi bi-layers me-1"></i><?= $rollItemCount ?> <?= $rollItemCount === 1 ? 'Roll' : 'Rolls' ?><?php if ($rollQtySum > $rollItemCount): ?> (<?= $rollQtySum ?> Qty)<?php endif; ?>
                                     </span>
                                     <span class="badge bg-light text-dark border">
                                         <?= number_format($totalWeight, 2) ?> kg
@@ -132,11 +137,17 @@
                                     </span>
                                 <?php endif; ?>
                             </div>
-                            <?php if ($rollCount > 0): ?>
-                                <div class="small text-muted font-monospace text-truncate" style="max-width: 320px;" title="<?= e(implode(', ', array_map(fn($r) => $r['roll_number'] ?: ('Roll #' . $r['id']), $rollItems))) ?>">
-                                    <?= e(implode(', ', array_slice(array_map(fn($r) => $r['roll_number'] ?: ('Roll #' . $r['id']), $rollItems), 0, 3))) ?>
-                                    <?php if ($rollCount > 3): ?>
-                                        <span class="text-secondary fw-normal font-sans">+<?= $rollCount - 3 ?> more</span>
+                            <?php if ($rollItemCount > 0): 
+                                $rollSummaryLabels = array_map(function($r) {
+                                    $name = $r['roll_number'] ?: ('Roll #' . $r['id']);
+                                    $qty = (int)($r['quantity'] ?? 1);
+                                    return $qty > 1 ? "{$name} ({$qty})" : $name;
+                                }, $rollItems);
+                            ?>
+                                <div class="small text-muted font-monospace text-truncate" style="max-width: 320px;" title="<?= e(implode(', ', $rollSummaryLabels)) ?>">
+                                    <?= e(implode(', ', array_slice($rollSummaryLabels, 0, 3))) ?>
+                                    <?php if (count($rollItems) > 3): ?>
+                                        <span class="text-secondary fw-normal font-sans">+<?= count($rollItems) - 3 ?> more</span>
                                     <?php endif; ?>
                                 </div>
                             <?php endif; ?>

@@ -468,9 +468,19 @@ $existingItems = array_map(static function (array $item): array {
             if (payload.data && payload.data.is_damaged) {
                 const alertEl = document.createElement('div');
                 alertEl.className = 'list-group-item list-group-item-danger border-danger fw-bold small p-3 d-flex align-items-center gap-2';
-                alertEl.innerHTML = `<i class="bi bi-shield-x text-danger fs-4"></i><div><span class="d-block text-danger">${payload.data.message}</span><small class="text-dark fw-normal">Damage Record: <strong>${payload.data.damage_number}</strong> · Reason: ${payload.data.damage_reason}</small></div>`;
+                alertEl.innerHTML = `<i class="bi bi-shield-x text-danger fs-4"></i><div><span class="d-block text-danger">${payload.data.message}</span><small class="text-dark fw-normal">Damage Record: <strong>${payload.data.damage_number || 'N/A'}</strong> · Reason: ${payload.data.damage_reason || 'Quarantined'}</small></div>`;
                 resultBox.append(alertEl);
                 document.getElementById('cartMessage').innerHTML = `<div class="alert alert-danger py-1.5 px-3 fw-bold small mb-0"><i class="bi bi-exclamation-octagon-fill me-1"></i> ${payload.data.message}</div>`;
+                return;
+            }
+
+            // Check if item has already been outwarded to warehouse
+            if (payload.data && payload.data.is_outwarded) {
+                const alertEl = document.createElement('div');
+                alertEl.className = 'list-group-item list-group-item-warning border-warning fw-bold small p-3 d-flex align-items-center gap-2';
+                alertEl.innerHTML = `<i class="bi bi-truck text-warning fs-4"></i><div><span class="d-block text-warning-emphasis">${payload.data.message}</span><small class="text-dark fw-normal">Outward Dispatch: <strong>${payload.data.outward_number || 'N/A'}</strong> · Destination: ${payload.data.warehouse_name || 'Warehouse'}</small></div>`;
+                resultBox.append(alertEl);
+                document.getElementById('cartMessage').innerHTML = `<div class="alert alert-warning py-1.5 px-3 fw-bold small mb-0"><i class="bi bi-exclamation-triangle-fill me-1"></i> ${payload.data.message}</div>`;
                 return;
             }
 

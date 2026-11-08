@@ -1,13 +1,10 @@
 <div class="page-header mb-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
     <div>
         <h2 class="mb-1"><i class="bi bi-receipt me-2 text-primary"></i><?= e($purchase['purchase_number']) ?></h2>
-        <span class="text-muted">Purchase details and itemized tax summary</span>
     </div>
     <div class="d-flex gap-2">
-        <a href="<?= url('production/purchases/roll-qr/' . $purchase['id']) ?>" target="_blank" class="btn btn-outline-dark"><i class="bi bi-qr-code me-1"></i>Roll QR Labels</a>
-        <a href="<?= url('production/purchases/print/' . $purchase['id']) ?>" target="_blank" class="btn btn-outline-primary"><i class="bi bi-printer me-1"></i>Print</a>
-        <a href="<?= url('production/purchases') ?>" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Purchases</a>
-    </div>
+        <a href="<?= url('production/purchases') ?>" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
+       </div>
 </div>
 
 <div class="row g-3 mb-4">

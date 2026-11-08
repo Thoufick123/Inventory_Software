@@ -228,7 +228,7 @@ class ProductionReportService
             $data['wastage'] = array_merge($cuttingWastage, $stitchingWastage);
         }
 
-        // 12. Expenses & Assets
+        // 12. Production Expenses
         if (in_array('expenses', $selectedModules, true)) {
             $data['expenses'] = Database::fetchAll(
                 "SELECT pe.item_name AS title, pe.category,
@@ -760,9 +760,9 @@ class ProductionReportService
             fputcsv($out, []);
         }
 
-        // 13. Production Expenses & Machinery Assets
+        // 13. Production Expenses
         if (!empty($data['expenses'])) {
-            fputcsv($out, ['=== 13. PRODUCTION EXPENSES & ASSETS ===']);
+            fputcsv($out, ['=== 13. PRODUCTION EXPENSES ===']);
             fputcsv($out, ['Expense Title', 'Category', 'Unit', 'Total Cost (INR)', 'Paid (INR)', 'Pending (INR)', 'Payment Status', 'Expense Date']);
             foreach ($data['expenses'] as $e) {
                 fputcsv($out, [

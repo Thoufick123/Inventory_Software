@@ -151,6 +151,7 @@ class Router {
         $this->post('admin/production-units/delete/{id}', 'AdminController', 'deleteProductionUnit', ['AuthMiddleware']);
         $this->post('admin/production-units/toggle/{id}', 'AdminController', 'toggleProductionUnit', ['AuthMiddleware']);
         $this->post('api/admin/production-units/quick-add', 'AdminController', 'ajaxAddProductionUnit', ['AuthMiddleware']);
+        $this->get('api/qr/status-finder', 'AdminController', 'ajaxQrStatusFinder', ['AuthMiddleware']);
 
         // Warehouses Management
         $this->post('admin/warehouses/store', 'AdminController', 'storeWarehouse', ['AuthMiddleware']);
@@ -452,7 +453,7 @@ class Router {
         $this->post('production/stitching-wastage/delete/{id}', 'ProductionController', 'deleteStitchingWastage', ['AuthMiddleware', ['PermissionMiddleware', 'stitching_wastage', 'delete']]);
         $this->get('production/stitching-wastage/receipt/{id}', 'ProductionController', 'stitchingWastageReceipt', ['AuthMiddleware', ['PermissionMiddleware', 'stitching_wastage', 'view']]);
 
-        // Production Expenses & Assets Management (Unit 1 & Unit 2)
+        // Production Expenses Management (Unit 1 & Unit 2)
         $this->get('production/expenses', 'ProductionController', 'expensesList', ['AuthMiddleware', ['PermissionMiddleware', 'production_expenses', 'view']]);
         $this->post('production/expenses/store', 'ProductionController', 'storeExpense', ['AuthMiddleware', ['PermissionMiddleware', 'production_expenses', 'create']]);
         $this->post('production/expenses/update/{id}', 'ProductionController', 'updateExpense', ['AuthMiddleware', ['PermissionMiddleware', 'production_expenses', 'edit']]);

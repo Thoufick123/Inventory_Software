@@ -45,6 +45,7 @@
         <span class="text-secondary"><?= date('l, d F Y') ?> &bull; Enterprise Manufacturing, Warehouse & Retail Command Center</span>
     </div>
     <div class="d-flex align-items-center gap-2">
+        <button type="button" class="btn btn-outline-dark shadow-sm fw-semibold d-flex align-items-center gap-1.5" data-bs-toggle="modal" data-bs-target="#qrStatusFinderModal"><i class="bi bi-qr-code-scan text-primary"></i><span>QR Status Finder</span></button>
         <div class="dropdown">
             <button class="btn btn-primary dropdown-toggle shadow-sm" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                 <i class="bi bi-plus-circle me-1"></i> Quick Add

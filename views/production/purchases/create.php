@@ -188,11 +188,107 @@
     </div>
 </div>
 <style>
-.purchase-label-card{width:250px;min-height:130px;border:1.5px solid #0f172a;border-radius:6px;background:#fff;padding:8px;display:flex;gap:8px;align-items:center}
-.purchase-label-qr{width:76px;height:76px;flex-shrink:0}
-.purchase-label-qr img,.purchase-label-qr canvas{width:100%!important;height:100%!important}
-.purchase-label-code{font-family:monospace;font-size:10px;font-weight:800;word-break:break-all}
-.purchase-label-info{font-size:9px;overflow-wrap:anywhere}
+.roll-label-card {
+    width: 275px;
+    min-height: 155px;
+    background: #ffffff;
+    border: 1.5px solid #0f172a;
+    border-radius: 8px;
+    padding: 10px 12px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: relative;
+    box-sizing: border-box;
+}
+.label-header {
+    border-bottom: 1px dashed #cbd5e1;
+    padding-bottom: 4px;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+.company-tag {
+    font-size: 8.5px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    color: #1e293b;
+    text-transform: uppercase;
+    line-height: 1.2;
+    max-width: 175px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.po-tag {
+    font-size: 8px;
+    font-weight: 700;
+    color: #0284c7;
+    font-family: monospace;
+    background: #e0f2fe;
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+.label-body {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.qr-box {
+    width: 72px;
+    height: 72px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    padding: 2px;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+}
+.qr-box img, .qr-box canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+.label-meta {
+    flex-grow: 1;
+    font-size: 9.5px;
+    line-height: 1.35;
+    min-width: 0;
+}
+.roll-badge-num {
+    font-family: monospace;
+    font-size: 11px;
+    font-weight: 900;
+    color: #0f172a;
+    display: block;
+    margin-bottom: 2px;
+    letter-spacing: 0.5px;
+}
+.meta-line {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: #334155;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.meta-line strong {
+    color: #0f172a;
+}
+.label-footer {
+    border-top: 1px dashed #cbd5e1;
+    padding-top: 4px;
+    margin-top: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 8px;
+    color: #64748b;
+}
 </style>
 
 <template id="fabricRollTemplate">
@@ -529,8 +625,6 @@
     }
 
     function previewLabels() {
-        const supplier = document.getElementById('purchaseSeller');
-        if (!supplier.value) { alert('Select a supplier before previewing labels.'); supplier.focus(); return; }
         const material = document.getElementById('fabricDescription').value.trim().toUpperCase();
         if (!material) { document.getElementById('fabricDescription').focus(); return; }
         const rolls = Array.from(rollsContainer.querySelectorAll('.roll-card'));
@@ -538,24 +632,55 @@
         const labelCards = document.getElementById('purchaseLabelCards');
         labelCards.innerHTML = '';
         let labelCount = 0;
+        const supplierName = supplier.options[supplier.selectedIndex]?.text?.trim() || 'SUPPLIER';
+
         rolls.forEach((card, index) => {
             const qty = Number(card.querySelector('.roll-quantity').value) || 1;
             const start = Number(card.dataset.startSeq) || nextSequence;
             const roll = card.querySelector('.roll-number').value || 'ROLL #' + (index + 1);
-            const supplierName = supplier.options[supplier.selectedIndex].text;
             const weight = Number(card.querySelector('.roll-weight').value) || 0;
+            const pieceWeight = qty > 0 ? (weight / qty).toFixed(2) : weight.toFixed(2);
+            const color = (card.querySelector('.roll-color')?.value?.trim() || 'STANDARD').toUpperCase();
+            const design = (card.querySelector('.roll-design')?.value?.trim() || '').toUpperCase();
+
             for (let piece = 0; piece < qty; piece++) {
                 const code = sequencePrefix + String(start + piece).padStart(2, '0');
+                const pieceLabel = qty > 1 ? `${roll} (${piece + 1}/${qty})` : roll;
+
                 const sticker = document.createElement('div');
-                sticker.className = 'purchase-label-card';
-                sticker.innerHTML = `<div class="purchase-label-qr"></div><div class="purchase-label-info"><div class="fw-bold">${safe(supplierName)}</div><div class="purchase-label-code">${safe(code)}</div><div>${safe(roll)}</div><div>${safe(material)}</div><div>${safe(card.querySelector('.roll-color').value)} · ${safe(card.querySelector('.roll-design').value)}</div><div>${weight.toFixed(2)} kg · Piece ${piece + 1} of ${qty}</div></div>`;
+                sticker.className = 'roll-label-card';
+                sticker.innerHTML = `
+                    <div class="label-header">
+                        <div class="company-tag" title="${safe(supplierName)}">${safe(supplierName)}</div>
+                        <div class="po-tag">PO PREVIEW</div>
+                    </div>
+                    <div class="label-body">
+                        <div class="qr-box"></div>
+                        <div class="label-meta">
+                            <span class="roll-badge-num">${safe(pieceLabel)}</span>
+                            <div class="meta-line"><span>Fabric:</span> <strong>${safe(material.length > 16 ? material.substring(0, 16) + '...' : material)}</strong></div>
+                            <div class="meta-line"><span>Color:</span> <strong>${safe(color)}</strong></div>
+                            <div class="meta-line"><span>Weight:</span> <strong style="color:#0284c7">${pieceWeight} kg</strong></div>
+                            <div class="meta-line"><span>Code:</span> <span class="font-monospace text-muted" style="font-size:8px">${safe(code)}</span></div>
+                        </div>
+                    </div>
+                    <div class="label-footer">
+                        <span>GRM MFG</span>
+                    </div>
+                `;
                 labelCards.appendChild(sticker);
-                const qrTarget = sticker.querySelector('.purchase-label-qr');
+                const qrTarget = sticker.querySelector('.qr-box');
                 if (window.QRCode) {
-                    new QRCode(qrTarget, {text: `${code}|${supplierName}|${roll}|${material}`, width:76, height:76, correctLevel:QRCode.CorrectLevel.M});
+                    new QRCode(qrTarget, {
+                        text: code,
+                        width: 72,
+                        height: 72,
+                        colorDark: "#000000",
+                        colorLight: "#ffffff",
+                        correctLevel: QRCode.CorrectLevel.L
+                    });
                 } else {
                     qrTarget.textContent = code;
-                    qrTarget.classList.add('purchase-label-code');
                 }
                 labelCount++;
             }
