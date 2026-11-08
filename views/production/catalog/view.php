@@ -20,18 +20,6 @@
         </div>
     </div>
     <div class="d-flex gap-2 flex-wrap">
-        <a href="<?= url('production/programs/create?product_id=' . $product['id']) ?>" class="btn btn-primary">
-            <i class="bi bi-kanban me-1"></i> Start Production Program
-        </a>
-        <a href="<?= url('production/catalog/edit/' . $product['id']) ?>" class="btn btn-outline-primary">
-            <i class="bi bi-pencil me-1"></i> Edit Style
-        </a>
-        <form method="POST" action="<?= url('production/catalog/delete/' . $product['id']) ?>" class="d-inline mb-0" onsubmit="return confirm('Are you sure you want to delete this product style?');">
-            <?= CSRF::field() ?>
-            <button type="submit" class="btn btn-outline-danger">
-                <i class="bi bi-trash me-1"></i> Delete Style
-            </button>
-        </form>
         <a href="<?= url('production/catalog') ?>" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i> Back to Catalog
         </a>
@@ -41,18 +29,13 @@
 <div class="row g-4">
     <!-- Left Column: Image & Core Info -->
     <div class="col-lg-4">
-        <div class="card shadow-sm border-0 mb-4">
-            <div class="card-body text-center p-3">
-                <?php if (!empty($product['image_url'])): ?>
+        <?php if (!empty($product['image_url'])): ?>
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-body text-center p-3">
                     <img src="<?= e($product['image_url']) ?>" class="img-fluid rounded border shadow-sm w-100" style="max-height: 320px; object-fit: contain;" alt="<?= e($product['name']) ?>">
-                <?php else: ?>
-                    <div class="py-5 bg-light rounded text-muted border">
-                        <i class="bi bi-image fs-1 d-block mb-2 text-secondary"></i>
-                        <span>No Photo Uploaded</span>
-                    </div>
-                <?php endif; ?>
+                </div>
             </div>
-        </div>
+        <?php endif; ?>
 
         <div class="card shadow-sm border-0 mb-4">
             <div class="card-header bg-white py-3 border-bottom">
@@ -171,9 +154,6 @@
                 <h5 class="card-title mb-0 fw-bold text-dark">
                     <i class="bi bi-kanban me-2 text-primary"></i> Linked Production Programs
                 </h5>
-                <a href="<?= url('production/programs/create?product_id=' . $product['id']) ?>" class="btn btn-sm btn-outline-primary">
-                    <i class="bi bi-plus-circle me-1"></i> Plan New Program
-                </a>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">

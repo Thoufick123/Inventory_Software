@@ -23,6 +23,7 @@ class Database {
             
             try {
                 self::$instance = new PDO($dsn, $config['username'], $config['password'], $config['options'] ?? []);
+                self::$instance->exec("SET time_zone = '+05:30'");
             } catch (PDOException $e) {
                 error_log("Database connection failed: " . $e->getMessage());
                 if (function_exists('env') && env('APP_DEBUG', false)) {
@@ -177,6 +178,20 @@ class Database {
      */
     public static function lastInsertId(): string {
         return self::getInstance()->lastInsertId();
+    }
+
+    /**
+     * Ensure a column exists in a table (idempotent schema helper).
+     */
+    public static function ensureColumn(string $table, string $column, string $definition): void {
+        try {
+            $cols = array_column(self::fetchAll("DESCRIBE `$table`"), 'Field');
+            if (!in_array($column, $cols, true)) {
+                self::execute("ALTER TABLE `$table` ADD COLUMN `$column` $definition");
+            }
+        } catch (Throwable $e) {
+            // Silently ignore if already exists
+        }
     }
 
     /**

@@ -3,7 +3,23 @@
     <span class="text-muted">Pack QC-passed goods into delivery boxes and assign destination warehouse</span>
 </div>
 
-<?php if ($selectedQC && ($selectedQC['remaining_qty'] ?? 1) <= 0 && ($selectedQC['already_packed_qty'] ?? 0) > 0): ?>
+<?php if ($selectedQC && ($selectedQC['remaining_qty'] ?? 1) <= 0 && ($selectedQC['already_packed_qty'] ?? 0) > 0 && ($totalQCRework ?? 0) > 0): ?>
+    <div class="alert alert-warning border border-warning-subtle shadow-sm p-3 mb-4 rounded-3">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
+            <div class="d-flex align-items-center gap-3">
+                <div class="p-3 bg-warning bg-opacity-20 text-warning rounded-circle">
+                    <i class="bi bi-tools fs-2"></i>
+                </div>
+                <div>
+                    <h5 class="fw-bold mb-1 text-dark">Reworked Inventory Available for Next Batch</h5>
+                    <p class="text-muted small mb-0">
+                        All regular QC-passed pieces have been packed, but <strong><?= number_format($totalQCRework) ?> repaired / reworked pieces</strong> are available. Enable the <strong>Admin Rework Option</strong> toggle below to pack these reworked pieces into a new batch for Outward dispatch.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+<?php elseif ($selectedQC && ($selectedQC['remaining_qty'] ?? 1) <= 0 && ($selectedQC['already_packed_qty'] ?? 0) > 0): ?>
     <div class="alert alert-info border border-info-subtle shadow-sm p-3 mb-4 rounded-3">
         <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
             <div class="d-flex align-items-center gap-3">
@@ -58,7 +74,7 @@
                             <option value="">-- Select QC Batch --</option>
                             <?php foreach ($qcBatches as $qb): ?>
                                 <option value="<?= $qb['id'] ?>" <?= ($selectedQC && (int)$selectedQC['id'] === (int)$qb['id']) ? 'selected' : '' ?>>
-                                    QC #<?= $qb['id'] ?> (<?= e($qb['program_number'] ?? '') ?> — <?= e($qb['product_name'] ?? '') ?>) [<?= number_format($qb['remaining_qty'] ?? $qb['passed_qty']) ?> pcs remaining / <?= number_format($qb['total_qc_passed'] ?? $qb['passed_qty']) ?> pcs passed]
+                                    QC #<?= $qb['id'] ?> (<?= e($qb['program_number'] ?? '') ?> — <?= e($qb['product_name'] ?? '') ?>) [<?= number_format($qb['remaining_qty'] ?? $qb['passed_qty']) ?> pcs rem<?= !empty($qb['total_qc_rework']) ? ' · ' . number_format($qb['total_qc_rework']) . ' rework' : '' ?> / <?= number_format($qb['total_qc_passed'] ?? $qb['passed_qty']) ?> passed]
                                 </option>
                             <?php endforeach; ?>
                         </select>
@@ -75,18 +91,22 @@
                         <div class="mb-3 p-3 bg-light rounded border">
                             <div class="small text-muted fw-semibold">Program &amp; Product</div>
                             <div class="fw-bold text-dark"><?= e($selectedQC['program_number']) ?> — <?= e($selectedQC['product_name']) ?></div>
-                            <div class="row g-2 mt-2 pt-2 border-top">
-                                <div class="col-4">
-                                    <div class="small text-muted">Total Passed</div>
-                                    <div class="fw-bold text-dark"><?= number_format($selectedQC['total_qc_passed'] ?? $selectedQC['passed_qty']) ?> pcs</div>
+                            <div class="row g-2 mt-2 pt-2 border-top text-center">
+                                <div class="col-3">
+                                    <div class="small text-muted" style="font-size: 10px;">Total Passed</div>
+                                    <div class="fw-bold text-dark small"><?= number_format($selectedQC['total_qc_passed'] ?? $selectedQC['passed_qty']) ?></div>
                                 </div>
-                                <div class="col-4">
-                                    <div class="small text-muted">Already Packed</div>
-                                    <div class="fw-bold text-danger"><?= number_format($selectedQC['already_packed_qty'] ?? 0) ?> pcs</div>
+                                <div class="col-3">
+                                    <div class="small text-muted" style="font-size: 10px;">Packed</div>
+                                    <div class="fw-bold text-danger small"><?= number_format($selectedQC['already_packed_qty'] ?? 0) ?></div>
                                 </div>
-                                <div class="col-4">
-                                    <div class="small text-muted">Remaining</div>
-                                    <div class="fw-bold text-success"><i class="bi bi-check-circle-fill me-1"></i><?= number_format($selectedQC['remaining_qty'] ?? $selectedQC['passed_qty']) ?> pcs</div>
+                                <div class="col-3">
+                                    <div class="small text-muted" style="font-size: 10px;">Passed Rem.</div>
+                                    <div class="fw-bold text-success small"><?= number_format($selectedQC['remaining_qty'] ?? $selectedQC['passed_qty']) ?></div>
+                                </div>
+                                <div class="col-3">
+                                    <div class="small text-muted" style="font-size: 10px;">Rework</div>
+                                    <div class="fw-bold text-warning small"><?= number_format($totalQCRework ?? 0) ?></div>
                                 </div>
                             </div>
                         </div>
@@ -119,6 +139,27 @@
                     <h5 class="card-title mb-0 fw-bold"><i class="bi bi-grid-3x3 me-2 text-primary"></i>Packed Quantities</h5>
                     <span class="badge bg-success fs-6 px-3 py-2" id="totalPackedBadge">0 pcs Packed</span>
                 </div>
+                <?php if ($selectedQC && ($totalQCRework ?? 0) > 0): ?>
+                    <div class="p-3 bg-warning bg-opacity-10 border-bottom border-warning-subtle">
+                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" role="switch" name="include_rework" id="toggleIncludeRework" value="1" <?= !empty($includeRework) ? 'checked' : '' ?> onchange="onToggleReworkOption(this.checked)">
+                                <label class="form-check-label fw-bold text-dark cursor-pointer" for="toggleIncludeRework">
+                                    <i class="bi bi-tools text-warning me-1"></i> Include Reworked / Repaired Garments in this Batch (Admin Option)
+                                </label>
+                            </div>
+                            <div>
+                                <span class="badge bg-warning text-dark border border-warning-subtle fw-semibold" id="reworkCountBadge">
+                                    <i class="bi bi-arrow-repeat me-1"></i> <?= number_format($totalQCRework ?? 0) ?> Rework Pcs in this QC Batch
+                                </span>
+                            </div>
+                        </div>
+                        <div id="reworkNoticeBox" class="small text-muted mt-2 pt-2 border-top border-warning-subtle <?= empty($includeRework) ? 'd-none' : '' ?>">
+                            <i class="bi bi-info-circle-fill text-warning me-1"></i>
+                            <strong>Admin Rework Flow Active:</strong> Repaired and reworked pieces are unlocked into the packable pool. These items will be packed into the master cartons and loaded directly for Outward Dispatch to the Central Warehouse.
+                        </div>
+                    </div>
+                <?php endif; ?>
                 <div class="card-body p-0 flex-grow-1">
                     <?php if (!$selectedQC): ?>
                         <div class="p-5 text-center text-muted my-auto">
@@ -143,15 +184,21 @@
                                 </thead>
                                 <tbody>
                                     <?php foreach ($items as $idx => $it): 
-                                        $remQty = (int)($it['remaining_qty'] ?? $it['passed_qty']);
+                                        $reworkQty = (int)($it['rework_qty'] ?? 0);
+                                        $remPassedQty = (int)($it['remaining_qty'] ?? $it['passed_qty']);
+                                        $effectivePackable = $remPassedQty + (!empty($includeRework) ? $reworkQty : 0);
                                         $availablePieceTags = array_values($it['available_piece_tags'] ?? []);
                                         $hasAvailableTags = !empty($availablePieceTags);
-                                        $packQty = $hasAvailableTags ? min($remQty, count($availablePieceTags)) : $remQty;
+                                        $packQty = $hasAvailableTags ? min($effectivePackable, count($availablePieceTags)) : $effectivePackable;
                                         $isZero = ($packQty <= 0);
                                         $rejectedQty = (int)($it['rejected_qty'] ?? 0);
-                                        $reworkQty = (int)($it['rework_qty'] ?? 0);
                                     ?>
-                                        <tr class="variant-item-row <?= $isZero ? 'table-light opacity-75' : '' ?>" data-variant-name="<?= e($it['size_name'] ?? $it['display_size'] ?? 'Standard') ?> / <?= e($it['color_name'] ?? $it['display_color'] ?? 'Assorted') ?>" data-passed="<?= $packQty ?>" data-is-zero="<?= $isZero ? '1' : '0' ?>">
+                                        <tr class="variant-item-row <?= $isZero ? 'table-light opacity-75' : '' ?>" 
+                                            data-variant-name="<?= e($it['size_name'] ?? $it['display_size'] ?? 'Standard') ?> / <?= e($it['color_name'] ?? $it['display_color'] ?? 'Assorted') ?>" 
+                                            data-passed="<?= $packQty ?>" 
+                                            data-passed-qty="<?= $remPassedQty ?>"
+                                            data-rework-qty="<?= $reworkQty ?>"
+                                            data-is-zero="<?= $isZero ? '1' : '0' ?>">
                                             <td>
                                                 <input type="hidden" name="items[<?= $idx ?>][qc_item_id]" value="<?= $it['id'] ?>">
                                                 <input type="hidden" name="items[<?= $idx ?>][variant_id]" value="<?= $it['variant_id'] ?? '' ?>">
@@ -163,14 +210,19 @@
                                             </td>
                                             <td>
                                                 <div>
-                                                    <?php if ($isZero): ?>
+                                                    <?php if ($effectivePackable <= 0): ?>
                                                         <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1">
                                                             <i class="bi bi-slash-circle me-1"></i>0 pcs Available (Fully Packed)
                                                         </span>
                                                     <?php else: ?>
                                                         <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
-                                                            <i class="bi bi-box-seam me-1"></i><?= number_format($remQty) ?> pcs Available
+                                                            <i class="bi bi-box-seam me-1"></i><?= number_format($remPassedQty) ?> pcs Passed Available
                                                         </span>
+                                                        <?php if ($reworkQty > 0): ?>
+                                                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1 mt-1 d-inline-block">
+                                                                <i class="bi bi-tools me-1"></i><?= number_format($reworkQty) ?> Rework Pcs <?= !empty($includeRework) ? '(Unlocked)' : '(Admin Toggle)' ?>
+                                                            </span>
+                                                        <?php endif; ?>
                                                     <?php endif; ?>
                                                 </div>
                                                 <?php if (($it['already_packed'] ?? 0) > 0): ?>
@@ -245,7 +297,12 @@
                                                 <?php if ($isZero): ?>
                                                     <div class="small text-muted mt-1"><i class="bi bi-lock-fill me-1"></i>0 pcs remaining (Disabled)</div>
                                                 <?php else: ?>
-                                                    <div class="small text-muted mt-1">Max: <?= number_format($packQty) ?> pcs</div>
+                                                    <small class="text-muted d-block mt-1">
+                                                        Max: <span class="max-display-val"><?= number_format($packQty) ?></span> pcs
+                                                        <?php if (!empty($includeRework) && $reworkQty > 0): ?>
+                                                            <span class="text-warning fw-semibold">(incl. <?= $reworkQty ?> rework)</span>
+                                                        <?php endif; ?>
+                                                    </small>
                                                 <?php endif; ?>
                                             </td>
                                         </tr>
@@ -259,7 +316,7 @@
                     <a href="<?= url('production/batches') ?>" class="btn btn-outline-secondary">
                         <i class="bi bi-x-circle me-1"></i> Cancel
                     </a>
-                    <?php if ($selectedQC && ($selectedQC['remaining_qty'] ?? 1) <= 0 && ($selectedQC['already_packed_qty'] ?? 0) > 0): ?>
+                    <?php if ($selectedQC && ($selectedQC['remaining_qty'] ?? 1) <= 0 && ($selectedQC['already_packed_qty'] ?? 0) > 0 && ($totalQCRework ?? 0) <= 0): ?>
                         <a href="<?= url('production/batches' . (!empty($existingBatches[0]['batch_number']) ? '?search=' . urlencode($existingBatches[0]['batch_number']) : '')) ?>" class="btn btn-primary px-4 fw-semibold">
                             <i class="bi bi-box-seam me-1"></i> View Finished Batch (<?= e($existingBatches[0]['batch_number'] ?? '') ?>)
                         </a>
@@ -298,6 +355,16 @@
 </style>
 
 <script>
+function onToggleReworkOption(isChecked) {
+    const currentUrl = new URL(window.location.href);
+    if (isChecked) {
+        currentUrl.searchParams.set('include_rework', '1');
+    } else {
+        currentUrl.searchParams.delete('include_rework');
+    }
+    window.location.href = currentUrl.toString();
+}
+
 function handleQCBatchChange(qcBatchId) {
     if (qcBatchId) {
         window.location.href = '<?= url('production/batches/create') ?>?qc_batch_id=' + encodeURIComponent(qcBatchId);

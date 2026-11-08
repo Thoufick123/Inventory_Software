@@ -751,6 +751,14 @@ document.addEventListener('DOMContentLoaded', function() {
                             <div class="row g-2">
                                 <div class="col-md-6">
                                     <div class="form-check">
+                                        <input class="form-check-input export-mod-cb" type="checkbox" name="modules[]" value="purchases" id="modPurchases" checked>
+                                        <label class="form-check-label small fw-semibold" for="modPurchases">
+                                            <i class="bi bi-bag-check text-primary me-1"></i> Fabric Purchases (POs &amp; Invoices)
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
                                         <input class="form-check-input export-mod-cb" type="checkbox" name="modules[]" value="rolls" id="modRolls" checked>
                                         <label class="form-check-label small fw-semibold" for="modRolls">
                                             <i class="bi bi-stack text-primary me-1"></i> Fabric Rolls &amp; Inwards (Meters, Kg, Cost)
@@ -791,6 +799,22 @@ document.addEventListener('DOMContentLoaded', function() {
                                 </div>
                                 <div class="col-md-6">
                                     <div class="form-check">
+                                        <input class="form-check-input export-mod-cb" type="checkbox" name="modules[]" value="batches" id="modBatches" checked>
+                                        <label class="form-check-label small fw-semibold" for="modBatches">
+                                            <i class="bi bi-box-seam text-success me-1"></i> Finished Goods Batches (Master Cartons)
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input export-mod-cb" type="checkbox" name="modules[]" value="outward" id="modOutward" checked>
+                                        <label class="form-check-label small fw-semibold" for="modOutward">
+                                            <i class="bi bi-truck text-primary me-1"></i> Production Outward &amp; Dispatches
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
                                         <input class="form-check-input export-mod-cb" type="checkbox" name="modules[]" value="billing" id="modBilling" checked>
                                         <label class="form-check-label small fw-semibold" for="modBilling">
                                             <i class="bi bi-receipt text-primary me-1"></i> Production Billing &amp; Direct Sales (HSN &amp; GST)
@@ -826,6 +850,22 @@ document.addEventListener('DOMContentLoaded', function() {
                                         <input class="form-check-input export-mod-cb" type="checkbox" name="modules[]" value="expenses" id="modExpenses" checked>
                                         <label class="form-check-label small fw-semibold" for="modExpenses">
                                             <i class="bi bi-wallet2 text-warning me-1"></i> Expenses &amp; Machinery Assets
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input export-mod-cb" type="checkbox" name="modules[]" value="batches" id="modBatches" checked>
+                                        <label class="form-check-label small fw-semibold" for="modBatches">
+                                            <i class="bi bi-box-seam text-primary me-1"></i> Finished Goods Batches &amp; Cartons
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input export-mod-cb" type="checkbox" name="modules[]" value="outward" id="modOutward" checked>
+                                        <label class="form-check-label small fw-semibold" for="modOutward">
+                                            <i class="bi bi-truck text-success me-1"></i> Outward &amp; Warehouse Dispatches
                                         </label>
                                     </div>
                                 </div>

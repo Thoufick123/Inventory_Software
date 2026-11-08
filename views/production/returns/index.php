@@ -8,15 +8,12 @@
             <h4 class="fw-bold text-dark mb-1">
                 <i class="bi bi-arrow-return-left text-danger me-2"></i>Production Customer Returns &amp; Exchanges
             </h4>
-            <span class="text-muted small">Manage returns, exchanges, restocked pieces, and GST credit notes for factory direct sales</span>
-        </div>
+            </div>
         <div class="d-flex gap-2">
             <a href="<?= url('production/returns/create') ?>" class="btn btn-danger btn-sm fw-semibold shadow-sm px-3">
                 <i class="bi bi-plus-circle me-1"></i> Record Return / Exchange
             </a>
-            <a href="<?= url('production/billing') ?>" class="btn btn-outline-secondary btn-sm fw-semibold shadow-sm">
-                <i class="bi bi-receipt me-1"></i> View Invoices
-            </a>
+            
         </div>
     </div>
 

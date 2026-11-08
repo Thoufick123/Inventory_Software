@@ -10,12 +10,7 @@
     <div class="d-flex gap-2 flex-wrap">
         <?php if (hasPermission('batches', 'create')): ?>
         <a href="<?= url('production/batches/create') ?>" class="btn btn-success shadow-sm">
-            <i class="bi bi-box-seam me-1"></i> Option A: Pack for Central Warehouse
-        </a>
-        <?php endif; ?>
-        <?php if (hasPermission('production_billing', 'create')): ?>
-        <a href="<?= url('production/billing/create') ?>" class="btn btn-primary shadow-sm">
-            <i class="bi bi-receipt me-1"></i> Option B: Direct Factory B2B / Outlet Bill
+            <i class="bi bi-box-seam me-1"></i> Pack for Central Warehouse
         </a>
         <?php endif; ?>
     </div>
@@ -273,14 +268,14 @@ $inventoryVariantCount = array_sum(array_map(
                             </a>
                             <?php if (hasPermission('batches', 'create') && $variant['remaining_qty'] > 0): ?>
                                 <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id']) ?>"
-                                   class="btn btn-sm btn-outline-success text-nowrap" title="Option A: Pack into Boxes for Central Warehouse">
+                                   class="btn btn-sm btn-outline-success text-nowrap" title="Pack into Boxes for Central Warehouse">
                                     <i class="bi bi-box-seam me-1"></i>Pack (WH)
                                 </a>
                             <?php endif; ?>
-                            <?php if (hasPermission('production_billing', 'create') && $variant['remaining_qty'] > 0): ?>
-                                <a href="<?= url('production/billing/create?qc_batch_id=' . $batch['qc_batch_id']) ?>"
-                                   class="btn btn-sm btn-outline-primary text-nowrap" title="Option B: Direct Factory B2B Sale / Outlet Bill">
-                                    <i class="bi bi-receipt me-1"></i>Bill (Direct)
+                            <?php if (hasPermission('batches', 'create') && ($variant['rework_qty'] ?? 0) > 0): ?>
+                                <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id'] . '&include_rework=1') ?>"
+                                   class="btn btn-sm btn-outline-warning text-nowrap" title="Pack Reworked Pieces into Batch for Outward">
+                                    <i class="bi bi-tools me-1"></i>Pack Rework
                                 </a>
                             <?php endif; ?>
                         </div>
@@ -463,14 +458,14 @@ $inventoryVariantCount = array_sum(array_map(
                     </a>
                     <?php if (hasPermission('batches', 'create') && $batch['remaining_pieces'] > 0): ?>
                     <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id']) ?>" 
-                       class="btn btn-outline-success btn-sm fw-semibold" title="Option A: Pack Remaining Stock into Box Batch for Warehouse">
+                       class="btn btn-outline-success btn-sm fw-semibold" title="Pack Remaining Stock into Box Batch for Warehouse">
                         <i class="bi bi-box-seam me-1"></i>Pack (WH)
                     </a>
                     <?php endif; ?>
-                    <?php if (hasPermission('production_billing', 'create') && $batch['remaining_pieces'] > 0): ?>
-                    <a href="<?= url('production/billing/create?qc_batch_id=' . $batch['qc_batch_id']) ?>" 
-                       class="btn btn-outline-primary btn-sm fw-semibold" title="Option B: Direct Factory B2B Sale / Outlet Bill">
-                        <i class="bi bi-receipt me-1"></i>Bill (Direct)
+                    <?php if (hasPermission('batches', 'create') && ($batch['total_rework_pieces'] ?? 0) > 0): ?>
+                    <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id'] . '&include_rework=1') ?>" 
+                       class="btn btn-outline-warning btn-sm fw-semibold" title="Pack Reworked Pieces into Batch for Outward">
+                        <i class="bi bi-tools me-1"></i>Pack Rework
                     </a>
                     <?php endif; ?>
                 </div>

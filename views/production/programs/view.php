@@ -37,13 +37,7 @@
             Category: <strong class="text-dark"><?= e($catBreadcrumb) ?></strong>
         </span>
     </div>
-    <div class="d-flex gap-2">
-        <?php if ($program['status'] === 'APPROVED' || $program['status'] === 'IN_PROGRESS'): ?>
-            <a href="<?= url('production/cutting/create?program_id=' . $program['id']) ?>" class="btn btn-primary">
-                <i class="bi bi-scissors me-1"></i> New Cutting Batch
-            </a>
-        <?php endif; ?>
-    </div>
+  
 </div>
 
 <!-- Key Info Cards -->

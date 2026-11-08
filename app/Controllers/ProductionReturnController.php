@@ -1,14 +1,5 @@
 <?php
 
-namespace App\Controllers;
-
-use App\Core\Auth;
-use App\Core\Response;
-use App\Core\Session;
-use App\Helpers\Database;
-use App\Services\SettingsService;
-use Throwable;
-
 class ProductionReturnController
 {
     public function index(): void
@@ -367,6 +358,7 @@ class ProductionReturnController
             'items'         => $items,
             'bill'          => $bill,
             'sellerCompany' => SettingsService::getGroup('company'),
+            'prodUnit'      => ProductionUnit::getActiveFacility($return['production_unit_id'] ?? null),
         ]);
     }
 }

@@ -64,6 +64,7 @@ class ProductionBillingController
             'bill' => $bill,
             'billItems' => $this->loadBillItems((int)$bill['id']),
             'sellerCompany' => SettingsService::getGroup('company'),
+            'prodUnit' => ProductionUnit::getActiveFacility($bill['production_unit_id'] ?? null),
         ]);
     }
 
@@ -81,8 +82,33 @@ class ProductionBillingController
         }
 
         $billId = max(0, (int)($_GET['bill_id'] ?? 0));
-        $items = $this->getAvailableInventory($billId);
         $needle = strtoupper($query);
+
+        // Check if scanned tag / QR matches a quarantined item in Damage Management
+        $damagedMatch = Database::fetchOne(
+            "SELECT rd.damage_number, rd.damage_reason, rd.qr_code, rd.damaged_weight, rd.status,
+                    sr.roll_number
+             FROM roll_damages rd
+             LEFT JOIN seller_rolls sr ON sr.id = rd.seller_roll_id
+             WHERE (UPPER(TRIM(rd.qr_code)) = ? OR UPPER(TRIM(sr.roll_number)) = ? OR UPPER(TRIM(sr.qr_code)) = ?)
+               AND rd.status NOT IN ('CANCELLED', 'REJECTED')",
+            [$needle, $needle, $needle]
+        );
+
+        if ($damagedMatch) {
+            $dmgQr = !empty($damagedMatch['qr_code']) ? $damagedMatch['qr_code'] : $damagedMatch['roll_number'];
+            Response::jsonSuccess('Damaged item quarantined.', [
+                'items'         => [],
+                'is_damaged'    => true,
+                'damage_number' => $damagedMatch['damage_number'],
+                'damage_reason' => $damagedMatch['damage_reason'],
+                'qr_code'       => $dmgQr,
+                'message'       => "Cannot bill QR item '{$dmgQr}'! This item is quarantined in the Damage Management module (Damage #{$damagedMatch['damage_number']} — {$damagedMatch['damage_reason']}). Damaged items cannot be sold or billed!"
+            ]);
+            return;
+        }
+
+        $items = $this->getAvailableInventory($billId);
         $matches = [];
 
         foreach ($items as $item) {
@@ -229,12 +255,22 @@ class ProductionBillingController
             $soldRows
         ), true);
 
+        $damagedRows = Database::fetchAll(
+            "SELECT DISTINCT qr_code FROM roll_damages 
+             WHERE qr_code IS NOT NULL AND TRIM(qr_code) <> '' 
+               AND status NOT IN ('CANCELLED', 'REJECTED')"
+        );
+        $damagedTags = array_fill_keys(array_map(
+            static fn(array $row): string => strtoupper(trim((string)$row['qr_code'])),
+            $damagedRows
+        ), true);
+
         $available = [];
         foreach ($rows as $row) {
             $qcItemId = (int)$row['qc_item_id'];
             $tags = array_values(array_filter(
                 $tagsByItem[$qcItemId] ?? [],
-                static fn(string $tag): bool => !isset($soldTags[strtoupper(trim($tag))])
+                static fn(string $tag): bool => !isset($soldTags[strtoupper(trim($tag))]) && !isset($damagedTags[strtoupper(trim($tag))])
             ));
             if (!$tags) {
                 continue;
@@ -352,8 +388,28 @@ class ProductionBillingController
 
             $stock = $inventory[$qcItemId];
             $availableTagMap = array_fill_keys(array_map('strtoupper', $stock['available_tags']), true);
+            
+            // Check against Damage Management records
+            $damagedCheckRows = Database::fetchAll(
+                "SELECT rd.damage_number, rd.damage_reason, rd.qr_code, sr.roll_number
+                 FROM roll_damages rd
+                 LEFT JOIN seller_rolls sr ON sr.id = rd.seller_roll_id
+                 WHERE rd.status NOT IN ('CANCELLED', 'REJECTED')"
+            );
+            $damagedLookup = [];
+            foreach ($damagedCheckRows as $dCR) {
+                if (!empty($dCR['qr_code'])) $damagedLookup[strtoupper(trim($dCR['qr_code']))] = $dCR;
+                if (!empty($dCR['roll_number'])) $damagedLookup[strtoupper(trim($dCR['roll_number']))] = $dCR;
+            }
+
             foreach ($tags as $tag) {
                 $normalized = strtoupper($tag);
+                if (isset($damagedLookup[$normalized])) {
+                    $d = $damagedLookup[$normalized];
+                    Session::flash('error', "Cannot bill QR item '{$tag}'! It has been quarantined in Damage Management (Damage #{$d['damage_number']} — {$d['damage_reason']}).");
+                    Response::redirect($billId ? 'production/billing/edit/' . $billId : 'production/billing/create');
+                    return;
+                }
                 if (!isset($availableTagMap[$normalized]) || isset($usedTags[$normalized])) {
                     Response::redirect($billId ? 'production/billing/edit/' . $billId : 'production/billing/create', 'error', 'A scanned QR code is unavailable or duplicated. Please scan the item again.');
                     return;

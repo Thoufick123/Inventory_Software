@@ -1,8 +1,7 @@
 <div class="page-header mb-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
     <div>
         <h2 class="mb-1"><i class="bi bi-bag-plus me-2 text-primary"></i>Record Production Purchase</h2>
-        <span class="text-muted">Record supplier invoices, fabric rolls, and other garment supplies.</span>
-    </div>
+        </div>
     <a href="<?= url('production/purchases') ?>" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back to Purchases</a>
 </div>
 
@@ -72,8 +71,7 @@
             <div class="row g-3 align-items-center">
                 <div class="col">
                     <h5 class="mb-0 fw-bold"><i class="bi bi-layers-half me-2 text-primary"></i>Fabric Roll &amp; Material Supply Details</h5>
-                    <small class="text-muted">Specify the fabric grade and add multiple rolls for this purchase.</small>
-                </div>
+                   </div>
                 <div class="col-auto">
                     <button type="button" class="btn btn-sm btn-primary" id="addFabricRoll"><i class="bi bi-plus-circle me-1"></i>Add Fabric Roll</button>
                 </div>
@@ -105,10 +103,7 @@
             <div class="card border shadow-sm mb-4" id="rollDetailsTableContainer">
                 <div class="card-header bg-light py-2 px-3 d-flex align-items-center justify-content-between">
                     <span class="fw-bold small"><i class="bi bi-table me-1 text-primary"></i>Fabric Rolls Inventory &amp; Details Table</span>
-                    <div class="d-flex align-items-center gap-2">
-                        <button type="button" class="btn btn-sm btn-dark" id="previewLabels"><i class="bi bi-qr-code text-warning me-1"></i>Preview Labels</button>
-                        <span class="badge bg-secondary-subtle text-secondary border" id="tableRollCountBadge">0 Rolls</span>
-                    </div>
+                    
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover table-bordered align-middle mb-0" style="font-size:13px">
@@ -327,34 +322,61 @@
         const totalRq = cards.reduce((sum, card) => sum + (Number(card.querySelector('.roll-quantity').value) || 0), 0);
         const colors = new Set(cards.map(card => card.querySelector('.roll-color').value.trim().toUpperCase()).filter(Boolean));
         const designs = new Set(cards.map(card => card.querySelector('.roll-design').value.trim().toUpperCase()).filter(Boolean));
-        document.getElementById('rollCountBadge').textContent = cards.length;
-        document.getElementById('tableRollCountBadge').textContent = cards.length + (cards.length === 1 ? ' Roll' : ' Rolls');
-        document.getElementById('summaryTotalRolls').textContent = cards.length + (cards.length === 1 ? ' Roll' : ' Rolls');
-        document.getElementById('summaryTotalRQ').textContent = totalRq.toLocaleString('en-IN') + ' RQ';
-        document.getElementById('summaryColorsDesigns').textContent = colors.size + ' Colors • ' + designs.size + ' Designs';
-        document.getElementById('summaryTotalWeight').textContent = totalWeight.toFixed(2) + ' kg';
-        document.getElementById('summaryTotalPrice').textContent = money(totalPrice);
+        const countBadge = document.getElementById('rollCountBadge');
+        if (countBadge) countBadge.textContent = cards.length;
+        const tblCountBadge = document.getElementById('tableRollCountBadge');
+        if (tblCountBadge) tblCountBadge.textContent = cards.length + (cards.length === 1 ? ' Roll' : ' Rolls');
+        const sumRolls = document.getElementById('summaryTotalRolls');
+        if (sumRolls) sumRolls.textContent = cards.length + (cards.length === 1 ? ' Roll' : ' Rolls');
+        const sumRQ = document.getElementById('summaryTotalRQ');
+        if (sumRQ) sumRQ.textContent = totalRq.toLocaleString('en-IN') + ' RQ';
+        const sumColDes = document.getElementById('summaryColorsDesigns');
+        if (sumColDes) sumColDes.textContent = colors.size + ' Colors • ' + designs.size + ' Designs';
+        const sumWeight = document.getElementById('summaryTotalWeight');
+        if (sumWeight) sumWeight.textContent = totalWeight.toFixed(2) + ' kg';
+        const sumPrice = document.getElementById('summaryTotalPrice');
+        if (sumPrice) sumPrice.textContent = money(totalPrice);
 
         const body = document.getElementById('rollDetailsTableBody');
-        if (!cards.length) {
-            body.innerHTML = '<tr><td colspan="13" class="text-center text-muted py-4">Add fabric rolls to see their inventory details.</td></tr>';
-        } else {
-            body.innerHTML = cards.map((card, index) => {
-                const qty = Number(card.querySelector('.roll-quantity').value) || 0;
-                const weight = Number(card.querySelector('.roll-weight').value) || 0;
-                const price = Number(card.querySelector('.roll-price').value) || 0;
-                const tax = calculateItemTax(card, price);
-                const totalValue = price + tax.amount;
-                const start = Number(card.dataset.startSeq) || 0;
-                const end = start + Math.max(qty, 1) - 1;
-                const codeStart = start ? sequencePrefix + String(start).padStart(2, '0') : '—';
-                const codeEnd = start ? sequencePrefix + String(end).padStart(2, '0') : '—';
-                const photo = card.querySelector('.roll-photo').files[0];
-                const previewImg = card.querySelector('.roll-preview img');
-                const photoHtml = photo && previewImg.src ? `<img src="${previewImg.src}" alt="Roll" style="width:38px;height:38px;object-fit:cover">` : '<span class="text-muted"><i class="bi bi-camera"></i></span>';
-                const taxLabel = tax.type === 'BOTH' ? 'SGST + CGST' : tax.type;
-                return `<tr><td class="text-center">${index + 1}</td><td>${photoHtml}</td><td><strong>${safe(card.querySelector('.roll-number').value)}</strong><small class="d-block font-monospace">${safe(codeStart)}${codeStart !== codeEnd ? '–' + safe(codeEnd) : ''}</small></td><td>${safe(card.querySelector('.roll-color').value || '—')}</td><td>${safe(card.querySelector('.roll-design').value || '—')}</td><td class="text-center">${Number(card.querySelector('.roll-design-count').value) || 0}</td><td class="text-end">${qty.toLocaleString('en-IN')} RQ</td><td class="text-end">${weight.toFixed(2)} kg</td><td class="text-end">${money(price)}</td><td>${taxLabel}</td><td class="text-end">${money(tax.amount)}</td><td class="text-end fw-bold text-success">${money(totalValue)}</td><td class="text-center"><span class="badge bg-success-subtle text-success">New Roll (${qty} RQ)</span></td></tr>`;
-            }).join('');
+        if (body) {
+            if (!cards.length) {
+                body.innerHTML = '<tr><td colspan="13" class="text-center text-muted py-4">Add fabric rolls to see their inventory details.</td></tr>';
+            } else {
+                body.innerHTML = cards.map((card, index) => {
+                    const rollNum = card.querySelector('.roll-number')?.value || ('ROLL #' + (index + 1));
+                    const color = card.querySelector('.roll-color')?.value || '—';
+                    const design = card.querySelector('.roll-design')?.value || '—';
+                    const designCount = Number(card.querySelector('.roll-design-count')?.value) || 1;
+                    const qty = Number(card.querySelector('.roll-quantity')?.value) || 0;
+                    const weight = Number(card.querySelector('.roll-weight')?.value) || 0;
+                    const price = Number(card.querySelector('.roll-price')?.value) || 0;
+                    const tax = calculateItemTax(card, price);
+                    const totalValue = price + tax.amount;
+                    const start = Number(card.dataset.startSeq) || 0;
+                    const end = start + Math.max(qty, 1) - 1;
+                    const codeStart = start ? sequencePrefix + String(start).padStart(2, '0') : '—';
+                    const codeEnd = start ? sequencePrefix + String(end).padStart(2, '0') : '—';
+                    const photo = card.querySelector('.roll-photo')?.files[0];
+                    const previewImg = card.querySelector('.roll-preview img');
+                    const photoHtml = photo && previewImg && previewImg.src ? `<img src="${previewImg.src}" alt="Roll" style="width:38px;height:38px;object-fit:cover;border-radius:4px;">` : '<span class="text-muted"><i class="bi bi-camera"></i></span>';
+                    const taxLabel = tax.type === 'BOTH' ? 'SGST + CGST' : tax.type;
+                    return `<tr>
+                        <td class="text-center fw-bold">${index + 1}</td>
+                        <td class="text-center">${photoHtml}</td>
+                        <td><strong>${safe(rollNum)}</strong><small class="d-block font-monospace text-primary">${safe(codeStart)}${codeStart !== codeEnd ? '–' + safe(codeEnd) : ''}</small></td>
+                        <td><span class="badge bg-light text-dark border">${safe(color)}</span></td>
+                        <td>${safe(design)}</td>
+                        <td class="text-center">${designCount}</td>
+                        <td class="text-end fw-semibold">${qty.toLocaleString('en-IN')} RQ</td>
+                        <td class="text-end fw-bold" style="color:#0284c7">${weight.toFixed(2)} kg</td>
+                        <td class="text-end">${money(price)}</td>
+                        <td><small class="badge bg-secondary-subtle text-secondary">${taxLabel}</small></td>
+                        <td class="text-end">${money(tax.amount)}</td>
+                        <td class="text-end fw-bold text-success">${money(totalValue)}</td>
+                        <td class="text-center"><span class="badge bg-success-subtle text-success border border-success">Ready (${qty} RQ)</span></td>
+                    </tr>`;
+                }).join('');
+            }
         }
         updateTotal();
     }
@@ -439,14 +461,13 @@
             Array.from(rollsContainer.children).forEach((item, i) => item.querySelector('.roll-title').textContent = 'ROLL #' + (i + 1));
             updateCodes();
         });
-        card.querySelectorAll('input').forEach(input => input.addEventListener('input', updateCodes));
-        card.querySelector('.item-gst-type').addEventListener('change', () => {
-            updateTaxInputs(card);
-            updateCodes();
-        });
-        card.querySelector('.item-tax-mode').addEventListener('change', () => {
-            updateTaxInputs(card);
-            updateCodes();
+        card.querySelectorAll('input, select').forEach(input => {
+            input.addEventListener('input', updateCodes);
+            input.addEventListener('change', () => {
+                updateTaxInputs(card);
+                updateCodes();
+            });
+            input.addEventListener('keyup', updateCodes);
         });
         updateTaxInputs(card);
         card.querySelector('.roll-photo').addEventListener('change', event => {
@@ -545,7 +566,7 @@
 
     document.getElementById('addFabricRoll').addEventListener('click', addRoll);
     document.getElementById('addSupply').addEventListener('click', addSupply);
-    document.getElementById('previewLabels').addEventListener('click', previewLabels);
+    document.getElementById('previewLabels')?.addEventListener('click', previewLabels);
     supplierSelect.addEventListener('change', updateSupplierDetails);
     updateSupplierDetails();
     fetch('<?= url("api/sellers/next-roll-codes") ?>')

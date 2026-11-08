@@ -36,6 +36,9 @@ function env(string $key, $default = null) {
     return $value;
 }
 
+// Always ensure PHP runtime is locked to Indian Standard Time (IST)
+date_default_timezone_set(env('APP_TIMEZONE', 'Asia/Kolkata'));
+
 return [
     'name'      => env('APP_NAME', 'GRM Inventory Management'),
     'env'       => env('APP_ENV', 'local'),

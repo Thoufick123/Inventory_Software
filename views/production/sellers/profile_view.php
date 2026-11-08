@@ -5,8 +5,6 @@
     </div>
     <div class="d-flex gap-2">
         <a href="<?= url('production/sellers') ?>" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Suppliers</a>
-        <?php if (hasPermission('sellers', 'edit')): ?><a href="<?= url('production/sellers/edit/' . $seller['id']) ?>" class="btn btn-primary"><i class="bi bi-pencil me-1"></i>Edit Supplier</a><?php endif; ?>
-        <?php if (hasPermission('sellers', 'create')): ?><a href="<?= url('production/purchases/create') ?>" class="btn btn-outline-primary"><i class="bi bi-bag-plus me-1"></i>Record Purchase</a><?php endif; ?>
     </div>
 </div>
 <div class="card shadow-sm border">

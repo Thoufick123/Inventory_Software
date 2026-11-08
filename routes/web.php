@@ -75,7 +75,13 @@ class Router {
                 }
                 require_once $controllerFile;
 
-                $controller = new $route['controller']();
+                $controllerClass = $route['controller'];
+                if (!class_exists($controllerClass)) {
+                    if (class_exists("App\\Controllers\\{$controllerClass}")) {
+                        $controllerClass = "App\\Controllers\\{$controllerClass}";
+                    }
+                }
+                $controller = new $controllerClass();
                 $action = $route['action'];
 
                 if (!method_exists($controller, $action)) {
@@ -275,6 +281,8 @@ class Router {
         $this->get('api/stitching/{id}/details', 'ProductionController', 'ajaxStitchingDetails', ['AuthMiddleware']);
         $this->get('api/catalog/variants', 'ProductionController', 'ajaxCatalogVariants', ['AuthMiddleware']);
         $this->get('api/catalog/check-qr-code', 'ProductionController', 'ajaxCheckQRCode', ['AuthMiddleware']);
+        $this->get('api/hsn-codes', 'ProductionController', 'ajaxHsnCodesList', ['AuthMiddleware']);
+        $this->post('api/hsn-codes/store', 'ProductionController', 'ajaxStoreHsnCode', ['AuthMiddleware']);
         $this->post('api/warehouse/quick-add', 'WarehouseController', 'ajaxAddWarehouse', ['AuthMiddleware', ['PermissionMiddleware', 'warehouse', 'create']]);
         $this->post('api/warehouse/store', 'WarehouseController', 'ajaxAddWarehouse', ['AuthMiddleware', ['PermissionMiddleware', 'warehouse', 'create']]);
         $this->get('api/warehouse/get/{id}', 'WarehouseController', 'ajaxGetWarehouse', ['AuthMiddleware', ['PermissionMiddleware', 'warehouse', 'view']]);
@@ -347,6 +355,7 @@ class Router {
         $this->post('production/purchases/update/{id}', 'ProductionController', 'updateProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'edit']]);
         $this->post('production/purchases/delete/{id}', 'ProductionController', 'deleteProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'delete']]);
         $this->get('production/purchases/print/{id}', 'ProductionController', 'printProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
+        $this->get('production/purchases/roll-qr/{id}', 'ProductionController', 'productionPurchaseRollQr', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
         $this->get('production/purchases/create', 'ProductionController', 'createProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'create']]);
         $this->post('production/purchases/store', 'ProductionController', 'storeProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'create']]);
 
@@ -507,6 +516,7 @@ class Router {
         // WAREHOUSE ROUTES
         // ==========================================
         $this->get('warehouse/dashboard', 'WarehouseController', 'dashboard', ['AuthMiddleware', ['PermissionMiddleware', 'warehouse', 'view']]);
+        $this->get('warehouse/reports/export', 'WarehouseController', 'exportReports', ['AuthMiddleware', ['PermissionMiddleware', 'warehouse', 'view']]);
 
         // Inward/GRN & QR Scanner
         $this->get('warehouse/inward', 'WarehouseController', 'inwardList', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'view']]);

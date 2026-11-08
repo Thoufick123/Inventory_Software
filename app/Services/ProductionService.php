@@ -710,9 +710,9 @@ class ProductionService {
     }
 
     /**
-     * Resolve approved QR tags by QC item, including legacy label sequence tags.
+     * Resolve approved (and optionally rework) QR tags by QC item, including legacy label sequence tags.
      */
-    private static function getApprovedQCPieceTags(int $qcBatchId): array {
+    private static function getApprovedQCPieceTags(int $qcBatchId, bool $includeRework = false): array {
         if ($qcBatchId <= 0) {
             return [];
         }
@@ -728,10 +728,11 @@ class ProductionService {
             $piecesData = json_decode(stripslashes($rawPieces), true);
         }
 
+        $allowedStatuses = $includeRework ? ['APPROVED', 'REWORK'] : ['APPROVED'];
         $savedApprovedByItem = [];
         if (is_array($piecesData)) {
             foreach ($piecesData as $piece) {
-                if (!is_array($piece) || strtoupper((string)($piece['status'] ?? '')) !== 'APPROVED') {
+                if (!is_array($piece) || !in_array(strtoupper((string)($piece['status'] ?? '')), $allowedStatuses, true)) {
                     continue;
                 }
                 $itemId = (int)($piece['item_id'] ?? 0);
@@ -749,10 +750,10 @@ class ProductionService {
             if (empty($tags)) {
                 $startCode = trim((string)($item['label_start_code'] ?? $item['tag_code'] ?? ''));
                 $startSeq = (int)($item['label_start_seq'] ?? 0);
-                $passedQty = max(0, (int)($item['passed_qty'] ?? 0));
-                if ($startSeq > 0 && $passedQty > 0 && preg_match('/^(.+?)(\d+)$/', $startCode, $match)) {
-                    $endSeq = (int)($item['label_end_seq'] ?? ($startSeq + $passedQty - 1));
-                    $endSeq = min($endSeq, $startSeq + $passedQty - 1);
+                $effectiveQty = max(0, (int)($item['passed_qty'] ?? 0)) + ($includeRework ? max(0, (int)($item['rework_qty'] ?? 0)) : 0);
+                if ($startSeq > 0 && $effectiveQty > 0 && preg_match('/^(.+?)(\d+)$/', $startCode, $match)) {
+                    $endSeq = (int)($item['label_end_seq'] ?? ($startSeq + $effectiveQty - 1));
+                    $endSeq = min($endSeq, $startSeq + $effectiveQty - 1);
                     for ($seq = $startSeq; $seq <= $endSeq; $seq++) {
                         $tags[] = $match[1] . str_pad((string)$seq, strlen($match[2]), '0', STR_PAD_LEFT);
                     }
@@ -787,12 +788,12 @@ class ProductionService {
         return $positions;
     }
 
-    public static function getAvailableQCPieceTags(int $qcBatchId): array {
+    public static function getAvailableQCPieceTags(int $qcBatchId, bool $includeRework = false): array {
         if ($qcBatchId <= 0) {
             return [];
         }
 
-        $approvedByItem = self::getApprovedQCPieceTags($qcBatchId);
+        $approvedByItem = self::getApprovedQCPieceTags($qcBatchId, $includeRework);
         $legacyPackedByVariant = [];
         $assignedTagsByVariant = [];
         $previousRows = Database::fetchAll(
@@ -876,9 +877,10 @@ class ProductionService {
     public static function createProductionBatch(array $batchData, array $items, int $userId): int {
         Database::beginTransaction();
         try {
+            $includeRework = !empty($batchData['include_rework']);
             if (!empty($batchData['qc_batch_id'])) {
                 $qcId = (int)$batchData['qc_batch_id'];
-                $availableTagsByItem = self::getAvailableQCPieceTags($qcId);
+                $availableTagsByItem = self::getAvailableQCPieceTags($qcId, $includeRework);
                 $qcItemsById = [];
                 foreach (QCBatch::getItems($qcId) as $qcItem) {
                     $qcItemsById[(int)$qcItem['id']] = $qcItem;
@@ -926,6 +928,18 @@ class ProductionService {
                     $totalQCPassed = (int)($qcRow['passed_qty'] ?? 0);
                 }
 
+                $totalQCRework = 0;
+                if ($includeRework) {
+                    $totalQCRework = (int)(Database::fetchOne(
+                        "SELECT COALESCE(SUM(rework_qty), 0) as total FROM qc_items WHERE qc_batch_id = ?",
+                        [$qcId]
+                    )['total'] ?? 0);
+                    if ($totalQCRework <= 0) {
+                        $qcRow = $qcRow ?? QCBatch::find($qcId);
+                        $totalQCRework = (int)($qcRow['rework_qty'] ?? 0);
+                    }
+                }
+
                 $alreadyPacked = (int)(Database::fetchOne(
                     "SELECT COALESCE(SUM(pbi.quantity), 0) as total
                      FROM production_batch_items pbi
@@ -934,7 +948,7 @@ class ProductionService {
                     [$qcId]
                 )['total'] ?? 0);
 
-                $remainingQty = max(0, $totalQCPassed - $alreadyPacked);
+                $remainingQty = max(0, ($totalQCPassed + $totalQCRework) - $alreadyPacked);
 
                 $requestPackingQty = 0;
                 foreach ($items as $item) {
@@ -942,11 +956,13 @@ class ProductionService {
                 }
 
                 if ($remainingQty <= 0) {
-                    throw new Exception("Validation Error: All QC passed garments in QC Batch #{$qcId} ({$totalQCPassed} pcs) have already been packed into finished batches.");
+                    $poolMsg = $includeRework ? "passed and rework" : "QC passed";
+                    throw new Exception("Validation Error: All {$poolMsg} garments in QC Batch #{$qcId} have already been packed into finished batches.");
                 }
 
                 if ($requestPackingQty > $remainingQty) {
-                    throw new Exception("Validation Error: Cannot pack {$requestPackingQty} pcs. Only {$remainingQty} pcs remain available to pack for QC Batch #{$qcId} ({$totalQCPassed} total passed, {$alreadyPacked} already packed).");
+                    $reworkText = $includeRework ? " (including {$totalQCRework} rework pcs)" : "";
+                    throw new Exception("Validation Error: Cannot pack {$requestPackingQty} pcs. Only {$remainingQty} pcs remain available to pack for QC Batch #{$qcId}{$reworkText}.");
                 }
             }
 

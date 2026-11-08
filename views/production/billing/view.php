@@ -5,9 +5,7 @@
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" href="<?= url('production/billing') ?>"><i class="bi bi-arrow-left me-1"></i>Back</a>
-        <?php if (hasPermission('production_billing', 'edit')): ?><a class="btn btn-outline-primary" href="<?= url('production/billing/edit/' . (int)$bill['id']) ?>"><i class="bi bi-pencil me-1"></i>Edit</a><?php endif; ?>
-        <?php if (hasPermission('production_billing', 'print')): ?><a class="btn btn-dark" target="_blank" href="<?= url('production/billing/print/' . (int)$bill['id']) ?>"><i class="bi bi-printer me-1"></i>Print</a><?php endif; ?>
-    </div>
+         </div>
 </div>
 
 <div class="card border-0 shadow-sm mb-3">

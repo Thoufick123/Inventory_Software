@@ -2,8 +2,7 @@
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 w-100">
         <div>
             <h2 class="mb-0"><i class="bi bi-exclamation-octagon me-2 text-danger"></i>Fabric &amp; Roll Damage Management</h2>
-            <span class="text-muted">Track defective fabric rolls, initiate supplier returns, and manage refunds or replacement rolls</span>
-        </div>
+            </div>
         <div class="d-flex gap-2 align-items-center ms-auto">
             <?php if (hasPermission('damages', 'create')): ?>
             <button type="button" class="btn btn-danger shadow-sm" data-bs-toggle="modal" data-bs-target="#reportDamageModal">
@@ -180,30 +179,35 @@
                                     <?php endif; ?>
                                 </td>
 
-                                <!-- Roll Details & Photo -->
+                                <!-- Roll Details, Photo & QR Code -->
                                 <td>
+                                    <?php 
+                                        $qrCodeVal = !empty($d['qr_code']) ? $d['qr_code'] : (!empty($d['roll_qr_code']) ? $d['roll_qr_code'] : (!empty($d['roll_start_code']) ? $d['roll_start_code'] : $d['roll_number']));
+                                    ?>
                                     <div class="d-flex align-items-center gap-2">
-                                        <?php if (!empty($d['photo_url'])): ?>
-                                            <a href="<?= uploadUrl($d['photo_url']) ?>" target="_blank" title="View damage proof photo">
-                                                <img src="<?= uploadUrl($d['photo_url']) ?>" alt="Damage Photo" class="rounded border shadow-sm" style="width: 40px; height: 40px; object-fit: cover;">
-                                            </a>
-                                        <?php elseif (!empty($d['roll_photo_url'])): ?>
-                                            <a href="<?= uploadUrl($d['roll_photo_url']) ?>" target="_blank" title="View roll photo">
-                                                <img src="<?= uploadUrl($d['roll_photo_url']) ?>" alt="Roll Photo" class="rounded border shadow-sm" style="width: 40px; height: 40px; object-fit: cover;">
-                                            </a>
-                                        <?php else: ?>
-                                            <div class="rounded bg-light border d-flex align-items-center justify-content-center text-muted" style="width: 40px; height: 40px;">
-                                                <i class="bi bi-circle-square text-secondary"></i>
-                                            </div>
-                                        <?php endif; ?>
+                                        <!-- Scannable QR Code Thumbnail -->
+                                        <div class="damage-qr-thumb position-relative" style="width: 46px; height: 46px; background: #fff; border: 1.5px solid #0f172a; border-radius: 6px; padding: 2px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;" title="Click to view & scan Damaged Item QR Code" onclick="showDamageQrModal('<?= e($d['damage_number']) ?>', '<?= e($qrCodeVal) ?>', '<?= e($d['roll_number']) ?>', '<?= e(addslashes($d['damage_reason'])) ?>', '<?= number_format($d['damaged_weight'], 2) ?> kg', '<?= e(addslashes($d['seller_company'] ?: $d['seller_name'])) ?>')">
+                                            <div id="damage-qr-<?= $d['id'] ?>" class="damage-qr-canvas" data-qr="<?= e($qrCodeVal) ?>" style="width: 40px; height: 40px;"></div>
+                                        </div>
+
                                         <div>
-                                            <span class="fw-bold text-dark fs-7"><?= e($d['roll_number']) ?></span>
+                                            <div class="d-flex align-items-center gap-1.5 flex-wrap">
+                                                <span class="fw-bold text-dark fs-7"><?= e($d['roll_number']) ?></span>
+                                                <span class="badge bg-danger text-white font-monospace" style="font-size: 10px; cursor: pointer;" title="Quarantined Damage QR - Click to inspect" onclick="showDamageQrModal('<?= e($d['damage_number']) ?>', '<?= e($qrCodeVal) ?>', '<?= e($d['roll_number']) ?>', '<?= e(addslashes($d['damage_reason'])) ?>', '<?= number_format($d['damaged_weight'], 2) ?> kg', '<?= e(addslashes($d['seller_company'] ?: $d['seller_name'])) ?>')">
+                                                    <i class="bi bi-qr-code me-1"></i><?= e($qrCodeVal) ?>
+                                                </span>
+                                            </div>
                                             <div class="d-flex gap-1 flex-wrap mt-1">
                                                 <?php if (!empty($d['roll_color'])): ?>
                                                     <span class="badge bg-info-subtle text-info border px-1"><?= e($d['roll_color']) ?></span>
                                                 <?php endif; ?>
                                                 <?php if (!empty($d['roll_design'])): ?>
                                                     <span class="badge bg-warning-subtle text-warning border px-1"><?= e($d['roll_design']) ?></span>
+                                                <?php endif; ?>
+                                                <?php if (!empty($d['photo_url'])): ?>
+                                                    <a href="<?= uploadUrl($d['photo_url']) ?>" target="_blank" class="badge bg-light text-secondary border text-decoration-none px-1" title="View Defect Photo">
+                                                        <i class="bi bi-image me-1"></i>Photo
+                                                    </a>
                                                 <?php endif; ?>
                                             </div>
                                         </div>
@@ -1251,5 +1255,103 @@ async function addDamageReason(selectId) {
     } catch (error) {
         window.alert(error.message || 'Unable to save this damage reason.');
     }
+}
+</script>
+
+
+<!-- Modal to View Damaged Item QR Code Details -->
+<div class="modal fade" id="damageQrModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow border-0">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title fs-6 fw-bold">
+                    <i class="bi bi-qr-code-scan me-2"></i>Damaged Item Quarantined QR Code
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center p-4">
+                <div class="alert alert-danger py-1 px-3 mb-3 d-inline-block fw-bold small">
+                    <i class="bi bi-shield-x me-1"></i> QUARANTINED DEFECTIVE ITEM · NOT FOR SALE
+                </div>
+
+                <!-- Big QR Code Container -->
+                <div class="d-flex justify-content-center mb-3">
+                    <div id="modalDamageQrBox" class="p-2 border rounded bg-white shadow-sm" style="width: 170px; height: 170px; display: flex; align-items: center; justify-content: center;"></div>
+                </div>
+
+                <h4 class="fw-bold font-monospace text-dark mb-1" id="modalDamageQrText"></h4>
+                <div class="text-danger fw-bold small mb-3" id="modalDamageNum"></div>
+
+                <div class="bg-light p-3 rounded text-start small border">
+                    <div class="row g-2">
+                        <div class="col-6"><span class="text-muted d-block">Roll Number:</span><strong id="modalDamageRoll"></strong></div>
+                        <div class="col-6"><span class="text-muted d-block">Damaged Weight:</span><strong id="modalDamageWeight" class="text-danger"></strong></div>
+                        <div class="col-6"><span class="text-muted d-block">Supplier:</span><strong id="modalDamageSupplier"></strong></div>
+                        <div class="col-6"><span class="text-muted d-block">Defect Reason:</span><strong id="modalDamageReason" class="text-danger"></strong></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light py-2 justify-content-between">
+                <span class="text-muted small">Billing restriction active for this QR code.</span>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Generate clean QR thumbnails for all damage rows
+    document.querySelectorAll('.damage-qr-canvas').forEach(function(box) {
+        const qrText = box.getAttribute('data-qr');
+        if (qrText && typeof QRCode !== 'undefined') {
+            try {
+                box.innerHTML = '';
+                new QRCode(box, {
+                    text: qrText,
+                    width: 40,
+                    height: 40,
+                    colorDark: "#000000",
+                    colorLight: "#ffffff",
+                    correctLevel: QRCode.CorrectLevel.L
+                });
+                setTimeout(function() {
+                    box.removeAttribute('title');
+                    box.querySelectorAll('img, canvas').forEach(function(el) { el.removeAttribute('title'); });
+                }, 40);
+            } catch (err) {
+                console.error("Damage QR Thumb Error:", err);
+            }
+        }
+    });
+});
+
+function showDamageQrModal(damageNumber, qrCode, rollNumber, reason, weight, supplier) {
+    document.getElementById('modalDamageNum').textContent = 'Damage Record: ' + damageNumber;
+    document.getElementById('modalDamageQrText').textContent = qrCode;
+    document.getElementById('modalDamageRoll').textContent = rollNumber;
+    document.getElementById('modalDamageReason').textContent = reason;
+    document.getElementById('modalDamageWeight').textContent = weight;
+    document.getElementById('modalDamageSupplier').textContent = supplier;
+
+    const qrBox = document.getElementById('modalDamageQrBox');
+    qrBox.innerHTML = '';
+    if (typeof QRCode !== 'undefined') {
+        new QRCode(qrBox, {
+            text: qrCode,
+            width: 154,
+            height: 154,
+            colorDark: "#000000",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.L
+        });
+        setTimeout(function() {
+            qrBox.removeAttribute('title');
+            qrBox.querySelectorAll('img, canvas').forEach(function(el) { el.removeAttribute('title'); });
+        }, 40);
+    }
+
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('damageQrModal')).show();
 }
 </script>

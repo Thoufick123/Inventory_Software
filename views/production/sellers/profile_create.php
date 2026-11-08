@@ -1,7 +1,6 @@
 <div class="page-header mb-4">
     <h2><i class="bi bi-person-plus me-2 text-primary"></i>Add Supplier</h2>
-    <span class="text-muted">Register supplier contact and business information. Record invoices and products in Purchases.</span>
-</div>
+   </div>
 <form method="POST" action="<?= url('production/sellers/store') ?>" class="card shadow-sm border">
     <?= CSRF::field() ?>
     <input type="hidden" name="supplier_profile_only" value="1">

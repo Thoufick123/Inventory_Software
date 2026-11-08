@@ -99,6 +99,79 @@ class WarehouseController {
         ]));
     }
 
+    public function exportReports(): void {
+        if (!hasPermission('warehouse', 'view') && !hasPermission('stock', 'view') && !hasPermission('inward', 'view') && !hasPermission('allocation', 'view') && !hasPermission('purchases', 'view')) {
+            Session::flash('error', 'Access denied: You do not have permission to export warehouse reports.');
+            Response::redirect(url('warehouse/dashboard'));
+            return;
+        }
+
+        require_once BASE_PATH . '/app/Services/WarehouseReportService.php';
+
+        $periodType = trim((string)($_REQUEST['period_type'] ?? 'MONTH'));
+        $format = strtoupper(trim((string)($_REQUEST['format'] ?? 'CSV')));
+
+        if ($periodType === 'MONTH') {
+            $month = (int)($_REQUEST['selected_month'] ?? date('n'));
+            $year = (int)($_REQUEST['selected_year'] ?? date('Y'));
+            $month = max(1, min(12, $month));
+            $year = max(2020, min(2035, $year));
+            $startDate = sprintf('%04d-%02d-01', $year, $month);
+            $endDate = date('Y-m-t', strtotime($startDate));
+            $periodLabel = date('F Y', strtotime($startDate));
+        } else {
+            $startDate = trim((string)($_REQUEST['date_from'] ?? date('Y-m-01')));
+            $endDate = trim((string)($_REQUEST['date_to'] ?? date('Y-m-d')));
+            $periodLabel = date('d M Y', strtotime($startDate)) . ' to ' . date('d M Y', strtotime($endDate));
+        }
+
+        $allModules = ['inward', 'stock', 'catalog', 'suppliers', 'purchases', 'allocations', 'outward', 'damages', 'returns', 'expenses', 'complementary'];
+        $selectedModules = !empty($_REQUEST['modules']) && is_array($_REQUEST['modules'])
+            ? array_values(array_intersect($_REQUEST['modules'], $allModules))
+            : $allModules;
+
+        if (empty($selectedModules)) {
+            $selectedModules = $allModules;
+        }
+
+        $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+        if (!empty($_REQUEST['warehouse_id']) && is_numeric($_REQUEST['warehouse_id'])) {
+            $warehouseId = (int)$_REQUEST['warehouse_id'];
+        } else {
+            $warehouseId = $scopedWarehouseId;
+        }
+
+        $activeWarehouse = null;
+        if ($warehouseId) {
+            $activeWarehouse = Database::fetchOne("SELECT * FROM warehouses WHERE id = ?", [$warehouseId]);
+        }
+        if (!$activeWarehouse) {
+            $activeWarehouse = [
+                'name'    => 'Central Warehouses Network',
+                'code'    => 'WH-ALL',
+                'phone'   => '+91 98765 43210',
+                'address' => 'Central Hub & Outlets Distribution Center',
+            ];
+        }
+
+        $data = \App\Services\WarehouseReportService::getReportData($startDate, $endDate, $selectedModules, $warehouseId);
+
+        if ($format === 'PRINT') {
+            Response::viewOnly('warehouse.reports.print', [
+                'periodLabel'     => $periodLabel,
+                'startDate'       => $startDate,
+                'endDate'         => $endDate,
+                'selectedModules' => $selectedModules,
+                'data'            => $data,
+                'warehouse'       => $activeWarehouse,
+                'company'         => class_exists('SettingsService') ? \SettingsService::getGroup('company') : [],
+            ]);
+            return;
+        }
+
+        \App\Services\WarehouseReportService::streamCsv($periodLabel, $startDate, $endDate, $data, $activeWarehouse);
+    }
+
     // =========================================================================
     // 2. INWARD / GRN (Production Finished Goods Receipt) — Person 1
     // =========================================================================
@@ -176,6 +249,7 @@ class WarehouseController {
         $sql .= " ORDER BY pb.id DESC";
         $batches = Database::fetchAll($sql, $params);
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $productionUnits = function_exists('getScopedProductionUnits') ? getScopedProductionUnits() : ProductionUnit::getAll(['is_active' => 1]);
 
         // Fetch variant items for all retrieved batches for rich batch-wise card cards UI
@@ -894,6 +968,7 @@ class WarehouseController {
 
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
 
         if ($scopedWarehouseId) {
             $selectedWarehouseId = $scopedWarehouseId;
@@ -2596,6 +2671,7 @@ class WarehouseController {
         $damages = WarehouseDamage::getAll($filters);
         $stats = WarehouseDamage::getSummaryStats($scopedWarehouseId);
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
 
         Response::view('warehouse.damage.index', [
             'pageTitle'          => 'Warehouse Damaged Stock',
@@ -2621,6 +2697,7 @@ class WarehouseController {
         }
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $variants = Database::fetchAll(
             "SELECT pv.*, p.name as product_name, p.code as product_code,
                     COALESCE(wc.name, cat.name) as category_name,
@@ -4331,6 +4408,7 @@ class WarehouseController {
 
         $purchases = PurchaseOrder::getAll($filters);
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $customers = Database::fetchAll("SELECT * FROM customers WHERE is_active = 1 ORDER BY name ASC");
 
         // Summary Stats
@@ -4460,6 +4538,7 @@ class WarehouseController {
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
         $customers = Database::fetchAll("SELECT * FROM customers WHERE is_active = 1 ORDER BY name ASC");
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $variants = Database::fetchAll(
             "SELECT pv.id, pv.sku, pv.qr_code, pv.qr_type, pv.series_start_code, pv.series_end_code, pv.pack_quantity,
                     pv.selling_price, pv.mrp, p.name as product_name, p.code as product_code, p.qr_code_prefix,
@@ -4751,6 +4830,7 @@ class WarehouseController {
         $items = PurchaseOrder::getItems($poId);
         $customers = Database::fetchAll("SELECT * FROM customers WHERE is_active = 1 ORDER BY name ASC");
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $variants = Database::fetchAll(
             "SELECT pv.id, pv.sku, pv.qr_code, pv.qr_type, pv.series_start_code, pv.series_end_code, pv.pack_quantity,
                     pv.selling_price, pv.mrp, p.name as product_name, p.code as product_code, p.qr_code_prefix,
@@ -5910,6 +5990,7 @@ class WarehouseController {
         $recentReturns = WarehouseService::getPurchaseReturnsList($_GET, $warehouseId);
 
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAllActive();
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
 
         Response::view('warehouse.purchases.returns', [
             'pageTitle'        => 'Direct Purchases Customer Returns & Exchanges',
@@ -5923,6 +6004,7 @@ class WarehouseController {
             'summary'          => $summary,
             'recentReturns'    => $recentReturns,
             'warehouses'       => $warehouses,
+            'hsnCodes'         => $hsnCodes,
             'warehouseId'      => $warehouseId,
             'filters'          => $_GET,
         ]);
@@ -6232,6 +6314,7 @@ class WarehouseController {
 
         $adjustments = StockAdjustment::getAll($filters);
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $variants = Database::fetchAll(
             "SELECT pv.id, pv.sku, p.name as product_name, s.name as size_name, c.name as color_name
              FROM product_variants pv
@@ -6351,6 +6434,7 @@ class WarehouseController {
         }
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $shops = function_exists('getScopedShops') ? getScopedShops() : Shop::getActive();
         $categories = Database::fetchAll("SELECT id, name FROM categories WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
         $subcategories = Database::fetchAll("SELECT id, category_id, name FROM subcategories WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
@@ -8080,6 +8164,7 @@ class WarehouseController {
         $approvedAllocations = Database::fetchAll($appSql, $appParams);
 
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
 
         Response::view('warehouse.allocation.outward', [
             'pageTitle'           => 'Warehouse Outward & Dispatch',
@@ -8401,6 +8486,7 @@ class WarehouseController {
         }
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $shops = function_exists('getScopedShops') ? getScopedShops() : Shop::getActive();
         $categories = Database::fetchAll("SELECT id, name FROM categories WHERE is_active = 1 ORDER BY name ASC");
         $subcategories = Database::fetchAll("SELECT id, category_id, name FROM subcategories WHERE is_active = 1 ORDER BY name ASC");
@@ -8620,6 +8706,7 @@ class WarehouseController {
 
         $returns = WarehouseReturn::getAll($filters);
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
 
         $stats = [
             'total_batches'    => count($returns),
@@ -10213,6 +10300,7 @@ class WarehouseController {
         );
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
 
         $productIds = array_column($products, 'id');
         $variantsByProduct = [];
@@ -10270,6 +10358,7 @@ class WarehouseController {
             'suppliers'        => $suppliers,
             'selectedSellerId' => $sellerId,
             'warehouses'       => $warehouses,
+            'hsnCodes'         => $hsnCodes,
             'search'           => $search,
             'categoryId'       => $categoryId,
             'sourceType'       => $sourceType,
@@ -10829,7 +10918,9 @@ class WarehouseController {
         $sizes = Database::fetchAll("SELECT * FROM sizes WHERE is_active = 1 ORDER BY sort_order ASC, id ASC");
         $colors = Database::fetchAll("SELECT * FROM colors WHERE is_active = 1 ORDER BY name ASC");
         $sellers = Database::fetchAll("SELECT * FROM warehouse_suppliers WHERE is_active = 1 ORDER BY name ASC");
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
 
         // Generate auto style code suggestion
         $count = Database::fetchOne("SELECT COUNT(*) as c FROM products")['c'] ?? 0;
@@ -10852,6 +10943,7 @@ class WarehouseController {
             'suggestedCode'           => $suggestedCode,
             'suggestedCatalogCode'    => $suggestedCatalogCode,
             'pendingSupplierProducts' => $pendingSupplierProducts,
+            'hsnCodes'                => $hsnCodes,
             'breadcrumb'              => [
                 ['label' => 'Warehouse', 'url' => url('warehouse/dashboard')],
                 ['label' => 'Catalog', 'url' => url('warehouse/catalog')],
@@ -11087,16 +11179,18 @@ class WarehouseController {
                 $variantQr = $sku;
 
                 $vHsn = !empty($v['hsn_code']) ? strtoupper(trim($v['hsn_code'])) : (!empty($_POST['hsn_code']) ? strtoupper(trim($_POST['hsn_code'])) : null);
+                $vGst = isset($v['gst_rate']) && $v['gst_rate'] !== '' ? (float)$v['gst_rate'] : (!empty($_POST['gst_rate']) ? (float)$_POST['gst_rate'] : 5.00);
 
                 Database::execute(
-                    "INSERT INTO product_variants (product_id, size_id, color_id, sku, hsn_code, qr_code, mrp, purchase_price, production_cost, selling_price, weight, mfg_date, expiry_date, qr_type, series_start_code, series_end_code, pack_quantity, is_complementary, is_active)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
+                    "INSERT INTO product_variants (product_id, size_id, color_id, sku, hsn_code, gst_rate, qr_code, mrp, purchase_price, production_cost, selling_price, weight, mfg_date, expiry_date, qr_type, series_start_code, series_end_code, pack_quantity, is_complementary, is_active)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
                     [
                         $productId,
                         $sizeId,
                         $colorId,
                         $sku,
                         $vHsn,
+                        $vGst,
                         $variantQr,
                         $mrp,
                         $costPrice,
@@ -11416,7 +11510,9 @@ class WarehouseController {
         }
         $sizes = Database::fetchAll("SELECT * FROM sizes WHERE is_active = 1 ORDER BY sort_order ASC, id ASC");
         $colors = Database::fetchAll("SELECT * FROM colors WHERE is_active = 1 ORDER BY name ASC");
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
 
         // If category short codes are not saved on product, auto-derive from category records
         if (empty($product['category_code']) && $catId) {
@@ -11490,6 +11586,7 @@ class WarehouseController {
             'sizes'            => $sizes,
             'colors'           => $colors,
             'warehouses'       => $warehouses,
+            'hsnCodes'         => $hsnCodes,
             'breadcrumb'       => [
                 ['label' => 'Warehouse', 'url' => url('warehouse/dashboard')],
                 ['label' => 'Catalog', 'url' => url('warehouse/catalog')],
@@ -11699,19 +11796,20 @@ class WarehouseController {
                 }
 
                 $vHsn = !empty($v['hsn_code']) ? strtoupper(trim($v['hsn_code'])) : (!empty($_POST['hsn_code']) ? strtoupper(trim($_POST['hsn_code'])) : null);
+                $vGst = isset($v['gst_rate']) && $v['gst_rate'] !== '' ? (float)$v['gst_rate'] : (!empty($_POST['gst_rate']) ? (float)$_POST['gst_rate'] : 5.00);
 
                 $existingVar = Database::fetchOne("SELECT id FROM product_variants WHERE product_id = ? AND sku = ?", [$id, $sku]);
                 if ($existingVar) {
                     Database::execute(
-                        "UPDATE product_variants SET size_id = ?, color_id = ?, sku = ?, hsn_code = ?, qr_code = ?, mrp = ?, purchase_price = ?, production_cost = ?, selling_price = ?, weight = ?, mfg_date = ?, expiry_date = ?, qr_type = ?, series_start_code = ?, series_end_code = ?, pack_quantity = ?, is_complementary = ?, is_active = 1, updated_at = NOW() WHERE id = ?",
-                        [$sizeId, $colorId, $sku, $vHsn, $sku, $mrp, $costPrice, $costPrice, $sellingPrice, $weight, $vMfg, $vExp, $qrType, $seriesStart, $seriesEnd, $packQty, $isComplementary, $existingVar['id']]
+                        "UPDATE product_variants SET size_id = ?, color_id = ?, sku = ?, hsn_code = ?, gst_rate = ?, qr_code = ?, mrp = ?, purchase_price = ?, production_cost = ?, selling_price = ?, weight = ?, mfg_date = ?, expiry_date = ?, qr_type = ?, series_start_code = ?, series_end_code = ?, pack_quantity = ?, is_complementary = ?, is_active = 1, updated_at = NOW() WHERE id = ?",
+                        [$sizeId, $colorId, $sku, $vHsn, $vGst, $sku, $mrp, $costPrice, $costPrice, $sellingPrice, $weight, $vMfg, $vExp, $qrType, $seriesStart, $seriesEnd, $packQty, $isComplementary, $existingVar['id']]
                     );
                     $variantId = (int)$existingVar['id'];
                 } else {
                     Database::execute(
-                        "INSERT INTO product_variants (product_id, size_id, color_id, sku, hsn_code, qr_code, mrp, purchase_price, production_cost, selling_price, weight, mfg_date, expiry_date, qr_type, series_start_code, series_end_code, pack_quantity, is_complementary, is_active)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
-                        [$id, $sizeId, $colorId, $sku, $vHsn, $sku, $mrp, $costPrice, $costPrice, $sellingPrice, $weight, $vMfg, $vExp, $qrType, $seriesStart, $seriesEnd, $packQty, $isComplementary]
+                        "INSERT INTO product_variants (product_id, size_id, color_id, sku, hsn_code, gst_rate, qr_code, mrp, purchase_price, production_cost, selling_price, weight, mfg_date, expiry_date, qr_type, series_start_code, series_end_code, pack_quantity, is_complementary, is_active)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
+                        [$id, $sizeId, $colorId, $sku, $vHsn, $vGst, $sku, $mrp, $costPrice, $costPrice, $sellingPrice, $weight, $vMfg, $vExp, $qrType, $seriesStart, $seriesEnd, $packQty, $isComplementary]
                     );
                     $variantId = (int)Database::lastInsertId();
                 }
@@ -11973,6 +12071,7 @@ class WarehouseController {
         }
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $variants = Database::fetchAll(
             "SELECT pv.id, pv.sku, pv.qr_code, pv.selling_price, pv.mrp, pv.purchase_price, pv.production_cost,
                     COALESCE(pv.purchase_price, pv.production_cost, 0) as cost_price,
@@ -12496,6 +12595,7 @@ class WarehouseController {
 
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
 
         $stats = [
             'total_orders'    => count($orders),
@@ -13138,7 +13238,9 @@ class WarehouseController {
         }
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
         $sellers = Database::fetchAll("SELECT * FROM warehouse_suppliers WHERE is_active = 1 ORDER BY name ASC");
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         
         $variants = Database::fetchAll(
             "SELECT pv.id, pv.sku, pv.qr_code, pv.selling_price, pv.mrp, pv.purchase_price, pv.production_cost,
@@ -13695,6 +13797,7 @@ class WarehouseController {
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
         $shops = function_exists('getScopedShops') ? getScopedShops() : Database::fetchAll("SELECT * FROM shops WHERE is_active = 1 ORDER BY name ASC");
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $variants = Database::fetchAll(
             "SELECT pv.id, pv.sku, pv.mrp, pv.selling_price, p.name as product_name,
                     COALESCE((
@@ -14739,6 +14842,7 @@ class WarehouseController {
         $warehouses = Database::fetchAll("SELECT * FROM warehouses WHERE is_active = 1 ORDER BY name ASC");
         $sizes = Database::fetchAll("SELECT * FROM sizes WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
         $colors = Database::fetchAll("SELECT * FROM colors WHERE is_active = 1 ORDER BY name ASC");
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $brands = Database::fetchAll("SELECT * FROM brands WHERE is_active = 1 ORDER BY name ASC");
 
         // Pre-fetch attributes and default products map for immediate client responsiveness

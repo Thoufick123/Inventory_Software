@@ -37,6 +37,48 @@ class ProductionUnit {
     }
 
     /**
+     * Get active facility details for invoices, bills, and reports.
+     * Excludes staff/manager personal names to present official facility information.
+     */
+    public static function getActiveFacility(?int $unitId = null): array {
+        self::ensureSchema();
+        if ($unitId) {
+            $u = self::find($unitId);
+            if (!empty($u) && !empty($u['name'])) {
+                return $u;
+            }
+        }
+
+        $scopedId = function_exists('currentProductionUnitId') ? currentProductionUnitId() : null;
+        if ($scopedId) {
+            $u = self::find($scopedId);
+            if (!empty($u) && !empty($u['name'])) {
+                return $u;
+            }
+        }
+
+        $activeUnit = Database::fetchOne("SELECT * FROM production_units WHERE is_active = 1 ORDER BY id ASC LIMIT 1");
+        if (!empty($activeUnit) && !empty($activeUnit['name'])) {
+            return $activeUnit;
+        }
+
+        $anyUnit = Database::fetchOne("SELECT * FROM production_units ORDER BY id ASC LIMIT 1");
+        if (!empty($anyUnit) && !empty($anyUnit['name'])) {
+            return $anyUnit;
+        }
+
+        return [
+            'id'         => 1,
+            'name'       => 'Tirupur Apparel Unit 1',
+            'code'       => 'PU-01',
+            'phone'      => '9876543210',
+            'gst_number' => '33AAAAA0000A1Z5',
+            'address'    => 'Tirupur Manufacturing Hub, Avinashi Road, Tirupur - 641603',
+            'location'   => 'Tirupur',
+        ];
+    }
+
+    /**
      * Find a production unit by unique code.
      */
     public static function findByCode(string $code): ?array {

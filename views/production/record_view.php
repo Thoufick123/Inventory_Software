@@ -11,14 +11,14 @@
 <?php if (!empty($qrLabel['code'])): ?>
     <div class="card border shadow-sm mb-4">
         <div class="card-header bg-white py-3">
-            <h5 class="card-title mb-0 fw-bold"><i class="bi bi-qr-code-scan me-2 text-danger"></i>Damaged Fabric Piece Label</h5>
+            <h5 class="card-title mb-0 fw-bold"><i class="bi bi-qr-code-scan me-2 text-dark"></i>Damaged Fabric Piece QR Label</h5>
         </div>
         <div class="card-body">
             <div class="d-inline-flex align-items-center gap-3 p-3 border rounded bg-white">
-                <div id="damageRecordQr" class="p-1 border rounded"></div>
+                <div id="damageRecordQr" class="p-1 border rounded bg-white"></div>
                 <div>
-                    <div class="fw-bold fs-5"><?= e($qrLabel['roll_number'] ?? '') ?></div>
-                    <div class="font-monospace fw-semibold"><?= e($qrLabel['code']) ?></div>
+                    <div class="fw-bold fs-5 text-dark"><?= e($qrLabel['roll_number'] ?? '') ?></div>
+                    <div class="font-monospace fw-semibold text-secondary"><?= e($qrLabel['code']) ?></div>
                     <?php if (!empty($qrLabel['color'])): ?>
                         <div class="small text-muted">Color: <?= e($qrLabel['color']) ?></div>
                     <?php endif; ?>
@@ -33,12 +33,20 @@
     <script src="<?= asset('js/qrcode.min.js') ?>"></script>
     <script>
         if (window.QRCode) {
-            new QRCode(document.getElementById('damageRecordQr'), {
+            const qrEl = document.getElementById('damageRecordQr');
+            qrEl.innerHTML = '';
+            new QRCode(qrEl, {
                 text: <?= json_encode((string)$qrLabel['code'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>,
                 width: 112,
                 height: 112,
-                correctLevel: QRCode.CorrectLevel.M
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.L
             });
+            setTimeout(function() {
+                qrEl.removeAttribute('title');
+                qrEl.querySelectorAll('img, canvas').forEach(function(el) { el.removeAttribute('title'); });
+            }, 50);
         }
     </script>
 <?php endif; ?>

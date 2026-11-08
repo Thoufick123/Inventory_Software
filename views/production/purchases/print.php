@@ -1,6 +1,7 @@
 <?php
+$prodUnit = $prodUnit ?? (class_exists('ProductionUnit') ? ProductionUnit::getActiveFacility($purchase['production_unit_id'] ?? null) : []);
 $currency = $company['currency_symbol'] ?? '₹';
-$companyName = $company['company_name'] ?? '';
+$companyName = !empty($prodUnit['name']) ? $prodUnit['name'] : ($company['company_name'] ?? '');
 $taxLabels = ['SGST' => 'SGST', 'CGST' => 'CGST', 'IGST' => 'IGST'];
 ?>
 <!DOCTYPE html>
@@ -8,7 +9,7 @@ $taxLabels = ['SGST' => 'SGST', 'CGST' => 'CGST', 'IGST' => 'IGST'];
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Purchase Report <?= e($purchase['purchase_number']) ?></title>
+    <title>Purchase Report <?= e($purchase['purchase_number']) ?> — <?= htmlspecialchars($companyName) ?></title>
     <style>
         *{box-sizing:border-box}body{font:14px Arial,sans-serif;color:#1f2937;margin:28px}.toolbar{display:flex;justify-content:flex-end;margin-bottom:16px}.toolbar button{padding:9px 16px;border:0;border-radius:4px;background:#1d4ed8;color:#fff;font-size:14px;cursor:pointer}.report{max-width:1000px;margin:auto}.header{display:flex;justify-content:space-between;gap:24px;border-bottom:2px solid #1f2937;padding-bottom:18px;margin-bottom:22px}.company h1{font-size:23px;margin:0 0 8px}.company p,.meta p,.party p{margin:4px 0;white-space:pre-line}.title{text-align:right}.title h2{margin:0 0 8px;font-size:21px}.parties{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:20px 0}.party{border:1px solid #d1d5db;border-radius:5px;padding:14px}.party h3{margin:0 0 10px;font-size:14px;text-transform:uppercase;color:#4b5563}.meta{margin:10px 0 20px}.meta strong{display:inline-block;min-width:120px}.items{width:100%;border-collapse:collapse;margin:16px 0}.items th,.items td{border:1px solid #d1d5db;padding:9px;text-align:left;vertical-align:top}.items th{background:#f3f4f6}.num{text-align:right!important;white-space:nowrap}.totals{width:360px;max-width:100%;margin:16px 0 0 auto;border-collapse:collapse}.totals td{padding:7px 10px;border-bottom:1px solid #e5e7eb}.grand-total{font-weight:bold;font-size:17px;border-top:2px solid #1f2937}.notes{margin-top:24px;border-top:1px solid #d1d5db;padding-top:12px}.footer{margin-top:36px;text-align:center;color:#6b7280;font-size:12px}@media print{body{margin:12mm}.toolbar{display:none}.report{max-width:none}thead{display:table-header-group}tr{break-inside:avoid}}
     </style>
@@ -18,12 +19,14 @@ $taxLabels = ['SGST' => 'SGST', 'CGST' => 'CGST', 'IGST' => 'IGST'];
 <main class="report">
     <header class="header">
         <div class="company">
-            <h1><?= e($companyName ?: 'Company') ?></h1>
-            <?php if (!empty($company['company_tagline'])): ?><p><?= e($company['company_tagline']) ?></p><?php endif; ?>
-            <?php if (!empty($company['company_address'])): ?><p><?= e($company['company_address']) ?></p><?php endif; ?>
-            <?php if (!empty($company['company_phone'])): ?><p>Phone: <?= e($company['company_phone']) ?></p><?php endif; ?>
-            <?php if (!empty($company['company_email'])): ?><p>Email: <?= e($company['company_email']) ?></p><?php endif; ?>
-            <?php if (!empty($company['company_gstin'])): ?><p>GSTIN: <?= e($company['company_gstin']) ?></p><?php endif; ?>
+            <h1><?= htmlspecialchars($companyName ?: 'Production Unit') ?></h1>
+            <?php if (!empty($prodUnit['address'])): ?><p><?= nl2br(htmlspecialchars($prodUnit['address'])) ?></p>
+            <?php elseif (!empty($company['company_address'])): ?><p><?= e($company['company_address']) ?></p><?php endif; ?>
+            <?php if (!empty($prodUnit['phone'])): ?><p>Phone: <?= htmlspecialchars($prodUnit['phone']) ?></p>
+            <?php elseif (!empty($company['company_phone'])): ?><p>Phone: <?= e($company['company_phone']) ?></p><?php endif; ?>
+            <?php if (!empty($prodUnit['code'])): ?><p>Unit Code: <?= htmlspecialchars($prodUnit['code']) ?></p><?php endif; ?>
+            <?php if (!empty($prodUnit['gst_number'])): ?><p>GSTIN: <?= htmlspecialchars($prodUnit['gst_number']) ?></p>
+            <?php elseif (!empty($company['company_gstin'])): ?><p>GSTIN: <?= e($company['company_gstin']) ?></p><?php endif; ?>
         </div>
         <div class="title">
             <h2>Purchase Report</h2>
@@ -33,12 +36,14 @@ $taxLabels = ['SGST' => 'SGST', 'CGST' => 'CGST', 'IGST' => 'IGST'];
 
     <div class="parties">
         <section class="party">
-            <h3>Our Company</h3>
-            <p><strong><?= e($companyName ?: '—') ?></strong></p>
-            <?php if (!empty($company['company_address'])): ?><p><?= e($company['company_address']) ?></p><?php endif; ?>
-            <?php if (!empty($company['company_phone'])): ?><p>Phone: <?= e($company['company_phone']) ?></p><?php endif; ?>
-            <?php if (!empty($company['company_email'])): ?><p>Email: <?= e($company['company_email']) ?></p><?php endif; ?>
-            <?php if (!empty($company['company_gstin'])): ?><p>GSTIN: <?= e($company['company_gstin']) ?></p><?php endif; ?>
+            <h3>Production Facility</h3>
+            <p><strong><?= htmlspecialchars($companyName ?: '—') ?></strong></p>
+            <?php if (!empty($prodUnit['address'])): ?><p><?= nl2br(htmlspecialchars($prodUnit['address'])) ?></p>
+            <?php elseif (!empty($company['company_address'])): ?><p><?= e($company['company_address']) ?></p><?php endif; ?>
+            <?php if (!empty($prodUnit['phone'])): ?><p>Phone: <?= htmlspecialchars($prodUnit['phone']) ?></p>
+            <?php elseif (!empty($company['company_phone'])): ?><p>Phone: <?= e($company['company_phone']) ?></p><?php endif; ?>
+            <?php if (!empty($prodUnit['gst_number'])): ?><p>GSTIN: <?= htmlspecialchars($prodUnit['gst_number']) ?></p>
+            <?php elseif (!empty($company['company_gstin'])): ?><p>GSTIN: <?= e($company['company_gstin']) ?></p><?php endif; ?>
         </section>
         <section class="party">
             <h3>Purchased From</h3>

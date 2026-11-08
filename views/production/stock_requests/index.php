@@ -154,9 +154,9 @@
                         <i class="bi bi-inbox fs-1 text-secondary"></i>
                     </div>
                     <div class="fw-bold fs-6">No Warehouse Stock Requisitions Found</div>
-                    <p class="small mb-3">Requisitions submitted from Central Warehouse or retail channels will appear here.</p>
-                    <a href="<?= url('production/stock-requests/create') ?>" class="btn btn-sm btn-primary px-3">
-                        <i class="bi bi-plus-circle me-1"></i> Create First Stock Request
+                    <p class="small mb-3">Incoming stock replenishment requests submitted from Central Warehouse or retail channels will appear here for allocation.</p>
+                    <a href="<?= url('production/stock-requests/create') ?>" class="btn btn-sm btn-primary px-3 shadow-sm">
+                        <i class="bi bi-plus-circle me-1"></i> Create Stock Request
                     </a>
                 </div>
             <?php else: ?>
@@ -165,8 +165,9 @@
                         <thead class="table-light small text-uppercase">
                             <tr>
                                 <th>Request #</th>
-                                <th>Warehouse Location</th>
+                                <th>Source / Warehouse</th>
                                 <th>Requested By</th>
+                                <th>Requester Message / Reason</th>
                                 <th class="text-center">Priority</th>
                                 <th class="text-center">Required By</th>
                                 <th class="text-center">Requested</th>
@@ -188,6 +189,15 @@
                                         <div class="fw-semibold text-dark"><i class="bi bi-building me-1 text-secondary"></i><?= e($r['warehouse_name']) ?></div>
                                     </td>
                                     <td><?= e($r['requested_by_name'] ?: 'Warehouse Staff') ?></td>
+                                    <td>
+                                        <?php if (!empty($r['notes'])): ?>
+                                            <div class="text-dark small fw-semibold" style="max-width: 240px;">
+                                                <i class="bi bi-chat-left-text text-primary me-1"></i><?= e(mb_strimwidth($r['notes'], 0, 70, '...')) ?>
+                                            </div>
+                                        <?php else: ?>
+                                            <span class="text-muted small fst-italic">Standard stock replenishment</span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td class="text-center">
                                         <?php if ($r['priority'] === 'URGENT'): ?>
                                             <span class="badge bg-danger text-white">URGENT</span>

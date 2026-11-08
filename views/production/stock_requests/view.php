@@ -69,6 +69,23 @@
         </div>
     </div>
 
+    <!-- Requester Message / Note Banner -->
+    <?php if (!empty($req['notes'])): ?>
+        <div class="card border-0 shadow-sm rounded-3 mb-4 border-start border-4 border-primary bg-primary bg-opacity-10">
+            <div class="card-body p-3 d-flex align-items-start gap-3">
+                <i class="bi bi-chat-left-quote-fill fs-3 text-primary mt-1"></i>
+                <div class="flex-grow-1">
+                    <div class="fw-bold text-dark mb-1">
+                        Requisition Request Message from <?= e($req['warehouse_name']) ?> (<?= e($req['requested_by_name'] ?: 'Requester') ?>):
+                    </div>
+                    <div class="text-secondary fs-6 fst-italic bg-white p-2 rounded border">
+                        "<?= nl2br(e($req['notes'])) ?>"
+                    </div>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>
+
     <!-- Requested Items & Stock Availability Matrix -->
     <div class="card border-0 shadow-sm rounded-3 mb-4">
         <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">

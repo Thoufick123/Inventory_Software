@@ -463,6 +463,17 @@ $existingItems = array_map(static function (array $item): array {
             const response = await fetch('<?= url('api/production/billing/search') ?>?' + params.toString(), {headers: {'Accept': 'application/json'}});
             const payload = await response.json();
             if (!response.ok || !payload.success) throw new Error(payload.message || 'Inventory search failed.');
+
+            // Check if item is flagged as damaged in Damage Management module
+            if (payload.data && payload.data.is_damaged) {
+                const alertEl = document.createElement('div');
+                alertEl.className = 'list-group-item list-group-item-danger border-danger fw-bold small p-3 d-flex align-items-center gap-2';
+                alertEl.innerHTML = `<i class="bi bi-shield-x text-danger fs-4"></i><div><span class="d-block text-danger">${payload.data.message}</span><small class="text-dark fw-normal">Damage Record: <strong>${payload.data.damage_number}</strong> · Reason: ${payload.data.damage_reason}</small></div>`;
+                resultBox.append(alertEl);
+                document.getElementById('cartMessage').innerHTML = `<div class="alert alert-danger py-1.5 px-3 fw-bold small mb-0"><i class="bi bi-exclamation-octagon-fill me-1"></i> ${payload.data.message}</div>`;
+                return;
+            }
+
             const assigned = assignedTags();
             let resultCount = 0;
             payload.data.items.forEach(item => {

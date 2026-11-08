@@ -1,13 +1,5 @@
 <?php
 
-namespace App\Controllers;
-
-use App\Core\Auth;
-use App\Core\Response;
-use App\Core\Session;
-use App\Helpers\Database;
-use Throwable;
-
 class ProductionStockRequestController
 {
     public function index(): void

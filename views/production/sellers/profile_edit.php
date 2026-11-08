@@ -1,5 +1,5 @@
 <div class="page-header mb-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
-    <div><h2><i class="bi bi-pencil-square me-2 text-primary"></i>Edit Supplier Details</h2><span class="text-muted">Purchase records and fabric roll inventory are managed separately in Purchases.</span></div>
+    <div><h2><i class="bi bi-pencil-square me-2 text-primary"></i>Edit Supplier Details</h2></div>
     <a href="<?= url('production/sellers') ?>" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back to Suppliers</a>
 </div>
 <form method="POST" action="<?= url('production/sellers/update/' . $seller['id']) ?>" class="card shadow-sm border">

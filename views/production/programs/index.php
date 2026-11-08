@@ -1,8 +1,7 @@
 <div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
     <div>
         <h2 class="mb-1 fw-bold text-dark"><i class="bi bi-kanban me-2 text-primary"></i>Production Programs</h2>
-        <span class="text-muted">Manufacturing orders, raw material rolls, 3-tier category hierarchy, and timeline schedules</span>
-    </div>
+        </div>
     <?php if (hasPermission('programs', 'create')): ?>
     <a href="<?= url('production/programs/create') ?>" class="btn btn-primary shadow-sm">
         <i class="bi bi-plus-circle me-1"></i> Create Program
