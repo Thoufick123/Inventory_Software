@@ -878,13 +878,67 @@ class ProductionService {
         Database::beginTransaction();
         try {
             $includeRework = !empty($batchData['include_rework']);
-            if (!empty($batchData['qc_batch_id'])) {
-                $qcId = (int)$batchData['qc_batch_id'];
-                $availableTagsByItem = self::getAvailableQCPieceTags($qcId, $includeRework);
-                $qcItemsById = [];
-                foreach (QCBatch::getItems($qcId) as $qcItem) {
-                    $qcItemsById[(int)$qcItem['id']] = $qcItem;
+            $primaryQcId = !empty($batchData['qc_batch_id']) ? (int)$batchData['qc_batch_id'] : 0;
+            
+            $additionalQcIds = [];
+            if (!empty($batchData['additional_qc_batch_ids'])) {
+                if (is_array($batchData['additional_qc_batch_ids'])) {
+                    $additionalQcIds = array_map('intval', $batchData['additional_qc_batch_ids']);
+                } else {
+                    $decoded = json_decode((string)$batchData['additional_qc_batch_ids'], true);
+                    if (is_array($decoded)) {
+                        $additionalQcIds = array_map('intval', $decoded);
+                    } else {
+                        $additionalQcIds = array_map('intval', explode(',', (string)$batchData['additional_qc_batch_ids']));
+                    }
                 }
+            }
+            $allQcIds = array_values(array_filter(array_unique(array_merge($primaryQcId > 0 ? [$primaryQcId] : [], $additionalQcIds))));
+
+            if (!empty($allQcIds)) {
+                $availableTagsByItem = [];
+                $qcItemsById = [];
+                $totalCombinedPool = 0;
+                $totalCombinedPacked = 0;
+
+                foreach ($allQcIds as $qId) {
+                    $tagsForBatch = self::getAvailableQCPieceTags($qId, $includeRework);
+                    foreach ($tagsForBatch as $itemId => $tagList) {
+                        $availableTagsByItem[$itemId] = array_values(array_unique(array_merge($availableTagsByItem[$itemId] ?? [], $tagList)));
+                    }
+                    foreach (QCBatch::getItems($qId) as $qcItem) {
+                        $qcItemsById[(int)$qcItem['id']] = $qcItem;
+                    }
+
+                    $qPassed = (int)(Database::fetchOne("SELECT COALESCE(SUM(passed_qty), 0) as total FROM qc_items WHERE qc_batch_id = ?", [$qId])['total'] ?? 0);
+                    if ($qPassed <= 0) {
+                        $qcRow = QCBatch::find($qId);
+                        $qPassed = (int)($qcRow['passed_qty'] ?? 0);
+                    }
+
+                    $qRework = 0;
+                    if ($includeRework) {
+                        $qRework = (int)(Database::fetchOne("SELECT COALESCE(SUM(rework_qty), 0) as total FROM qc_items WHERE qc_batch_id = ?", [$qId])['total'] ?? 0);
+                        if ($qRework <= 0) {
+                            $qcRow = $qcRow ?? QCBatch::find($qId);
+                            $qRework = (int)($qcRow['rework_qty'] ?? 0);
+                        }
+                    }
+
+                    $qPacked = (int)(Database::fetchOne(
+                        "SELECT COALESCE(SUM(pbi.quantity), 0) as total
+                         FROM production_batch_items pbi
+                         JOIN production_batches pb ON pbi.production_batch_id = pb.id
+                         WHERE (pb.qc_batch_id = ? OR pb.additional_qc_batch_ids LIKE ?) AND pb.status != 'CANCELLED'",
+                        [$qId, '%' . $qId . '%']
+                    )['total'] ?? 0);
+
+                    $totalCombinedPool += ($qPassed + $qRework);
+                    $totalCombinedPacked += $qPacked;
+                }
+
+                $remainingQty = max(0, $totalCombinedPool - $totalCombinedPacked);
+
                 $requestedTags = [];
                 foreach ($items as &$item) {
                     $qty = (int)($item['quantity'] ?? 0);
@@ -919,50 +973,19 @@ class ProductionService {
                 }
                 unset($item);
 
-                $totalQCPassed = (int)(Database::fetchOne(
-                    "SELECT COALESCE(SUM(passed_qty), 0) as total FROM qc_items WHERE qc_batch_id = ?",
-                    [$qcId]
-                )['total'] ?? 0);
-                if ($totalQCPassed <= 0) {
-                    $qcRow = QCBatch::find($qcId);
-                    $totalQCPassed = (int)($qcRow['passed_qty'] ?? 0);
-                }
-
-                $totalQCRework = 0;
-                if ($includeRework) {
-                    $totalQCRework = (int)(Database::fetchOne(
-                        "SELECT COALESCE(SUM(rework_qty), 0) as total FROM qc_items WHERE qc_batch_id = ?",
-                        [$qcId]
-                    )['total'] ?? 0);
-                    if ($totalQCRework <= 0) {
-                        $qcRow = $qcRow ?? QCBatch::find($qcId);
-                        $totalQCRework = (int)($qcRow['rework_qty'] ?? 0);
-                    }
-                }
-
-                $alreadyPacked = (int)(Database::fetchOne(
-                    "SELECT COALESCE(SUM(pbi.quantity), 0) as total
-                     FROM production_batch_items pbi
-                     JOIN production_batches pb ON pbi.production_batch_id = pb.id
-                     WHERE pb.qc_batch_id = ? AND pb.status != 'CANCELLED'",
-                    [$qcId]
-                )['total'] ?? 0);
-
-                $remainingQty = max(0, ($totalQCPassed + $totalQCRework) - $alreadyPacked);
-
                 $requestPackingQty = 0;
                 foreach ($items as $item) {
                     $requestPackingQty += (int)($item['quantity'] ?? 0);
                 }
 
                 if ($remainingQty <= 0) {
-                    $poolMsg = $includeRework ? "passed and rework" : "QC passed";
-                    throw new Exception("Validation Error: All {$poolMsg} garments in QC Batch #{$qcId} have already been packed into finished batches.");
+                    $batchLabels = implode(', ', array_map(fn($id) => '#' . $id, $allQcIds));
+                    throw new Exception("Validation Error: All garments in selected QC Batch(es) {$batchLabels} have already been packed into finished batches.");
                 }
 
                 if ($requestPackingQty > $remainingQty) {
-                    $reworkText = $includeRework ? " (including {$totalQCRework} rework pcs)" : "";
-                    throw new Exception("Validation Error: Cannot pack {$requestPackingQty} pcs. Only {$remainingQty} pcs remain available to pack for QC Batch #{$qcId}{$reworkText}.");
+                    $batchLabels = implode(', ', array_map(fn($id) => '#' . $id, $allQcIds));
+                    throw new Exception("Validation Error: Cannot pack {$requestPackingQty} pcs. Only {$remainingQty} pcs remain available across selected QC Batch(es) {$batchLabels}.");
                 }
             }
 
@@ -976,6 +999,10 @@ class ProductionService {
                 $totalQty += (int)($item['quantity'] ?? 0);
             }
             $batchData['total_qty'] = $totalQty;
+            if (!empty($additionalQcIds)) {
+                $batchData['additional_qc_batch_ids'] = $additionalQcIds;
+                $batchData['is_multi_qc'] = 1;
+            }
 
             $batchId = ProductionBatch::create($batchData);
 

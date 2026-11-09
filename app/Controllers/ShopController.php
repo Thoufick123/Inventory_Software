@@ -66,6 +66,65 @@ class ShopController {
     }
 
     /**
+     * Export Shop Reports (CSV Spreadsheet or Printable Master Summary)
+     */
+    public function exportReports(): void {
+        if (!hasPermission('shop', 'view') && !hasPermission('sales', 'view') && !hasPermission('shop_stock', 'view')) {
+            Session::setFlash('error', 'Access denied: You do not have permission to export shop reports.');
+            Response::redirect(url('shop/dashboard'));
+            return;
+        }
+
+        require_once BASE_PATH . '/app/Services/ShopReportService.php';
+
+        $periodType = trim((string)($_REQUEST['period_type'] ?? 'MONTH'));
+        $format = strtoupper(trim((string)($_REQUEST['format'] ?? 'CSV')));
+
+        if ($periodType === 'MONTH') {
+            $month = (int)($_REQUEST['selected_month'] ?? date('n'));
+            $year = (int)($_REQUEST['selected_year'] ?? date('Y'));
+            $month = max(1, min(12, $month));
+            $year = max(2020, min(2035, $year));
+            $startDate = sprintf('%04d-%02d-01', $year, $month);
+            $endDate = date('Y-m-t', strtotime($startDate));
+            $periodLabel = date('F Y', strtotime($startDate));
+        } else {
+            $startDate = trim((string)($_REQUEST['date_from'] ?? date('Y-m-01')));
+            $endDate = trim((string)($_REQUEST['date_to'] ?? date('Y-m-d')));
+            $periodLabel = date('d M Y', strtotime($startDate)) . ' to ' . date('d M Y', strtotime($endDate));
+        }
+
+        $allModules = ['sales', 'sale_items', 'stock', 'inward', 'returns', 'return_to_warehouse', 'customers', 'cash_register', 'cash_expenses', 'damages'];
+        $selectedModules = !empty($_REQUEST['modules']) && is_array($_REQUEST['modules'])
+            ? array_values(array_intersect($_REQUEST['modules'], $allModules))
+            : $allModules;
+
+        if (empty($selectedModules)) {
+            $selectedModules = $allModules;
+        }
+
+        $shop = ShopService::getActiveShop();
+        $shopId = (int)($shop['id'] ?? 1);
+
+        $data = \App\Services\ShopReportService::getReportData($startDate, $endDate, $selectedModules, $shopId);
+
+        if ($format === 'PRINT') {
+            Response::viewOnly('shop.reports.print', [
+                'periodLabel'     => $periodLabel,
+                'startDate'       => $startDate,
+                'endDate'         => $endDate,
+                'selectedModules' => $selectedModules,
+                'data'            => $data,
+                'shop'            => $shop,
+                'company'         => class_exists('SettingsService') ? \SettingsService::getGroup('company') : [],
+            ]);
+            return;
+        }
+
+        \App\Services\ShopReportService::streamCsv($periodLabel, $startDate, $endDate, $data, $shop);
+    }
+
+    /**
      * POS Billing Terminal Interface
      */
     public function posInterface(): void {

@@ -14,8 +14,7 @@
             <h3 class="fw-bold mb-0 text-dark">
                 <i class="bi bi-people-fill text-primary me-2"></i>Customer Directory &amp; CRM
             </h3>
-            <small class="text-muted">Manage complete customer profiles, lifetime purchase history, and shopping activity</small>
-        </div>
+           </div>
     </div>
 
     <!-- KPI Metric Cards Grid -->

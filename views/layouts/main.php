@@ -601,12 +601,6 @@ if (!empty($authUser['shop_name'])) {
                     <?php endif; ?>
                 </div>
                 <div class="navbar-right">
-                    <!-- Quick Universal QR Status Finder Button -->
-                    <button type="button" class="btn btn-outline-primary btn-sm rounded-pill px-3 py-1.5 d-flex align-items-center gap-1.5 shadow-sm" data-bs-toggle="modal" data-bs-target="#qrStatusFinderModal" title="Universal QR &amp; Barcode Status Finder">
-                        <i class="bi bi-qr-code-scan"></i>
-                        <span class="d-none d-sm-inline fw-semibold" style="font-size: 13px;">QR Status Finder</span>
-                    </button>
-
                     <!-- User Dropdown -->
                     <div class="dropdown">
                         <button class="user-dropdown" data-bs-toggle="dropdown">

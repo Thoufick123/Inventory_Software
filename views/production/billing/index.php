@@ -8,6 +8,84 @@
     <?php endif; ?>
 </div>
 
+<!-- Production Billing KPI Summary Cards -->
+<div class="row g-3 mb-4">
+    <!-- Card 1: Total Revenue -->
+    <div class="col-sm-6 col-xl-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body p-3">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <span class="text-muted small fw-semibold text-uppercase">Total Billed Revenue</span>
+                    <div class="p-2 bg-success bg-opacity-10 text-success rounded-circle">
+                        <i class="bi bi-currency-rupee fs-5"></i>
+                    </div>
+                </div>
+                <h3 class="fw-bold text-dark mb-1">₹<?= number_format($stats['total_revenue'] ?? 0, 2) ?></h3>
+                <div class="small text-muted d-flex align-items-center gap-1">
+                    <span class="text-success fw-semibold">₹<?= number_format($stats['paid_revenue'] ?? 0, 2) ?></span> Paid
+                    <span class="text-muted">&bull;</span>
+                    <span class="text-warning fw-semibold">₹<?= number_format($stats['pending_revenue'] ?? 0, 2) ?></span> Pending
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Card 2: Total Bills -->
+    <div class="col-sm-6 col-xl-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body p-3">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <span class="text-muted small fw-semibold text-uppercase">Total Invoices / Bills</span>
+                    <div class="p-2 bg-primary bg-opacity-10 text-primary rounded-circle">
+                        <i class="bi bi-receipt-cutoff fs-5"></i>
+                    </div>
+                </div>
+                <h3 class="fw-bold text-dark mb-1"><?= number_format($stats['total_bills'] ?? 0) ?></h3>
+                <div class="small text-muted d-flex align-items-center gap-1">
+                    <span class="badge bg-success-subtle text-success"><?= $stats['paid_count'] ?? 0 ?> Settled</span>
+                    <span class="badge bg-warning-subtle text-warning-emphasis"><?= $stats['pending_count'] ?? 0 ?> Unsettled</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Card 3: Bill-based Customers -->
+    <div class="col-sm-6 col-xl-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body p-3">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <span class="text-muted small fw-semibold text-uppercase">Billed Customers</span>
+                    <div class="p-2 bg-info bg-opacity-10 text-info rounded-circle">
+                        <i class="bi bi-people-fill fs-5"></i>
+                    </div>
+                </div>
+                <h3 class="fw-bold text-dark mb-1"><?= number_format($stats['unique_customers'] ?? 0) ?></h3>
+                <div class="small text-muted">
+                    <span class="fw-semibold text-info">Unique Clients</span> billed across QC inventory
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Card 4: Realization Ratio -->
+    <div class="col-sm-6 col-xl-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body p-3">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <span class="text-muted small fw-semibold text-uppercase">Realization Ratio</span>
+                    <div class="p-2 bg-warning bg-opacity-10 text-warning rounded-circle">
+                        <i class="bi bi-check2-circle fs-5"></i>
+                    </div>
+                </div>
+                <h3 class="fw-bold text-dark mb-1"><?= !empty($stats['total_revenue']) ? round(($stats['paid_revenue'] / $stats['total_revenue']) * 100, 1) . '%' : '0%' ?></h3>
+                <div class="small text-muted">
+                    <span>Payment collection conversion rate</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="card border-0 shadow-sm">
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">

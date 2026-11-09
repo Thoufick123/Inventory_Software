@@ -3,7 +3,14 @@
         <h2 class="mb-1"><i class="bi bi-receipt me-2 text-success"></i>Customer Purchase Tax Invoice #<?= e($po['po_number']) ?></h2>
         <span class="text-muted">Official direct customer sales invoice, itemized tax ledger &amp; dispatch slip</span>
     </div>
-    <div class="d-flex gap-2">
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+        <!-- Toggle to Hide/Show Amounts for Customer Delivery Slip -->
+        <div class="form-check form-switch me-2 d-print-none bg-light border rounded-pill px-3 py-1.5 shadow-2xs d-flex align-items-center gap-2">
+            <input class="form-check-input ms-0 mt-0" type="checkbox" id="toggleHideAmounts" onchange="toggleInvoiceAmounts(this.checked)" style="cursor: pointer;">
+            <label class="form-check-label small fw-semibold text-secondary user-select-none mb-0" for="toggleHideAmounts" style="cursor: pointer;">
+                <i class="bi bi-eye-slash me-1"></i> Hide Amounts (Delivery Challan)
+            </label>
+        </div>
         <button onclick="window.print()" class="btn btn-success shadow-sm">
             <i class="bi bi-printer me-1"></i> Print Tax Invoice
         </button>
@@ -45,17 +52,23 @@
             </div>
             <p class="text-muted small mb-0">
                 <strong>Dispatch Warehouse:</strong> <?= e($po['warehouse_name'] ?? 'Main Warehouse') ?> (<?= e($po['warehouse_code'] ?? 'WH') ?>)<br>
-                <strong>GSTIN:</strong> 33AAACG1234F1Z5 &nbsp;|&nbsp; <strong>State Code:</strong> 33 (Tamil Nadu)<br>
+                <strong>GSTIN:</strong> 33AAACG1234F1Z5<br>
                 <strong>Email:</strong> sales@grmapparels.com &nbsp;|&nbsp; <strong>Phone:</strong> +91 421 2233445
             </p>
         </div>
         <div class="col-sm-5 text-sm-end mt-3 mt-sm-0">
-            <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 fs-6 fw-bold mb-2 d-inline-block">
+            <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 fs-6 fw-bold mb-2 d-inline-block" id="invoiceTypeBadge">
                 TAX INVOICE / DIRECT SALE
             </span>
             <div class="font-monospace fw-bold fs-5 text-primary">#<?= e($po['po_number']) ?></div>
-            <div class="small text-muted">Invoice Date: <strong><?= date('d M Y', strtotime($po['order_date'])) ?></strong></div>
-            <div class="small text-muted">Payment Mode: <strong class="text-dark"><?= e($po['payment_method'] ?? 'CASH') ?></strong> (<span class="text-success fw-semibold"><?= e($po['payment_status'] ?? 'PAID') ?></span>)</div>
+            <?php
+            $rawTimestamp = !empty($po['created_at']) && $po['created_at'] !== '0000-00-00 00:00:00' 
+                ? $po['created_at'] 
+                : ($po['order_date'] ?? date('Y-m-d H:i:s'));
+            $billingTimestamp = date('d M Y, h:i:s A', strtotime($rawTimestamp));
+            ?>
+            <div class="small text-muted mt-1">Invoice Date &amp; Time: <strong class="text-dark"><i class="bi bi-clock me-1 text-primary"></i><?= $billingTimestamp ?></strong></div>
+            <div class="small text-muted mt-0.5">Payment Mode: <strong class="text-dark"><?= e($po['payment_method'] ?? 'CASH') ?></strong> (<span class="text-success fw-semibold"><?= e($po['payment_status'] ?? 'PAID') ?></span>)</div>
         </div>
     </div>
 
@@ -83,12 +96,6 @@
             </div>
         </div>
         <div class="col-sm-6 text-sm-end">
-            <h6 class="text-muted text-uppercase fs-7 fw-bold mb-2">Order &amp; Dispatch Status:</h6>
-            <div class="mb-1">
-                <span class="badge bg-<?= in_array($po['status'], ['COMPLETED', 'RECEIVED']) ? 'success' : 'primary' ?> px-3 py-1 fs-7">
-                    <?= e($po['status']) ?>
-                </span>
-            </div>
             <?php if (!empty($po['notes'])): ?>
                 <div class="small text-muted mt-2">
                     <strong>Order Notes:</strong> <?= e($po['notes']) ?>
@@ -98,19 +105,19 @@
     </div>
 
     <!-- Itemized Products Table -->
-    <div class="table-responsive mb-4">
-        <table class="table table-bordered align-middle mb-0">
+    <div class="table-responsive mb-4 invoice-table-wrapper">
+        <table class="table table-bordered align-middle mb-0 invoice-table">
             <thead class="table-light">
                 <tr>
                     <th style="width: 4%;">#</th>
-                    <th style="width: 34%;">Product Description</th>
-                    <th class="text-center" style="width: 10%;">Size / Color</th>
-                    <th class="text-center" style="width: 7%;">Qty</th>
-                    <th class="text-end" style="width: 11%;">Rate (₹)</th>
-                    <th class="text-end" style="width: 9%;">Disc (₹)</th>
-                    <th class="text-end" style="width: 11%;">Taxable (₹)</th>
-                    <th class="text-center" style="width: 6%;">GST %</th>
-                    <th class="text-end" style="width: 13%;">Amount (₹)</th>
+                    <th style="width: 32%;">Product Description</th>
+                    <th class="text-center" style="width: 14%;">Size / Color</th>
+                    <th class="text-center" style="width: 8%;">Qty</th>
+                    <th class="text-end col-amount" style="width: 10%;">Rate (₹)</th>
+                    <th class="text-end col-amount" style="width: 8%;">Disc (₹)</th>
+                    <th class="text-end col-amount" style="width: 11%;">Taxable (₹)</th>
+                    <th class="text-center col-amount" style="width: 5%;">GST %</th>
+                    <th class="text-end col-amount" style="width: 12%;">Amount (₹)</th>
                 </tr>
             </thead>
             <tbody>
@@ -151,11 +158,11 @@
                             <?= e($item['size_name'] ?? 'Free') ?> / <?= e($item['color_name'] ?? 'Std') ?>
                         </td>
                         <td class="text-center fw-bold fs-6"><?= number_format($qty) ?></td>
-                        <td class="text-end font-monospace">₹<?= number_format($billedRate, 2) ?></td>
-                        <td class="text-end font-monospace text-danger"><?= $lineDisc > 0 ? '-₹' . number_format($lineDisc, 2) : '-' ?></td>
-                        <td class="text-end font-monospace">₹<?= number_format($lineTaxable, 2) ?></td>
-                        <td class="text-center font-monospace small"><?= $gstPct ?>%</td>
-                        <td class="text-end fw-bold text-dark font-monospace">₹<?= number_format($lineTotal, 2) ?></td>
+                        <td class="text-end font-monospace col-amount">₹<?= number_format($billedRate, 2) ?></td>
+                        <td class="text-end font-monospace text-danger col-amount"><?= $lineDisc > 0 ? '-₹' . number_format($lineDisc, 2) : '-' ?></td>
+                        <td class="text-end font-monospace col-amount">₹<?= number_format($lineTaxable, 2) ?></td>
+                        <td class="text-center font-monospace small col-amount"><?= $gstPct ?>%</td>
+                        <td class="text-end fw-bold text-dark font-monospace col-amount">₹<?= number_format($lineTotal, 2) ?></td>
                     </tr>
                 <?php endforeach; ?>
             </tbody>
@@ -164,7 +171,7 @@
 
     <!-- Financial Totals & Authorised Sign-off Footer -->
     <div class="row g-4 align-items-start mt-2">
-        <div class="col-sm-6 ms-auto">
+        <div class="col-sm-6 ms-auto invoice-totals-row">
             <?php
             $displayGross = $calcGross > 0 ? $calcGross : ((float)$po['total_amount'] + (float)($po['discount_amount'] ?? 0));
             $displayDisc = (float)($po['discount_amount'] ?? 0) > 0 ? (float)$po['discount_amount'] : $calcDisc;
@@ -219,18 +226,34 @@
 </div>
 
 <!-- ========================================================================= -->
-<!-- PRINT STYLES -->
+<!-- PRINT STYLES & INTERACTIVE TOGGLES -->
 <!-- ========================================================================= -->
 <style>
 .invoice-container {
-    max-width: 950px;
+    max-width: 1050px;
     margin: 0 auto;
 }
 .fs-7 { font-size: 0.85rem; }
 .fs-8 { font-size: 0.75rem; }
 
+.invoice-table {
+    width: 100%;
+    table-layout: auto;
+    font-size: 0.88rem;
+}
+.invoice-table th, .invoice-table td {
+    padding: 0.55rem 0.5rem;
+    vertical-align: middle;
+}
+
+/* Hide amounts mode (Delivery Challan / Packing Slip Mode) */
+.hide-amounts-mode .col-amount,
+.hide-amounts-mode .invoice-totals-row {
+    display: none !important;
+}
+
 @media print {
-    .no-print, .page-header, .sidebar, .navbar, .breadcrumb, footer {
+    .no-print, .page-header, .sidebar, .navbar, .breadcrumb, footer, .d-print-none {
         display: none !important;
     }
     body {
@@ -243,9 +266,46 @@
         box-shadow: none !important;
         padding: 0 !important;
         max-width: 100% !important;
+        width: 100% !important;
+    }
+    .table-responsive {
+        overflow: visible !important;
+        display: block !important;
+    }
+    .invoice-table {
+        width: 100% !important;
+        table-layout: auto !important;
+        font-size: 10.5px !important;
+    }
+    .invoice-table th, .invoice-table td {
+        padding: 4px 6px !important;
     }
     .table-light {
         background-color: #f8f9fa !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
     }
 }
 </style>
+
+<script>
+function toggleInvoiceAmounts(hide) {
+    const container = document.querySelector('.invoice-container');
+    const badge = document.getElementById('invoiceTypeBadge');
+    if (hide) {
+        container.classList.add('hide-amounts-mode');
+        if (badge) {
+            badge.innerText = 'DELIVERY CHALLAN / DISPATCH SLIP';
+            badge.classList.remove('bg-success-subtle', 'text-success', 'border-success-subtle');
+            badge.classList.add('bg-secondary-subtle', 'text-secondary', 'border-secondary-subtle');
+        }
+    } else {
+        container.classList.remove('hide-amounts-mode');
+        if (badge) {
+            badge.innerText = 'TAX INVOICE / DIRECT SALE';
+            badge.classList.remove('bg-secondary-subtle', 'text-secondary', 'border-secondary-subtle');
+            badge.classList.add('bg-success-subtle', 'text-success', 'border-success-subtle');
+        }
+    }
+}
+</script>

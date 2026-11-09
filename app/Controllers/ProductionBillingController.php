@@ -11,11 +11,40 @@ class ProductionBillingController
              ORDER BY pb.bill_date DESC, pb.id DESC"
         );
 
+        $stats = [
+            'total_revenue'    => 0.0,
+            'paid_revenue'     => 0.0,
+            'pending_revenue'  => 0.0,
+            'total_bills'      => count($bills),
+            'unique_customers' => 0,
+            'paid_count'       => 0,
+            'pending_count'    => 0,
+        ];
+
+        $customerSet = [];
+        foreach ($bills as $b) {
+            $amount = (float)($b['total_amount'] ?? 0);
+            $stats['total_revenue'] += $amount;
+            if (($b['payment_status'] ?? '') === 'PAID') {
+                $stats['paid_revenue'] += $amount;
+                $stats['paid_count']++;
+            } else {
+                $stats['pending_revenue'] += $amount;
+                $stats['pending_count']++;
+            }
+            $buyer = trim(($b['buyer_type'] ?? '') . '_' . (($b['buyer_type'] ?? '') === 'CUSTOMER' ? ($b['customer_name'] ?? '') : ($b['company_name'] ?? '')));
+            if ($buyer !== '_' && $buyer !== '') {
+                $customerSet[$buyer] = true;
+            }
+        }
+        $stats['unique_customers'] = count($customerSet);
+
         Response::view('production.billing.index', [
             'pageTitle' => 'Production Billing',
             'activeModule' => 'production',
             'activeMenu' => 'prod-billing',
             'bills' => $bills,
+            'stats' => $stats,
         ]);
     }
 

@@ -34,6 +34,28 @@ $activeVar = null;
 $generatedItems = [];
 $monthStr = sprintf('%02d', date('n'));
 $yearStr = date('y');
+$deletedWhRows = Database::fetchAll("SELECT code, variant_id FROM warehouse_deleted_label_codes");
+$deletedWhCodes = [];
+foreach ($deletedWhRows as $drow) {
+    $cKey = strtoupper(trim((string)($drow['code'] ?? '')));
+    if ($cKey === '') continue;
+    $vKey = (int)($drow['variant_id'] ?? 0);
+    if ($vKey > 0) {
+        $deletedWhCodes[$vKey . '_' . $cKey] = true;
+    } else {
+        $deletedWhCodes['0_' . $cKey] = true;
+    }
+}
+if (!function_exists('isWarehouseCodeDeleted')) {
+    function isWarehouseCodeDeleted(string $code, ?int $variantId, array $deletedWhCodes): bool {
+        $cKey = strtoupper(trim($code));
+        if ($cKey === '') return false;
+        if ($variantId !== null && $variantId > 0 && !empty($deletedWhCodes[$variantId . '_' . $cKey])) {
+            return true;
+        }
+        return !empty($deletedWhCodes['0_' . $cKey]);
+    }
+}
 
 if (!function_exists('getWarehouseQrSequenceOffset')) {
     function getWarehouseQrSequenceOffset(string $prefix, ?int $excludeVariantId = null): int {
@@ -652,6 +674,13 @@ if ($currentSourceType === 'po' || $currentSourceType === 'tp_purchase') {
                         [(int)$activeVar['id']]
                     );
 
+                    if (!empty($existingQrs) && !empty($deletedWhCodes)) {
+                        $activeVarId = (int)$activeVar['id'];
+                        $existingQrs = array_values(array_filter($existingQrs, function($eqr) use ($deletedWhCodes, $activeVarId) {
+                            return !isWarehouseCodeDeleted((string)$eqr['qr_code'], $activeVarId, $deletedWhCodes);
+                        }));
+                    }
+
                     if (!empty($existingQrs)) {
                         foreach ($existingQrs as $idx => $eqr) {
                             $packQ = (int)($eqr['pack_quantity'] ?? $packQty);
@@ -805,6 +834,9 @@ if ($currentSourceType === 'po' || $currentSourceType === 'tp_purchase') {
 
                     for ($i = $startSeq; $i <= $endSeq; $i++) {
                         $tagCode = $baseTagPrefix . sprintf("%0{$seqPad}d", $i);
+                        if (isWarehouseCodeDeleted($tagCode, (int)$activeVar['id'], $deletedWhCodes)) {
+                            continue;
+                        }
                         $generatedItems[] = [
                             'piece_no'             => $i,
                             'total_count'          => $categoryOffset + $totalExpectedQty,
@@ -1079,12 +1111,19 @@ if ($isViewingExisting && $selectedVariantId && $activeVar) {
         || strtoupper($activeVar['qr_type'] ?? '') === 'SERIES'
         || $activeCategoryType === 'SERIES';
     $existingQrCodes = Database::fetchAll(
-        "SELECT qr_code, inwarded_at
+        "SELECT id, qr_code, series_end_code, pack_quantity, inwarded_at, created_at, is_extra, extra_reason
          FROM warehouse_qr_codes
          WHERE variant_id = ?
-         ORDER BY (inwarded_at IS NOT NULL) DESC, created_at ASC, id ASC" . (($isComp || $isSeries) ? " LIMIT 1" : ""),
+         ORDER BY id ASC",
         [(int)$selectedVariantId]
     );
+
+    if (!empty($existingQrCodes) && !empty($deletedWhCodes)) {
+        $existingQrCodes = array_values(array_filter($existingQrCodes, function($eqr) use ($deletedWhCodes, $selectedVariantId) {
+            return !isWarehouseCodeDeleted((string)$eqr['qr_code'], (int)$selectedVariantId, $deletedWhCodes);
+        }));
+    }
+
     $generatedItems = [];
 
     $brandOrSeller = !empty($activeVar['brand_name']) && $activeVar['brand_name'] !== 'Third-Party Brand'
@@ -1099,7 +1138,23 @@ if ($isViewingExisting && $selectedVariantId && $activeVar) {
 
     foreach ($existingQrCodes as $index => $qrCode) {
         $tagCode = (string)$qrCode['qr_code'];
+        $endCode = !empty($qrCode['series_end_code']) ? (string)$qrCode['series_end_code'] : $tagCode;
+        $packQ = (int)($qrCode['pack_quantity'] ?? $activeVar['pack_quantity'] ?? 1);
+        if ($packQ <= 0) $packQ = 1;
+
+        $seqRangeText = '';
+        if (preg_match('/^[A-Za-z]+\d{4}(\d+)$/', $tagCode, $mStart) && preg_match('/^[A-Za-z]+\d{4}(\d+)$/', $endCode, $mEnd)) {
+            $seqRangeText = " (" . (int)$mStart[1] . " to " . (int)$mEnd[1] . ")";
+        } elseif (preg_match('/(\d+)$/', $tagCode, $mStart) && preg_match('/(\d+)$/', $endCode, $mEnd)) {
+            $seqRangeText = " (" . (int)$mStart[1] . " to " . (int)$mEnd[1] . ")";
+        }
+
+        $sourceLabel = ($isSeries || $isComp)
+            ? (($isComp ? 'Master Complementary Pack: ' : 'Master Series Pack: ') . $brandOrSeller . " ({$packQ} Pcs)" . $seqRangeText)
+            : 'Previously generated supplier QR label';
+
         $generatedItems[] = [
+            'id'                   => (int)$qrCode['id'],
             'piece_no'             => $index + 1,
             'total_count'          => $existingCount,
             'variant_id'           => (int)$selectedVariantId,
@@ -1114,13 +1169,16 @@ if ($isViewingExisting && $selectedVariantId && $activeVar) {
             'mrp'                  => (float)($activeVar['mrp'] ?? 0),
             'selling_price'        => (float)($activeVar['selling_price'] ?? 0),
             'cost_price'           => (float)($activeVar['purchase_price'] ?? 0),
-            'source_label'         => 'Previously generated supplier QR label',
-            'badge_class'          => 'bg-success',
+            'source_label'         => $sourceLabel,
+            'badge_class'          => ($isSeries || $isComp) ? 'bg-dark text-white' : 'bg-success',
             'qr_payload'           => $tagCode,
             'is_series'            => $isSeries || $isComp,
             'is_complementary'     => $isComp,
-            'pack_quantity'        => (int)($activeVar['pack_quantity'] ?? 1),
+            'series_start_code'    => $tagCode,
+            'series_end_code'      => $endCode,
+            'pack_quantity'        => $packQ,
             'is_inwarded'          => !empty($qrCode['inwarded_at']),
+            'is_saved_qr'          => true,
             'category_name'        => $activeVar['category_name'] ?? '',
             'subcategory_name'     => $activeVar['subcategory_name'] ?? '',
             'sub_subcategory_name' => $activeVar['sub_subcategory_name'] ?? '',
@@ -1164,10 +1222,11 @@ if (!empty($generatedItems) && !$isViewingExisting) {
                     "SELECT qr_code
                      FROM warehouse_qr_codes
                      WHERE variant_id = ? AND warehouse_id = ? AND inwarded_at IS NULL
+                       AND qr_code NOT IN (SELECT code FROM warehouse_deleted_label_codes WHERE variant_id = ? OR variant_id IS NULL)
                      ORDER BY id DESC
                      LIMIT " . (int)($requestedQrCountByVariant[$variantId] ?? 0) . "
                      FOR UPDATE",
-                    [$variantId, $targetWarehouseId]
+                    [$variantId, $targetWarehouseId, $variantId]
                 );
                 $availableQrCodesByVariant[$variantId] = array_reverse(array_column($savedQrCodes, 'qr_code'));
             }
@@ -1840,11 +1899,33 @@ foreach ($qrBatches as $batch) {
                                                             </span>
                                                         <?php endif; ?>
                                                     </td>
-                                                    <td class="text-end pe-3">
-                                                        <a href="<?= url('warehouse/labels?view=existing&history_tab=extra_qrs&variant_id=' . (int)$item['variant_id'] . '&catalog_code=' . urlencode($item['catalog_code'] ?: $item['product_code'] ?: '')) ?>" 
-                                                           class="btn btn-sm btn-outline-primary fw-semibold shadow-2xs" 
-                                                           title="Open QR Printing Suite for this Product">
-                                                            <i class="bi bi-printer me-1"></i>Open Labels
+                                                    <td class="text-end pe-3 text-nowrap">
+                                                        <?php
+                                                        $extraStickerPayload = [
+                                                            'id'                 => (int)$item['id'],
+                                                            'tag_code'           => $item['qr_code'],
+                                                            'series_end_code'    => $item['series_end_code'] ?: $item['qr_code'],
+                                                            'product_name'       => $item['product_name'] ?? '',
+                                                            'sku'                => $item['sku'] ?? '',
+                                                            'clean_sku'          => !empty($item['size_name']) && !empty($item['color_name']) ? ($item['size_name'] . '-' . $item['color_name']) : ($item['sku'] ?? 'STD'),
+                                                            'brand_name'         => $item['brand_name'] ?: 'GRM WAREHOUSE',
+                                                            'size_name'          => $item['size_name'] ?: 'Free',
+                                                            'color_name'         => $item['color_name'] ?: 'Std',
+                                                            'mrp'                => (float)($item['mrp'] ?? 0),
+                                                            'selling_price'      => (float)($item['selling_price'] ?? 0),
+                                                            'cost_price'         => (float)($item['purchase_price'] ?? 0),
+                                                            'pack_quantity'      => $pQty,
+                                                            'is_series'          => $isSeries || $isComp,
+                                                            'is_complementary'   => $isComp,
+                                                            'qr_payload'         => $item['qr_code'],
+                                                            'category_hierarchy' => implode(' › ', array_filter([$item['category_name'] ?? '', $item['subcategory_name'] ?? '', $item['sub_subcategory_name'] ?? ''])),
+                                                        ];
+                                                        ?>
+
+                                                        <a href="<?= url('warehouse/labels?source_type=po&brand_name=' . urlencode($item['brand_name'] ?: '') . '&catalog_code=' . urlencode($item['catalog_code'] ?: $item['product_code'] ?: '') . '&variant_id=' . (int)$item['variant_id'] . '&view=existing&history_tab=extra_qrs') ?>" 
+                                                           class="btn btn-sm btn-outline-secondary fw-semibold shadow-2xs" 
+                                                           title="Open all QR batches for this product in QR Suite">
+                                                            <i class="bi bi-boxes me-1"></i>All Labels
                                                         </a>
                                                     </td>
                                                 </tr>
@@ -2087,9 +2168,8 @@ foreach ($qrBatches as $batch) {
         </div>
 
     </div>
-</div>
-
     <?php endif; ?>
+</div><!-- End #qrBatchesListSection -->
 
 <!-- ========================================================================= -->
 <!-- VIEW 2: QR GENERATION AREA -->
@@ -2489,7 +2569,11 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                     <i class="bi bi-boxes me-2 text-primary"></i>
                     Master Series Bundle Pack QR Label
                     <span class="badge bg-purple text-white rounded-pill ms-2" style="background-color: #6f42c1 !important;">
-                        1 Master QR (<?= $generatedItems[0]['pack_quantity'] ?? 1 ?> Pcs Pack)
+                        <?php
+                        $mPackCount = count($generatedItems);
+                        $mTotalPcs = array_sum(array_column($generatedItems, 'pack_quantity'));
+                        echo $mPackCount . ' Master QR' . ($mPackCount > 1 ? 's' : '') . ' (' . $mTotalPcs . ' Total Pcs)';
+                        ?>
                     </span>
                 <?php else: ?>
                     <i class="bi bi-qr-code me-2 text-success"></i>
@@ -2571,7 +2655,7 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                         <button type="button" class="btn btn-sm btn-outline-success fw-bold bg-white shadow-2xs" onclick="produceNewAdjustmentQR()" title="Produce one new QR code sticker with next sequence number for this product">
                             <i class="bi bi-plus-circle-fill text-success me-1"></i> + Produce 1 New QR
                         </button>
-                        <button type="button" class="btn btn-sm btn-outline-danger fw-bold bg-white shadow-2xs" id="btnDeleteSelectedQrs" onclick="deleteSelectedQrs()" disabled title="Remove selected QR stickers from this page only">
+                        <button type="button" class="btn btn-sm btn-outline-danger fw-bold bg-white shadow-2xs" id="btnDeleteSelectedQrs" onclick="deleteSelectedQrs()" disabled title="Permanently delete selected QR code(s) so they will not appear again">
                             <i class="bi bi-trash3 me-1"></i>Delete Selected QR(s)
                         </button>
                     </div>
@@ -3672,11 +3756,14 @@ function onQrModeChange(mode) {
     }
 }
 
+let currentPreviewExtraItem = null;
+
 /**
  * Preview Single Piece in 2D QR Code Tag Modal
  */
 function previewSingleTag(idx) {
     if (!GENERATED_ITEMS[idx]) return;
+    currentPreviewExtraItem = null;
     currentPreviewIndex = idx;
     const item = GENERATED_ITEMS[idx];
 
@@ -3702,10 +3789,76 @@ function previewSingleTag(idx) {
 }
 
 /**
+ * Preview and Print an Extra Generated QR Sticker directly in 2D QR Code Modal
+ */
+function previewExtraQrSticker(item) {
+    if (!item) return;
+    currentPreviewExtraItem = item;
+    currentPreviewIndex = null;
+
+    const mrpNum = parseFloat(item.mrp || 0);
+    const sellVal = (item.selling_price && item.selling_price > 0) ? parseFloat(item.selling_price) : mrpNum;
+    const displaySku = item.clean_sku || ((item.size_name && item.color_name) ? `${item.size_name}-${item.color_name}` : item.sku);
+
+    const elCode = document.getElementById('previewDamageCode');
+    const elBrand = document.getElementById('previewBrandName');
+    const elAttr = document.getElementById('previewAttrText');
+    const elBase = document.getElementById('previewBasePrice');
+    const elDisc = document.getElementById('previewDiscPrice');
+
+    if (elCode) elCode.textContent = item.tag_code || item.qr_code || '';
+    if (elBrand) elBrand.textContent = (item.brand_name || 'GRM WAREHOUSE').toUpperCase();
+    if (elAttr) elAttr.textContent = `${displaySku}${item.is_series ? ` (Pack of ${item.pack_quantity || 1})` : ''}`.toUpperCase();
+    if (elBase) elBase.textContent = `MRP: ₹${(mrpNum % 1 === 0) ? mrpNum.toLocaleString() : mrpNum.toFixed(2)}`;
+    if (elDisc) elDisc.textContent = `Disc: ₹${(sellVal % 1 === 0) ? sellVal.toLocaleString() : sellVal.toFixed(2)}`;
+
+    const canvas = document.getElementById('singleQRCanvas');
+    const qrPayload = item.tag_code || item.qr_code || '';
+    generateQRCodeContainer(canvas, qrPayload, 74);
+
+    const modalEl = document.getElementById('singleQRModal');
+    if (modalEl) {
+        const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+        modal.show();
+    }
+}
+
+/**
  * Print Single Piece directly from the 2D QR Code Tag Preview Modal
  */
 function printSinglePieceFromModal() {
-    printSinglePieceSticker(currentPreviewIndex);
+    if (currentPreviewExtraItem) {
+        const item = currentPreviewExtraItem;
+        const mrpNum = parseFloat(item.mrp || 0);
+        const sellNum = parseFloat(item.selling_price || item.cost_price || item.mrp || 0);
+        const fmtMrp = (mrpNum % 1 === 0) ? String(Math.round(mrpNum)) : mrpNum.toFixed(2);
+        const fmtDisc = (sellNum % 1 === 0) ? String(Math.round(sellNum)) : sellNum.toFixed(2);
+        const displaySku = item.clean_sku || ((item.size_name && item.color_name) ? `${item.size_name}-${item.color_name}` : item.sku);
+
+        const labelPayload = [{
+            sku: displaySku,
+            productName: item.product_name,
+            categoryHierarchy: item.category_hierarchy || '',
+            categoryName: item.category_name || '',
+            subcategoryName: item.subcategory_name || '',
+            subSubcategoryName: item.sub_subcategory_name || '',
+            sizeName: item.size_name || 'Free',
+            colorName: item.color_name || 'Std',
+            attrText: `${item.size_name || 'Free'}-${item.color_name || 'Std'}`,
+            basePrice: fmtMrp,
+            discountPrice: fmtDisc,
+            damageCode: item.tag_code || item.qr_code,
+            title: (item.brand_name || "GRM CLASSIC").toUpperCase(),
+            qrPayload: item.qr_payload || item.tag_code || item.qr_code,
+            quantity: 1
+        }];
+
+        printLabel(labelPayload);
+        return;
+    }
+    if (currentPreviewIndex !== null && typeof printSinglePieceSticker === 'function') {
+        printSinglePieceSticker(currentPreviewIndex);
+    }
 }
 
 /**
@@ -4495,49 +4648,90 @@ function deleteSelectedQrs() {
         return;
     }
 
-    if (!confirm(`Remove ${selectedIndices.length} selected QR sticker(s) from this page? This will not change saved QR data or inventory.`)) {
+    const codesToDelete = selectedIndices.map(idx => GENERATED_ITEMS[idx].tag_code).filter(Boolean);
+
+    if (!confirm(`Permanently delete ${codesToDelete.length} selected QR sticker(s)? They will be removed from the database and will not appear again after page refresh.`)) {
         return;
     }
 
-    selectedIndices.forEach(idx => {
-        const item = GENERATED_ITEMS[idx];
-        if (item) item.is_deleted = true;
-        const card = document.getElementById(`col-piece-${idx}`);
-        if (card) card.remove();
-        selectedStickerIndices.delete(idx);
-    });
-
-    const activeItems = GENERATED_ITEMS.filter(item => item && !item.is_deleted);
-    const totalBadge = document.getElementById('totalPiecesBadge');
-    const totalSelectable = document.getElementById('totalSelectableCount');
-    const inwardCount = document.getElementById('lblStickersGeneratedCount');
-    if (totalBadge) totalBadge.textContent = `${activeItems.length} Available Pieces`;
-    if (totalSelectable) totalSelectable.textContent = activeItems.length;
-    if (inwardCount) inwardCount.textContent = activeItems.length;
-
-    const emptyMessage = document.getElementById('emptyGeneratedQrMessage');
-    if (activeItems.length === 0 && !emptyMessage) {
-        const message = document.createElement('div');
-        message.id = 'emptyGeneratedQrMessage';
-        message.className = 'col-12 text-center py-4 text-muted';
-        message.textContent = 'No QR stickers remain on this page.';
-        document.getElementById('stickersCardGrid')?.appendChild(message);
+    const btnDelete = document.getElementById('btnDeleteSelectedQrs');
+    const origHtml = btnDelete ? btnDelete.innerHTML : '';
+    if (btnDelete) {
+        btnDelete.disabled = true;
+        btnDelete.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Deleting...';
     }
 
-    const maxPieceNo = activeItems.reduce((max, item) => Math.max(max, parseInt(item.piece_no, 10) || 0), 1);
-    ['rangeSelectFrom', 'rangeSelectTo'].forEach(id => {
-        const input = document.getElementById(id);
-        if (input) input.max = maxPieceNo;
-    });
-    const tagRange = document.getElementById('inwardTagRangeText');
-    if (tagRange) {
-        tagRange.textContent = activeItems.length
-            ? `${activeItems[0].tag_code} -> ${activeItems[activeItems.length - 1].tag_code}`
-            : 'None';
-    }
+    const formData = new FormData();
+    codesToDelete.forEach(code => formData.append('codes[]', code));
+    const variantId = GENERATED_ITEMS[selectedIndices[0]]?.variant_id || '<?= $activeVar['id'] ?? '' ?>';
+    if (variantId) formData.append('variant_id', variantId);
 
-    updateSelectionCounter();
-    showPrintToast(`Removed ${selectedIndices.length} QR sticker(s) from this page.`, 'success');
+    fetch('<?= url("warehouse/labels/delete-qr") ?>', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+        }
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (btnDelete) {
+            btnDelete.disabled = false;
+            btnDelete.innerHTML = origHtml;
+        }
+        if (!res.success) {
+            showPrintToast(res.message || 'Error deleting QR stickers.', 'danger');
+            return;
+        }
+
+        selectedIndices.forEach(idx => {
+            const item = GENERATED_ITEMS[idx];
+            if (item) item.is_deleted = true;
+            const card = document.getElementById(`col-piece-${idx}`);
+            if (card) card.remove();
+            selectedStickerIndices.delete(idx);
+        });
+
+        const activeItems = GENERATED_ITEMS.filter(item => item && !item.is_deleted);
+        const totalBadge = document.getElementById('totalPiecesBadge');
+        const totalSelectable = document.getElementById('totalSelectableCount');
+        const inwardCount = document.getElementById('lblStickersGeneratedCount');
+        if (totalBadge) totalBadge.textContent = `${activeItems.length} Available Pieces`;
+        if (totalSelectable) totalSelectable.textContent = activeItems.length;
+        if (inwardCount) inwardCount.textContent = activeItems.length;
+
+        const emptyMessage = document.getElementById('emptyGeneratedQrMessage');
+        if (activeItems.length === 0 && !emptyMessage) {
+            const message = document.createElement('div');
+            message.id = 'emptyGeneratedQrMessage';
+            message.className = 'col-12 text-center py-4 text-muted';
+            message.textContent = 'No QR stickers remain on this page.';
+            document.getElementById('stickersCardGrid')?.appendChild(message);
+        }
+
+        const maxPieceNo = activeItems.reduce((max, item) => Math.max(max, parseInt(item.piece_no, 10) || 0), 1);
+        ['rangeSelectFrom', 'rangeSelectTo'].forEach(id => {
+            const input = document.getElementById(id);
+            if (input) input.max = maxPieceNo;
+        });
+        const tagRange = document.getElementById('inwardTagRangeText');
+        if (tagRange) {
+            tagRange.textContent = activeItems.length
+                ? `${activeItems[0].tag_code} -> ${activeItems[activeItems.length - 1].tag_code}`
+                : 'None';
+        }
+
+        updateSelectionCounter();
+        showPrintToast(res.message || `Deleted ${codesToDelete.length} QR sticker(s) permanently.`, 'success');
+    })
+    .catch(err => {
+        if (btnDelete) {
+            btnDelete.disabled = false;
+            btnDelete.innerHTML = origHtml;
+        }
+        showPrintToast('Network error while deleting QR sticker(s).', 'danger');
+    });
 }
 
 /**

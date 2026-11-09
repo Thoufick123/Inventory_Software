@@ -42,26 +42,9 @@
 <div class="page-header d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
     <div>
         <h2 class="mb-1"><i class="bi bi-speedometer2 me-2 text-primary"></i>Admin Dashboard</h2>
-        <span class="text-secondary"><?= date('l, d F Y') ?> &bull; Enterprise Manufacturing, Warehouse & Retail Command Center</span>
-    </div>
+        </div>
     <div class="d-flex align-items-center gap-2">
         <button type="button" class="btn btn-outline-dark shadow-sm fw-semibold d-flex align-items-center gap-1.5" data-bs-toggle="modal" data-bs-target="#qrStatusFinderModal"><i class="bi bi-qr-code-scan text-primary"></i><span>QR Status Finder</span></button>
-        <div class="dropdown">
-            <button class="btn btn-primary dropdown-toggle shadow-sm" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                <i class="bi bi-plus-circle me-1"></i> Quick Add
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end shadow">
-                <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#modalProductionUnit" onclick="resetUnitModal()"><i class="bi bi-gear-wide-connected me-2 text-primary"></i>Add Production Unit</a></li>
-                <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#modalWarehouse" onclick="resetWarehouseModal()"><i class="bi bi-buildings me-2 text-success"></i>Add Warehouse</a></li>
-                <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#modalShop" onclick="resetShopModal()"><i class="bi bi-shop me-2 text-info"></i>Add Retail Shop</a></li>
-                <li><hr class="dropdown-divider"></li>
-                <li><a class="dropdown-item" href="<?= url('production/programs/create') ?>"><i class="bi bi-calendar2-plus me-2 text-secondary"></i>New Production Program</a></li>
-                <li><a class="dropdown-item" href="<?= url('warehouse/purchases/create') ?>"><i class="bi bi-bag-plus me-2 text-secondary"></i>New Purchase Order</a></li>
-                <?php if (hasPermission('pos', 'view') || hasPermission('pos', 'create')): ?>
-                <li><a class="dropdown-item" href="<?= url('shop/pos') ?>"><i class="bi bi-receipt me-2 text-secondary"></i>Launch POS Terminal</a></li>
-                <?php endif; ?>
-            </ul>
-        </div>
     </div>
 </div>
 
@@ -291,9 +274,10 @@
                                     </td>
                                     <td class="text-end pe-3">
                                         <div class="btn-group btn-group-sm">
-                                            <a href="<?= url('production/dashboard') ?>" class="btn btn-outline-secondary" title="View Production Dashboard">
+                                            <button type="button" class="btn btn-outline-secondary" title="View Unit Details"
+                                                    onclick="viewFacilityDetails('unit', <?= htmlspecialchars(json_encode($unit), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-eye"></i>
-                                            </a>
+                                            </button>
                                             <button type="button" class="btn btn-outline-primary" title="Edit Unit" 
                                                     onclick="editUnit(<?= htmlspecialchars(json_encode($unit), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
@@ -388,9 +372,10 @@
                                     </td>
                                     <td class="text-end pe-3">
                                         <div class="btn-group btn-group-sm">
-                                            <a href="<?= url('warehouse/dashboard') ?>" class="btn btn-outline-secondary" title="View Warehouse Dashboard">
+                                            <button type="button" class="btn btn-outline-secondary" title="View Warehouse Details"
+                                                    onclick="viewFacilityDetails('warehouse', <?= htmlspecialchars(json_encode($wh), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-eye"></i>
-                                            </a>
+                                            </button>
                                             <a href="<?= url('warehouse/stock?warehouse_id=' . $wh['id']) ?>" class="btn btn-outline-secondary" title="View Stock">
                                                 <i class="bi bi-boxes"></i>
                                             </a>
@@ -492,9 +477,10 @@
                                     </td>
                                     <td class="text-end pe-3">
                                         <div class="btn-group btn-group-sm">
-                                            <a href="<?= url('shop/dashboard') ?>" class="btn btn-outline-secondary" title="View Retail Shop Dashboard">
+                                            <button type="button" class="btn btn-outline-secondary" title="View Shop Details"
+                                                    onclick="viewFacilityDetails('shop', <?= htmlspecialchars(json_encode($shop), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-eye"></i>
-                                            </a>
+                                            </button>
                                             <?php if (hasPermission('pos', 'view') || hasPermission('pos', 'create')): ?>
                                             <a href="<?= url('shop/pos') ?>" class="btn btn-outline-success" title="Launch POS Terminal">
                                                 <i class="bi bi-receipt"></i>
@@ -578,9 +564,10 @@
                                     </td>
                                     <td class="text-end pe-3">
                                         <div class="btn-group btn-group-sm">
-                                            <a href="<?= url('warehouse/whatsapp-orders') ?>" class="btn btn-outline-secondary" title="View WhatsApp Dashboard">
+                                            <button type="button" class="btn btn-outline-secondary" title="View Channel Details"
+                                                    onclick="viewFacilityDetails('whatsapp', <?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-eye"></i>
-                                            </a>
+                                            </button>
                                             <button type="button" class="btn btn-outline-primary" title="Edit Channel" onclick="editChannel(<?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
@@ -650,9 +637,10 @@
                                     </td>
                                     <td class="text-end pe-3">
                                         <div class="btn-group btn-group-sm">
-                                            <a href="<?= url('warehouse/website-orders') ?>" class="btn btn-outline-secondary" title="View Website Dashboard">
+                                            <button type="button" class="btn btn-outline-secondary" title="View Channel Details"
+                                                    onclick="viewFacilityDetails('website', <?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-eye"></i>
-                                            </a>
+                                            </button>
                                             <button type="button" class="btn btn-outline-primary" title="Edit Channel" onclick="editChannel(<?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
@@ -1107,6 +1095,88 @@
 </div>
 
 <!-- ========================================================================= -->
+<!-- MODAL: VIEW FACILITY / SAVED INFRASTRUCTURE DETAILS -->
+<!-- ========================================================================= -->
+<div class="modal fade" id="modalFacilityDetails" tabindex="-1" aria-labelledby="modalFacilityDetailsLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header text-white" id="modalFacilityDetailsHeader" style="background: #0d6efd;">
+                <div class="d-flex align-items-center gap-2">
+                    <span id="facilityHeaderIcon" class="fs-4"><i class="bi bi-info-circle"></i></span>
+                    <div>
+                        <h5 class="modal-title fw-bold mb-0 text-white" id="facilityDetailTitle">Facility Details</h5>
+                        <div class="small opacity-75 text-white" id="facilityDetailSubtitle">Saved Configuration &amp; Profile</div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <div class="p-3 bg-light rounded border h-100">
+                            <div class="text-muted small fw-semibold text-uppercase mb-2"><i class="bi bi-card-text me-1"></i>Basic Information</div>
+                            <div class="mb-2">
+                                <span class="text-muted small d-block">Facility / Unit Name:</span>
+                                <span class="fw-bold text-dark fs-6" id="facilityDetailName">-</span>
+                            </div>
+                            <div class="row g-2 mb-2">
+                                <div class="col-6">
+                                    <span class="text-muted small d-block">Facility Code:</span>
+                                    <span class="badge bg-secondary-subtle text-secondary font-monospace" id="facilityDetailCode">-</span>
+                                </div>
+                                <div class="col-6">
+                                    <span class="text-muted small d-block">Operational Status:</span>
+                                    <span id="facilityDetailStatus">-</span>
+                                </div>
+                            </div>
+                            <div>
+                                <span class="text-muted small d-block">GST / Reg Number:</span>
+                                <span class="fw-semibold text-dark font-monospace" id="facilityDetailGst">-</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 bg-light rounded border h-100">
+                            <div class="text-muted small fw-semibold text-uppercase mb-2"><i class="bi bi-person-lines-fill me-1"></i>Contact &amp; Location</div>
+                            <div class="mb-2">
+                                <span class="text-muted small d-block">Manager / In-charge:</span>
+                                <span class="fw-bold text-dark" id="facilityDetailManager">-</span>
+                            </div>
+                            <div class="mb-2">
+                                <span class="text-muted small d-block">Phone / Contact:</span>
+                                <span class="fw-semibold text-dark font-monospace" id="facilityDetailPhone">-</span>
+                            </div>
+                            <div>
+                                <span class="text-muted small d-block">Address / Location:</span>
+                                <span class="text-dark small" id="facilityDetailAddress">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Operational Metrics Card -->
+                <div class="card border border-primary-subtle bg-light mb-1">
+                    <div class="card-body p-3">
+                        <div class="text-muted small fw-bold text-uppercase mb-2" id="facilityMetricsTitle"><i class="bi bi-graph-up me-1"></i>Operational Metrics</div>
+                        <div class="row g-2 text-center" id="facilityMetricsContainer">
+                            <!-- Populated dynamically via JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-primary" id="btnEditFacilityModal">
+                        <i class="bi bi-pencil me-1"></i>Edit Details
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
 <!-- 5. JAVASCRIPT FOR DYNAMIC MODALS & TAB NAVIGATION -->
 <!-- ========================================================================= -->
 <script>
@@ -1287,6 +1357,181 @@ function editChannel(chan) {
     document.getElementById('btnSubmitChannel').textContent = `Update ${title}`;
     
     const modal = new bootstrap.Modal(document.getElementById('modalChannel'));
+    modal.show();
+}
+
+// Facility Saved Details Modal
+function viewFacilityDetails(type, data) {
+    if (!data) return;
+
+    const header = document.getElementById('modalFacilityDetailsHeader');
+    const headerIcon = document.getElementById('facilityHeaderIcon');
+    const title = document.getElementById('facilityDetailTitle');
+    const subtitle = document.getElementById('facilityDetailSubtitle');
+    const name = document.getElementById('facilityDetailName');
+    const code = document.getElementById('facilityDetailCode');
+    const status = document.getElementById('facilityDetailStatus');
+    const gst = document.getElementById('facilityDetailGst');
+    const manager = document.getElementById('facilityDetailManager');
+    const phone = document.getElementById('facilityDetailPhone');
+    const address = document.getElementById('facilityDetailAddress');
+    const metricsTitle = document.getElementById('facilityMetricsTitle');
+    const metricsCont = document.getElementById('facilityMetricsContainer');
+    const btnEdit = document.getElementById('btnEditFacilityModal');
+
+    name.textContent = data.name || '-';
+    code.textContent = data.code || '-';
+    gst.textContent = data.gst_number || 'N/A';
+    manager.textContent = data.manager_name || 'Unassigned';
+    phone.textContent = data.phone || 'N/A';
+    address.textContent = data.address || 'No address specified';
+
+    if (data.is_active == 1) {
+        status.innerHTML = '<span class="badge bg-success-subtle text-success"><i class="bi bi-check-circle me-1"></i>Active</span>';
+    } else {
+        status.innerHTML = '<span class="badge bg-secondary-subtle text-secondary"><i class="bi bi-dash-circle me-1"></i>Inactive</span>';
+    }
+
+    metricsCont.innerHTML = '';
+
+    if (type === 'unit') {
+        header.style.background = '#0d6efd';
+        headerIcon.innerHTML = '<i class="bi bi-gear-wide-connected"></i>';
+        title.textContent = data.name || 'Production Unit Details';
+        subtitle.textContent = 'Apparel Cutting, Stitching & Manufacturing Unit Profile';
+        metricsTitle.innerHTML = '<i class="bi bi-activity me-1"></i>Active Production Capacity';
+        btnEdit.className = 'btn btn-primary';
+
+        metricsCont.innerHTML = `
+            <div class="col-sm-3 col-6">
+                <div class="p-2 bg-white rounded border">
+                    <div class="text-muted small" style="font-size: 11px;">Active Programs</div>
+                    <div class="fw-bold fs-6 text-primary">${data.active_programs || 0}</div>
+                </div>
+            </div>
+            <div class="col-sm-3 col-6">
+                <div class="p-2 bg-white rounded border">
+                    <div class="text-muted small" style="font-size: 11px;">Planned Qty</div>
+                    <div class="fw-bold fs-6 text-dark">${(parseInt(data.total_planned_qty, 10) || 0).toLocaleString()} pcs</div>
+                </div>
+            </div>
+            <div class="col-sm-3 col-6">
+                <div class="p-2 bg-white rounded border">
+                    <div class="text-muted small" style="font-size: 11px;">Total Output</div>
+                    <div class="fw-bold fs-6 text-success">${(parseInt(data.total_completed_qty, 10) || 0).toLocaleString()} pcs</div>
+                </div>
+            </div>
+            <div class="col-sm-3 col-6">
+                <div class="p-2 bg-white rounded border">
+                    <div class="text-muted small" style="font-size: 11px;">Cut Batches</div>
+                    <div class="fw-bold fs-6 text-secondary">${data.total_cutting || 0}</div>
+                </div>
+            </div>
+        `;
+        btnEdit.onclick = function() {
+            bootstrap.Modal.getInstance(document.getElementById('modalFacilityDetails')).hide();
+            editUnit(data);
+        };
+    } else if (type === 'warehouse') {
+        header.style.background = '#cc8a26';
+        headerIcon.innerHTML = '<i class="bi bi-buildings"></i>';
+        title.textContent = data.name || 'Warehouse Details';
+        subtitle.textContent = 'Storage & Distribution Facility Profile';
+        metricsTitle.innerHTML = '<i class="bi bi-boxes me-1"></i>Warehouse Stock & Valuation';
+        btnEdit.className = 'btn btn-warning text-white';
+
+        const stockPcs = parseInt(data.total_stock_pcs, 10) || 0;
+        const valuation = parseFloat(data.total_valuation) || 0;
+
+        metricsCont.innerHTML = `
+            <div class="col-sm-4 col-6">
+                <div class="p-2 bg-white rounded border">
+                    <div class="text-muted small" style="font-size: 11px;">In-Stock Pieces</div>
+                    <div class="fw-bold fs-6 text-warning-emphasis">${stockPcs.toLocaleString()} pcs</div>
+                </div>
+            </div>
+            <div class="col-sm-4 col-6">
+                <div class="p-2 bg-white rounded border">
+                    <div class="text-muted small" style="font-size: 11px;">Stock Valuation</div>
+                    <div class="fw-bold fs-6 text-success">₹${valuation.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                </div>
+            </div>
+            <div class="col-sm-4 col-12">
+                <div class="p-2 bg-white rounded border">
+                    <div class="text-muted small" style="font-size: 11px;">Facility Type</div>
+                    <div class="fw-bold fs-6 text-dark">Central Distribution Hub</div>
+                </div>
+            </div>
+        `;
+        btnEdit.onclick = function() {
+            bootstrap.Modal.getInstance(document.getElementById('modalFacilityDetails')).hide();
+            editWarehouse(data);
+        };
+    } else if (type === 'shop') {
+        header.style.background = '#0dcaf0';
+        headerIcon.innerHTML = '<i class="bi bi-shop"></i>';
+        title.textContent = data.name || 'Retail Shop Details';
+        subtitle.textContent = 'Direct Retail Storefront Profile';
+        metricsTitle.innerHTML = '<i class="bi bi-receipt me-1"></i>Storefront Sales Activity';
+        btnEdit.className = 'btn btn-info text-white';
+
+        const todaySales = parseFloat(data.today_sales) || 0;
+        const monthSales = parseFloat(data.month_sales) || 0;
+
+        metricsCont.innerHTML = `
+            <div class="col-sm-4 col-6">
+                <div class="p-2 bg-white rounded border">
+                    <div class="text-muted small" style="font-size: 11px;">Today's Sales</div>
+                    <div class="fw-bold fs-6 text-success">₹${todaySales.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                </div>
+            </div>
+            <div class="col-sm-4 col-6">
+                <div class="p-2 bg-white rounded border">
+                    <div class="text-muted small" style="font-size: 11px;">Month Sales</div>
+                    <div class="fw-bold fs-6 text-primary">₹${monthSales.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                </div>
+            </div>
+            <div class="col-sm-4 col-12">
+                <div class="p-2 bg-white rounded border">
+                    <div class="text-muted small" style="font-size: 11px;">Terminal Status</div>
+                    <div class="fw-bold fs-6 text-dark">${data.pos_enabled ? 'POS Active' : 'Standard'}</div>
+                </div>
+            </div>
+        `;
+        btnEdit.onclick = function() {
+            bootstrap.Modal.getInstance(document.getElementById('modalFacilityDetails')).hide();
+            editShop(data);
+        };
+    } else {
+        const isWhatsapp = type === 'whatsapp';
+        header.style.background = isWhatsapp ? '#198754' : '#6f42c1';
+        headerIcon.innerHTML = `<i class="bi ${isWhatsapp ? 'bi-whatsapp' : 'bi-globe'}"></i>`;
+        title.textContent = data.name || (isWhatsapp ? 'WhatsApp Channel Details' : 'Website Channel Details');
+        subtitle.textContent = isWhatsapp ? 'WhatsApp Business Channel Profile' : 'Online Website E-Commerce Channel Profile';
+        metricsTitle.innerHTML = '<i class="bi bi-broadcast me-1"></i>Channel Status';
+        btnEdit.className = `btn ${isWhatsapp ? 'btn-success' : 'btn-primary'}`;
+
+        metricsCont.innerHTML = `
+            <div class="col-6">
+                <div class="p-2 bg-white rounded border">
+                    <div class="text-muted small" style="font-size: 11px;">Channel Type</div>
+                    <div class="fw-bold fs-6 text-dark">${data.channel_type || (isWhatsapp ? 'WHATSAPP' : 'WEBSITE')}</div>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="p-2 bg-white rounded border">
+                    <div class="text-muted small" style="font-size: 11px;">Channel Code</div>
+                    <div class="fw-bold fs-6 text-secondary">${data.code || '-'}</div>
+                </div>
+            </div>
+        `;
+        btnEdit.onclick = function() {
+            bootstrap.Modal.getInstance(document.getElementById('modalFacilityDetails')).hide();
+            editChannel(data);
+        };
+    }
+
+    const modal = new bootstrap.Modal(document.getElementById('modalFacilityDetails'));
     modal.show();
 }
 </script>

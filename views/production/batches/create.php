@@ -1,7 +1,6 @@
 <div class="page-header mb-4">
     <h2><i class="bi bi-box-seam me-2 text-success"></i>Pack Finished Production Batch</h2>
-    <span class="text-muted">Pack QC-passed goods into delivery boxes and assign destination warehouse</span>
-</div>
+   </div>
 
 <?php if ($selectedQC && ($selectedQC['remaining_qty'] ?? 1) <= 0 && ($selectedQC['already_packed_qty'] ?? 0) > 0 && ($totalQCRework ?? 0) > 0): ?>
     <div class="alert alert-warning border border-warning-subtle shadow-sm p-3 mb-4 rounded-3">
@@ -78,7 +77,6 @@
                                 </option>
                             <?php endforeach; ?>
                         </select>
-                        <div class="form-text small text-muted">Select a QC-passed batch to load approved quantities.</div>
                         <?php if (empty($qcBatches) && !$selectedQC): ?>
                             <div class="alert alert-warning py-2 px-3 small mt-2 mb-0">
                                 <i class="bi bi-info-circle me-1"></i> All QC passed batches have already been fully packed into finished batches. <a href="<?= url('production/qc/create') ?>" class="alert-link">Create a QC inspection</a>.
@@ -86,27 +84,90 @@
                         <?php endif; ?>
                     </div>
 
+                    <!-- Small Checkbox to Combine with Reworked/Completed Batch -->
+                    <?php if ($selectedQC && (function_exists('isAdmin') ? isAdmin() : true)): ?>
+                        <div class="form-check mt-2 mb-2">
+                            <input class="form-check-input" type="checkbox" id="combineReworkCheck" name="is_multi_qc_check" value="1" <?= !empty($additionalQcIds) ? 'checked' : '' ?> onchange="toggleReworkDropdown(this.checked)">
+                            <label class="form-check-label small fw-semibold text-secondary cursor-pointer" for="combineReworkCheck">
+                                <i class="bi bi-patch-check text-primary me-1"></i> Combine with Reworked / Re-inspected Batch
+                            </label>
+                        </div>
+
+                        <!-- Dynamic Dropdown Field for Completed Rework Batches -->
+                        <div id="reworkDropdownContainer" class="<?= empty($additionalQcIds) ? 'd-none' : '' ?> mb-3 p-2.5 bg-light rounded border border-primary-subtle">
+                            <label class="form-label small fw-bold text-dark mb-1">
+                                Select Rework-Completed QC Batch <span class="text-danger">*</span>
+                            </label>
+                            <select name="additional_rework_qc_id" id="additional_qc_batch_dropdown" class="form-select form-select-sm" onchange="onReworkBatchSelect(this.value)">
+                                <option value="">-- Choose Completed Rework / Repaired Batch --</option>
+                                <?php foreach ($eligibleAdditionalBatches as $eab): 
+                                    $isSelected = in_array((int)$eab['id'], $additionalQcIds ?? [], true);
+                                ?>
+                                    <option value="<?= $eab['id'] ?>" <?= $isSelected ? 'selected' : '' ?>>
+                                        QC #<?= $eab['id'] ?> (<?= e($eab['program_number'] ?? '') ?> — <?= e($eab['product_name'] ?? '') ?>) [<?= number_format($eab['remaining_qty'] ?? $eab['passed_qty']) ?> pcs ready<?= !empty($eab['rework_completed_qty']) ? ' · ' . $eab['rework_completed_qty'] . ' rework-fixed' : '' ?>]
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <?php if (empty($eligibleAdditionalBatches)): ?>
+                                <div class="text-muted small mt-1" style="font-size: 11px;">
+                                    <i class="bi bi-info-circle me-1"></i> No other batches with completed rework/re-inspected pieces found.
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
+
                     <?php if ($selectedQC): ?>
                         <input type="hidden" name="program_id" id="program_id" value="<?= $selectedQC['program_id'] ?>">
+                        <input type="hidden" name="is_multi_qc" value="<?= !empty($isMultiQC) && !empty($additionalQcIds) ? '1' : '0' ?>">
+                        <?php if (!empty($additionalQcIds)): ?>
+                            <?php foreach ($additionalQcIds as $aqId): ?>
+                                <input type="hidden" name="additional_qc_batch_ids[]" value="<?= (int)$aqId ?>">
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+
                         <div class="mb-3 p-3 bg-light rounded border">
-                            <div class="small text-muted fw-semibold">Program &amp; Product</div>
+                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                <span class="small text-muted fw-semibold">Program &amp; Product</span>
+                                <?php if (!empty($isMultiQC) && !empty($additionalQCBatches)): ?>
+                                    <span class="badge bg-primary px-2 py-1 small">
+                                        <i class="bi bi-collection me-1"></i> <?= 1 + count($additionalQCBatches) ?> QC Batches Combined
+                                    </span>
+                                <?php endif; ?>
+                            </div>
                             <div class="fw-bold text-dark"><?= e($selectedQC['program_number']) ?> — <?= e($selectedQC['product_name']) ?></div>
+                            
+                            <?php if (!empty($isMultiQC) && !empty($additionalQCBatches)): ?>
+                                <div class="mt-2 pt-2 border-top small">
+                                    <div class="fw-semibold text-dark mb-1">Batches Combined in this Pack:</div>
+                                    <div class="d-flex flex-wrap gap-1">
+                                        <span class="badge bg-primary text-white border">
+                                            <i class="bi bi-check-circle me-1"></i>Primary: QC #<?= $selectedQC['id'] ?> (<?= number_format($selectedQC['remaining_qty']) ?> pcs)
+                                        </span>
+                                        <?php foreach ($additionalQCBatches as $ab): ?>
+                                            <span class="badge bg-info-subtle text-dark border border-info">
+                                                <i class="bi bi-plus me-1"></i>QC #<?= $ab['id'] ?> &bull; <?= e($ab['program_number'] ?? '') ?> (<?= number_format($ab['remaining_qty']) ?> pcs)
+                                            </span>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+
                             <div class="row g-2 mt-2 pt-2 border-top text-center">
                                 <div class="col-3">
                                     <div class="small text-muted" style="font-size: 10px;">Total Passed</div>
-                                    <div class="fw-bold text-dark small"><?= number_format($selectedQC['total_qc_passed'] ?? $selectedQC['passed_qty']) ?></div>
+                                    <div class="fw-bold text-dark small"><?= number_format(!empty($isMultiQC) && !empty($additionalQCBatches) ? ($combinedTotals['total_passed'] ?? 0) : ($selectedQC['total_qc_passed'] ?? $selectedQC['passed_qty'])) ?></div>
                                 </div>
                                 <div class="col-3">
                                     <div class="small text-muted" style="font-size: 10px;">Packed</div>
-                                    <div class="fw-bold text-danger small"><?= number_format($selectedQC['already_packed_qty'] ?? 0) ?></div>
+                                    <div class="fw-bold text-danger small"><?= number_format(!empty($isMultiQC) && !empty($additionalQCBatches) ? ($combinedTotals['packed'] ?? 0) : ($selectedQC['already_packed_qty'] ?? 0)) ?></div>
                                 </div>
                                 <div class="col-3">
                                     <div class="small text-muted" style="font-size: 10px;">Passed Rem.</div>
-                                    <div class="fw-bold text-success small"><?= number_format($selectedQC['remaining_qty'] ?? $selectedQC['passed_qty']) ?></div>
+                                    <div class="fw-bold text-success small"><?= number_format(!empty($isMultiQC) && !empty($additionalQCBatches) ? ($combinedTotals['remaining'] ?? 0) : ($selectedQC['remaining_qty'] ?? $selectedQC['passed_qty'])) ?></div>
                                 </div>
                                 <div class="col-3">
                                     <div class="small text-muted" style="font-size: 10px;">Rework</div>
-                                    <div class="fw-bold text-warning small"><?= number_format($totalQCRework ?? 0) ?></div>
+                                    <div class="fw-bold text-warning small"><?= number_format(!empty($isMultiQC) && !empty($additionalQCBatches) ? ($combinedTotals['rework'] ?? 0) : ($totalQCRework ?? 0)) ?></div>
                                 </div>
                             </div>
                         </div>
@@ -183,38 +244,69 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php foreach ($items as $idx => $it): 
+                                    <?php 
+                                    $packableItems = [];
+                                    foreach ($items as $idx => $it) {
                                         $reworkQty = (int)($it['rework_qty'] ?? 0);
                                         $remPassedQty = (int)($it['remaining_qty'] ?? $it['passed_qty']);
                                         $effectivePackable = $remPassedQty + (!empty($includeRework) ? $reworkQty : 0);
                                         $availablePieceTags = array_values($it['available_piece_tags'] ?? []);
                                         $hasAvailableTags = !empty($availablePieceTags);
                                         $packQty = $hasAvailableTags ? min($effectivePackable, count($availablePieceTags)) : $effectivePackable;
-                                        $isZero = ($packQty <= 0);
-                                        $rejectedQty = (int)($it['rejected_qty'] ?? 0);
+                                        if ($effectivePackable > 0 && $packQty > 0) {
+                                            $it['computed_rework_qty'] = $reworkQty;
+                                            $it['computed_rem_passed'] = $remPassedQty;
+                                            $it['computed_effective'] = $effectivePackable;
+                                            $it['computed_pack_qty'] = $packQty;
+                                            $it['computed_available_tags'] = $availablePieceTags;
+                                            $it['computed_has_tags'] = $hasAvailableTags;
+                                            $packableItems[$idx] = $it;
+                                        }
+                                    }
                                     ?>
-                                        <tr class="variant-item-row <?= $isZero ? 'table-light opacity-75' : '' ?>" 
-                                            data-variant-name="<?= e($it['size_name'] ?? $it['display_size'] ?? 'Standard') ?> / <?= e($it['color_name'] ?? $it['display_color'] ?? 'Assorted') ?>" 
-                                            data-passed="<?= $packQty ?>" 
-                                            data-passed-qty="<?= $remPassedQty ?>"
-                                            data-rework-qty="<?= $reworkQty ?>"
-                                            data-is-zero="<?= $isZero ? '1' : '0' ?>">
-                                            <td>
-                                                <input type="hidden" name="items[<?= $idx ?>][qc_item_id]" value="<?= $it['id'] ?>">
-                                                <input type="hidden" name="items[<?= $idx ?>][variant_id]" value="<?= $it['variant_id'] ?? '' ?>">
-                                                <input type="hidden" name="items[<?= $idx ?>][size_name]" value="<?= e($it['size_name'] ?? $it['display_size'] ?? '') ?>">
-                                                <input type="hidden" name="items[<?= $idx ?>][color_name]" value="<?= e($it['color_name'] ?? $it['display_color'] ?? '') ?>">
-                                                <input type="hidden" name="items[<?= $idx ?>][sku]" value="<?= e($it['sku'] ?? '') ?>">
-                                                <div class="fw-bold text-dark"><?= e($it['size_name'] ?? $it['display_size'] ?? 'Standard') ?> / <?= e($it['color_name'] ?? $it['display_color'] ?? 'Assorted') ?></div>
-                                                <small class="text-muted font-monospace"><?= e($it['sku'] ?? '') ?></small>
+                                    <?php if (empty($packableItems)): ?>
+                                        <tr>
+                                            <td colspan="4" class="text-center py-5 text-muted">
+                                                <i class="bi bi-check-circle-fill text-success fs-1 d-block mb-2"></i>
+                                                <h6 class="fw-bold text-dark">All Passed Products Already Packed &amp; Outwarded</h6>
+                                                <p class="small text-muted mb-0">All approved items for this QC Inspection batch have already been packed into production batches. No remaining pieces available to pack.</p>
                                             </td>
-                                            <td>
-                                                <div>
-                                                    <?php if ($effectivePackable <= 0): ?>
-                                                        <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1">
-                                                            <i class="bi bi-slash-circle me-1"></i>0 pcs Available (Fully Packed)
-                                                        </span>
-                                                    <?php else: ?>
+                                        </tr>
+                                    <?php else: ?>
+                                        <?php foreach ($packableItems as $idx => $it): 
+                                            $reworkQty = $it['computed_rework_qty'];
+                                            $remPassedQty = $it['computed_rem_passed'];
+                                            $effectivePackable = $it['computed_effective'];
+                                            $availablePieceTags = $it['computed_available_tags'];
+                                            $hasAvailableTags = $it['computed_has_tags'];
+                                            $packQty = $it['computed_pack_qty'];
+                                            $rejectedQty = (int)($it['rejected_qty'] ?? 0);
+                                        ?>
+                                            <tr class="variant-item-row" 
+                                                data-variant-name="<?= e($it['size_name'] ?? $it['display_size'] ?? 'Standard') ?> / <?= e($it['color_name'] ?? $it['display_color'] ?? 'Assorted') ?>" 
+                                                data-passed="<?= $packQty ?>" 
+                                                data-passed-qty="<?= $remPassedQty ?>"
+                                                data-rework-qty="<?= $reworkQty ?>"
+                                                data-is-zero="0">
+                                                <td>
+                                                    <input type="hidden" name="items[<?= $idx ?>][qc_batch_id]" value="<?= $it['qc_batch_id'] ?? $selectedQC['id'] ?>">
+                                                    <input type="hidden" name="items[<?= $idx ?>][qc_item_id]" value="<?= $it['id'] ?>">
+                                                    <input type="hidden" name="items[<?= $idx ?>][variant_id]" value="<?= $it['variant_id'] ?? '' ?>">
+                                                    <input type="hidden" name="items[<?= $idx ?>][size_name]" value="<?= e($it['size_name'] ?? $it['display_size'] ?? '') ?>">
+                                                    <input type="hidden" name="items[<?= $idx ?>][color_name]" value="<?= e($it['color_name'] ?? $it['display_color'] ?? '') ?>">
+                                                    <input type="hidden" name="items[<?= $idx ?>][sku]" value="<?= e($it['sku'] ?? '') ?>">
+                                                    <div class="fw-bold text-dark"><?= e($it['size_name'] ?? $it['display_size'] ?? 'Standard') ?> / <?= e($it['color_name'] ?? $it['display_color'] ?? 'Assorted') ?></div>
+                                                    <small class="text-muted font-monospace"><?= e($it['sku'] ?? '') ?></small>
+                                                    <?php if (!empty($isMultiQC) && !empty($additionalQCBatches)): ?>
+                                                        <div class="mt-1">
+                                                            <span class="badge bg-<?= !empty($it['is_additional']) ? 'info' : 'primary' ?>-subtle text-<?= !empty($it['is_additional']) ? 'info-emphasis' : 'primary' ?> border border-<?= !empty($it['is_additional']) ? 'info' : 'primary' ?>-subtle font-monospace" style="font-size: 11px;">
+                                                                <i class="bi bi-box-seam me-1"></i>QC #<?= $it['qc_batch_number'] ?? $selectedQC['id'] ?><?= !empty($it['is_additional']) ? ' (Combined)' : ' (Primary)' ?>
+                                                            </span>
+                                                        </div>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td>
+                                                    <div>
                                                         <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
                                                             <i class="bi bi-box-seam me-1"></i><?= number_format($remPassedQty) ?> pcs Passed Available
                                                         </span>
@@ -223,90 +315,87 @@
                                                                 <i class="bi bi-tools me-1"></i><?= number_format($reworkQty) ?> Rework Pcs <?= !empty($includeRework) ? '(Unlocked)' : '(Admin Toggle)' ?>
                                                             </span>
                                                         <?php endif; ?>
-                                                    <?php endif; ?>
-                                                </div>
-                                                <?php if (($it['already_packed'] ?? 0) > 0): ?>
-                                                    <small class="text-muted d-block mt-1">
-                                                        Total Passed: <?= number_format($it['passed_qty']) ?> pcs (<?= number_format($it['already_packed']) ?> already packed)
-                                                    </small>
-                                                <?php else: ?>
-                                                    <small class="text-muted d-block mt-1">
-                                                        Total Passed: <?= number_format($it['passed_qty']) ?> pcs
-                                                    </small>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td>
-                                                <?php if ($hasAvailableTags): ?>
-                                                    <div class="small fw-semibold text-success mb-1">
-                                                        <i class="bi bi-patch-check-fill me-1"></i>
-                                                        <?= number_format(count($availablePieceTags)) ?> approved QR code(s) available
                                                     </div>
-                                                    <?php if ($rejectedQty > 0 || $reworkQty > 0): ?>
-                                                        <div class="small text-danger mb-2">
-                                                            <?= $rejectedQty > 0 ? number_format($rejectedQty) . ' rejected' : '' ?>
-                                                            <?= $rejectedQty > 0 && $reworkQty > 0 ? ' · ' : '' ?>
-                                                            <?= $reworkQty > 0 ? number_format($reworkQty) . ' need rework' : '' ?> QR code(s) excluded.
-                                                            Re-inspect and pass them in QC before packing.
-                                                        </div>
+                                                    <?php if (($it['already_packed'] ?? 0) > 0): ?>
+                                                        <small class="text-muted d-block mt-1">
+                                                            Total Passed: <?= number_format($it['passed_qty']) ?> pcs (<?= number_format($it['already_packed']) ?> already packed)
+                                                        </small>
+                                                    <?php else: ?>
+                                                        <small class="text-muted d-block mt-1">
+                                                            Total Passed: <?= number_format($it['passed_qty']) ?> pcs
+                                                        </small>
                                                     <?php endif; ?>
-                                                    <div class="piece-tag-picker">
-                                                        <input type="search"
-                                                               class="form-control form-control-sm piece-tag-search mb-2"
-                                                               placeholder="Search QR codes..."
-                                                               aria-label="Search QR codes for <?= e($it['sku'] ?? '') ?>"
-                                                               oninput="filterPieceTags(this)"
-                                                               <?= $isZero ? 'disabled' : '' ?>>
-                                                        <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-                                                            <small class="text-muted piece-tag-count" aria-live="polite"></small>
-                                                            <div class="d-flex gap-1">
-                                                                <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" onclick="selectPieceTagsForQuantity(this)" <?= $isZero ? 'disabled' : '' ?>>Select Qty</button>
-                                                                <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="clearPieceTags(this)" <?= $isZero ? 'disabled' : '' ?>>Clear</button>
+                                                </td>
+                                                <td>
+                                                    <?php if ($hasAvailableTags): ?>
+                                                        <div class="small fw-semibold text-success mb-1">
+                                                            <i class="bi bi-patch-check-fill me-1"></i>
+                                                            <?= number_format(count($availablePieceTags)) ?> approved QR code(s) available
+                                                        </div>
+                                                        <?php if ($rejectedQty > 0 || $reworkQty > 0): ?>
+                                                            <div class="small text-danger mb-2">
+                                                                <?= $rejectedQty > 0 ? number_format($rejectedQty) . ' rejected' : '' ?>
+                                                                <?= $rejectedQty > 0 && $reworkQty > 0 ? ' · ' : '' ?>
+                                                                <?= $reworkQty > 0 ? number_format($reworkQty) . ' need rework' : '' ?> QR code(s) excluded.
+                                                                Re-inspect and pass them in QC before packing.
                                                             </div>
+                                                        <?php endif; ?>
+                                                        <div class="piece-tag-picker">
+                                                            <input type="search"
+                                                                   class="form-control form-control-sm piece-tag-search mb-2"
+                                                                   placeholder="Search QR codes..."
+                                                                   aria-label="Search QR codes for <?= e($it['sku'] ?? '') ?>"
+                                                                   oninput="filterPieceTags(this)">
+                                                            <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                                                                <small class="text-muted piece-tag-count" aria-live="polite"></small>
+                                                                <div class="d-flex gap-1">
+                                                                    <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" onclick="selectAllPieceTags(this)"><i class="bi bi-check-all me-1"></i>Select All</button>
+                                                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" onclick="clearPieceTags(this)">Clear</button>
+                                                                </div>
+                                                            </div>
+                                                            <div class="piece-tag-options">
+                                                            <?php foreach ($availablePieceTags as $tagIndex => $tag): ?>
+                                                                <label class="piece-tag-option" data-piece-tag-option>
+                                                                    <input type="checkbox"
+                                                                           name="items[<?= $idx ?>][piece_tags][]"
+                                                                           class="form-check-input piece-tags-input mt-0"
+                                                                           value="<?= e($tag) ?>"
+                                                                           <?= $tagIndex < $packQty ? 'checked' : '' ?>
+                                                                           onchange="syncPieceTagSelection(this)">
+                                                                    <span class="font-monospace"><?= e($tag) ?></span>
+                                                                    <?php if (!empty($isMultiQC) && !empty($additionalQCBatches)): ?>
+                                                                        <span class="badge bg-light text-muted border py-0 px-1 font-monospace" style="font-size: 9px;">#<?= $it['qc_batch_number'] ?? $selectedQC['id'] ?></span>
+                                                                    <?php endif; ?>
+                                                                </label>
+                                                            <?php endforeach; ?>
+                                                            </div>
+                                                            <div class="small text-muted mt-1">Check QR codes to pack. The quantity updates to match your selection.</div>
                                                         </div>
-                                                        <div class="piece-tag-options <?= $isZero ? 'opacity-50' : '' ?>">
-                                                        <?php foreach ($availablePieceTags as $tagIndex => $tag): ?>
-                                                            <label class="piece-tag-option" data-piece-tag-option>
-                                                                <input type="checkbox"
-                                                                       name="items[<?= $idx ?>][piece_tags][]"
-                                                                       class="form-check-input piece-tags-input mt-0"
-                                                                       value="<?= e($tag) ?>"
-                                                                       <?= $tagIndex < $packQty ? 'checked' : '' ?>
-                                                                       <?= $isZero ? 'disabled' : '' ?>
-                                                                       onchange="syncPieceTagSelection(this)">
-                                                                <span class="font-monospace"><?= e($tag) ?></span>
-                                                            </label>
-                                                        <?php endforeach; ?>
-                                                        </div>
-                                                        <div class="small text-muted mt-1">Check QR codes to pack. The quantity updates to match your selection.</div>
-                                                <?php else: ?>
-                                                    <span class="small text-muted">Individual QC QR codes are unavailable.</span>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td>
-                                                <div class="input-group input-group-sm">
-                                                    <input type="number" 
-                                                           name="items[<?= $idx ?>][quantity]" 
-                                                           class="form-control form-control-sm packed-input fw-semibold <?= $isZero ? 'bg-light text-muted border-secondary-subtle' : '' ?>" 
-                                                           min="0" 
-                                                           max="<?= $packQty ?>"
-                                                           value="<?= $packQty ?>"
-                                                           <?= $isZero ? 'disabled readonly tabindex="-1"' : '' ?>
-                                                           oninput="calcPackedTotal(); updatePieceTagCounts()">
-                                                    <span class="input-group-text <?= $isZero ? 'bg-light text-muted' : 'bg-light text-muted' ?>">pcs</span>
-                                                </div>
-                                                <?php if ($isZero): ?>
-                                                    <div class="small text-muted mt-1"><i class="bi bi-lock-fill me-1"></i>0 pcs remaining (Disabled)</div>
-                                                <?php else: ?>
+                                                    <?php else: ?>
+                                                        <span class="small text-muted">Individual QC QR codes are unavailable.</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td>
+                                                    <div class="input-group input-group-sm">
+                                                        <input type="number" 
+                                                               name="items[<?= $idx ?>][quantity]" 
+                                                               class="form-control form-control-sm packed-input fw-semibold" 
+                                                               min="0" 
+                                                               max="<?= $packQty ?>"
+                                                               value="<?= $packQty ?>"
+                                                               oninput="calcPackedTotal(); updatePieceTagCounts()">
+                                                        <span class="input-group-text bg-light text-muted">pcs</span>
+                                                    </div>
                                                     <small class="text-muted d-block mt-1">
                                                         Max: <span class="max-display-val"><?= number_format($packQty) ?></span> pcs
                                                         <?php if (!empty($includeRework) && $reworkQty > 0): ?>
                                                             <span class="text-warning fw-semibold">(incl. <?= $reworkQty ?> rework)</span>
                                                         <?php endif; ?>
                                                     </small>
-                                                <?php endif; ?>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
                                 </tbody>
                             </table>
                         </div>
@@ -355,6 +444,39 @@
 </style>
 
 <script>
+function toggleReworkDropdown(show) {
+    const container = document.getElementById('reworkDropdownContainer');
+    const dropdown = document.getElementById('additional_qc_batch_dropdown');
+    if (show) {
+        if (container) container.classList.remove('d-none');
+    } else {
+        if (container) container.classList.add('d-none');
+        if (dropdown) dropdown.value = '';
+        const qcId = document.getElementById('qc_batch_id')?.value;
+        if (qcId) {
+            const currentUrl = new URL(window.location.href);
+            currentUrl.searchParams.delete('multi_qc');
+            currentUrl.searchParams.delete('additional_qc_batch_ids');
+            window.location.href = currentUrl.toString();
+        }
+    }
+}
+
+function onReworkBatchSelect(val) {
+    const qcId = document.getElementById('qc_batch_id')?.value;
+    if (!qcId) return;
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set('qc_batch_id', qcId);
+    if (val) {
+        currentUrl.searchParams.set('multi_qc', '1');
+        currentUrl.searchParams.set('additional_qc_batch_ids', val);
+    } else {
+        currentUrl.searchParams.delete('multi_qc');
+        currentUrl.searchParams.delete('additional_qc_batch_ids');
+    }
+    window.location.href = currentUrl.toString();
+}
+
 function onToggleReworkOption(isChecked) {
     const currentUrl = new URL(window.location.href);
     if (isChecked) {
@@ -423,20 +545,22 @@ function filterPieceTags(input) {
     });
 }
 
-function selectPieceTagsForQuantity(button) {
+function selectAllPieceTags(button) {
     const row = button.closest('.variant-item-row');
     const options = row?.querySelector('.piece-tag-options');
-    const quantityInput = row?.querySelector('.packed-input');
-    if (!options || !quantityInput) return;
+    if (!options) return;
 
-    const quantity = Math.min(
-        parseInt(quantityInput.max, 10) || 0,
-        Math.max(0, parseInt(quantityInput.value, 10) || 0)
-    );
-    options.querySelectorAll('.piece-tags-input').forEach((checkbox, index) => {
-        checkbox.checked = index < quantity;
+    options.querySelectorAll('.piece-tags-input').forEach(checkbox => {
+        checkbox.checked = true;
     });
-    syncPieceTagSelection(options.querySelector('.piece-tags-input'));
+    const firstCheckbox = options.querySelector('.piece-tags-input');
+    if (firstCheckbox) {
+        syncPieceTagSelection(firstCheckbox);
+    }
+}
+
+function selectPieceTagsForQuantity(button) {
+    selectAllPieceTags(button);
 }
 
 function clearPieceTags(button) {
@@ -472,6 +596,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 return false;
             } else {
                 qcBatchSelect.classList.remove('is-invalid', 'border-danger');
+            }
+
+            // Validate Combine Rework selection if checked
+            const reworkCheck = document.getElementById('combineReworkCheck');
+            const reworkDropdown = document.getElementById('additional_qc_batch_dropdown');
+            if (reworkCheck && reworkCheck.checked && (!reworkDropdown || !reworkDropdown.value)) {
+                e.preventDefault();
+                alert('Please select a Rework-Completed QC Batch from the dropdown, or uncheck the combine option.');
+                if (reworkDropdown) {
+                    reworkDropdown.classList.add('is-invalid', 'border-danger');
+                    reworkDropdown.focus();
+                }
+                return false;
+            } else if (reworkDropdown) {
+                reworkDropdown.classList.remove('is-invalid', 'border-danger');
             }
 
             // 2. Validate Destination Warehouse

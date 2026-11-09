@@ -7384,14 +7384,14 @@ class ProductionController {
         $unitClause = $scopedUnitId ? " AND pp.production_unit_id = $scopedUnitId" : "";
         
         $rawQcBatches = Database::fetchAll(
-            "SELECT qb.*, pp.program_number, COALESCE(p.name, pp.name, 'General Apparel') as product_name,
+            "SELECT qb.*, pp.program_number, pp.product_id as program_product_id, COALESCE(p.name, pp.name, 'General Apparel') as product_name,
                     COALESCE((SELECT SUM(passed_qty) FROM qc_items WHERE qc_batch_id = qb.id), qb.passed_qty, 0) as total_qc_passed,
                     COALESCE((SELECT SUM(rework_qty) FROM qc_items WHERE qc_batch_id = qb.id), qb.rework_qty, 0) as total_qc_rework,
                     COALESCE((
                         SELECT SUM(pbi.quantity)
                         FROM production_batch_items pbi
                         JOIN production_batches pb ON pbi.production_batch_id = pb.id
-                        WHERE pb.qc_batch_id = qb.id AND pb.status != 'CANCELLED'
+                        WHERE (pb.qc_batch_id = qb.id OR pb.additional_qc_batch_ids LIKE CONCAT('%', qb.id, '%')) AND pb.status != 'CANCELLED'
                     ), 0) as already_packed_qty
              FROM qc_batches qb
              JOIN production_programs pp ON qb.program_id = pp.id
@@ -7418,10 +7418,38 @@ class ProductionController {
         }
 
         $selectedQC = null;
+        $additionalQCBatches = [];
+        $eligibleAdditionalBatches = [];
+        $additionalQcIds = [];
+        $isMultiQC = !empty($_GET['multi_qc']) || !empty($_GET['additional_qc_batch_ids']);
+
+        if (!empty($_GET['additional_qc_batch_ids'])) {
+            if (is_array($_GET['additional_qc_batch_ids'])) {
+                $additionalQcIds = array_map('intval', $_GET['additional_qc_batch_ids']);
+            } else {
+                $additionalQcIds = array_map('intval', explode(',', (string)$_GET['additional_qc_batch_ids']));
+            }
+            $additionalQcIds = array_values(array_filter($additionalQcIds, fn($id) => $id > 0 && $id != (int)$qcBatchId));
+        }
+
         $items = [];
+        $includeRework = !empty($_GET['include_rework']);
+        $totalQCRework = 0;
+        $combinedTotals = [
+            'total_passed' => 0,
+            'packed'       => 0,
+            'remaining'    => 0,
+            'rework'       => 0,
+        ];
+
         if ($qcBatchId) {
             $selectedQC = QCBatch::find((int)$qcBatchId);
             if ($selectedQC) {
+                $selProg = Database::fetchOne("SELECT program_number, product_id FROM production_programs WHERE id = ?", [(int)$selectedQC['program_id']]);
+                $selectedQC['program_number'] = $selProg['program_number'] ?? ('PRG #' . $selectedQC['program_id']);
+                $selectedQCProd = Database::fetchOne("SELECT name FROM products WHERE id = ?", [(int)($selProg['product_id'] ?? 0)]);
+                $selectedQC['product_name'] = $selectedQCProd['name'] ?? 'Finished Product';
+
                 $totalQCPassed = (int)(Database::fetchOne(
                     "SELECT COALESCE(SUM(passed_qty), 0) as total FROM qc_items WHERE qc_batch_id = ?",
                     [(int)$qcBatchId]
@@ -7434,68 +7462,10 @@ class ProductionController {
                     "SELECT COALESCE(SUM(pbi.quantity), 0) as total
                      FROM production_batch_items pbi
                      JOIN production_batches pb ON pbi.production_batch_id = pb.id
-                     WHERE pb.qc_batch_id = ? AND pb.status != 'CANCELLED'",
-                    [(int)$qcBatchId]
+                     WHERE (pb.qc_batch_id = ? OR pb.additional_qc_batch_ids LIKE ?) AND pb.status != 'CANCELLED'",
+                    [(int)$qcBatchId, '%' . (int)$qcBatchId . '%']
                 )['total'] ?? 0);
 
-                $selectedQC['total_qc_passed'] = $totalQCPassed;
-                $selectedQC['already_packed_qty'] = $alreadyPackedTotal;
-                $selectedQC['remaining_qty'] = max(0, $totalQCPassed - $alreadyPackedTotal);
-
-                // Fetch already packed quantities mapped per variant
-                $variantPackedMap = [];
-                $packedRows = Database::fetchAll(
-                    "SELECT pbi.variant_id, COALESCE(SUM(pbi.quantity), 0) as packed_qty
-                     FROM production_batch_items pbi
-                     JOIN production_batches pb ON pbi.production_batch_id = pb.id
-                     WHERE pb.qc_batch_id = ? AND pb.status != 'CANCELLED'
-                     GROUP BY pbi.variant_id",
-                    [(int)$qcBatchId]
-                );
-                foreach ($packedRows as $pr) {
-                    $variantPackedMap[(int)$pr['variant_id']] = (int)$pr['packed_qty'];
-                }
-
-                $items = QCBatch::getItems((int)$qcBatchId);
-                $productId = ProductionService::findOrCreateProductForProgram((int)$selectedQC['program_id']);
-                if ($productId > 0) {
-                    foreach ($items as &$it) {
-                        if (empty($it['variant_id'])) {
-                            $vId = ProductionService::findOrCreateVariant(
-                                $productId,
-                                $it['size_name'] ?? $it['display_size'] ?? '',
-                                $it['color_name'] ?? $it['display_color'] ?? '',
-                                $it['sku'] ?? ''
-                            );
-                            if ($vId > 0) {
-                                $it['variant_id'] = $vId;
-                                Database::execute("UPDATE qc_items SET variant_id = ? WHERE id = ?", [$vId, $it['id']]);
-                                if (!empty($it['base_price']) || !empty($it['discount_price'])) {
-                                    Database::execute("UPDATE product_variants SET mrp = ?, selling_price = ? WHERE id = ?", [
-                                        (float)($it['base_price'] ?? 0),
-                                        (float)($it['discount_price'] ?? 0),
-                                        $vId
-                                    ]);
-                                }
-                            }
-                        }
-                        $vId = (int)($it['variant_id'] ?? 0);
-                        $vPacked = $variantPackedMap[$vId] ?? 0;
-                        $it['already_packed'] = $vPacked;
-                        $it['remaining_qty'] = max(0, (int)$it['passed_qty'] - $vPacked);
-                    }
-                    unset($it);
-                } else {
-                    foreach ($items as &$it) {
-                        $vId = (int)($it['variant_id'] ?? 0);
-                        $vPacked = $variantPackedMap[$vId] ?? 0;
-                        $it['already_packed'] = $vPacked;
-                        $it['remaining_qty'] = max(0, (int)$it['passed_qty'] - $vPacked);
-                    }
-                    unset($it);
-                }
-
-                $includeRework = !empty($_GET['include_rework']);
                 $totalQCRework = (int)(Database::fetchOne(
                     "SELECT COALESCE(SUM(rework_qty), 0) as total FROM qc_items WHERE qc_batch_id = ?",
                     [(int)$qcBatchId]
@@ -7504,20 +7474,205 @@ class ProductionController {
                     $totalQCRework = (int)($selectedQC['rework_qty'] ?? 0);
                 }
 
+                $selectedQC['total_qc_passed'] = $totalQCPassed;
+                $selectedQC['already_packed_qty'] = $alreadyPackedTotal;
+                $selectedQC['remaining_qty'] = max(0, $totalQCPassed - $alreadyPackedTotal);
+                $selectedQC['total_qc_rework'] = $totalQCRework;
+
+                $combinedTotals['total_passed'] += $totalQCPassed;
+                $combinedTotals['packed'] += $alreadyPackedTotal;
+                $combinedTotals['remaining'] += $selectedQC['remaining_qty'];
+                $combinedTotals['rework'] += $totalQCRework;
+
+                // Eligible other batches to combine: ONLY batches that have reworked / rejected-then-completed good products
+                foreach ($qcBatches as $qb) {
+                    if ((int)$qb['id'] === (int)$selectedQC['id']) {
+                        continue;
+                    }
+                    $hasReworkGoods = false;
+                    $reworkCount = 0;
+
+                    if (!empty($qb['total_qc_rework']) || !empty($qb['rework_qty'])) {
+                        $hasReworkGoods = true;
+                        $reworkCount = (int)($qb['total_qc_rework'] ?? $qb['rework_qty']);
+                    }
+
+                    if (!$hasReworkGoods && !empty($qb['pieces_data'])) {
+                        $pieces = json_decode($qb['pieces_data'], true);
+                        if (is_array($pieces)) {
+                            foreach ($pieces as $p) {
+                                if (!empty($p['is_reinspected']) || (!empty($p['defect_reason']) && ($p['status'] ?? '') === 'APPROVED')) {
+                                    $hasReworkGoods = true;
+                                    $reworkCount++;
+                                }
+                            }
+                        }
+                    }
+
+                    if (!$hasReworkGoods) {
+                        $qcItemsDefects = Database::fetch(
+                            "SELECT COUNT(*) as cnt FROM qc_items WHERE qc_batch_id = ? AND (defect_reason != '' OR rework_qty > 0)",
+                            [(int)$qb['id']]
+                        );
+                        if (!empty($qcItemsDefects['cnt'])) {
+                            $hasReworkGoods = true;
+                            $reworkCount = (int)$qcItemsDefects['cnt'];
+                        }
+                    }
+
+                    if ($hasReworkGoods && ($qb['remaining_qty'] ?? 1) > 0) {
+                        $qb['rework_completed_qty'] = $reworkCount;
+                        $eligibleAdditionalBatches[] = $qb;
+                    }
+                }
+
+                // Fetch already packed quantities mapped per variant for primary batch
+                $variantPackedMap = [];
+                $packedRows = Database::fetchAll(
+                    "SELECT pbi.variant_id, COALESCE(SUM(pbi.quantity), 0) as packed_qty
+                     FROM production_batch_items pbi
+                     JOIN production_batches pb ON pbi.production_batch_id = pb.id
+                     WHERE (pb.qc_batch_id = ? OR pb.additional_qc_batch_ids LIKE ?) AND pb.status != 'CANCELLED'
+                     GROUP BY pbi.variant_id",
+                    [(int)$qcBatchId, '%' . (int)$qcBatchId . '%']
+                );
+                foreach ($packedRows as $pr) {
+                    $variantPackedMap[(int)$pr['variant_id']] = (int)$pr['packed_qty'];
+                }
+
+                $primaryItems = QCBatch::getItems((int)$qcBatchId);
+                $productId = ProductionService::findOrCreateProductForProgram((int)$selectedQC['program_id']);
                 $availablePieceTags = ProductionService::getAvailableQCPieceTags((int)$qcBatchId, $includeRework);
-                foreach ($items as &$it) {
+
+                foreach ($primaryItems as &$it) {
+                    if (empty($it['variant_id']) && $productId > 0) {
+                        $vId = ProductionService::findOrCreateVariant(
+                            $productId,
+                            $it['size_name'] ?? $it['display_size'] ?? '',
+                            $it['color_name'] ?? $it['display_color'] ?? '',
+                            $it['sku'] ?? ''
+                        );
+                        if ($vId > 0) {
+                            $it['variant_id'] = $vId;
+                            Database::execute("UPDATE qc_items SET variant_id = ? WHERE id = ?", [$vId, $it['id']]);
+                            if (!empty($it['base_price']) || !empty($it['discount_price'])) {
+                                Database::execute("UPDATE product_variants SET mrp = ?, selling_price = ? WHERE id = ?", [
+                                    (float)($it['base_price'] ?? 0),
+                                    (float)($it['discount_price'] ?? 0),
+                                    $vId
+                                ]);
+                            }
+                        }
+                    }
+                    $vId = (int)($it['variant_id'] ?? 0);
+                    $vPacked = $variantPackedMap[$vId] ?? 0;
+                    $it['already_packed'] = $vPacked;
+                    $it['remaining_qty'] = max(0, (int)$it['passed_qty'] - $vPacked);
                     $it['available_piece_tags'] = $availablePieceTags[(int)$it['id']] ?? [];
                     $it['rework_qty'] = (int)($it['rework_qty'] ?? 0);
+                    $it['qc_batch_id'] = (int)$selectedQC['id'];
+                    $it['qc_batch_number'] = (int)$selectedQC['id'];
+                    $it['program_number'] = $selectedQC['program_number'] ?? '';
+                    $it['is_additional'] = false;
+                    $items[] = $it;
                 }
                 unset($it);
+
+                // Process additional QC batches if selected
+                foreach ($additionalQcIds as $addId) {
+                    $addQC = QCBatch::find((int)$addId);
+                    if (!$addQC) continue;
+
+                    $addProg = Database::fetchOne("SELECT program_number, product_id FROM production_programs WHERE id = ?", [(int)$addQC['program_id']]);
+                    $addQC['program_number'] = $addProg['program_number'] ?? ('PRG #' . $addQC['program_id']);
+                    $addProdRow = Database::fetchOne("SELECT name FROM products WHERE id = ?", [(int)($addProg['product_id'] ?? 0)]);
+                    $addQC['product_name'] = $addProdRow['name'] ?? 'Finished Product';
+
+                    $addPassed = (int)(Database::fetchOne("SELECT COALESCE(SUM(passed_qty), 0) as total FROM qc_items WHERE qc_batch_id = ?", [$addId])['total'] ?? 0);
+                    if ($addPassed <= 0) $addPassed = (int)($addQC['passed_qty'] ?? 0);
+
+                    $addPacked = (int)(Database::fetchOne(
+                        "SELECT COALESCE(SUM(pbi.quantity), 0) as total
+                         FROM production_batch_items pbi
+                         JOIN production_batches pb ON pbi.production_batch_id = pb.id
+                         WHERE (pb.qc_batch_id = ? OR pb.additional_qc_batch_ids LIKE ?) AND pb.status != 'CANCELLED'",
+                        [$addId, '%' . $addId . '%']
+                    )['total'] ?? 0);
+
+                    $addRework = (int)(Database::fetchOne("SELECT COALESCE(SUM(rework_qty), 0) as total FROM qc_items WHERE qc_batch_id = ?", [$addId])['total'] ?? 0);
+                    if ($addRework <= 0) $addRework = (int)($addQC['rework_qty'] ?? 0);
+
+                    $addRemaining = max(0, $addPassed - $addPacked);
+                    $addQC['total_qc_passed'] = $addPassed;
+                    $addQC['already_packed_qty'] = $addPacked;
+                    $addQC['remaining_qty'] = $addRemaining;
+                    $addQC['total_qc_rework'] = $addRework;
+
+                    $combinedTotals['total_passed'] += $addPassed;
+                    $combinedTotals['packed'] += $addPacked;
+                    $combinedTotals['remaining'] += $addRemaining;
+                    $combinedTotals['rework'] += $addRework;
+
+                    $addTagsMap = ProductionService::getAvailableQCPieceTags($addId, $includeRework);
+                    $addPackedRows = Database::fetchAll(
+                        "SELECT pbi.variant_id, COALESCE(SUM(pbi.quantity), 0) as packed_qty
+                         FROM production_batch_items pbi
+                         JOIN production_batches pb ON pbi.production_batch_id = pb.id
+                         WHERE (pb.qc_batch_id = ? OR pb.additional_qc_batch_ids LIKE ?) AND pb.status != 'CANCELLED'
+                         GROUP BY pbi.variant_id",
+                        [$addId, '%' . $addId . '%']
+                    );
+                    $addVariantPackedMap = [];
+                    foreach ($addPackedRows as $apr) {
+                        $addVariantPackedMap[(int)$apr['variant_id']] = (int)$apr['packed_qty'];
+                    }
+
+                    $addItems = QCBatch::getItems($addId);
+                    $addProdId = ProductionService::findOrCreateProductForProgram((int)$addQC['program_id']);
+                    foreach ($addItems as &$ait) {
+                        if (empty($ait['variant_id']) && $addProdId > 0) {
+                            $vId = ProductionService::findOrCreateVariant(
+                                $addProdId,
+                                $ait['size_name'] ?? $ait['display_size'] ?? '',
+                                $ait['color_name'] ?? $ait['display_color'] ?? '',
+                                $ait['sku'] ?? ''
+                            );
+                            if ($vId > 0) {
+                                $ait['variant_id'] = $vId;
+                                Database::execute("UPDATE qc_items SET variant_id = ? WHERE id = ?", [$vId, $ait['id']]);
+                                if (!empty($ait['base_price']) || !empty($ait['discount_price'])) {
+                                    Database::execute("UPDATE product_variants SET mrp = ?, selling_price = ? WHERE id = ?", [
+                                        (float)($ait['base_price'] ?? 0),
+                                        (float)($ait['discount_price'] ?? 0),
+                                        $vId
+                                    ]);
+                                }
+                            }
+                        }
+                        $vId = (int)($ait['variant_id'] ?? 0);
+                        $vPacked = $addVariantPackedMap[$vId] ?? 0;
+                        $ait['already_packed'] = $vPacked;
+                        $ait['remaining_qty'] = max(0, (int)$ait['passed_qty'] - $vPacked);
+                        $ait['available_piece_tags'] = $addTagsMap[(int)$ait['id']] ?? [];
+                        $ait['rework_qty'] = (int)($ait['rework_qty'] ?? 0);
+                        $ait['qc_batch_id'] = $addId;
+                        $ait['qc_batch_number'] = $addId;
+                        $ait['program_number'] = $addQC['program_number'] ?? '';
+                        $ait['is_additional'] = true;
+                        $items[] = $ait;
+                    }
+                    unset($ait);
+
+                    $additionalQCBatches[] = $addQC;
+                }
 
                 $existingBatches = Database::fetchAll(
                     "SELECT pb.*, w.name as warehouse_name, w.code as warehouse_code
                      FROM production_batches pb 
                      LEFT JOIN warehouses w ON pb.destination_warehouse_id = w.id 
-                     WHERE pb.qc_batch_id = ? AND pb.status != 'CANCELLED' 
+                     WHERE (pb.qc_batch_id = ? OR pb.additional_qc_batch_ids LIKE ?) AND pb.status != 'CANCELLED' 
                      ORDER BY pb.id DESC",
-                    [(int)$qcBatchId]
+                    [(int)$qcBatchId, '%' . (int)$qcBatchId . '%']
                 );
 
                 // Ensure selectedQC is in $qcBatches list if not already present
@@ -7541,17 +7696,22 @@ class ProductionController {
         $warehouses = Database::fetchAll("SELECT * FROM warehouses WHERE is_active = 1 ORDER BY name ASC");
 
         Response::view('production.batches.create', [
-            'pageTitle'       => 'Pack Production Batch',
-            'activeModule'    => 'production',
-            'activeMenu'      => 'batches',
-            'qcBatches'       => $qcBatches,
-            'selectedQC'      => $selectedQC,
-            'existingBatches' => $existingBatches ?? [],
-            'items'           => $items,
-            'warehouses'      => $warehouses,
-            'includeRework'   => $includeRework ?? false,
-            'totalQCRework'   => $totalQCRework ?? 0,
-            'breadcrumb'      => [
+            'pageTitle'                 => 'Pack Production Batch',
+            'activeModule'              => 'production',
+            'activeMenu'                => 'batches',
+            'qcBatches'                 => $qcBatches,
+            'selectedQC'                => $selectedQC,
+            'additionalQCBatches'       => $additionalQCBatches,
+            'eligibleAdditionalBatches' => $eligibleAdditionalBatches,
+            'additionalQcIds'           => $additionalQcIds,
+            'isMultiQC'                 => $isMultiQC,
+            'combinedTotals'            => $combinedTotals,
+            'existingBatches'           => $existingBatches ?? [],
+            'items'                     => $items,
+            'warehouses'                => $warehouses,
+            'includeRework'             => $includeRework ?? false,
+            'totalQCRework'             => $totalQCRework ?? 0,
+            'breadcrumb'                => [
                 ['label' => 'Production', 'url' => url('production/dashboard')],
                 ['label' => 'Batches', 'url' => url('production/batches')],
                 ['label' => 'Pack Batch'],
@@ -7583,6 +7743,17 @@ class ProductionController {
             Response::back();
             return;
         }
+
+        $additionalQcIds = [];
+        if (!empty($_POST['additional_qc_batch_ids']) && is_array($_POST['additional_qc_batch_ids'])) {
+            foreach ($_POST['additional_qc_batch_ids'] as $aqId) {
+                $aqId = (int)$aqId;
+                if ($aqId > 0 && $aqId !== $qcBatchId && !in_array($aqId, $additionalQcIds, true)) {
+                    $additionalQcIds[] = $aqId;
+                }
+            }
+        }
+        $isMultiQC = !empty($additionalQcIds) || !empty($_POST['is_multi_qc']);
 
         $programId = (int)($qcBatch['program_id'] ?? ($_POST['program_id'] ?? 0));
         $productId = ProductionService::findOrCreateProductForProgram($programId);
@@ -7652,16 +7823,26 @@ class ProductionController {
             $user = Session::get('user');
             $userId = !empty($user['id']) ? (int)$user['id'] : (int)(Database::fetchOne("SELECT id FROM users LIMIT 1")['id'] ?? 2);
             $includeRework = !empty($_POST['include_rework']);
-            $batchNotes = $includeRework ? '[Admin Rework Authorized: Includes repaired/reworked garments packed for outward dispatch]' : null;
+            $batchNotes = [];
+            if ($includeRework) {
+                $batchNotes[] = '[Admin Rework Authorized: Includes repaired/reworked garments packed for outward dispatch]';
+            }
+            if ($isMultiQC && !empty($additionalQcIds)) {
+                $allLabels = array_merge(['QC #' . $qcBatchId], array_map(fn($id) => 'QC #' . $id, $additionalQcIds));
+                $batchNotes[] = '[Multi-Batch Combined: ' . implode(' + ', $allLabels) . ']';
+            }
+            $notesStr = !empty($batchNotes) ? implode(' ', $batchNotes) : null;
 
             $batchId = ProductionService::createProductionBatch([
                 'program_id'               => $programId,
-                'qc_batch_id'              => !empty($_POST['qc_batch_id']) ? (int)$_POST['qc_batch_id'] : null,
+                'qc_batch_id'              => $qcBatchId,
+                'additional_qc_batch_ids'  => $additionalQcIds,
+                'is_multi_qc'              => $isMultiQC ? 1 : 0,
                 'destination_warehouse_id' => (int)$_POST['destination_warehouse_id'],
                 'box_count'                => (int)($_POST['box_count'] ?? 1),
                 'status'                   => 'PREPARING',
                 'include_rework'           => $includeRework,
-                'notes'                    => $batchNotes,
+                'notes'                    => $notesStr,
             ], $items, $userId);
 
             Session::flash('success', 'Production batch packed and created successfully.');
@@ -7825,11 +8006,28 @@ class ProductionController {
         $items = ProductionBatch::getItems($batchId);
         $outward = ProductionOutward::findByBatchId($batchId);
 
+        $multiQCBatches = [];
+        if (!empty($batch['additional_qc_batch_ids'])) {
+            $addIds = json_decode((string)$batch['additional_qc_batch_ids'], true);
+            if (!is_array($addIds)) {
+                $addIds = explode(',', (string)$batch['additional_qc_batch_ids']);
+            }
+            foreach ($addIds as $aid) {
+                $aq = QCBatch::find((int)$aid);
+                if ($aq) {
+                    $aqProg = Database::fetchOne("SELECT program_number FROM production_programs WHERE id = ?", [(int)$aq['program_id']]);
+                    $aq['program_number'] = $aqProg['program_number'] ?? ('PRG #' . $aq['program_id']);
+                    $multiQCBatches[] = $aq;
+                }
+            }
+        }
+
         Response::json([
-            'success' => true,
-            'batch'   => $batch,
-            'items'   => $items,
-            'outward' => $outward,
+            'success'          => true,
+            'batch'            => $batch,
+            'items'            => $items,
+            'outward'          => $outward,
+            'multi_qc_batches' => $multiQCBatches,
         ]);
     }
 

@@ -257,6 +257,19 @@ function formatUtcDateTime(?string $datetime, string $format = 'd M Y h:i A'): s
 }
 
 /**
+ * Check if current user is an Admin or Super Admin.
+ */
+function isAdmin(): bool {
+    $user = Session::user();
+    if (empty($user)) {
+        return false;
+    }
+    $roleSlug = strtolower($user['role_slug'] ?? '');
+    $roleId = (int)($user['role_id'] ?? 0);
+    return $roleId === 1 || in_array($roleSlug, ['super_admin', 'admin', 'administrator', 'system_admin'], true);
+}
+
+/**
  * Check if current user has a specific permission.
  * Supports both hasPermission('module.action') and hasPermission('module', 'action')
  */

@@ -636,6 +636,8 @@ class Router {
         $this->post('api/warehouse/labels/produce-new-qr', 'WarehouseController', 'produceNewQrAjax', ['AuthMiddleware']);
         $this->post('warehouse/labels/confirm-stickered-inward', 'WarehouseController', 'confirmStickeredInward', ['AuthMiddleware']);
         $this->post('api/warehouse/labels/confirm-stickered-inward', 'WarehouseController', 'confirmStickeredInward', ['AuthMiddleware']);
+        $this->post('warehouse/labels/delete-qr', 'WarehouseController', 'deleteWarehouseQrAjax', ['AuthMiddleware']);
+        $this->post('api/warehouse/labels/delete-qr', 'WarehouseController', 'deleteWarehouseQrAjax', ['AuthMiddleware']);
 
         // Shop Requests, WhatsApp & Website Channel Orders
         $this->get('warehouse/shop-requests', 'WarehouseController', 'shopRequestList', ['AuthMiddleware', ['PermissionMiddleware', 'shop_requests', 'view']]);
@@ -781,6 +783,8 @@ class Router {
         // ==========================================
         $this->get('shop/dashboard', 'ShopController', 'dashboard', ['AuthMiddleware', ['PermissionMiddleware', 'shop', 'view']]);
         $this->get('api/shop/dashboard/metrics', 'ShopController', 'ajaxFilterMetrics', ['AuthMiddleware', ['PermissionMiddleware', 'shop', 'view']]);
+        $this->get('shop/reports/export', 'ShopController', 'exportReports', ['AuthMiddleware', ['PermissionMiddleware', 'shop', 'view']]);
+        $this->post('shop/reports/export', 'ShopController', 'exportReports', ['AuthMiddleware', ['PermissionMiddleware', 'shop', 'view']]);
 
         // POS / Billing
         $this->get('shop/pos', 'ShopController', 'posInterface', ['AuthMiddleware', ['PermissionMiddleware', 'pos', 'view']]);

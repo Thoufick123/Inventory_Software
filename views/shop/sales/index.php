@@ -13,13 +13,9 @@ $onlineRecordCount = count(array_filter($items, static fn($item) => (float)($ite
                 <span class="badge bg-primary-subtle text-primary fw-semibold px-3 py-1 rounded-pill">
                     <i class="bi bi-shop me-1"></i><?= e($shop['name'] ?? 'Shop Store') ?>
                 </span>
-                <span class="badge bg-success-subtle text-success fw-semibold px-3 py-1 rounded-pill">
-                    <i class="bi bi-check2-circle me-1"></i>Live Sales Ledger
-                </span>
             </div>
             <h2 class="fw-bold text-dark mb-0">Selled Products Register</h2>
-            <p class="text-muted small mb-0">Complete itemized sales ledger, product-level transactions, and piece-level serial QR traceability.</p>
-        </div>
+            </div>
     </div>
 
     <!-- 4 KPI Summary Cards -->
@@ -173,10 +169,10 @@ $onlineRecordCount = count(array_filter($items, static fn($item) => (float)($ite
             <table class="table table-hover align-middle mb-0" id="salesTable">
                 <thead class="table-light small text-uppercase">
                     <tr>
-                        <th class="ps-4" style="width: 4%;">#</th>
+                        <th class="ps-4" style="width: 4%;">s.no</th>
                         <th style="width: 20%;">Product Details</th>
                         <th style="width: 12%;">Piece QR Serial Tag</th>
-                        <th style="width: 12%;">Invoice #</th>
+                        <th style="width: 12%;">Invoice s.no</th>
                         <th style="width: 12%;">Customer</th>
                         <th class="text-center" style="width: 5%;">Qty</th>
                         <th class="text-end" style="width: 12%;">Rate &amp; Discount</th>

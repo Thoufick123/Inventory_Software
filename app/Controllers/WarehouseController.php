@@ -1036,9 +1036,12 @@ class WarehouseController {
         }
 
         if (!empty($search)) {
-            $sql .= " AND (p.name LIKE ? OR pv.sku LIKE ? OR p.code LIKE ? OR sel.name LIKE ? OR b.name LIKE ? OR pv.qr_code LIKE ? OR p.qr_code_prefix LIKE ? OR s.name LIKE ? OR col.name LIKE ? OR p.material LIKE ? OR EXISTS (SELECT 1 FROM stock_transactions st_search WHERE st_search.variant_id = pv.id AND st_search.location_type = 'WAREHOUSE' AND st_search.location_id = sb.location_id AND st_search.notes LIKE ?))";
+            $sql .= " AND (p.name LIKE ? OR pv.sku LIKE ? OR p.code LIKE ? OR sel.name LIKE ? OR b.name LIKE ? OR pv.qr_code LIKE ? OR p.qr_code_prefix LIKE ? OR s.name LIKE ? OR col.name LIKE ? OR p.material LIKE ? 
+                     OR EXISTS (SELECT 1 FROM warehouse_qr_codes wqr_s WHERE wqr_s.variant_id = pv.id AND wqr_s.warehouse_id = sb.location_id AND wqr_s.qr_code LIKE ?)
+                     OR EXISTS (SELECT 1 FROM production_batch_items pbi_s JOIN production_batches pb_s ON pbi_s.production_batch_id = pb_s.id WHERE pbi_s.variant_id = pv.id AND (pb_s.destination_warehouse_id = sb.location_id OR pb_s.destination_warehouse_id IS NULL) AND (pbi_s.piece_tags LIKE ? OR pbi_s.received_qr_codes LIKE ?))
+                     OR EXISTS (SELECT 1 FROM stock_transactions st_search WHERE st_search.variant_id = pv.id AND st_search.location_type = 'WAREHOUSE' AND st_search.location_id = sb.location_id AND st_search.notes LIKE ?))";
             $s = '%' . $search . '%';
-            $params = array_merge($params, [$s, $s, $s, $s, $s, $s, $s, $s, $s, $s, $s]);
+            $params = array_merge($params, [$s, $s, $s, $s, $s, $s, $s, $s, $s, $s, $s, $s, $s, $s]);
         }
 
         $sql .= " ORDER BY p.name ASC, pv.sku ASC";
@@ -10267,6 +10270,92 @@ class WarehouseController {
             'message' => "Produced 1 New QR: {$newTagCode}" . ($isSeriesOrComp ? " (Pack #{$totalPacks}, {$packQtyForQr} Pcs: {$nextSeq} - {$endSeq})" : " (Piece #{$nextSeq})"),
             'item'    => $itemData,
         ]);
+    }
+
+    public function deleteWarehouseQrAjax(): void {
+        $canDelete = hasPermission('wh_labels', 'create') || hasPermission('wh_labels', 'edit') || hasPermission('wh_labels', 'view') || hasPermission('stock', 'view') || hasPermission('warehouse', 'view');
+        if (!$canDelete) {
+            Response::json(['success' => false, 'message' => 'Access denied.'], 403);
+            return;
+        }
+
+        $codes = [];
+        if (!empty($_POST['codes'])) {
+            if (is_array($_POST['codes'])) {
+                $codes = $_POST['codes'];
+            } else {
+                $decoded = json_decode((string)$_POST['codes'], true);
+                if (is_array($decoded)) {
+                    $codes = $decoded;
+                } else {
+                    $codes = explode(',', (string)$_POST['codes']);
+                }
+            }
+        } elseif (!empty($_POST['code'])) {
+            $codes = [(string)$_POST['code']];
+        }
+
+        $codes = array_values(array_unique(array_filter(array_map(function($c) {
+            return strtoupper(trim((string)$c));
+        }, $codes))));
+
+        if (empty($codes)) {
+            Response::json(['success' => false, 'message' => 'No QR codes specified to delete.'], 400);
+            return;
+        }
+
+        $sessionUserId = Session::get('user_id');
+        $userId = is_numeric($sessionUserId) && (int)$sessionUserId > 0 ? (int)$sessionUserId : null;
+        $variantId = !empty($_POST['variant_id']) ? (int)$_POST['variant_id'] : null;
+
+        $deletedCount = 0;
+        $deletedCodes = [];
+        $skippedInwarded = [];
+
+        Database::beginTransaction();
+        try {
+            foreach ($codes as $code) {
+                // Check if already inwarded into warehouse inventory
+                $existing = Database::fetchOne(
+                    "SELECT id, variant_id, inwarded_at FROM warehouse_qr_codes WHERE qr_code = ?",
+                    [$code]
+                );
+
+                if ($existing && !empty($existing['inwarded_at'])) {
+                    $skippedInwarded[] = $code;
+                    continue;
+                }
+
+                $varId = $existing ? (int)$existing['variant_id'] : $variantId;
+
+                // 1. Delete from warehouse_qr_codes
+                Database::execute("DELETE FROM warehouse_qr_codes WHERE qr_code = ? AND inwarded_at IS NULL", [$code]);
+
+                // 2. Track in warehouse_deleted_label_codes
+                Database::execute(
+                    "INSERT INTO warehouse_deleted_label_codes (code, variant_id, created_by)
+                     VALUES (?, ?, ?)
+                     ON DUPLICATE KEY UPDATE variant_id = VALUES(variant_id)",
+                    [$code, $varId, $userId]
+                );
+
+                $deletedCodes[] = $code;
+                $deletedCount++;
+            }
+
+            Database::commit();
+
+            Response::json([
+                'success'          => true,
+                'deleted_count'    => $deletedCount,
+                'deleted_codes'    => $deletedCodes,
+                'skipped_inwarded' => $skippedInwarded,
+                'message'          => $deletedCount . ' QR code(s) deleted permanently.',
+            ]);
+        } catch (Throwable $e) {
+            Database::rollback();
+            Response::json(['success' => false, 'message' => 'Database error deleting QR code: ' . $e->getMessage()], 500);
+        }
     }
 
     // =========================================================================

@@ -1,4 +1,14 @@
 <?php
+// Group warehouse piece items by variant_id for quick in-list QR lookup
+$pieceQrsByVariant = [];
+if (!empty($pieceItems) && is_array($pieceItems)) {
+    foreach ($pieceItems as $pi) {
+        $vId = (int)($pi['variant_id'] ?? 0);
+        if ($vId > 0 && !empty($pi['tag_code'])) {
+            $pieceQrsByVariant[$vId][] = $pi;
+        }
+    }
+}
 // views/warehouse/stock/index.php
 // Warehouse Stock Inventory — Dual Sections: Production Inward & Third-Party Vendor Inventory
 $currTab = $activeTab ?? ($_GET['tab'] ?? 'normal');
@@ -41,15 +51,7 @@ if (!function_exists('renderCategoryTypeBadge')) {
         <h2 class="mb-1"><i class="bi bi-boxes me-2 text-primary"></i>Warehouse Stock &amp; Inventory</h2>
     </div>
     <div class="d-flex gap-2 flex-wrap align-items-center">
-        <!-- Main View Mode Switcher -->
-        <div class="btn-group shadow-sm" role="group" id="mainStockViewSwitcher">
-            <button type="button" class="btn <?= ($viewMode ?? 'ledger') !== 'pieces' ? 'btn-primary active' : 'btn-outline-primary bg-white text-dark' ?> fw-semibold" id="btnShowLedgerView" onclick="switchMainStockView('ledger')">
-                <i class="bi bi-table me-1"></i> Ledger View
-            </button>
-            <button type="button" class="btn <?= ($viewMode ?? 'ledger') === 'pieces' ? 'btn-primary active' : 'btn-outline-primary bg-white text-dark' ?> fw-semibold" id="btnShowPieceView" onclick="switchMainStockView('pieces')">
-                <i class="bi bi-card-list me-1"></i> Piece-by-Piece View <span class="badge bg-warning text-dark ms-1"><?= count($pieceItems ?? []) ?> pcs</span>
-            </button>
-        </div>
+
 
         <?php if (hasPermission('stock', 'view')): ?>
         <a href="<?= url('warehouse/adjustments') ?>" class="btn btn-outline-secondary">
@@ -250,7 +252,7 @@ if (!function_exists('renderCategoryTypeBadge')) {
                 <label class="form-label small fw-semibold text-muted mb-1">Search Keyword</label>
                 <div class="input-group">
                     <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
-                    <input type="text" name="search" id="stockLiveSearchInput" class="form-control" placeholder="SKU, style code, vendor, material..." value="<?= e($search ?? '') ?>" oninput="liveFilterStockRows(this.value)">
+                    <input type="text" name="search" id="stockLiveSearchInput" class="form-control" placeholder="SKU, QR code tag, style code, vendor..." value="<?= e($search ?? '') ?>" oninput="liveFilterStockRows(this.value)">
                 </div>
             </div>
             <div class="col-md-3 d-flex align-items-end gap-2 pt-3">
@@ -304,7 +306,7 @@ if (!function_exists('renderCategoryTypeBadge')) {
 <?php endif; ?>
 
 <!-- LEDGER / SUMMARY VIEW SECTION -->
-<div id="ledgerStockViewSection" style="display: <?= ($viewMode ?? 'ledger') !== 'pieces' ? 'block' : 'none' ?>;">
+<div id="ledgerStockViewSection">
 <!-- PRODUCT TYPE TABS -->
 <ul class="nav nav-pills mb-3 gap-2" id="inventorySectionTabs" role="tablist">
     <li class="nav-item" role="presentation">
@@ -405,7 +407,7 @@ if (!function_exists('renderCategoryTypeBadge')) {
                         </thead>
                         <tbody>
                             <?php foreach ($productionItems as $item): ?>
-                                <tr id="stock-row-<?= $item['variant_id'] ?>">
+                                <tr id="stock-row-<?= $item['variant_id'] ?>" data-variant-qrs="<?= e(implode(' ', array_column($pieceQrsByVariant[(int)$item['variant_id']] ?? [], 'tag_code'))) ?>">
                                     <td class="price-checkbox-col text-center" style="display: none;">
                                         <input type="checkbox" class="form-check-input price-item-checkbox" 
                                                value="<?= (int)$item['variant_id'] ?>" 
@@ -420,8 +422,33 @@ if (!function_exists('renderCategoryTypeBadge')) {
                                     </td>
                                     <td>
                                         <span class="fw-bold font-monospace text-primary"><?= e($item['sku']) ?></span>
-                                        <?php if (!empty($item['qr_code'])): ?>
-                                            <br><small class="text-muted"><i class="bi bi-qr-code me-1"></i><?= e($item['qr_code']) ?></small>
+                                        <?php 
+                                        $variantQrs = $pieceQrsByVariant[(int)$item['variant_id']] ?? [];
+                                        $totalVariantQrs = count($variantQrs);
+                                        if ($totalVariantQrs === 1): 
+                                            $singleTag = $variantQrs[0]['tag_code'] ?? ($item['qr_code'] ?? '');
+                                        ?>
+                                            <div class="mt-1">
+                                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace fs-8" title="QR Code">
+                                                    <i class="bi bi-qr-code me-1"></i><?= e($singleTag) ?>
+                                                </span>
+                                            </div>
+                                        <?php elseif ($totalVariantQrs > 1): 
+                                            $firstTag = $variantQrs[0]['tag_code'] ?? '';
+                                            $lastTag = $variantQrs[$totalVariantQrs - 1]['tag_code'] ?? '';
+                                        ?>
+                                            <div class="mt-1">
+                                                <button type="button" class="btn btn-xs btn-outline-primary rounded-pill py-0.5 px-2 fw-semibold d-inline-flex align-items-center gap-1 font-monospace shadow-2xs" 
+                                                        data-bs-toggle="modal" 
+                                                        data-bs-target="#viewVariantQrsModal_<?= (int)$item['variant_id'] ?>" 
+                                                        title="Click to view &amp; find all <?= $totalVariantQrs ?> QR codes for this variant">
+                                                    <i class="bi bi-qr-code-scan text-primary"></i> <?= $totalVariantQrs ?> QRs <span class="text-muted small d-none d-sm-inline">(<?= e($firstTag) ?>...<?= e($lastTag) ?>)</span>
+                                                </button>
+                                            </div>
+                                        <?php elseif (!empty($item['qr_code'])): ?>
+                                            <div class="mt-1">
+                                                <small class="text-muted font-monospace"><i class="bi bi-qr-code me-1"></i><?= e($item['qr_code']) ?></small>
+                                            </div>
                                         <?php endif; ?>
                                     </td>
                                     <td>
@@ -549,7 +576,7 @@ if (!function_exists('renderCategoryTypeBadge')) {
                         </thead>
                         <tbody>
                             <?php foreach ($thirdPartyItems as $item): ?>
-                                <tr id="stock-row-<?= $item['variant_id'] ?>">
+                                <tr id="stock-row-<?= $item['variant_id'] ?>" data-variant-qrs="<?= e(implode(' ', array_column($pieceQrsByVariant[(int)$item['variant_id']] ?? [], 'tag_code'))) ?>">
                                     <td class="price-checkbox-col text-center" style="display: none;">
                                         <input type="checkbox" class="form-check-input price-item-checkbox" 
                                                value="<?= (int)$item['variant_id'] ?>" 
@@ -565,8 +592,33 @@ if (!function_exists('renderCategoryTypeBadge')) {
                                     </td>
                                     <td>
                                         <span class="fw-bold font-monospace text-primary"><?= e($item['sku']) ?></span>
-                                        <?php if (!empty($item['qr_code'])): ?>
-                                            <br><small class="text-muted"><i class="bi bi-qr-code me-1"></i><?= e($item['qr_code']) ?></small>
+                                        <?php 
+                                        $variantQrs = $pieceQrsByVariant[(int)$item['variant_id']] ?? [];
+                                        $totalVariantQrs = count($variantQrs);
+                                        if ($totalVariantQrs === 1): 
+                                            $singleTag = $variantQrs[0]['tag_code'] ?? ($item['qr_code'] ?? '');
+                                        ?>
+                                            <div class="mt-1">
+                                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace fs-8" title="QR Code">
+                                                    <i class="bi bi-qr-code me-1"></i><?= e($singleTag) ?>
+                                                </span>
+                                            </div>
+                                        <?php elseif ($totalVariantQrs > 1): 
+                                            $firstTag = $variantQrs[0]['tag_code'] ?? '';
+                                            $lastTag = $variantQrs[$totalVariantQrs - 1]['tag_code'] ?? '';
+                                        ?>
+                                            <div class="mt-1">
+                                                <button type="button" class="btn btn-xs btn-outline-primary rounded-pill py-0.5 px-2 fw-semibold d-inline-flex align-items-center gap-1 font-monospace shadow-2xs" 
+                                                        data-bs-toggle="modal" 
+                                                        data-bs-target="#viewVariantQrsModal_<?= (int)$item['variant_id'] ?>" 
+                                                        title="Click to view &amp; find all <?= $totalVariantQrs ?> QR codes for this variant">
+                                                    <i class="bi bi-qr-code-scan text-primary"></i> <?= $totalVariantQrs ?> QRs <span class="text-muted small d-none d-sm-inline">(<?= e($firstTag) ?>...<?= e($lastTag) ?>)</span>
+                                                </button>
+                                            </div>
+                                        <?php elseif (!empty($item['qr_code'])): ?>
+                                            <div class="mt-1">
+                                                <small class="text-muted font-monospace"><i class="bi bi-qr-code me-1"></i><?= e($item['qr_code']) ?></small>
+                                            </div>
                                         <?php endif; ?>
                                     </td>
                                     <td>
@@ -706,7 +758,7 @@ if (!function_exists('renderCategoryTypeBadge')) {
                         </thead>
                         <tbody>
                             <?php foreach ($complementaryItems as $item): ?>
-                                <tr id="stock-row-<?= $item['variant_id'] ?>">
+                                <tr id="stock-row-<?= $item['variant_id'] ?>" data-variant-qrs="<?= e(implode(' ', array_column($pieceQrsByVariant[(int)$item['variant_id']] ?? [], 'tag_code'))) ?>">
                                     <td class="price-checkbox-col text-center" style="display: none;">
                                         <input type="checkbox" class="form-check-input price-item-checkbox" 
                                                value="<?= (int)$item['variant_id'] ?>" 
@@ -721,8 +773,33 @@ if (!function_exists('renderCategoryTypeBadge')) {
                                     </td>
                                     <td>
                                         <span class="fw-bold font-monospace text-primary"><?= e($item['sku']) ?></span>
-                                        <?php if (!empty($item['qr_code'])): ?>
-                                            <br><small class="text-muted"><i class="bi bi-qr-code me-1"></i><?= e($item['qr_code']) ?></small>
+                                        <?php 
+                                        $variantQrs = $pieceQrsByVariant[(int)$item['variant_id']] ?? [];
+                                        $totalVariantQrs = count($variantQrs);
+                                        if ($totalVariantQrs === 1): 
+                                            $singleTag = $variantQrs[0]['tag_code'] ?? ($item['qr_code'] ?? '');
+                                        ?>
+                                            <div class="mt-1">
+                                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace fs-8" title="QR Code">
+                                                    <i class="bi bi-qr-code me-1"></i><?= e($singleTag) ?>
+                                                </span>
+                                            </div>
+                                        <?php elseif ($totalVariantQrs > 1): 
+                                            $firstTag = $variantQrs[0]['tag_code'] ?? '';
+                                            $lastTag = $variantQrs[$totalVariantQrs - 1]['tag_code'] ?? '';
+                                        ?>
+                                            <div class="mt-1">
+                                                <button type="button" class="btn btn-xs btn-outline-primary rounded-pill py-0.5 px-2 fw-semibold d-inline-flex align-items-center gap-1 font-monospace shadow-2xs" 
+                                                        data-bs-toggle="modal" 
+                                                        data-bs-target="#viewVariantQrsModal_<?= (int)$item['variant_id'] ?>" 
+                                                        title="Click to view &amp; find all <?= $totalVariantQrs ?> QR codes for this variant">
+                                                    <i class="bi bi-qr-code-scan text-primary"></i> <?= $totalVariantQrs ?> QRs <span class="text-muted small d-none d-sm-inline">(<?= e($firstTag) ?>...<?= e($lastTag) ?>)</span>
+                                                </button>
+                                            </div>
+                                        <?php elseif (!empty($item['qr_code'])): ?>
+                                            <div class="mt-1">
+                                                <small class="text-muted font-monospace"><i class="bi bi-qr-code me-1"></i><?= e($item['qr_code']) ?></small>
+                                            </div>
                                         <?php endif; ?>
                                     </td>
                                     <td>
@@ -796,343 +873,51 @@ if (!function_exists('renderCategoryTypeBadge')) {
 <?php endif; ?>
 </div><!-- /#ledgerStockViewSection -->
 
-<!-- 2. PIECE-BY-PIECE WAREHOUSE INVENTORY SECTION (Image 2 Reference Built for Central Warehouse) -->
-<div id="pieceStockViewSection" style="display: <?= ($viewMode ?? 'ledger') === 'pieces' ? 'block' : 'none' ?>;">
-
-    <!-- Fast 2D QR Code Search & Quick Label Print Bar -->
-    <div class="card shadow-sm mb-4 border-primary">
-        <div class="card-header bg-primary text-white py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <span class="fw-bold fs-7"><i class="bi bi-qr-code-scan me-2"></i>Garment &amp; Product QR Code Search &amp; Quick Label Print</span>
-            <span class="badge bg-white text-primary fw-bold fs-8" id="whPieceSearchMatchBadge">Showing all <?= count($pieceItems ?? []) ?> pieces</span>
-        </div>
-        <div class="card-body p-3">
-            <div class="row g-2 align-items-center">
-                <div class="col-lg-7 col-md-6">
-                    <div class="input-group input-group-lg">
-                        <span class="input-group-text bg-light border-primary"><i class="bi bi-upc-scan text-primary fs-5"></i></span>
-                        <input type="text" id="whPieceSearchInput" class="form-control border-primary fw-bold" 
-                               placeholder="Search or Scan Piece QR sticker tag (e.g. <?= (!empty($pieceItems[0]['tag_code']) ? $pieceItems[0]['tag_code'] : 'SSS112601') ?>)..." 
-                               oninput="filterWhPieces()" onkeyup="if(event.key==='Enter') filterWhPieces()">
-                        <button type="button" class="btn btn-outline-secondary" onclick="clearWhPieceSearch()" title="Clear Search">
-                            <i class="bi bi-x-lg"></i>
-                        </button>
+<!-- VARIANT IN-STOCK QR CODES MODALS (User Requested Direct List Style QR Explorer) -->
+<?php foreach ($pieceQrsByVariant as $vId => $qrs): 
+    $firstPiece = $qrs[0];
+?>
+<div class="modal fade" id="viewVariantQrsModal_<?= $vId ?>" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-dark text-white py-3 px-4">
+                <div>
+                    <h5 class="modal-title fw-bold fs-6 mb-0">
+                        <i class="bi bi-qr-code me-2 text-warning"></i><?= e($firstPiece['product_name']) ?> — In-Stock QR Codes
+                    </h5>
+                    <span class="small text-muted font-monospace"><?= e($firstPiece['sku']) ?> &bull; <?= count($qrs) ?> Pieces Available</span>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="mb-3">
+                    <div class="input-group">
+                        <span class="input-group-text bg-light"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" class="form-control" placeholder="Search or scan QR tag code (e.g. <?= e($firstPiece['tag_code']) ?>)..." oninput="filterVariantModalQrs(this, 'variantQrGrid_<?= $vId ?>')">
                     </div>
                 </div>
-                <div class="col-lg-5 col-md-6 d-flex gap-2 justify-content-md-end flex-wrap">
-                    <button type="button" class="btn btn-primary btn-lg fw-semibold shadow-sm flex-grow-1 flex-md-grow-0" id="btnWhPrintFiltered" onclick="openWhBatchPrintModal()">
-                        <i class="bi bi-printer-fill me-1"></i> Print Filtered Labels (<span id="whFilteredCountLabel"><?= count($pieceItems ?? []) ?></span>)
-                    </button>
-                </div>
-            </div>
-
-            <!-- Quick Sub-Filters Row -->
-            <div class="d-flex align-items-center gap-2 mt-3 flex-wrap">
-                <span class="small text-muted fw-bold text-uppercase me-1"><i class="bi bi-funnel me-1"></i>Filter:</span>
-                <button type="button" class="btn btn-sm btn-dark fw-semibold px-3 py-1 wh-source-filter-btn active" data-source="all" onclick="filterWhPieceSource('all', this)">
-                    All Pieces (<?= count($pieceItems ?? []) ?>)
-                </button>
-                <button type="button" class="btn btn-sm btn-outline-success fw-semibold px-3 py-1 wh-source-filter-btn" data-source="OWN_PRODUCTION" onclick="filterWhPieceSource('OWN_PRODUCTION', this)">
-                    <i class="bi bi-buildings me-1"></i> Production Unit (<?= count(array_filter($pieceItems ?? [], fn($p) => ($p['source_type'] ?? '') === 'OWN_PRODUCTION' && ($p['category_type'] ?? '') !== 'SERIES' && ($p['category_type'] ?? '') !== 'COMPLEMENTARY')) ?>)
-                </button>
-                <button type="button" class="btn btn-sm btn-outline-warning text-dark fw-semibold px-3 py-1 wh-source-filter-btn" data-source="EXTERNAL_PURCHASE" onclick="filterWhPieceSource('EXTERNAL_PURCHASE', this)">
-                    <i class="bi bi-shop me-1"></i> Third-Party (<?= count(array_filter($pieceItems ?? [], fn($p) => ($p['source_type'] ?? '') === 'EXTERNAL_PURCHASE' && ($p['category_type'] ?? '') !== 'SERIES' && ($p['category_type'] ?? '') !== 'COMPLEMENTARY')) ?>)
-                </button>
-                <button type="button" class="btn btn-sm btn-outline-danger fw-semibold px-3 py-1 wh-source-filter-btn" data-source="COMPLEMENTARY" onclick="filterWhPieceSource('COMPLEMENTARY', this)">
-                    <i class="bi bi-gift-fill me-1"></i> Complementary (<?= count(array_filter($pieceItems ?? [], fn($p) => ($p['category_type'] ?? '') === 'COMPLEMENTARY')) ?>)
-                </button>
-                <button type="button" class="btn btn-sm btn-outline-info text-dark fw-semibold px-3 py-1 wh-source-filter-btn" data-source="SERIES" onclick="filterWhPieceSource('SERIES', this)">
-                    <i class="bi bi-boxes me-1"></i> Series Pack (<?= count(array_filter($pieceItems ?? [], fn($p) => ($p['category_type'] ?? '') === 'SERIES')) ?>)
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Central Warehouse Pieces Main Card -->
-    <div class="card border-0 shadow-sm mb-4">
-        <div class="card-header bg-transparent py-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
-            <div>
-                <h5 class="card-title mb-0 d-flex align-items-center gap-2">
-                    <i class="bi bi-boxes text-primary"></i>
-                    Central Warehouse Individual Pieces
-                    <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill fs-7 px-2" id="whPieceCountBadge">
-                        <?= count($pieceItems ?? []) ?> In Stock / <?= count($pieceItems ?? []) ?> Total Pieces
-                    </span>
-                </h5>
-                <span class="text-muted small">
-                    <i class="bi bi-geo-alt-fill text-danger me-1"></i>
-                    Piece-by-piece inventory for <?= e($currentWarehouse['name'] ?? 'Central Distribution Warehouse') ?> (<?= count($pieceItems ?? []) ?> pieces available in warehouse)
-                </span>
-            </div>
-
-            <!-- View Switcher within Piece Mode: List vs Cards -->
-            <div class="d-flex align-items-center gap-2 flex-wrap">
-                <div class="btn-group" role="group">
-                    <button type="button" class="btn btn-primary active fw-semibold" id="btnWhDisplayList" onclick="switchWhPieceDisplay('list')">
-                        <i class="bi bi-list-ul me-1"></i> List (<?= count($pieceItems ?? []) ?>)
-                    </button>
-                    <button type="button" class="btn btn-outline-secondary fw-semibold" id="btnWhDisplayCard" onclick="switchWhPieceDisplay('card')">
-                        <i class="bi bi-grid-3x3-gap me-1"></i> Cards
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <div class="card-body p-4">
-
-            <!-- Empty Search State -->
-            <div class="text-center text-muted py-5" id="whEmptyPieceSearchState" style="display: none;">
-                <i class="bi bi-search fs-1 d-block mb-2 text-secondary"></i>
-                <h6 class="fw-semibold mb-1">No Matching Warehouse Garment Tag Found</h6>
-                <p class="small mb-0">No piece in warehouse stock matches the scanned or searched QR code.</p>
-            </div>
-
-            <?php if (empty($pieceItems)): ?>
-                <div class="text-center py-5 text-muted">
-                    <i class="bi bi-box-seam fs-1 d-block mb-3 text-secondary"></i>
-                    <h6 class="fw-semibold mb-1">No Warehouse Stock Pieces Found</h6>
-                    <p class="small text-muted mb-0">Inward production batches or vendor products into this warehouse to view individual pieces.</p>
-                </div>
-            <?php else: ?>
-                <!-- 1. Piece List Container (Exact Image 2 Structure Adapted for Central Warehouse) -->
-                <div class="list-group list-group-flush gap-2" id="whPieceListContainer" style="display: flex;">
-                    <?php foreach ($pieceItems as $it): ?>
-                        <article class="list-group-item inventory-piece-list-item d-flex flex-wrap align-items-center gap-3 p-3 wh-piece-row"
-                                 id="whPieceRow_<?= $it['piece_no'] ?>"
-                                 data-piece-no="<?= $it['piece_no'] ?>"
-                                 data-tag="<?= strtoupper($it['tag_code']) ?>"
-                                 data-sku="<?= strtoupper($it['sku']) ?>"
-                                 data-size="<?= strtoupper($it['size_name']) ?>"
-                                 data-color="<?= strtoupper($it['color_name']) ?>"
-                                 data-product="<?= strtoupper($it['product_name']) ?>"
-                                 data-source="<?= $it['source_type'] ?>"
-                                 data-cat-type="<?= $it['category_type'] ?? 'NORMAL' ?>">
-                            
-                            <!-- 1. Piece # & QR Badge (Image 2 Left Column) -->
-                            <div class="inventory-list-tag" style="min-width: 175px;">
-                                <div class="small text-muted fw-semibold mb-1">Piece #<?= $it['piece_no'] ?></div>
-                                <span class="badge bg-dark text-white font-monospace fs-7 px-2 py-1">
-                                    <i class="bi bi-qr-code-scan me-1 text-warning"></i><?= e($it['tag_code']) ?>
-                                </span>
-                                <div class="small text-muted mt-1">Garment #<?= $it['piece_seq'] ?> of <?= $it['total_in_variant'] ?></div>
+                <div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 g-2 overflow-auto" id="variantQrGrid_<?= $vId ?>" style="max-height: 420px;">
+                    <?php foreach ($qrs as $idx => $p): ?>
+                        <div class="col variant-qr-item" data-tag="<?= strtolower($p['tag_code']) ?>">
+                            <div class="border rounded p-2 text-center bg-light h-100 d-flex flex-column justify-content-between">
+                                <span class="badge bg-secondary-subtle text-secondary small mb-1">#<?= $idx + 1 ?></span>
+                                <div class="font-monospace fw-bold text-dark fs-7 mb-1"><?= e($p['tag_code']) ?></div>
+                                <button type="button" class="btn btn-xs btn-outline-primary py-0 px-2 mt-1" onclick='printSinglePieceLabel(<?= json_encode($p) ?>)'>
+                                    <i class="bi bi-printer me-1"></i> Print
+                                </button>
                             </div>
-
-                            <!-- 2. Product Icon & Style Name with Breadcrumb (Image 2 Middle-Left Column) -->
-                            <div class="inventory-list-product" style="min-width: 200px; flex: 1 1 220px;">
-                                <div class="d-flex align-items-center gap-2">
-                                    <div class="bg-primary bg-opacity-10 text-primary rounded p-2 text-center d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
-                                        <i class="bi <?= $it['source_type'] === 'OWN_PRODUCTION' ? 'bi-bag-check' : 'bi-box-seam' ?> fs-5"></i>
-                                    </div>
-                                    <div>
-                                        <div class="fw-bold text-dark"><?= e($it['product_name']) ?></div>
-                                        <?php if (!empty($it['category_name'])): ?>
-                                            <div class="mt-1">
-                                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle fs-7"><?= e($it['category_name']) ?></span>
-                                            </div>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- 3. Variant, Status, Batch Info, Price (Image 2 Middle-Right Column) -->
-                            <div class="inventory-list-meta d-flex flex-wrap gap-3 align-items-center" style="flex: 1 1 340px;">
-                                <!-- Variant & Status Badges -->
-                                <div>
-                                    <div class="d-flex flex-wrap gap-1">
-                                        <span class="badge bg-secondary-subtle text-secondary border font-monospace px-2 py-1">Size: <?= e($it['size_name']) ?></span>
-                                        <span class="badge bg-info-subtle text-info border font-monospace px-2 py-1">Color: <?= e($it['color_name']) ?></span>
-                                    </div>
-                                    <div class="mt-1">
-                                        <?php if ($it['source_type'] === 'OWN_PRODUCTION'): ?>
-                                            <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-0.5 d-inline-block" style="font-size: 11px;">
-                                                <i class="bi bi-patch-check me-1"></i>QC PASSED
-                                            </span>
-                                        <?php else: ?>
-                                            <span class="badge bg-info-subtle text-info border border-info-subtle px-2 py-0.5 d-inline-block" style="font-size: 11px;">
-                                                <i class="bi bi-check2-circle me-1"></i>VERIFIED INWARD
-                                            </span>
-                                        <?php endif; ?>
-                                        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-0.5 d-inline-block ms-1" style="font-size: 11px;">
-                                            <i class="bi bi-building-check me-1"></i>AVAILABLE
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <!-- QC Batch & Lineage Info (Warehouse Context) -->
-                                <div>
-                                    <?php if ($it['source_type'] === 'OWN_PRODUCTION'): ?>
-                                        <div>
-                                            <a href="<?= url('production/qc/inspect/' . $it['qc_batch_id']) ?>" class="fw-semibold text-decoration-none">
-                                                QC Batch #<?= $it['qc_batch_id'] ?>
-                                            </a>
-                                        </div>
-                                        <small class="text-muted d-block">
-                                            Program: <span class="text-primary"><?= e($it['program_number']) ?></span>
-                                        </small>
-                                        <small class="text-secondary" style="font-size: 11px;">Batch: <?= e($it['batch_number']) ?></small>
-                                    <?php else: ?>
-                                        <div>
-                                            <span class="fw-semibold text-dark"><i class="bi bi-shop me-1 text-primary"></i><?= e($it['seller_name'] ?? 'Vendor Partner') ?></span>
-                                        </div>
-                                        <small class="text-muted d-block"><?= e($it['batch_number']) ?></small>
-                                        <small class="text-secondary" style="font-size: 11px;"><i class="bi bi-geo-alt me-1"></i><?= e($it['warehouse_name']) ?></small>
-                                    <?php endif; ?>
-                                </div>
-
-                                <!-- Price & MRP -->
-                                <div>
-                                    <div class="fw-semibold text-dark fs-6">₹<?= number_format($it['selling_price'], 2) ?></div>
-                                    <?php if ($it['mrp'] > $it['selling_price']): ?>
-                                        <small class="text-muted text-decoration-line-through">₹<?= number_format($it['mrp'], 2) ?></small>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-
-                            <!-- 4. Actions Dropdown (Image 2 Right Column) -->
-                            <div class="inventory-list-actions d-flex justify-content-end ms-auto">
-                                <div class="dropdown">
-                                    <button class="btn btn-sm btn-light border dropdown-toggle fw-semibold" type="button" data-bs-toggle="dropdown">
-                                        Actions
-                                    </button>
-                                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-                                        <li>
-                                            <button type="button" class="dropdown-item" onclick="printSinglePieceLabel(<?= htmlspecialchars(json_encode($it), ENT_QUOTES, 'UTF-8') ?>)">
-                                                <i class="bi bi-printer me-2 text-primary"></i>Print QR Label
-                                            </button>
-                                        </li>
-                                        <li>
-                                            <a class="dropdown-item" href="<?= url('warehouse/stock/detail/' . $it['variant_id'] . '?warehouse_id=' . ($selectedWarehouseId ?? 1)) ?>">
-                                                <i class="bi bi-clock-history me-2 text-info"></i>Stock Ledger &amp; History
-                                            </a>
-                                        </li>
-                                        <?php if (hasPermission('allocation', 'create')): ?>
-                                        <li>
-                                            <a class="dropdown-item" href="<?= url('warehouse/allocation') ?>">
-                                                <i class="bi bi-arrow-right-circle me-2 text-success"></i>Shop Allocation
-                                            </a>
-                                        </li>
-                                        <?php endif; ?>
-                                        <?php if (hasPermission('damage', 'create')): ?>
-                                        <li><hr class="dropdown-divider"></li>
-                                        <li>
-                                            <a class="dropdown-item text-danger" href="<?= url('warehouse/damage/create?variant_id=' . $it['variant_id'] . '&qr_code=' . urlencode($it['tag_code'])) ?>">
-                                                <i class="bi bi-exclamation-triangle me-2"></i>Report Damage / Quarantine
-                                            </a>
-                                        </li>
-                                        <?php endif; ?>
-                                    </ul>
-                                </div>
-                            </div>
-
-                        </article>
-                    <?php endforeach; ?>
-                </div>
-
-                <!-- 2. Piece Card Grid Container -->
-                <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3" id="whPieceCardsContainer" style="display: none;">
-                    <?php foreach ($pieceItems as $it): ?>
-                        <div class="col wh-piece-card-col" 
-                             id="whPieceCard_<?= $it['piece_no'] ?>"
-                             data-piece-no="<?= $it['piece_no'] ?>"
-                             data-tag="<?= strtoupper($it['tag_code']) ?>"
-                             data-sku="<?= strtoupper($it['sku']) ?>"
-                             data-size="<?= strtoupper($it['size_name']) ?>"
-                             data-color="<?= strtoupper($it['color_name']) ?>"
-                             data-product="<?= strtoupper($it['product_name']) ?>"
-                             data-source="<?= $it['source_type'] ?>"
-                             data-cat-type="<?= $it['category_type'] ?? 'NORMAL' ?>">
-                            <article class="card inventory-piece-card h-100 shadow-sm border">
-                                <div class="card-header bg-white border-bottom-0 d-flex justify-content-between align-items-start gap-2 pt-3">
-                                    <span class="badge bg-secondary-subtle text-secondary font-monospace">Piece #<?= $it['piece_no'] ?></span>
-                                    <div class="text-end">
-                                        <span class="badge bg-dark text-white font-monospace fs-7 px-2 py-1">
-                                            <i class="bi bi-qr-code-scan me-1 text-warning"></i><?= e($it['tag_code']) ?>
-                                        </span>
-                                        <div class="small text-muted mt-1" style="font-size: 11px;">Garment #<?= $it['piece_seq'] ?> of <?= $it['total_in_variant'] ?></div>
-                                    </div>
-                                </div>
-                                <div class="card-body pt-1">
-                                    <div class="d-flex align-items-center gap-2 mb-2">
-                                        <div class="bg-primary bg-opacity-10 text-primary rounded p-2 text-center d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
-                                            <i class="bi <?= $it['source_type'] === 'OWN_PRODUCTION' ? 'bi-bag-check' : 'bi-box-seam' ?> fs-5"></i>
-                                        </div>
-                                        <div>
-                                            <div class="fw-bold text-dark text-truncate" style="max-width: 220px;" title="<?= e($it['product_name']) ?>"><?= e($it['product_name']) ?></div>
-                                            <?php if (!empty($it['category_name'])): ?>
-                                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle fs-7 text-truncate" style="max-width: 220px;"><?= e($it['category_name']) ?></span>
-                                            <?php endif; ?>
-                                        </div>
-                                    </div>
-                                    <div class="small text-muted mb-2">
-                                        <?php if ($it['source_type'] === 'OWN_PRODUCTION'): ?>
-                                            <div>QC Batch #<?= $it['qc_batch_id'] ?> · <?= e($it['program_number']) ?></div>
-                                        <?php else: ?>
-                                            <div><i class="bi bi-shop me-1 text-warning"></i><?= e($it['seller_name'] ?? 'Vendor') ?></div>
-                                        <?php endif; ?>
-                                    </div>
-                                    <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
-                                        <div class="d-flex gap-1">
-                                            <span class="badge bg-secondary-subtle text-secondary border font-monospace">Size: <?= e($it['size_name']) ?></span>
-                                            <span class="badge bg-info-subtle text-info border font-monospace">Color: <?= e($it['color_name']) ?></span>
-                                        </div>
-                                        <div class="text-end">
-                                            <div class="fw-semibold text-dark">₹<?= number_format($it['selling_price'], 2) ?></div>
-                                            <?php if ($it['mrp'] > $it['selling_price']): ?>
-                                                <small class="text-muted text-decoration-line-through">₹<?= number_format($it['mrp'], 2) ?></small>
-                                            <?php endif; ?>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-0.5">
-                                            <i class="bi bi-patch-check me-1"></i><?= e($it['qc_status'] ?? 'QC PASSED') ?>
-                                        </span>
-                                        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-0.5 ms-1">
-                                            <i class="bi bi-building-check me-1"></i>AVAILABLE
-                                        </span>
-                                    </div>
-                                </div>
-                                <div class="card-footer bg-white border-top-0 d-flex justify-content-end pb-3 pt-0">
-                                    <div class="dropdown">
-                                        <button class="btn btn-sm btn-light border dropdown-toggle" type="button" data-bs-toggle="dropdown">Actions</button>
-                                        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-                                            <li><button type="button" class="dropdown-item" onclick="printSinglePieceLabel(<?= htmlspecialchars(json_encode($it), ENT_QUOTES, 'UTF-8') ?>)"><i class="bi bi-printer me-2 text-primary"></i>Print QR Label</button></li>
-                                            <li><a class="dropdown-item" href="<?= url('warehouse/stock/detail/' . $it['variant_id'] . '?warehouse_id=' . ($selectedWarehouseId ?? 1)) ?>"><i class="bi bi-clock-history me-2 text-info"></i>History</a></li>
-                                        </ul>
-                                    </div>
-                                </div>
-                            </article>
                         </div>
                     <?php endforeach; ?>
                 </div>
-            <?php endif; ?>
-
-        </div>
-
-        <!-- Pagination Controls Footer for Warehouse Pieces -->
-        <div class="card-footer bg-white py-3 border-top d-flex align-items-center justify-content-between flex-wrap gap-3" id="whPiecePaginationFooter">
-            <div class="d-flex align-items-center gap-3 flex-wrap">
-                <span class="small text-muted fw-medium" id="whPageEntriesInfo">
-                    Showing 1 to 10 of <?= count($pieceItems ?? []) ?> pieces
-                </span>
-                <div class="d-flex align-items-center gap-2">
-                    <label for="whPageSizeSelect" class="small text-muted mb-0 fw-medium">Show:</label>
-                    <select id="whPageSizeSelect" class="form-select form-select-sm" style="width: auto;" onchange="changeWhPageSize(this.value)">
-                        <option value="10" selected>10 per page</option>
-                        <option value="25">25 per page</option>
-                        <option value="50">50 per page</option>
-                        <option value="100">100 per page</option>
-                        <option value="all">All pieces (<?= count($pieceItems ?? []) ?>)</option>
-                    </select>
-                </div>
             </div>
-            <nav aria-label="Warehouse Pieces Pagination">
-                <ul class="pagination pagination-sm mb-0 shadow-xs" id="whPiecePaginationList">
-                    <!-- Dynamically rendered page numbers -->
-                </ul>
-            </nav>
+            <div class="modal-footer bg-light py-2 px-4 justify-content-between">
+                <span class="small text-muted">Total: <?= count($qrs) ?> QR Stickers in Stock</span>
+                <button type="button" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal">Close</button>
+            </div>
         </div>
     </div>
-
-</div><!-- /#pieceStockViewSection -->
+</div>
+<?php endforeach; ?>
 
 <!-- Single Piece QR Sticker Modal -->
 <div class="modal fade" id="singlePieceQrModal" tabindex="-1" aria-hidden="true">
@@ -1783,7 +1568,18 @@ function liveFilterStockRows(query) {
     const term = (query || '').toLowerCase().trim();
     document.querySelectorAll('tr[id^="stock-row-"]').forEach(tr => {
         const text = tr.textContent.toLowerCase();
-        tr.style.display = (!term || text.includes(term)) ? '' : 'none';
+        const qrs = (tr.getAttribute('data-variant-qrs') || '').toLowerCase();
+        tr.style.display = (!term || text.includes(term) || qrs.includes(term)) ? '' : 'none';
+    });
+}
+
+function filterVariantModalQrs(input, containerId) {
+    const term = (input.value || '').toLowerCase().trim();
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.querySelectorAll('.variant-qr-item').forEach(el => {
+        const tag = (el.getAttribute('data-tag') || '').toLowerCase();
+        el.style.display = (!term || tag.includes(term)) ? '' : 'none';
     });
 }
 

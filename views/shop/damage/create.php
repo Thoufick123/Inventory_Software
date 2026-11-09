@@ -9,8 +9,7 @@
             </span>
         </div>
         <h2 class="mb-1 text-dark fw-bold"><i class="bi bi-qr-code-scan me-2 text-danger"></i>Log Shop Damaged Stock Entry</h2>
-        <span class="text-muted">Scan piece QR tags/barcodes from shop bins or shelves, inspect defect reason, and move to quarantine list</span>
-    </div>
+        </div>
     <div class="d-flex gap-2">
         <a href="<?= url('shop/damage') ?>" class="btn btn-outline-secondary rounded-pill px-3 shadow-sm">
             <i class="bi bi-arrow-left me-1"></i> Back to Damage List
@@ -51,9 +50,6 @@
                         <small class="text-white-50">
                             <i class="bi bi-keyboard me-1 text-warning"></i> Type any SKU or piece tag &amp; hit <strong>Enter</strong> or click <strong>Add</strong>.
                         </small>
-                        <a href="javascript:void(0)" class="small text-warning text-decoration-none fw-semibold" id="toggleManualDropdown">
-                            <i class="bi bi-list-ul me-1"></i> Manual Catalog Picker Fallback
-                        </a>
                     </div>
                 </div>
             </div>

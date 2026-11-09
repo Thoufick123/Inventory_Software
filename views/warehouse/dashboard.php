@@ -13,7 +13,7 @@
         </div>
     </div>
     <div class="d-flex align-items-center gap-2">
-        <button type="button" class="btn btn-outline-dark btn-sm fw-semibold shadow-sm px-3 d-flex align-items-center gap-1.5" data-bs-toggle="modal" data-bs-target="#qrStatusFinderModal"><i class="bi bi-qr-code-scan text-primary"></i><span>QR Status Finder</span></button>
+        
         <button type="button" class="btn btn-primary btn-sm fw-semibold shadow-sm px-3 d-flex align-items-center gap-1.5" data-bs-toggle="modal" data-bs-target="#warehouseReportExportModal">
             <i class="bi bi-file-earmark-arrow-down"></i> Export Reports
         </button>

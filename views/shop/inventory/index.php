@@ -23,14 +23,8 @@ $shopQuery = '?shop_id=' . (int)$shop['id'];
                 </span>
             </div>
             <h2 class="fw-bold mb-1 text-dark">Shop Stock Inventory</h2>
-            <p class="text-muted small mb-0">Live stock balances, commercial catalog specifications, piece-by-piece QR codes, and stock ledger.</p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
-            <?php if (hasPermission('pos', 'view') || hasPermission('pos', 'create')): ?>
-                <a href="<?= url('shop/pos') ?>" class="btn btn-outline-primary rounded-pill px-3 shadow-sm fw-semibold">
-                    <i class="bi bi-receipt me-1"></i> Launch POS Terminal
-                </a>
-            <?php endif; ?>
             <?php if (hasPermission('shop_stock', 'request') || hasPermission('shop_stock', 'create')): ?>
                 <button type="button" class="btn btn-primary rounded-pill px-3 shadow-sm fw-semibold" data-bs-toggle="modal" data-bs-target="#requestStockModal">
                     <i class="bi bi-box-arrow-in-down me-1"></i> Request Warehouse Stock

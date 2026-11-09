@@ -25,33 +25,13 @@ $filterLowStock = $currFilter['low_stock_count'] ?? $low_stock_count;
                 <i class="bi bi-shop me-1"></i><?= e($shop['name']) ?> (<?= e($shop['code']) ?>)
             </div>
             <h3 class="fw-bold mb-1 text-dark">Retail Shop Dashboard</h3>
-            <p class="text-muted small mb-0">Live billing analytics, multi-period revenue filters, payment breakdowns, and quick retail operations.</p>
+          
         </div>
         <div class="d-flex flex-wrap gap-2">
-            <?php if (hasPermission('sales', 'view')): ?>
-            <a href="<?= url('shop/sales') ?>" class="btn btn-sm btn-outline-primary rounded-pill px-3">
-                <i class="bi bi-cart-check me-1"></i> Selled Products
-            </a>
-            <?php endif; ?>
-            <?php if (hasPermission('shop_stock', 'view')): ?>
-            <a href="<?= url('shop/inventory') ?>" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
-                <i class="bi bi-boxes me-1"></i> Shop Stock
-            </a>
-            <?php endif; ?>
-            <?php if (hasPermission('shop_returns', 'view')): ?>
-            <a href="<?= url('shop/returns') ?>" class="btn btn-sm btn-outline-warning text-dark rounded-pill px-3">
-                <i class="bi bi-arrow-counterclockwise me-1"></i> Customer Returns
-            </a>
-            <?php endif; ?>
-            <?php if (hasPermission('return_to_warehouse', 'view')): ?>
-            <a href="<?= url('shop/return-to-warehouse') ?>" class="btn btn-sm btn-outline-danger rounded-pill px-3">
-                <i class="bi bi-arrow-return-left me-1"></i> Return to WH
-            </a>
-            <?php endif; ?>
-            <?php if (hasPermission('pos', 'view') || hasPermission('pos', 'create')): ?>
-            <a href="<?= url('shop/pos') ?>" class="btn btn-primary rounded-pill px-4 shadow-sm fw-semibold">
-                <i class="bi bi-qr-code-scan me-1"></i> Open POS Terminal
-            </a>
+            <?php if (hasPermission('shop', 'view') || hasPermission('sales', 'view') || hasPermission('shop_stock', 'view')): ?>
+            <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-semibold shadow-sm d-flex align-items-center gap-1.5" data-bs-toggle="modal" data-bs-target="#shopReportExportModal">
+                <i class="bi bi-file-earmark-arrow-down"></i> Export Reports
+            </button>
             <?php endif; ?>
         </div>
     </div>
@@ -397,49 +377,6 @@ $filterLowStock = $currFilter['low_stock_count'] ?? $low_stock_count;
                             <?php endif; ?>
                         </tbody>
                     </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- Quick Action Cards / Live Shortcuts -->
-        <div class="col-lg-4">
-            <!-- Fast POS Quick Banner -->
-            <?php if (hasPermission('pos', 'view') || hasPermission('pos', 'create')): ?>
-            <div class="card border-0 shadow-sm rounded-4 mb-4 bg-primary text-white p-4 position-relative overflow-hidden" style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;">
-                <div class="position-absolute end-0 top-0 translate-middle-y me-n3 opacity-25">
-                    <i class="bi bi-qr-code-scan" style="font-size: 8rem; color: #fff;"></i>
-                </div>
-                <div class="position-relative">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h5 class="fw-bold mb-0">Fast Retail POS</h5>
-                        <i class="bi bi-qr-code fs-2"></i>
-                    </div>
-                    <p class="small text-white-50 mb-3">Instant barcode / QR scanner billing terminal. Scan item tags, calculate tax, and print receipts in seconds.</p>
-                    <a href="<?= url('shop/pos') ?>" class="btn btn-light text-primary fw-bold rounded-pill w-100 py-2 shadow-sm">
-                        <i class="bi bi-play-fill me-1"></i> Start Billing Session
-                    </a>
-                </div>
-            </div>
-            <?php endif; ?>
-
-            <!-- Month Summary Card -->
-            <div class="card border-0 shadow-sm rounded-4 p-4">
-                <h6 class="fw-bold text-dark mb-3"><i class="bi bi-calendar-check me-2 text-primary"></i>This Month's Performance</h6>
-                <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
-                    <span class="text-muted">Total Invoices</span>
-                    <span class="fw-bold text-dark"><?= $month_invoices ?></span>
-                </div>
-                <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
-                    <span class="text-muted">Month Revenue</span>
-                    <span class="fw-bold text-success fs-5"><?= formatCurrency($month_revenue) ?></span>
-                </div>
-                <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
-                    <span class="text-muted">Average Order Value</span>
-                    <span class="fw-bold text-dark"><?= formatCurrency($avg_order_value_month) ?></span>
-                </div>
-                <div class="d-flex justify-content-between align-items-center py-2">
-                    <span class="text-muted">Today's Returns</span>
-                    <span class="badge bg-warning-subtle text-warning-emphasis rounded-pill"><?= $returns_today ?> Processed</span>
                 </div>
             </div>
         </div>
@@ -889,4 +826,221 @@ document.addEventListener('DOMContentLoaded', function() {
     renderRevenueChart();
     renderPaymentDonut(dataPaymentBreakdown);
 });
+</script>
+
+
+<!-- SHOP REPORT EXPORT MODAL -->
+<div class="modal fade" id="shopReportExportModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-success text-white py-3 px-4">
+                <h5 class="modal-title fw-bold fs-6">
+                    <i class="bi bi-file-earmark-arrow-down me-2"></i>Export Shop Operations &amp; Sales Reports
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="GET" action="<?= url('shop/reports/export') ?>" target="_blank">
+                <div class="modal-body p-4">
+                    <!-- 1. Period Selection -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold text-dark mb-2">
+                            <i class="bi bi-calendar-range text-success me-1"></i> 1. Select Report Period
+                        </label>
+                        <div class="d-flex gap-4 mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="period_type" id="shopPeriodTypeMonth" value="MONTH" checked onchange="toggleShopPeriodInputs()">
+                                <label class="form-check-label fw-semibold" for="shopPeriodTypeMonth">Month-Wise Filter</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="period_type" id="shopPeriodTypeCustom" value="CUSTOM" onchange="toggleShopPeriodInputs()">
+                                <label class="form-check-label fw-semibold" for="shopPeriodTypeCustom">Custom Date Range</label>
+                            </div>
+                        </div>
+
+                        <!-- Month-wise Picker -->
+                        <div class="row g-2" id="shopMonthPickerRow">
+                            <div class="col-sm-7">
+                                <label class="form-label small text-muted mb-1">Select Month</label>
+                                <select name="selected_month" class="form-select form-select-sm fw-semibold">
+                                    <?php for ($m = 1; $m <= 12; $m++): ?>
+                                        <option value="<?= $m ?>" <?= ((int)date('n') === $m) ? 'selected' : '' ?>>
+                                            <?= date('F', mktime(0, 0, 0, $m, 1)) ?>
+                                        </option>
+                                    <?php endfor; ?>
+                                </select>
+                            </div>
+                            <div class="col-sm-5">
+                                <label class="form-label small text-muted mb-1">Select Year</label>
+                                <select name="selected_year" class="form-select form-select-sm fw-semibold">
+                                    <?php 
+                                    $curYear = (int)date('Y');
+                                    for ($y = $curYear - 2; $y <= $curYear + 2; $y++): ?>
+                                        <option value="<?= $y ?>" <?= ($y === $curYear) ? 'selected' : '' ?>><?= $y ?></option>
+                                    <?php endfor; ?>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Custom Date Picker -->
+                        <div class="row g-2 d-none" id="shopCustomPickerRow">
+                            <div class="col-sm-6">
+                                <label class="form-label small text-muted mb-1">From Date</label>
+                                <input type="date" name="date_from" class="form-control form-control-sm" value="<?= date('Y-m-01') ?>">
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label small text-muted mb-1">To Date</label>
+                                <input type="date" name="date_to" class="form-control form-control-sm" value="<?= date('Y-m-d') ?>">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. Data Modules to Include -->
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label class="form-label fw-bold text-dark mb-0">
+                                <i class="bi bi-check2-square text-success me-1"></i> 2. Choose Shop Data Modules to Export
+                            </label>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-sm btn-link p-0 text-decoration-none text-success fw-semibold" onclick="toggleAllShopExportModules(true)">Select All</button>
+                                <span class="text-muted">|</span>
+                                <button type="button" class="btn btn-sm btn-link p-0 text-decoration-none text-secondary" onclick="toggleAllShopExportModules(false)">Clear</button>
+                            </div>
+                        </div>
+
+                        <div class="p-3 bg-light rounded-3 border">
+                            <div class="row g-2">
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input shop-export-mod-cb" type="checkbox" name="modules[]" value="sales" id="shopModSales" checked>
+                                        <label class="form-check-label small fw-semibold" for="shopModSales">
+                                            <i class="bi bi-receipt text-primary me-1"></i> POS Sales Invoices &amp; Billing
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input shop-export-mod-cb" type="checkbox" name="modules[]" value="sale_items" id="shopModSaleItems" checked>
+                                        <label class="form-check-label small fw-semibold" for="shopModSaleItems">
+                                            <i class="bi bi-cart-check text-success me-1"></i> Selled Products (Itemized Lines)
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input shop-export-mod-cb" type="checkbox" name="modules[]" value="stock" id="shopModStock" checked>
+                                        <label class="form-check-label small fw-semibold" for="shopModStock">
+                                            <i class="bi bi-boxes text-info me-1"></i> Shop Stock Balances &amp; Valuation
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input shop-export-mod-cb" type="checkbox" name="modules[]" value="inward" id="shopModInward" checked>
+                                        <label class="form-check-label small fw-semibold" for="shopModInward">
+                                            <i class="bi bi-box-arrow-in-down text-primary me-1"></i> Inwards from Central Warehouse
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input shop-export-mod-cb" type="checkbox" name="modules[]" value="returns" id="shopModReturns" checked>
+                                        <label class="form-check-label small fw-semibold" for="shopModReturns">
+                                            <i class="bi bi-arrow-counterclockwise text-warning me-1"></i> Customer Counter Returns &amp; Refunds
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input shop-export-mod-cb" type="checkbox" name="modules[]" value="return_to_warehouse" id="shopModRetWh" checked>
+                                        <label class="form-check-label small fw-semibold" for="shopModRetWh">
+                                            <i class="bi bi-arrow-return-left text-danger me-1"></i> Returns to Central Warehouse
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input shop-export-mod-cb" type="checkbox" name="modules[]" value="customers" id="shopModCustomers" checked>
+                                        <label class="form-check-label small fw-semibold" for="shopModCustomers">
+                                            <i class="bi bi-people text-secondary me-1"></i> Registered Customers Directory
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input shop-export-mod-cb" type="checkbox" name="modules[]" value="cash_register" id="shopModCashReg" checked>
+                                        <label class="form-check-label small fw-semibold" for="shopModCashReg">
+                                            <i class="bi bi-calculator text-dark me-1"></i> Cash Drawer Shifts &amp; Registers
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input shop-export-mod-cb" type="checkbox" name="modules[]" value="cash_expenses" id="shopModExpenses" checked>
+                                        <label class="form-check-label small fw-semibold" for="shopModExpenses">
+                                            <i class="bi bi-wallet2 text-warning me-1"></i> Store Petty Cash Expenses
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input shop-export-mod-cb" type="checkbox" name="modules[]" value="damages" id="shopModDamages" checked>
+                                        <label class="form-check-label small fw-semibold" for="shopModDamages">
+                                            <i class="bi bi-shield-x text-danger me-1"></i> In-Store Damaged Goods &amp; Losses
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 3. Export Format -->
+                    <div>
+                        <label class="form-label fw-bold text-dark mb-2">
+                            <i class="bi bi-file-earmark-spreadsheet text-success me-1"></i> 3. Export Format
+                        </label>
+                        <div class="d-flex gap-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="format" id="shopFormatCsv" value="CSV" checked>
+                                <label class="form-check-label fw-semibold" for="shopFormatCsv">
+                                    <i class="bi bi-file-earmark-excel text-success me-1"></i> CSV Spreadsheet (Excel Compatible)
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="format" id="shopFormatPrint" value="PRINT">
+                                <label class="form-check-label fw-semibold" for="shopFormatPrint">
+                                    <i class="bi bi-printer text-primary me-1"></i> Printable Master Summary Report
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer bg-light py-3 px-4 d-flex justify-content-between">
+                    <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Close</button>
+                    <button type="submit" class="btn btn-success px-4 fw-semibold shadow-sm">
+                        <i class="bi bi-download me-1"></i> Generate &amp; Download Export
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleShopPeriodInputs() {
+    const isMonth = document.getElementById('shopPeriodTypeMonth').checked;
+    const mRow = document.getElementById('shopMonthPickerRow');
+    const cRow = document.getElementById('shopCustomPickerRow');
+    if (isMonth) {
+        mRow.classList.remove('d-none');
+        cRow.classList.add('d-none');
+    } else {
+        mRow.classList.add('d-none');
+        cRow.classList.remove('d-none');
+    }
+}
+
+function toggleAllShopExportModules(check) {
+    document.querySelectorAll('.shop-export-mod-cb').forEach(cb => cb.checked = check);
+}
 </script>

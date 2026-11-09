@@ -23,7 +23,7 @@ $currTab = $tab ?? 'overview';
                 <?php endif; ?>
             </div>
             <h2 class="fw-bold mb-1 text-dark">Shop Cash &amp; Cash Flow Register</h2>
-            <p class="text-muted small mb-0">Daily cash register till management, cashier shifts, petty cash expenses, bank deposits, and live cash flow audit.</p>
+           
         </div>
 
         <div class="d-flex gap-2 flex-wrap align-items-center">
@@ -50,11 +50,6 @@ $currTab = $tab ?? 'overview';
                         <i class="bi bi-bank me-1"></i> Bank Deposit
                     </button>
                 <?php endif; ?>
-            <?php endif; ?>
-            <?php if (hasPermission('pos', 'view') || hasPermission('pos', 'create')): ?>
-                <a href="<?= url('shop/pos') ?>" class="btn btn-outline-primary rounded-pill px-3 shadow-sm fw-semibold">
-                    <i class="bi bi-receipt me-1"></i> POS Billing
-                </a>
             <?php endif; ?>
         </div>
     </div>

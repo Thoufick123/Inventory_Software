@@ -127,7 +127,14 @@
                                 data-warehouse-id="<?= $b['destination_warehouse_id'] ?? '' ?>"
                                 data-search-text="<?= e($searchData) ?>">
                                 <td>
-                                    <div class="fw-bold text-dark"><?= e($b['batch_number']) ?></div>
+                                    <div class="fw-bold text-dark">
+                                        <?= e($b['batch_number']) ?>
+                                        <?php if (!empty($b['is_multi_qc'])): ?>
+                                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1" style="font-size: 10px;" title="Combined Multiple QC Batches">
+                                                <i class="bi bi-collection me-1"></i>Multi-QC
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
                                     <small class="text-muted"><?= formatDate($b['created_at']) ?></small>
                                 </td>
                                 <td>

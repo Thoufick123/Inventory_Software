@@ -15,7 +15,6 @@ $activeSource = $filters['source_type'] ?? '';
             </span>
         </div>
         <h2 class="mb-1 text-dark fw-bold"><i class="bi bi-exclamation-octagon me-2 text-danger"></i>Shop Damaged Stock &amp; Defect Management</h2>
-        <span class="text-muted">Central quarantine register for transit damages from Inward GRN and shop floor / bin defect identification</span>
     </div>
     <div class="d-flex gap-2 flex-wrap">
         <?php if (hasPermission('shop_damage', 'create')): ?>
