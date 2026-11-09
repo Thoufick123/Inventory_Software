@@ -9702,8 +9702,9 @@ class WarehouseController {
      */
     public function confirmStickeredInward(): void {
         $isReturnInward = ($_POST['return_inward'] ?? '0') === '1';
-        $canInwardStock = hasPermission('inward', 'verify') || hasPermission('inward', 'create') || hasPermission('purchases', 'receive');
-        if ($isReturnInward ? !hasPermission('returns', 'classify') : !$canInwardStock) {
+        $canInwardStock = hasPermission('inward', 'verify') || hasPermission('inward', 'create') || hasPermission('purchases', 'receive') || (function_exists('isAdmin') && isAdmin());
+        $canInwardReturn = hasPermission('returns', 'classify') || hasPermission('returns', 'receive') || hasPermission('returns', 'view') || hasPermission('stock', 'view') || hasPermission('warehouse', 'view') || $canInwardStock;
+        if ($isReturnInward ? !$canInwardReturn : !$canInwardStock) {
             Response::json(['success' => false, 'message' => 'Access denied.'], 403);
             return;
         }
@@ -9948,7 +9949,7 @@ class WarehouseController {
             // If regular form POST (non-AJAX)
             if (!empty($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') === false && empty($_POST['is_ajax'])) {
                 Session::flash('success', $successMsg);
-                Response::redirect(url('warehouse/labels?source_type=tp_purchase&variant_id=' . $variantId));
+                Response::redirect(url('warehouse/labels?source_type=' . ($isReturnInward ? 'returns' : 'tp_purchase') . '&variant_id=' . $variantId));
                 return;
             }
 

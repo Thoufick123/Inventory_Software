@@ -811,11 +811,8 @@ function scanDamageRollQr() {
         })
         .then(data => {
             const isProd = (data.item_type === 'PRODUCT');
-            const quantity = Math.max(1, parseInt(data.quantity, 10) || 1);
-            const rollWeight = parseFloat(data.weight) || 0;
-            const rollPrice = parseFloat(data.price) || 0;
-            const pieceWeight = isProd ? rollWeight : (Math.round((rollWeight / quantity) * 100) / 100);
-            const loss = isProd ? (parseFloat(data.loss) || rollPrice) : (Math.round(pieceWeight * (rollWeight > 0 ? rollPrice / rollWeight : 0) * 100) / 100);
+            const pieceWeight = parseFloat(data.piece_weight !== undefined ? data.piece_weight : data.weight) || 0;
+            const loss = parseFloat(data.piece_loss !== undefined ? data.piece_loss : (data.loss !== undefined ? data.loss : data.price)) || 0;
 
             damageScannedLabels.push({
                 code: data.code,

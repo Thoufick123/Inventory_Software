@@ -67,9 +67,6 @@ $canDeleteCutting = hasPermission('cutting', 'delete');
                             </label>
                             <div class="d-flex align-items-center gap-2">
                                 <span class="badge bg-info-subtle text-info border" id="rollStatusBadge">Roll Selected</span>
-                                <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddRollRow" onclick="addCuttingRollRow()">
-                                    <i class="bi bi-plus-lg me-1"></i> Add Roll
-                                </button>
                             </div>
                         </div>
 
@@ -106,9 +103,6 @@ $canDeleteCutting = hasPermission('cutting', 'delete');
                         <small class="text-muted">Calculate multi-roll fabric wastage, rate per kg & exact wastage costs</small>
                     </div>
                     <div class="d-flex align-items-center gap-2">
-                        <button type="button" class="btn btn-sm btn-outline-warning text-dark fw-bold" id="btnAddWastageRollBtn" onclick="addCuttingRollRow()">
-                            <i class="bi bi-plus-lg me-1"></i> Add Roll
-                        </button>
                         <?php 
                             $rW = (float)$batch['roll_weight'];
                             $rP = (float)$batch['roll_price'];
@@ -474,9 +468,7 @@ function removeCuttingRollRow(btn) {
     if (row) {
         row.remove();
         const container = document.getElementById('cuttingRollsContainer');
-        if (container && container.querySelectorAll('.cutting-roll-row').length === 0) {
-            addCuttingRollRow();
-        }
+        // Removed auto-add empty roll
         calculateRollTotals();
         regenerateAllRollVariants();
     }
@@ -607,9 +599,7 @@ function deleteRollFromWastage(rowId) {
     if (row) {
         row.remove();
         const container = document.getElementById('cuttingRollsContainer');
-        if (container && container.querySelectorAll('.cutting-roll-row').length === 0) {
-            addCuttingRollRow();
-        }
+        // Removed auto-add empty roll
         calculateRollTotals();
         regenerateAllRollVariants();
     }

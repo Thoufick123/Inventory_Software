@@ -1590,6 +1590,10 @@ class ProductionController {
                     'weight' => $pieceWeight,
                     'price' => $pieceLoss,
                     'loss' => $pieceLoss,
+                    'piece_weight' => $pieceWeight,
+                    'piece_loss' => $pieceLoss,
+                    'total_roll_weight' => $rollWeight,
+                    'total_roll_price' => $rollPrice,
                     'code' => $scanCode,
                 ]);
                 return;
@@ -1726,6 +1730,8 @@ class ProductionController {
                 'weight' => $weight,
                 'price' => $loss,
                 'loss' => $loss,
+                'piece_weight' => $weight,
+                'piece_loss' => $loss,
                 'code' => $scanCode,
             ]);
             return;
@@ -4351,23 +4357,7 @@ class ProductionController {
         ]);
     }
 
-    public function createProgram(): void {
-        $scopedUnitId = function_exists('currentProductionUnitId') ? currentProductionUnitId() : null;
-        $units = function_exists('getScopedProductionUnits') ? getScopedProductionUnits() : Database::fetchAll("SELECT * FROM production_units WHERE is_active = 1 ORDER BY name ASC");
-        $categories = Database::fetchAll(
-            "SELECT c.* FROM categories c
-             WHERE c.is_active = 1
-               AND EXISTS (
-                   SELECT 1 FROM products p
-                   WHERE p.category_id = c.id
-                     AND p.is_active = 1
-                     AND (p.source_type IN ('OWN_PRODUCTION', 'MANUFACTURED', 'IN_HOUSE') OR p.source_type IS NULL)
-               )
-             ORDER BY c.sort_order ASC, c.name ASC"
-        );
-        $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 ORDER BY full_name ASC");
-
-        // Fetch raw material rolls from seller_rolls joined with sellers with live usage, damages, and remaining stock
+    private function getAvailableSellerRollsWithPieces(int $excludeProgramId = 0): array {
         $rolls = Database::fetchAll(
             "SELECT sr.*, s.name as seller_name, s.company as seller_company, s.material_type,
                     COALESCE(u.used_quantity, 0) as used_quantity,
@@ -4390,7 +4380,7 @@ class ProductionController {
                         SUM(ppr.roll_price) as used_price
                  FROM production_program_rolls ppr
                  JOIN production_programs pp ON ppr.production_program_id = pp.id
-                 WHERE pp.is_active = 1 AND pp.status != 'CANCELLED'
+                 WHERE pp.is_active = 1 AND pp.status != 'CANCELLED'" . ($excludeProgramId > 0 ? " AND pp.id != " . (int)$excludeProgramId : "") . "
                  GROUP BY ppr.seller_roll_id
              ) u ON sr.id = u.seller_roll_id
              LEFT JOIN (
@@ -4407,6 +4397,132 @@ class ProductionController {
              WHERE s.is_active = 1
              ORDER BY sr.id DESC"
         );
+
+        $deletedLabels = Database::fetchAll("SELECT seller_roll_id, sequence FROM seller_roll_deleted_labels");
+        $deletedMap = [];
+        foreach ($deletedLabels as $dl) {
+            $deletedMap[$dl['seller_roll_id'] . '_' . $dl['sequence']] = true;
+        }
+
+        $damages = Database::fetchAll("SELECT seller_roll_id, qr_code, damage_number FROM roll_damages WHERE status NOT IN ('CLOSED', 'CANCELLED')");
+        $damageMap = [];
+        foreach ($damages as $d) {
+            if (!empty($d['qr_code'])) {
+                $damageMap[strtoupper(trim($d['qr_code']))] = $d['damage_number'] ?: 'DAMAGED';
+            }
+        }
+
+        $progRollsSql = "SELECT ppr.*, pp.program_number 
+                         FROM production_program_rolls ppr
+                         JOIN production_programs pp ON pp.id = ppr.production_program_id
+                         WHERE pp.is_active = 1 AND pp.status != 'CANCELLED'";
+        if ($excludeProgramId > 0) {
+            $progRollsSql .= " AND pp.id != " . (int)$excludeProgramId;
+        }
+        $progRolls = Database::fetchAll($progRollsSql);
+
+        $allocatedMap = [];
+        $legacyUsedQty = [];
+        foreach ($progRolls as $pr) {
+            $rollId = (int)$pr['seller_roll_id'];
+            if (!empty($pr['allocated_qr_codes'])) {
+                $codes = array_filter(array_map('trim', explode(',', $pr['allocated_qr_codes'])));
+                foreach ($codes as $c) {
+                    $allocatedMap[strtoupper($c)] = $pr['program_number'] ?: ('Prog #' . $pr['production_program_id']);
+                }
+            } else {
+                $legacyUsedQty[$rollId] = ($legacyUsedQty[$rollId] ?? 0) + (int)($pr['roll_qty'] ?? 1);
+            }
+        }
+
+        foreach ($rolls as &$roll) {
+            $rollId = (int)$roll['id'];
+            $startSeq = (int)($roll['start_seq'] ?: 1);
+            $endSeq = (int)($roll['end_seq'] ?: max(1, (int)$roll['quantity']));
+            $startCode = trim($roll['start_code'] ?? '');
+            $prefix = '';
+            $seqDigits = 2;
+
+            if (preg_match('/^([A-Za-z]{2}\d{4})(\d+)$/', $startCode, $m)) {
+                $prefix = strtoupper($m[1]);
+                $seqDigits = strlen($m[2]);
+            } elseif (preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $startCode, $m)) {
+                $prefix = strtoupper($m[1]);
+                $seqDigits = strlen($m[2]);
+            } else {
+                $prefix = 'FB' . date('my');
+                $seqDigits = 2;
+            }
+
+            $pieces = [];
+            $availCodes = [];
+            $legacyToSkip = $legacyUsedQty[$rollId] ?? 0;
+
+            for ($seq = $startSeq; $seq <= $endSeq; $seq++) {
+                $code = $prefix . sprintf('%0' . $seqDigits . 'd', $seq);
+                $status = 'AVAILABLE';
+                $meta = '';
+
+                if (isset($deletedMap[$rollId . '_' . $seq])) {
+                    $status = 'DELETED';
+                    $meta = 'Deleted Label';
+                } elseif (isset($damageMap[strtoupper($code)])) {
+                    $status = 'DAMAGED';
+                    $meta = 'Damage ' . $damageMap[strtoupper($code)];
+                } elseif (isset($allocatedMap[strtoupper($code)])) {
+                    $status = 'USED';
+                    $meta = 'Allocated to ' . $allocatedMap[strtoupper($code)];
+                } elseif ($legacyToSkip > 0) {
+                    $status = 'USED';
+                    $meta = 'Used in Program';
+                    $legacyToSkip--;
+                }
+
+                if ($status === 'AVAILABLE') {
+                    $availCodes[] = $code;
+                }
+
+                $pieces[] = [
+                    'seq' => $seq,
+                    'code' => $code,
+                    'status' => $status,
+                    'meta' => $meta,
+                ];
+            }
+
+            $rangeSummary = '';
+            if (!empty($availCodes)) {
+                $rangeSummary = (count($availCodes) === 1) ? $availCodes[0] : ($availCodes[0] . ' → ' . end($availCodes));
+            }
+
+            $roll['pieces'] = $pieces;
+            $roll['available_codes'] = $availCodes;
+            $roll['range_summary'] = $rangeSummary;
+            $roll['available_quantity'] = count($availCodes);
+        }
+        unset($roll);
+
+        return $rolls;
+    }
+
+    public function createProgram(): void {
+        $scopedUnitId = function_exists('currentProductionUnitId') ? currentProductionUnitId() : null;
+        $units = function_exists('getScopedProductionUnits') ? getScopedProductionUnits() : Database::fetchAll("SELECT * FROM production_units WHERE is_active = 1 ORDER BY name ASC");
+        $categories = Database::fetchAll(
+            "SELECT c.* FROM categories c
+             WHERE c.is_active = 1
+               AND EXISTS (
+                   SELECT 1 FROM products p
+                   WHERE p.category_id = c.id
+                     AND p.is_active = 1
+                     AND (p.source_type IN ('OWN_PRODUCTION', 'MANUFACTURED', 'IN_HOUSE') OR p.source_type IS NULL)
+               )
+             ORDER BY c.sort_order ASC, c.name ASC"
+        );
+        $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 ORDER BY full_name ASC");
+
+        // Fetch raw material rolls from seller_rolls with individual piece QR codes breakdown and live availability
+        $rolls = $this->getAvailableSellerRollsWithPieces();
 
         // Auto-generate suggested program code PRG-YYYYMMDD-0001
         $count = Database::fetchOne("SELECT COUNT(*) as c FROM production_programs")['c'] ?? 0;
@@ -4442,6 +4558,7 @@ class ProductionController {
         }
 
         $name = mb_strtoupper(trim($_POST['name'] ?? ''));
+        $personName = trim((string)($_POST['person_name'] ?? ''));
         $programNumber = mb_strtoupper(trim($_POST['program_number'] ?? ''));
         $categoryId = !empty($_POST['category_id']) ? (int)$_POST['category_id'] : null;
         $subcategoryId = !empty($_POST['subcategory_id']) ? (int)$_POST['subcategory_id'] : null;
@@ -4455,6 +4572,12 @@ class ProductionController {
 
         if (empty($name)) {
             Session::flash('error', 'Program Name is required.');
+            Response::back();
+            return;
+        }
+
+        if (empty($personName)) {
+            Session::flash('error', 'Person Name (Planner / Creator) is required.');
             Response::back();
             return;
         }
@@ -4606,6 +4729,7 @@ class ProductionController {
             $programId = ProductionProgram::create([
                 'name'               => $name,
                 'program_number'     => $programNumber,
+                'person_name'        => $personName,
                 'production_unit_id' => $unitId,
                 'product_id'         => $productId,
                 'seller_roll_id'     => $sellerRollId,
@@ -4739,6 +4863,7 @@ class ProductionController {
         }
 
         $name = mb_strtoupper(trim($_POST['name'] ?? ''));
+        $personName = trim((string)($_POST['person_name'] ?? ''));
         $programNumber = mb_strtoupper(trim($_POST['program_number'] ?? ''));
         $categoryId = !empty($_POST['category_id']) ? (int)$_POST['category_id'] : null;
         $subcategoryId = !empty($_POST['subcategory_id']) ? (int)$_POST['subcategory_id'] : null;
@@ -4752,6 +4877,12 @@ class ProductionController {
 
         if (empty($name)) {
             Session::flash('error', 'Program Name is required.');
+            Response::back();
+            return;
+        }
+
+        if (empty($personName)) {
+            Session::flash('error', 'Person Name (Planner / Creator) is required.');
             Response::back();
             return;
         }
@@ -4881,6 +5012,7 @@ class ProductionController {
             ProductionProgram::update((int)$id, [
                 'name'               => $name,
                 'program_number'     => $programNumber,
+                'person_name'        => $personName,
                 'production_unit_id' => $unitId,
                 'seller_roll_id'     => $sellerRollId,
                 'seller_id'          => $sellerId,

@@ -452,7 +452,58 @@ class WarehouseReportService
         $totalOutwardPcs = (int)($outwardAgg['total_pieces'] ?? 0);
         $totalExpenditure = (float)($poAgg['total_spend'] ?? 0) + (float)($expAgg['total_cost'] ?? 0);
 
+        // Complementary products in warehouse
+        $compAgg = Database::fetchOne(
+            "SELECT COALESCE(SUM(sb.quantity), 0) as comp_units,
+                    COALESCE(SUM(sb.quantity * COALESCE(pv.selling_price, 0)), 0) as comp_value
+             FROM stock_balances sb
+             JOIN product_variants pv ON sb.variant_id = pv.id
+             JOIN products p ON pv.product_id = p.id
+             WHERE sb.location_type = 'WAREHOUSE' AND sb.stock_state = 'AVAILABLE'
+               AND (p.is_complementary = 1 OR pv.is_complementary = 1)
+             $whStockClause"
+        );
+
+        // Good vs Defective returns
+        $retStats = Database::fetchOne(
+            "SELECT COALESCE(SUM(wri.good_qty), 0) as good_pieces,
+                    COALESCE(SUM(COALESCE(wri.damaged_qty, wri.defective_qty, 0)), 0) as defective_pieces
+             FROM warehouse_return_items wri
+             JOIN warehouse_returns wr ON wri.warehouse_return_id = wr.id
+             WHERE DATE(wr.created_at) BETWEEN ? AND ?
+             $whRetClause",
+            [$startDate, $endDate]
+        );
+
+        $retGoodPcs = (int)($retStats['good_pieces'] ?? 0);
+        $retDefPcs = (int)($retStats['defective_pieces'] ?? 0);
+        $retTotalPcs = (int)($retAgg['total_pieces'] ?? 0);
+        if ($retGoodPcs === 0 && $retDefPcs === 0 && $retTotalPcs > 0) {
+            $retGoodPcs = $retTotalPcs;
+        }
+
         return [
+            'executive' => [
+                'available_stock_units'    => (int)($stockAgg['total_units'] ?? 0),
+                'unique_skus'              => (int)($stockAgg['total_skus'] ?? 0),
+                'retail_valuation'         => (float)($stockAgg['retail_valuation'] ?? 0.0),
+                'cost_valuation'           => (float)($stockAgg['cost_valuation'] ?? 0.0),
+                'total_inward_pieces'      => $totalInwardPcs,
+                'inward_batches_count'     => (int)($prodInwardAgg['batches_count'] ?? 0) + (int)($vendorInwardAgg['grn_count'] ?? 0),
+                'total_outward_pieces'     => $totalOutwardPcs,
+                'outward_dispatches_count' => (int)($outwardAgg['dispatches_count'] ?? 0),
+                'total_purchases_spend'    => (float)($poAgg['total_spend'] ?? 0.0),
+                'purchases_count'          => (int)($poAgg['po_count'] ?? 0),
+                'total_expenses'           => (float)($expAgg['total_cost'] ?? 0.0),
+                'expenses_count'           => (int)($expAgg['expense_count'] ?? 0),
+                'damage_pieces'            => (int)($damAgg['total_pieces'] ?? 0),
+                'damage_cost_loss'         => (float)($damAgg['total_loss'] ?? 0.0),
+                'returns_total_pieces'     => $retTotalPcs,
+                'returns_good_pieces'      => $retGoodPcs,
+                'returns_defective_pieces' => $retDefPcs,
+                'complementary_units'      => (int)($compAgg['comp_units'] ?? 0),
+                'complementary_value'      => (float)($compAgg['comp_value'] ?? 0.0),
+            ],
             'stock' => [
                 'available_units'     => (int)($stockAgg['total_units'] ?? 0),
                 'unique_skus'         => (int)($stockAgg['total_skus'] ?? 0),

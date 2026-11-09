@@ -35,6 +35,9 @@
         <span class="text-muted">
             Code: <code><?= e($program['program_number']) ?></code> &bull; 
             Category: <strong class="text-dark"><?= e($catBreadcrumb) ?></strong>
+            <?php if (!empty($program['person_name'])): ?>
+                &bull; Planner: <strong class="text-dark"><i class="bi bi-person-fill text-primary me-1"></i><?= e($program['person_name']) ?></strong>
+            <?php endif; ?>
         </span>
     </div>
   
@@ -90,6 +93,12 @@
             <div class="small text-muted mb-1"><i class="bi bi-person-badge text-primary me-1"></i>Supervisor & Unit</div>
             <div class="fw-bold fs-6 text-dark"><?= e($program['assigned_to_name'] ?? 'Unassigned') ?></div>
             <div class="small text-muted"><?= e($program['unit_name'] ?? 'No unit assigned') ?></div>
+            <?php if (!empty($program['person_name'])): ?>
+                <div class="small text-primary fw-semibold mt-1"><i class="bi bi-person-fill me-1"></i>Planner: <?= e($program['person_name']) ?></div>
+            <?php endif; ?>
+            <?php if (!empty($program['person_name'])): ?>
+                <div class="small text-primary fw-semibold mt-1"><i class="bi bi-person-fill me-1"></i>Planner: <?= e($program['person_name']) ?></div>
+            <?php endif; ?>
         </div>
     </div>
 </div>
@@ -113,6 +122,7 @@
                             <th>Color</th>
                             <th>Design</th>
                             <th>Supplier</th>
+                            <th>Allocated Piece QRs</th>
                             <th class="text-end">Qty (pcs)</th>
                             <th class="text-end">Weight (kg)</th>
                             <th class="text-end">Price (₹)</th>

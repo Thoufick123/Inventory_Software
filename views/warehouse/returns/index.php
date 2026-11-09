@@ -3,23 +3,7 @@
         <h2 class="mb-1"><i class="bi bi-arrow-return-left me-2 text-danger"></i>Warehouse Returns &amp; Quality Control</h2>
        
     </div>
-    <div class="d-flex gap-2 flex-wrap">
-        <?php if (hasPermission('warehouse', 'view')): ?>
-            <a href="<?= url('warehouse/dashboard') ?>" class="btn btn-outline-secondary">
-                <i class="bi bi-speedometer2 me-1"></i> Dashboard
-            </a>
-        <?php endif; ?>
-        <?php if (hasPermission('damage', 'view')): ?>
-            <a href="<?= url('warehouse/damage') ?>" class="btn btn-outline-danger">
-                <i class="bi bi-exclamation-octagon me-1"></i> Warehouse Damage
-            </a>
-        <?php endif; ?>
-        <?php if (hasPermission('wh_labels', 'view')): ?>
-            <a href="<?= url('warehouse/labels?tab=return_tags') ?>" class="btn btn-outline-primary">
-                <i class="bi bi-qr-code me-1"></i> Return QR Suite
-            </a>
-        <?php endif; ?>
-    </div>
+    
 </div>
 
 <!-- KPI Summary Cards -->

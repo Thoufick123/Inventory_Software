@@ -8,6 +8,29 @@ $warehouse = $warehouse ?? [
 $company = $company ?? [];
 $summary = $data['summary'] ?? [];
 $exec = $summary['executive'] ?? [];
+if (empty($exec) && !empty($summary)) {
+    $exec = [
+        'available_stock_units'    => $summary['stock']['available_units'] ?? 0,
+        'unique_skus'              => $summary['stock']['unique_skus'] ?? 0,
+        'retail_valuation'         => $summary['stock']['retail_valuation'] ?? 0,
+        'cost_valuation'           => $summary['stock']['cost_valuation'] ?? 0,
+        'total_inward_pieces'      => $summary['inward']['total_inward_pieces'] ?? 0,
+        'inward_batches_count'     => ($summary['inward']['prod_batches'] ?? 0) + ($summary['inward']['vendor_grns'] ?? 0),
+        'total_outward_pieces'     => $summary['outward']['total_pieces'] ?? 0,
+        'outward_dispatches_count' => $summary['outward']['dispatches_count'] ?? 0,
+        'total_purchases_spend'    => $summary['financial']['po_spend'] ?? 0,
+        'purchases_count'          => 0,
+        'total_expenses'           => $summary['financial']['operating_expenses'] ?? 0,
+        'expenses_count'           => 0,
+        'damage_pieces'            => $summary['damages']['damaged_pieces'] ?? 0,
+        'damage_cost_loss'         => $summary['damages']['total_loss'] ?? 0,
+        'returns_total_pieces'     => $summary['returns']['returned_pieces'] ?? 0,
+        'returns_good_pieces'      => $summary['returns']['returned_pieces'] ?? 0,
+        'returns_defective_pieces' => 0,
+        'complementary_units'      => 0,
+        'complementary_value'      => 0,
+    ];
+}
 $selectedModules = $selectedModules ?? [];
 ?>
 <!doctype html>

@@ -109,7 +109,8 @@ class ProductionProgram {
         if (!empty($filters['search'])) {
             $term = '%' . trim($filters['search']) . '%';
             $sql .= " AND (
-                pp.name LIKE ? 
+                pp.name LIKE ?
+                OR pp.person_name LIKE ? 
                 OR pp.program_number LIKE ? 
                 OR p.name LIKE ? 
                 OR p.code LIKE ? 
@@ -144,7 +145,7 @@ class ProductionProgram {
                       )
                 )
             )";
-            $params = array_merge($params, array_fill(0, 24, $term));
+            $params = array_merge($params, array_fill(0, 25, $term));
         }
 
         $sql .= " ORDER BY pp.created_at DESC";
@@ -222,11 +223,12 @@ class ProductionProgram {
 
         Database::execute(
             "INSERT INTO production_programs 
-             (name, program_number, production_unit_id, product_id, seller_roll_id, seller_id, roll_weight, roll_price, category_id, subcategory_id, sub_subcategory_id, planned_quantity, completed_quantity, start_date, end_date, target_date, priority, assigned_to, status, approved_by, approved_at, notes, created_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             (name, program_number, person_name, production_unit_id, product_id, seller_roll_id, seller_id, roll_weight, roll_price, category_id, subcategory_id, sub_subcategory_id, planned_quantity, completed_quantity, start_date, end_date, target_date, priority, assigned_to, status, approved_by, approved_at, notes, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 $data['name'] ?? null,
                 $data['program_number'],
+                $data['person_name'] ?? null,
                 $unitId,
                 $productId,
                 $sellerRollId,
@@ -261,7 +263,7 @@ class ProductionProgram {
         $params = [];
 
         $allowed = [
-            'name', 'program_number', 'production_unit_id', 'product_id', 
+            'name', 'program_number', 'person_name', 'production_unit_id', 'product_id', 
             'seller_roll_id', 'seller_id', 'roll_weight', 'roll_price', 
             'category_id', 'subcategory_id', 'sub_subcategory_id', 
             'planned_quantity', 'completed_quantity', 'start_date', 'end_date', 'target_date', 
@@ -386,10 +388,11 @@ class ProductionProgram {
                 }
             }
 
+            $allocatedQrCodes = !empty($r['allocated_qr_codes']) ? trim((string)$r['allocated_qr_codes']) : null;
             Database::execute(
-                "INSERT INTO production_program_rolls (program_id, production_program_id, seller_roll_id, seller_id, category_id, subcategory_id, sub_subcategory_id, roll_qty, roll_weight, roll_price, roll_color, roll_design)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [$programId, $programId, $rollId, $sellerId, $categoryId, $subcategoryId, $subSubcategoryId, $rollQty, $rollWeight, $rollPrice, $color, $design]
+                "INSERT INTO production_program_rolls (program_id, production_program_id, seller_roll_id, seller_id, category_id, subcategory_id, sub_subcategory_id, roll_qty, roll_weight, roll_price, roll_color, roll_design, allocated_qr_codes)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [$programId, $programId, $rollId, $sellerId, $categoryId, $subcategoryId, $subSubcategoryId, $rollQty, $rollWeight, $rollPrice, $color, $design, $allocatedQrCodes]
             );
         }
     }

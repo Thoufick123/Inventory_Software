@@ -35,16 +35,32 @@
                         <div class="form-text text-muted">Enter a descriptive title for this manufacturing run.</div>
                     </div>
 
-                    <div class="mb-0">
-                        <label class="form-label fw-semibold required">Program Code / Number</label>
-                        <div class="input-group">
-                            <span class="input-group-text bg-light text-muted"><i class="bi bi-hash"></i></span>
-                            <input type="text" 
-                                   name="program_number" 
-                                   id="program_number" 
-                                   class="form-control text-uppercase fw-bold" 
-                                   value="<?= e($suggestedProgramNumber) ?>" 
-                                   required>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold required">Program Code / Number <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light text-muted"><i class="bi bi-hash"></i></span>
+                                <input type="text" 
+                                       name="program_number" 
+                                       id="program_number" 
+                                       class="form-control text-uppercase fw-bold" 
+                                       value="<?= e($suggestedProgramNumber) ?>" 
+                                       required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold required">Person Name (Planner / Creator) <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light text-muted"><i class="bi bi-person-fill"></i></span>
+                                <input type="text" 
+                                       name="person_name" 
+                                       id="person_name" 
+                                       class="form-control fw-bold" 
+                                       placeholder="e.g. Supervisor Abi / John Doe" 
+                                       value="<?= e(Session::user()['full_name'] ?? '') ?>" 
+                                       required>
+                            </div>
+                            <div class="form-text text-muted">Person creating or planning this production program.</div>
                         </div>
                     </div>
                 </div>
@@ -351,7 +367,8 @@ function buildRollOptionsHtml(selectedRollId = '', currentRowIndex = null) {
             if (remAvail <= 0) {
                 label += ' • [OUT OF STOCK - 0 pcs]';
             } else {
-                label += ' • Available Stock: ' + remAvail + ' pcs';
+                const rangeStr = r.range_summary ? (' (' + r.range_summary + ')') : '';
+                label += ' • Available Stock: ' + remAvail + ' pcs' + rangeStr;
             }
 
             const isSel = selectedRollId && String(selectedRollId) === String(r.id);
@@ -421,7 +438,7 @@ function addProgramRollRow(rollData = null) {
                 </label>
                 <div class="input-group input-group-sm">
                     <span class="input-group-text bg-light"><i class="bi bi-box-seam"></i></span>
-                    <input type="number" step="1" min="1" name="rolls[${idx}][roll_qty]" id="roll_qty_${idx}" class="form-control fw-bold roll-qty-input" placeholder="1" value="${initQty}" oninput="handleRollQtyInput(${idx})" required>
+                    <input type="number" step="1" min="1" name="rolls[${idx}][roll_qty]" id="roll_qty_${idx}" class="form-control fw-bold roll-qty-input" placeholder="${rollData ? '1' : 'Select Roll First'}" value="${initQty}" oninput="handleRollQtyInput(${idx})" ${rollData ? '' : 'disabled'} required>
                     <span class="input-group-text bg-light">pcs</span>
                 </div>
                 <div id="roll_qty_warning_${idx}" class="text-danger small mt-1 fw-semibold d-none" style="font-size: 11px;"></div>
@@ -453,6 +470,28 @@ function addProgramRollRow(rollData = null) {
             <div><i class="bi bi-building text-primary me-1"></i> <span id="roll_supplier_${idx}">-</span></div>
             <div><i class="bi bi-palette text-primary me-1"></i> <span id="roll_color_${idx}">-</span></div>
             <div><i class="bi bi-brush text-primary me-1"></i> <span id="roll_design_${idx}">-</span></div>
+        </div>
+
+        <!-- Individual Piece QR Codes Area for THIS Roll -->
+        <div id="roll_pieces_section_${idx}" class="p-2.5 bg-white rounded border mb-2 shadow-sm ${rollData ? '' : 'd-none'}">
+            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                <span class="small fw-bold text-dark d-flex align-items-center gap-1.5">
+                    <i class="bi bi-qr-code text-primary fs-6"></i>
+                    <span>Individual Piece QR Codes</span>
+                    <span class="badge bg-primary-subtle text-primary border" id="roll_pieces_badge_${idx}">0 Selected</span>
+                </span>
+                <div class="d-flex align-items-center gap-1">
+                    <button type="button" class="btn btn-xs btn-outline-primary py-0 px-2 fw-semibold" style="font-size: 11px;" onclick="selectAllRollPieces(${idx})">Select All</button>
+                    <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2 fw-semibold" style="font-size: 11px;" onclick="clearRollPieces(${idx})">Clear</button>
+                </div>
+            </div>
+            <div class="d-flex flex-wrap gap-1.5 p-2 bg-light rounded border align-items-center" id="roll_pieces_container_${idx}" style="max-height: 125px; overflow-y: auto;">
+                <span class="text-muted small fst-italic">Select a fabric roll to load piece QR codes...</span>
+            </div>
+            <input type="hidden" name="rolls[${idx}][allocated_qr_codes]" id="roll_allocated_qrs_${idx}" value="${escapeHtml(rollData?.allocated_qr_codes || '')}">
+            <div class="form-text text-muted small mt-1 d-flex align-items-center justify-content-between" style="font-size: 11px;">
+                <span><i class="bi bi-info-circle me-1"></i>Click piece QR tags to toggle selection. Selected QR tags are saved with this program.</span>
+            </div>
         </div>
 
         <!-- 3-Tier Catalog Selection for THIS specific Roll -->
@@ -499,6 +538,7 @@ function addProgramRollRow(rollData = null) {
     }
 
     syncRollStockAllocations();
+    renderRollPieces(counterId);
 }
 
 function removeProgramRollRow(counterId) {
@@ -534,6 +574,7 @@ function handleRollQtyInput(counterId) {
         return;
     }
     syncRollStockAllocations();
+    renderRollPieces(counterId);
 }
 
 function handleRollRowChange(selectElement, counterId, autoPopulate = true) {
@@ -541,23 +582,41 @@ function handleRollRowChange(selectElement, counterId, autoPopulate = true) {
     const weightInput = document.getElementById('roll_weight_' + counterId);
     const priceInput = document.getElementById('roll_price_' + counterId);
     const specsDiv = document.getElementById('roll_specs_' + counterId);
+    const piecesSection = document.getElementById('roll_pieces_section_' + counterId);
     const warningDiv = document.getElementById('roll_qty_warning_' + counterId);
+    const catSelect = document.getElementById('roll_cat_' + counterId);
 
     if (!selectElement.value) {
         if (specsDiv) specsDiv.classList.add('d-none');
+        if (piecesSection) piecesSection.classList.add('d-none');
         if (warningDiv) {
             warningDiv.innerHTML = '';
             warningDiv.classList.add('d-none');
         }
         if (qtyInput) {
             qtyInput.value = '';
+            qtyInput.disabled = true;
+            qtyInput.placeholder = 'Select Roll First';
             qtyInput.removeAttribute('max');
             qtyInput.classList.remove('is-invalid', 'border-danger');
         }
         if (weightInput) weightInput.value = '';
         if (priceInput) priceInput.value = '';
+        if (catSelect) {
+            catSelect.value = '';
+            catSelect.disabled = true;
+        }
         syncRollStockAllocations();
+        renderRollPieces(counterId);
         return;
+    }
+
+    if (qtyInput) {
+        qtyInput.disabled = false;
+        qtyInput.placeholder = 'e.g. 1';
+    }
+    if (catSelect) {
+        catSelect.disabled = false;
     }
 
     const selectedRollId = selectElement.value;
@@ -610,6 +669,7 @@ function handleRollRowChange(selectElement, counterId, autoPopulate = true) {
     }
 
     syncRollStockAllocations();
+    renderRollPieces(counterId);
 }
 
 function syncRollStockAllocations() {
@@ -1193,6 +1253,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 e.preventDefault();
                 alert('Program Name is required. Please enter a descriptive title.');
                 nameInput?.focus();
+                return false;
+            }
+
+            const personInput = document.getElementById('person_name');
+            if (!personInput || !personInput.value.trim()) {
+                e.preventDefault();
+                alert('Person Name (Planner / Creator) is required.');
+                personInput?.focus();
                 return false;
             }
 

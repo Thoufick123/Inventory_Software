@@ -2201,7 +2201,7 @@ foreach ($qrBatches as $batch) {
         <ul class="nav nav-pills card-header-pills gap-2 flex-wrap" id="sourceTabs" role="tablist">
             <li class="nav-item">
                 <a class="nav-link <?= $currentSourceType === 'returns' ? 'active' : '' ?> fw-semibold" href="<?= url('warehouse/labels?source_type=returns') ?>">
-                    <i class="bi bi-arrow-return-left me-1"></i> 1. Customer Return QR Labels
+                    <i class="bi bi-arrow-return-left me-1"></i> 1. Customer Return QR Labels &amp; Stock Inward
                 </a>
             </li>
             <li class="nav-item">
@@ -2658,6 +2658,9 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                         <button type="button" class="btn btn-sm btn-outline-danger fw-bold bg-white shadow-2xs" id="btnDeleteSelectedQrs" onclick="deleteSelectedQrs()" disabled title="Permanently delete selected QR code(s) so they will not appear again">
                             <i class="bi bi-trash3 me-1"></i>Delete Selected QR(s)
                         </button>
+                        <button type="button" class="btn btn-sm btn-outline-success fw-bold bg-white shadow-2xs" id="btnQuickInwardSelected" onclick="confirmStickeredInwardAction(event)" title="Inward stickered product(s) to warehouse inventory stock">
+                            <i class="bi bi-box-arrow-in-down-right me-1"></i>Inward to Stock
+                        </button>
                     </div>
                 </div>
             </div>
@@ -2772,22 +2775,7 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                     </div>
                 <?php endforeach; ?>
             </div>
-            <?php if ($currentSourceType === 'returns' && !$isViewingExisting): ?>
-            <!-- Return QR pages do not use the PO/third-party inward banner, but
-                 the shared selected-QR action still needs a form to submit. -->
-            <form id="formConfirmInward" onsubmit="confirmStickeredInwardAction(event)" class="d-none">
-                <?= CSRF::field() ?>
-                <input type="hidden" name="variant_id" value="<?= (int)$selectedVariantId ?>">
-                <input type="hidden" name="warehouse_id" value="<?= (int)($targetWarehouseId ?? 1) ?>">
-                <input type="hidden" name="quantity" id="inwardQtyInput" value="0">
-                <input type="hidden" name="seller_id" value="<?= (int)($selectedSellerId ?? 0) ?>">
-                <input type="hidden" name="source_id" value="<?= (int)($selectedSourceId ?? 0) ?>">
-                <input type="hidden" name="return_inward" value="1">
-                <input type="hidden" name="tag_codes" id="inwardTagCodesInput" value="[]">
-                <span id="btnInwardSubmitText"></span>
-                <span id="btnInwardSubmitIcon"></span>
-            </form>
-            <?php endif; ?>
+
         <?php endif; ?>
     </div>
 </div>
@@ -2870,14 +2858,40 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
         </div>
     </div>
 </div>
-<?php elseif (!$isViewingExisting && in_array($currentSourceType, ['po', 'tp_purchase']) && !empty($generatedItems) && !empty($selectedVariantId)):
-    $activeVar = null;
-    $lookupPool = $thirdPartyVariants;
-    foreach ($lookupPool as $sv) {
-        if ($sv['id'] == $selectedVariantId) {
-            $activeVar = $sv;
-            break;
+<?php elseif (!$isViewingExisting && in_array($currentSourceType, ['po', 'tp_purchase', 'returns']) && !empty($generatedItems) && !empty($selectedVariantId)):
+    if (empty($activeVar)) {
+        $lookupPool = array_merge($stockVariants ?? [], $thirdPartyVariants ?? []);
+        foreach ($lookupPool as $sv) {
+            if ($sv['id'] == $selectedVariantId) {
+                $activeVar = $sv;
+                break;
+            }
         }
+    }
+    if (empty($activeVar)) {
+        $activeVar = Database::fetchOne(
+            "SELECT pv.*, p.name as product_name, p.code as product_code, p.qr_code_prefix,
+                    p.category_code, p.subcategory_code, p.sub_subcategory_code,
+                    p.category_id, p.subcategory_id, p.sub_subcategory_id,
+                    p.brand_id, b.name as brand_name,
+                    p.source_type, p.warehouse_supplier_id as seller_id, sz.name as size_name, c.name as color_name,
+                    COALESCE(cat.name, c_old.name, '') as category_name, 
+                    COALESCE(subcat.name, sc_old.name, '') as subcategory_name, 
+                    COALESCE(subsubcat.name, ssc_old.name, '') as sub_subcategory_name
+             FROM product_variants pv
+             JOIN products p ON pv.product_id = p.id
+             LEFT JOIN brands b ON p.brand_id = b.id
+             LEFT JOIN warehouse_categories cat ON p.warehouse_category_id = cat.id
+             LEFT JOIN warehouse_subcategories subcat ON p.warehouse_subcategory_id = subcat.id
+             LEFT JOIN warehouse_sub_subcategories subsubcat ON p.warehouse_sub_subcategory_id = subsubcat.id
+             LEFT JOIN categories c_old ON p.category_id = c_old.id
+             LEFT JOIN subcategories sc_old ON p.subcategory_id = sc_old.id
+             LEFT JOIN sub_subcategories ssc_old ON p.sub_subcategory_id = ssc_old.id
+             LEFT JOIN sizes sz ON pv.size_id = sz.id
+             LEFT JOIN colors c ON pv.color_id = c.id
+             WHERE pv.id = ?",
+            [$selectedVariantId]
+        );
     }
     $activeWh = null;
     foreach ($warehouses as $wh) {
@@ -2887,6 +2901,32 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
         }
     }
     if (!$activeWh && !empty($warehouses)) $activeWh = $warehouses[0];
+
+    // For returns: calculate inward status from warehouse_qr_codes
+    if ($currentSourceType === 'returns') {
+        $tagCodesList = array_filter(array_column($generatedItems, 'tag_code'));
+        $inwardedTagsMap = [];
+        if (!empty($tagCodesList)) {
+            $placeholders = implode(',', array_fill(0, count($tagCodesList), '?'));
+            $inwardedRows = Database::fetchAll("SELECT qr_code FROM warehouse_qr_codes WHERE qr_code IN ($placeholders) AND inwarded_at IS NOT NULL", $tagCodesList);
+            foreach ($inwardedRows as $ir) {
+                $inwardedTagsMap[$ir['qr_code']] = true;
+            }
+        }
+        $inwardedCount = 0;
+        foreach ($generatedItems as &$gitm) {
+            if (!empty($inwardedTagsMap[$gitm['tag_code']])) {
+                $gitm['is_inwarded'] = true;
+                $inwardedCount++;
+            }
+        }
+        unset($gitm);
+        $alreadyInwardedQty = $inwardedCount;
+        $totalExpectedQty = count($generatedItems);
+        $remainingQty = max(0, $totalExpectedQty - $alreadyInwardedQty);
+        $isFullyInwarded = ($alreadyInwardedQty >= $totalExpectedQty && $totalExpectedQty > 0);
+        $isPartiallyInwarded = ($alreadyInwardedQty > 0 && !$isFullyInwarded);
+    }
 ?>
 <!-- ========================================================================= -->
 <!-- STEP 3: CONFIRM STICKERED PRODUCTS & UPDATE INVENTORY STOCK (STANDALONE ONLY) -->
@@ -2905,16 +2945,19 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                     // For Normal products: inward 1 piece per sticker (count($generatedItems))
                     $inwardPieceQty = $isSeriesOrComp 
                         ? ($remainingQty > 0 ? $remainingQty : (!empty($activeVar['pack_quantity']) && (int)$activeVar['pack_quantity'] > 1 ? (int)$activeVar['pack_quantity'] : $totalExpectedQty))
-                        : count($generatedItems);
+                        : ($remainingQty > 0 ? $remainingQty : count($generatedItems));
                 ?>
                 <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
-                    <span class="badge bg-success px-3 py-1 fs-7 shadow-xs"><i class="bi bi-box-seam-fill me-1"></i>Official Inventory Stock Inward</span>
+                    <span class="badge bg-success px-3 py-1 fs-7 shadow-xs">
+                        <i class="bi <?= $currentSourceType === 'returns' ? 'bi-arrow-return-left' : 'bi-box-seam-fill' ?> me-1"></i>
+                        <?= $currentSourceType === 'returns' ? 'Official Return Stock Inward' : 'Official Inventory Stock Inward' ?>
+                    </span>
                     <span class="badge bg-light text-dark border">
                         <i class="bi bi-qr-code-scan me-1 text-primary"></i> <span id="lblStickersGeneratedCount"><?= count($generatedItems) ?></span> QR Stickers Generated
                     </span>
                     <?php if ($isFullyInwarded): ?>
                         <span class="badge bg-success-subtle text-success border border-success-subtle" id="inwardStatusBadge">
-                            <i class="bi bi-check-circle-fill me-1"></i> Stock Officially Inwarded (1-Time Completed: <?= $alreadyInwardedQty ?> pcs)
+                            <i class="bi bi-check-circle-fill me-1"></i> <?= $currentSourceType === 'returns' ? 'Returned Stock Officially Inwarded' : 'Stock Officially Inwarded' ?> (<?= $alreadyInwardedQty ?> pcs)
                         </span>
                     <?php elseif ($isPartiallyInwarded): ?>
                         <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" id="inwardStatusBadge">
@@ -2931,7 +2974,11 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                         <?= e($activeVar['product_name'] ?? 'Selected Product') ?>
                         <span class="text-muted fw-normal fs-6 ms-1">(<?= e($activeVar['size_name'] ?? 'Free') ?> / <?= e($activeVar['color_name'] ?? 'Std') ?>)</span>
                     </h4>
-                    <?php if ($actIsComp): ?>
+                    <?php if ($currentSourceType === 'returns'): ?>
+                        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2.5 py-1" style="font-size: 0.74rem;">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>Customer Return Restock
+                        </span>
+                    <?php elseif ($actIsComp): ?>
                         <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2.5 py-1" style="font-size: 0.74rem;">
                             <i class="bi bi-gift-fill me-1"></i>Complementary Product
                         </span>
@@ -2957,13 +3004,18 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                 <?php endif; ?>
                 <div class="text-muted small d-flex align-items-center gap-3 flex-wrap mt-2">
                     <span><i class="bi bi-building text-primary me-1"></i> Inward Warehouse: <strong><?= e($activeWh['name'] ?? 'Main Warehouse') ?></strong></span>
-                    <span><i class="bi bi-boxes text-success me-1"></i> Inwarded Stock: <strong id="liveCurrentWhStock" class="badge bg-secondary-subtle text-dark fs-7"><?= number_format($alreadyInwardedQty) ?> / <?= $totalExpectedQty ?> pcs</strong></span>
+                    <span><i class="bi bi-boxes text-success me-1"></i> <?= $currentSourceType === 'returns' ? 'Return Inward Progress' : 'Inwarded Stock' ?>: <strong id="liveCurrentWhStock" class="badge bg-secondary-subtle text-dark fs-7"><?= number_format($alreadyInwardedQty) ?> / <?= $totalExpectedQty ?> pcs</strong></span>
                     <span><i class="bi bi-tags-fill text-warning-emphasis me-1"></i> QR Tag Range: <strong class="font-monospace text-dark" id="inwardTagRangeText"><?= e($generatedItems[0]['tag_code'] ?? '') ?> &rarr; <?= e(end($generatedItems)['tag_code'] ?? '') ?></strong></span>
                     <span><i class="bi bi-currency-rupee text-success me-1"></i> MRP: <strong>₹<?= number_format($activeVar['mrp'] ?? 0, 2) ?></strong></span>
                 </div>
             </div>
 
-            <?php if (($currentSourceType === 'returns' && hasPermission('returns', 'classify')) || ($currentSourceType !== 'returns' && (hasPermission('inward', 'create') || hasPermission('inward', 'verify') || hasPermission('purchases', 'receive')))): ?>
+            <?php 
+            $canConfirmInward = ($currentSourceType === 'returns') 
+                ? (hasPermission('returns', 'classify') || hasPermission('returns', 'receive') || hasPermission('returns', 'view') || hasPermission('inward', 'create') || hasPermission('inward', 'verify') || hasPermission('purchases', 'receive') || hasPermission('stock', 'view') || hasPermission('warehouse', 'view') || (function_exists('isAdmin') && isAdmin()))
+                : (hasPermission('inward', 'create') || hasPermission('inward', 'verify') || hasPermission('purchases', 'receive') || (function_exists('isAdmin') && isAdmin()));
+            ?>
+            <?php if ($canConfirmInward): ?>
             <div class="d-flex align-items-center gap-2">
                 <form id="formConfirmInward" onsubmit="confirmStickeredInwardAction(event)">
                     <?= CSRF::field() ?>
@@ -2985,11 +3037,13 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                     }
                     ?>
                     <div class="d-flex align-items-center gap-2 flex-wrap">
-                        <button type="submit" id="btnConfirmInwardSubmit" class="btn <?= (!$hasUninwarded && $currentSourceType !== 'returns') ? 'btn-secondary opacity-75' : 'btn-success' ?> btn-lg shadow fw-bold px-4 py-3 d-flex align-items-center gap-2" <?= (!$hasUninwarded && $currentSourceType !== 'returns') ? 'disabled' : '' ?>>
-                            <i class="bi <?= (!$hasUninwarded && $currentSourceType !== 'returns') ? 'bi-check-circle-fill' : 'bi-box-arrow-in-down-right' ?> fs-4" id="btnInwardSubmitIcon"></i>
+                        <button type="submit" id="btnConfirmInwardSubmit" class="btn <?= (!$hasUninwarded) ? 'btn-secondary opacity-75' : 'btn-success' ?> btn-lg shadow fw-bold px-4 py-3 d-flex align-items-center gap-2" <?= (!$hasUninwarded) ? 'disabled' : '' ?>>
+                            <i class="bi <?= (!$hasUninwarded) ? 'bi-check-circle-fill' : 'bi-box-arrow-in-down-right' ?> fs-4" id="btnInwardSubmitIcon"></i>
                             <span id="btnInwardSubmitText">
-                                <?php if (!$hasUninwarded && $currentSourceType !== 'returns'): ?>
+                                <?php if (!$hasUninwarded): ?>
                                     All <?= $alreadyInwardedQty ?> Pieces Officially Inwarded (1-Time Completed)
+                                <?php elseif ($currentSourceType === 'returns'): ?>
+                                    Confirm Return QR &amp; Inward to Inventory (+<?= $inwardPieceQty ?> Pcs)
                                 <?php elseif ($isPartiallyInwarded): ?>
                                     Confirm Stickered &amp; Inward Remaining (+<?= $inwardPieceQty ?> Pcs)
                                 <?php else: ?>
@@ -4113,16 +4167,25 @@ function syncInwardButtonWithSelection() {
         }
         if (icon) icon.className = 'bi bi-box-arrow-in-down-right fs-4';
     } else {
-        // No selection means no inward action. Stock must never be credited implicitly.
-        btnText.textContent = 'Select QR Sticker(s) to Inward';
-        qtyInput.value = 0;
-        tagsInput.value = '[]';
+        // Default to ALL available non-inwarded products
+        let totalPieces = 0;
+        availableItems.forEach(entry => {
+            if (entry.item.is_series && entry.item.pack_quantity) {
+                totalPieces += parseInt(entry.item.pack_quantity, 10) || 1;
+            } else {
+                totalPieces += 1;
+            }
+        });
+        const tagCodes = availableItems.map(entry => entry.item.tag_code);
+        btnText.textContent = `Confirm Stickered & Inward to Inventory (+${totalPieces} Pcs)`;
+        qtyInput.value = totalPieces;
+        tagsInput.value = JSON.stringify(tagCodes);
         if (btn) {
-            btn.disabled = true;
-            btn.classList.add('btn-secondary', 'opacity-75');
-            btn.classList.remove('btn-success');
+            btn.disabled = false;
+            btn.classList.remove('btn-secondary', 'opacity-75');
+            btn.classList.add('btn-success');
         }
-        if (icon) icon.className = 'bi bi-hand-index-thumb fs-4';
+        if (icon) icon.className = 'bi bi-box-arrow-in-down-right fs-4';
     }
 }
 

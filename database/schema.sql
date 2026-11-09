@@ -1,7 +1,7 @@
 -- =================================================
 -- GRM Inventory Management System Canonical Database Schema
--- Generated: 2026-11-08 23:26:09
--- Total Tables: 105
+-- Generated: 2026-11-09 21:24:07
+-- Total Tables: 107
 -- =================================================
 
 SET FOREIGN_KEY_CHECKS = 0;
@@ -545,6 +545,7 @@ CREATE TABLE `cutting_batch_rolls` (
   `wastage_cost` decimal(12,2) NOT NULL DEFAULT 0.00,
   `roll_color` varchar(100) DEFAULT NULL,
   `roll_design` varchar(100) DEFAULT NULL,
+  `allocated_qr_codes` text DEFAULT NULL,
   `created_at` datetime DEFAULT current_timestamp(),
   `used_weight` decimal(10,2) DEFAULT 0.00,
   `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
@@ -995,9 +996,12 @@ CREATE TABLE `production_batches` (
   `batch_number` varchar(50) NOT NULL,
   `program_id` int(10) unsigned NOT NULL,
   `qc_batch_id` int(10) unsigned DEFAULT NULL,
+  `additional_qc_batch_ids` text DEFAULT NULL,
+  `is_multi_qc` tinyint(1) DEFAULT 0,
   `total_qty` int(11) NOT NULL DEFAULT 0,
   `box_count` int(11) DEFAULT 0,
   `destination_warehouse_id` int(10) unsigned NOT NULL,
+  `production_outward_id` int(10) unsigned DEFAULT NULL,
   `status` enum('PREPARING','APPROVED','DISPATCHED','RECEIVED') DEFAULT 'PREPARING',
   `prepared_by` int(10) unsigned DEFAULT NULL,
   `approved_by` int(10) unsigned DEFAULT NULL,
@@ -1197,12 +1201,30 @@ CREATE TABLE `production_expenses` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
+-- Table structure for table `production_outward_batches`
+-- --------------------------------------------------------
+DROP TABLE IF EXISTS `production_outward_batches`;
+CREATE TABLE `production_outward_batches` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `production_outward_id` int(10) unsigned NOT NULL,
+  `production_batch_id` int(10) unsigned NOT NULL,
+  `total_qty` int(11) NOT NULL DEFAULT 0,
+  `box_count` int(11) NOT NULL DEFAULT 1,
+  `created_at` datetime DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_pob_outward` (`production_outward_id`),
+  KEY `idx_pob_batch` (`production_batch_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
 -- Table structure for table `production_outwards`
 -- --------------------------------------------------------
 DROP TABLE IF EXISTS `production_outwards`;
 CREATE TABLE `production_outwards` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `production_batch_id` int(10) unsigned NOT NULL,
+  `batch_ids` text DEFAULT NULL,
+  `is_multi_batch` tinyint(1) DEFAULT 0,
   `production_unit_id` int(10) unsigned DEFAULT NULL,
   `warehouse_id` int(10) unsigned DEFAULT NULL,
   `quantity` int(11) NOT NULL DEFAULT 0,
@@ -1268,6 +1290,7 @@ CREATE TABLE `production_program_rolls` (
   `roll_price` decimal(12,2) DEFAULT 0.00,
   `roll_color` varchar(100) DEFAULT NULL,
   `roll_design` varchar(100) DEFAULT NULL,
+  `allocated_qr_codes` text DEFAULT NULL,
   `created_at` datetime DEFAULT current_timestamp(),
   `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `color` varchar(100) DEFAULT NULL,
@@ -1285,6 +1308,7 @@ CREATE TABLE `production_programs` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `program_number` varchar(50) NOT NULL,
   `name` varchar(255) DEFAULT NULL,
+  `person_name` varchar(150) DEFAULT NULL,
   `production_unit_id` int(10) unsigned DEFAULT NULL,
   `product_id` int(10) unsigned DEFAULT NULL,
   `seller_roll_id` int(10) unsigned DEFAULT NULL,
@@ -2677,6 +2701,19 @@ CREATE TABLE `warehouse_damages` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
+-- Table structure for table `warehouse_deleted_label_codes`
+-- --------------------------------------------------------
+DROP TABLE IF EXISTS `warehouse_deleted_label_codes`;
+CREATE TABLE `warehouse_deleted_label_codes` (
+  `code` varchar(100) NOT NULL,
+  `variant_id` int(10) unsigned DEFAULT NULL,
+  `created_by` int(10) unsigned DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`code`),
+  KEY `idx_wdlc_variant` (`variant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
 -- Table structure for table `warehouse_qr_codes`
 -- --------------------------------------------------------
 DROP TABLE IF EXISTS `warehouse_qr_codes`;
@@ -2688,6 +2725,10 @@ CREATE TABLE `warehouse_qr_codes` (
   `created_by` int(10) unsigned DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `inwarded_at` timestamp NULL DEFAULT NULL,
+  `pack_quantity` int(11) DEFAULT 1,
+  `series_end_code` varchar(100) DEFAULT NULL,
+  `is_extra` tinyint(1) NOT NULL DEFAULT 0,
+  `extra_reason` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_warehouse_qr_code` (`qr_code`),
   KEY `idx_warehouse_qr_variant` (`variant_id`),
