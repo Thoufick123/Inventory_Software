@@ -832,10 +832,10 @@ if (!function_exists('renderCategoryTypeBadge')) {
                     All Pieces (<?= count($pieceItems ?? []) ?>)
                 </button>
                 <button type="button" class="btn btn-sm btn-outline-success fw-semibold px-3 py-1 wh-source-filter-btn" data-source="OWN_PRODUCTION" onclick="filterWhPieceSource('OWN_PRODUCTION', this)">
-                    <i class="bi bi-buildings me-1"></i> Production Unit (<?= count(array_filter($pieceItems ?? [], fn($p) => ($p['source_type'] ?? '') === 'OWN_PRODUCTION')) ?>)
+                    <i class="bi bi-buildings me-1"></i> Production Unit (<?= count(array_filter($pieceItems ?? [], fn($p) => ($p['source_type'] ?? '') === 'OWN_PRODUCTION' && ($p['category_type'] ?? '') !== 'SERIES' && ($p['category_type'] ?? '') !== 'COMPLEMENTARY')) ?>)
                 </button>
                 <button type="button" class="btn btn-sm btn-outline-warning text-dark fw-semibold px-3 py-1 wh-source-filter-btn" data-source="EXTERNAL_PURCHASE" onclick="filterWhPieceSource('EXTERNAL_PURCHASE', this)">
-                    <i class="bi bi-shop me-1"></i> Third-Party (<?= count(array_filter($pieceItems ?? [], fn($p) => ($p['source_type'] ?? '') === 'EXTERNAL_PURCHASE')) ?>)
+                    <i class="bi bi-shop me-1"></i> Third-Party (<?= count(array_filter($pieceItems ?? [], fn($p) => ($p['source_type'] ?? '') === 'EXTERNAL_PURCHASE' && ($p['category_type'] ?? '') !== 'SERIES' && ($p['category_type'] ?? '') !== 'COMPLEMENTARY')) ?>)
                 </button>
                 <button type="button" class="btn btn-sm btn-outline-danger fw-semibold px-3 py-1 wh-source-filter-btn" data-source="COMPLEMENTARY" onclick="filterWhPieceSource('COMPLEMENTARY', this)">
                     <i class="bi bi-gift-fill me-1"></i> Complementary (<?= count(array_filter($pieceItems ?? [], fn($p) => ($p['category_type'] ?? '') === 'COMPLEMENTARY')) ?>)
@@ -1894,8 +1894,8 @@ function filterWhPieces() {
 
         // Source filter match
         let sourceMatch = true;
-        if (currentWhSourceFilter === 'OWN_PRODUCTION') sourceMatch = (src === 'OWN_PRODUCTION');
-        else if (currentWhSourceFilter === 'EXTERNAL_PURCHASE') sourceMatch = (src === 'EXTERNAL_PURCHASE');
+        if (currentWhSourceFilter === 'OWN_PRODUCTION') sourceMatch = (src === 'OWN_PRODUCTION' && catType !== 'SERIES' && catType !== 'COMPLEMENTARY');
+        else if (currentWhSourceFilter === 'EXTERNAL_PURCHASE') sourceMatch = (src === 'EXTERNAL_PURCHASE' && catType !== 'SERIES' && catType !== 'COMPLEMENTARY');
         else if (currentWhSourceFilter === 'COMPLEMENTARY') sourceMatch = (catType === 'COMPLEMENTARY');
         else if (currentWhSourceFilter === 'SERIES') sourceMatch = (catType === 'SERIES');
 

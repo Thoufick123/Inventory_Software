@@ -373,6 +373,55 @@ $canDeleteCatalog = hasPermission('wh_catalog', 'delete');
                                 </div>
                                 <div class="form-text text-muted" id="unifiedSubSubcatHelpText" style="font-size:.72rem;">Belongs strictly to selected subcategory</div>
                             </div>
+
+                            <!-- 4. HSN CODE, GST RATE & CATEGORY TYPE -->
+                            <div class="col-12 pt-2 border-top">
+                                <div class="row g-2 align-items-end">
+                                    <div class="col-md-5">
+                                        <div class="d-flex align-items-center justify-content-between mb-1">
+                                            <label class="form-label small fw-bold text-dark mb-0">
+                                                <i class="bi bi-upc-scan text-primary me-1"></i>HSN Code <span class="text-muted fw-normal">(Optional)</span>
+                                            </label>
+                                            <button type="button" class="btn btn-xs btn-outline-primary py-0 px-2 fw-semibold" onclick="openQuickAddHsnModal('unifiedCatHsn', 'unifiedCatGstRate')" style="font-size:0.72rem;">
+                                                <i class="bi bi-plus-lg me-1"></i>New HSN
+                                            </button>
+                                        </div>
+                                        <div class="input-group input-group-sm">
+                                            <input type="text" id="unifiedCatHsn" class="form-control form-control-sm text-uppercase fw-semibold" placeholder="e.g. 6109" list="unifiedHsnDatalist" onchange="onUnifiedCatHsnChange()">
+                                            <select class="form-select form-select-sm" id="unifiedCatHsnSelect" style="max-width:40px;" onchange="onUnifiedCatHsnSelect(this.value)" title="Choose from existing HSN codes">
+                                                <option value="">▼</option>
+                                                <?php foreach (($hsnCodes ?? []) as $h): ?>
+                                                    <option value="<?= htmlspecialchars($h['hsn_code']) ?>" data-gst="<?= (float)($h['gst_rate'] ?? 5) ?>"><?= htmlspecialchars($h['hsn_code']) ?> &bull; <?= htmlspecialchars($h['description'] ?? '') ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                        <div class="form-text text-muted" style="font-size:.72rem;">Default HSN code for products in this category</div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small fw-bold text-dark mb-1">
+                                            <i class="bi bi-percent text-success me-1"></i>GST Rate (%)
+                                        </label>
+                                        <select id="unifiedCatGstRate" class="form-select form-select-sm fw-semibold">
+                                            <option value="5.00">5.00% (Garments / Standard)</option>
+                                            <option value="12.00">12.00%</option>
+                                            <option value="18.00">18.00%</option>
+                                            <option value="0.00">0.00% (Exempt)</option>
+                                            <option value="28.00">28.00%</option>
+                                        </select>
+                                        <div class="form-text text-muted" style="font-size:.72rem;">Default GST tax rate</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label small fw-bold text-dark mb-1">
+                                            <i class="bi bi-tag text-info me-1"></i>Category Type
+                                        </label>
+                                        <select id="unifiedCategoryType" class="form-select form-select-sm fw-semibold">
+                                            <option value="NORMAL">Normal / Finished Goods</option>
+                                            <option value="FABRIC">Fabric / Raw Material</option>
+                                        </select>
+                                        <div class="form-text text-muted" style="font-size:.72rem;">Category classification</div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div>
@@ -512,6 +561,55 @@ $canDeleteCatalog = hasPermission('wh_catalog', 'delete');
                                     </div>
                                     <div class="form-text text-muted" id="editSubSubcatHelpText" style="font-size:.72rem;">Pick from dropdown or click + Add New</div>
                                 </div>
+
+                                <!-- 4. HSN CODE, GST RATE & CATEGORY TYPE -->
+                                <div class="col-12 pt-2 border-top">
+                                    <div class="row g-2 align-items-end">
+                                        <div class="col-md-5">
+                                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                                <label class="form-label small fw-semibold text-muted mb-0">
+                                                    <i class="bi bi-upc-scan text-primary me-1"></i>HSN Code
+                                                </label>
+                                                <button type="button" class="btn btn-xs btn-outline-primary py-0 px-2 fw-semibold" onclick="openQuickAddHsnModal('editFullCatHsn', 'editFullCatGstRate')" style="font-size:0.7rem;">
+                                                    <i class="bi bi-plus-lg me-1"></i>New HSN
+                                                </button>
+                                            </div>
+                                            <div class="input-group input-group-sm">
+                                                <input type="text" id="editFullCatHsn" class="form-control form-control-sm text-uppercase fw-semibold" placeholder="e.g. 6109" list="unifiedHsnDatalist" onchange="onEditCatHsnChange()">
+                                                <select class="form-select form-select-sm" id="editFullCatHsnSelect" style="max-width:40px;" onchange="onEditCatHsnSelect(this.value)" title="Choose from existing HSN codes">
+                                                    <option value="">▼</option>
+                                                    <?php foreach (($hsnCodes ?? []) as $h): ?>
+                                                        <option value="<?= htmlspecialchars($h['hsn_code']) ?>" data-gst="<?= (float)($h['gst_rate'] ?? 5) ?>"><?= htmlspecialchars($h['hsn_code']) ?> &bull; <?= htmlspecialchars($h['description'] ?? '') ?></option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </div>
+                                            <div class="form-text text-muted" style="font-size:.72rem;">Default HSN code for products in this category</div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label small fw-semibold text-muted mb-1">
+                                                <i class="bi bi-percent text-success me-1"></i>GST Rate (%)
+                                            </label>
+                                            <select id="editFullCatGstRate" class="form-select form-select-sm fw-semibold">
+                                                <option value="5.00">5.00% (Garments / Standard)</option>
+                                                <option value="12.00">12.00%</option>
+                                                <option value="18.00">18.00%</option>
+                                                <option value="0.00">0.00% (Exempt)</option>
+                                                <option value="28.00">28.00%</option>
+                                            </select>
+                                            <div class="form-text text-muted" style="font-size:.72rem;">Default GST tax rate</div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small fw-semibold text-muted mb-1">
+                                                <i class="bi bi-tag text-info me-1"></i>Category Type
+                                            </label>
+                                            <select id="editFullCategoryType" class="form-select form-select-sm fw-semibold">
+                                                <option value="NORMAL">Normal / Finished Goods</option>
+                                                <option value="FABRIC">Fabric / Raw Material</option>
+                                            </select>
+                                            <div class="form-text text-muted" style="font-size:.72rem;">Category classification</div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -555,6 +653,56 @@ $canDeleteCatalog = hasPermission('wh_catalog', 'delete');
                             <i class="bi bi-check2-circle me-1"></i> Save Changes
                         </button>
                     </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- GLOBAL HSN DATALIST FOR CATALOG MODALS -->
+<datalist id="unifiedHsnDatalist">
+    <?php foreach (($hsnCodes ?? []) as $h): ?>
+        <option value="<?= htmlspecialchars($h['hsn_code']) ?>" data-gst="<?= (float)($h['gst_rate'] ?? 5) ?>"><?= htmlspecialchars($h['hsn_code']) ?> - <?= htmlspecialchars($h['description'] ?? '') ?> (<?= (float)($h['gst_rate'] ?? 5) ?>% GST)</option>
+    <?php endforeach; ?>
+</datalist>
+
+<!-- MODAL: QUICK ADD HSN CODE (WAREHOUSE) -->
+<div class="modal fade" id="modalQuickAddHsn" tabindex="-1" aria-hidden="true" style="z-index: 1065;">
+    <div class="modal-dialog modal-dialog-centered" style="max-width: 440px;">
+        <div class="modal-content border-0 shadow-lg rounded-3">
+            <div class="modal-header bg-primary text-white py-2.5 px-3">
+                <h6 class="modal-title fw-bold mb-0 text-white">
+                    <i class="bi bi-upc-scan me-1.5"></i>Create New HSN Code
+                </h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="formQuickAddHsn" onsubmit="submitQuickAddHsnForm(event)">
+                <div class="modal-body p-3">
+                    <div class="mb-2.5">
+                        <label class="form-label small fw-bold text-dark mb-1">HSN Code <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control form-control-sm font-monospace text-uppercase fw-bold" id="qHsnCode" placeholder="e.g. 6109 or 6205" required maxlength="15">
+                        <div class="form-text text-muted" style="font-size:.72rem;">Harmonized System Nomenclature commodity classification code</div>
+                    </div>
+                    <div class="mb-2.5">
+                        <label class="form-label small fw-bold text-dark mb-1">Description / Garment Commodity <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control form-control-sm fw-semibold" id="qHsnDesc" placeholder="e.g. Cotton T-Shirts, Singlets &amp; Vests" required maxlength="255">
+                    </div>
+                    <div class="mb-1">
+                        <label class="form-label small fw-bold text-dark mb-1">GST Tax Rate (%) <span class="text-danger">*</span></label>
+                        <select class="form-select form-select-sm fw-semibold" id="qHsnGst">
+                            <option value="5.00" selected>5.00% (Standard Apparel)</option>
+                            <option value="12.00">12.00%</option>
+                            <option value="18.00">18.00%</option>
+                            <option value="0.00">0.00% (Nil / Exempt)</option>
+                            <option value="28.00">28.00%</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2 px-3 d-flex justify-content-between">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-sm btn-primary fw-bold" id="btnSubmitQuickHsn">
+                        <i class="bi bi-check-circle me-1"></i>Save HSN Code
+                    </button>
                 </div>
             </form>
         </div>
@@ -1578,6 +1726,9 @@ function openAddCategoryModal() {
     document.getElementById('formUnifiedCategory').reset();
     document.getElementById('unifiedAttributesTableBody').innerHTML = '';
     addUnifiedAttributeRow();
+    if (document.getElementById('unifiedCatHsn')) document.getElementById('unifiedCatHsn').value = '';
+    if (document.getElementById('unifiedCatGstRate')) document.getElementById('unifiedCatGstRate').value = '5.00';
+    if (document.getElementById('unifiedCategoryType')) document.getElementById('unifiedCategoryType').value = 'NORMAL';
 
     // Populate Category Dropdown with existing category names
     const catSel = document.getElementById('unifiedCatSelect');
@@ -1627,11 +1778,25 @@ function onUnifiedCatSelectChange() {
 
     if (!val) {
         populateUnifiedSubcategories(null);
+        if (document.getElementById('unifiedCatHsn')) document.getElementById('unifiedCatHsn').value = '';
+        if (document.getElementById('unifiedCatGstRate')) document.getElementById('unifiedCatGstRate').value = '5.00';
+        if (document.getElementById('unifiedCategoryType')) document.getElementById('unifiedCategoryType').value = 'NORMAL';
         return;
     }
 
     const catObj = (categoryTreeData || []).find(c => String(c.id) === String(val));
     populateUnifiedSubcategories(catObj || null);
+    if (catObj) {
+        if (document.getElementById('unifiedCatHsn')) {
+            document.getElementById('unifiedCatHsn').value = catObj.hsn_code || '';
+        }
+        if (document.getElementById('unifiedCatGstRate') && catObj.gst_rate) {
+            document.getElementById('unifiedCatGstRate').value = parseFloat(catObj.gst_rate).toFixed(2);
+        }
+        if (document.getElementById('unifiedCategoryType') && catObj.category_type) {
+            document.getElementById('unifiedCategoryType').value = (catObj.category_type || 'NORMAL').toUpperCase();
+        }
+    }
 }
 
 function toggleUnifiedNewCat(forceNew = true) {
@@ -2032,7 +2197,9 @@ function submitUnifiedCategoryForm(e) {
     const p = new URLSearchParams();
     p.append('_csrf_token', CSRF_TOKEN);
     p.append('category_name', cat);
-    p.append('category_type', 'NORMAL');
+    p.append('category_type', document.getElementById('unifiedCategoryType') ? document.getElementById('unifiedCategoryType').value : 'NORMAL');
+    p.append('hsn_code', document.getElementById('unifiedCatHsn') ? document.getElementById('unifiedCatHsn').value.trim() : '');
+    p.append('gst_rate', document.getElementById('unifiedCatGstRate') ? document.getElementById('unifiedCatGstRate').value.trim() : '5.00');
     if (selectedCategory) p.append('category_id', selectedCategory.id);
     p.append('subcategory_name', subcat);
     if (selectedSubcategory && !(subcatInputWrap && subcatInputWrap.style.display !== 'none')) {
@@ -2070,6 +2237,15 @@ function openFullEditCategoryModal(e, catId, targetSubcatId = null, targetSubSub
 
     document.getElementById('editFullCatId').value = cat.id;
     document.getElementById('editFullCatName').value = cat.name || '';
+    if (document.getElementById('editFullCatHsn')) {
+        document.getElementById('editFullCatHsn').value = cat.hsn_code || '';
+    }
+    if (document.getElementById('editFullCatGstRate')) {
+        document.getElementById('editFullCatGstRate').value = cat.gst_rate ? parseFloat(cat.gst_rate).toFixed(2) : '5.00';
+    }
+    if (document.getElementById('editFullCategoryType')) {
+        document.getElementById('editFullCategoryType').value = (cat.category_type || 'NORMAL').toUpperCase();
+    }
 
     // Populate subcategories for THIS category
     populateEditSubcategories(cat, targetSubcatId, targetSubSubcatId);
@@ -2431,7 +2607,9 @@ function submitUnifiedEditCategoryForm(e) {
     p.append('_csrf_token', CSRF_TOKEN);
     p.append('category_id', catId);
     p.append('category_name', catName);
-    p.append('category_type', 'NORMAL');
+    p.append('category_type', document.getElementById('editFullCategoryType') ? document.getElementById('editFullCategoryType').value : 'NORMAL');
+    p.append('hsn_code', document.getElementById('editFullCatHsn') ? document.getElementById('editFullCatHsn').value.trim() : '');
+    p.append('gst_rate', document.getElementById('editFullCatGstRate') ? document.getElementById('editFullCatGstRate').value.trim() : '5.00');
     p.append('subcategory_id', subcatId);
     p.append('subcategory_name', subcatName);
     p.append('sub_subcategory_id', subSubcatId);
@@ -2977,6 +3155,158 @@ function openViewCategoryHierarchyModal(e, catId) {
     const modalEl = document.getElementById('modalViewCategoryHierarchy');
     viewCategoryModalInstance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
     viewCategoryModalInstance.show();
+}
+
+// =========================================================================
+// WAREHOUSE QUICK ADD HSN CODE LOGIC
+// =========================================================================
+let quickHsnTargetInputId = null;
+let quickHsnTargetGstSelectId = null;
+
+function openQuickAddHsnModal(targetInputId = null, targetSelectId = null) {
+    quickHsnTargetInputId = targetInputId;
+    quickHsnTargetGstSelectId = targetSelectId;
+    const hsnInp = document.getElementById('qHsnCode');
+    const descInp = document.getElementById('qHsnDesc');
+    const gstSel = document.getElementById('qHsnGst');
+    if (hsnInp) hsnInp.value = '';
+    if (descInp) descInp.value = '';
+    if (gstSel) gstSel.value = '5.00';
+
+    new bootstrap.Modal(document.getElementById('modalQuickAddHsn')).show();
+    setTimeout(() => {
+        if (hsnInp) hsnInp.focus();
+    }, 400);
+}
+
+function submitQuickAddHsnForm(e) {
+    e.preventDefault();
+    const hsn = (document.getElementById('qHsnCode').value || '').trim().toUpperCase();
+    const desc = (document.getElementById('qHsnDesc').value || '').trim();
+    const gst = document.getElementById('qHsnGst').value || '5.00';
+
+    if (!hsn) {
+        alert('Please enter an HSN code.');
+        return;
+    }
+
+    const btn = document.getElementById('btnSubmitQuickHsn');
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+
+    const p = new URLSearchParams();
+    p.append('hsn_code', hsn);
+    p.append('description', desc || `HSN ${hsn}`);
+    p.append('gst_rate', gst);
+
+    fetch(`${APP_URL}/api/hsn-codes/store`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+        body: p.toString()
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+        if (data.success && data.data) {
+            bootstrap.Modal.getInstance(document.getElementById('modalQuickAddHsn')).hide();
+            showToast('Success', `HSN Code ${data.data.hsn_code} created successfully!`, 'success');
+
+            // Add to datalist
+            const dl = document.getElementById('unifiedHsnDatalist');
+            if (dl) {
+                const opt = document.createElement('option');
+                opt.value = data.data.hsn_code;
+                opt.text = `${data.data.hsn_code} - ${data.data.description} (${data.data.gst_rate}% GST)`;
+                opt.setAttribute('data-gst', data.data.gst_rate);
+                dl.appendChild(opt);
+            }
+
+            // Add to dropdown selects
+            ['unifiedCatHsnSelect', 'editFullCatHsnSelect'].forEach(selId => {
+                const sel = document.getElementById(selId);
+                if (sel) {
+                    const opt = document.createElement('option');
+                    opt.value = data.data.hsn_code;
+                    opt.textContent = `${data.data.hsn_code} • ${data.data.description}`;
+                    opt.setAttribute('data-gst', data.data.gst_rate);
+                    sel.appendChild(opt);
+                }
+            });
+
+            // Set value in target input if provided
+            if (quickHsnTargetInputId) {
+                const el = document.getElementById(quickHsnTargetInputId);
+                if (el) el.value = data.data.hsn_code;
+            }
+            if (quickHsnTargetGstSelectId) {
+                const el = document.getElementById(quickHsnTargetGstSelectId);
+                if (el) el.value = parseFloat(data.data.gst_rate).toFixed(2);
+            }
+        } else {
+            alert(data.message || 'Error saving HSN code');
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+        alert('Error: ' + err.message);
+    });
+}
+
+function onUnifiedCatHsnSelect(val) {
+    if (!val) return;
+    const inp = document.getElementById('unifiedCatHsn');
+    if (inp) inp.value = val;
+    const sel = document.getElementById('unifiedCatHsnSelect');
+    const opt = sel.options[sel.selectedIndex];
+    const gst = opt?.getAttribute('data-gst');
+    if (gst && document.getElementById('unifiedCatGstRate')) {
+        document.getElementById('unifiedCatGstRate').value = parseFloat(gst).toFixed(2);
+    }
+    sel.value = '';
+}
+
+function onUnifiedCatHsnChange() {
+    const inp = document.getElementById('unifiedCatHsn');
+    if (!inp) return;
+    const val = inp.value.trim().toUpperCase();
+    inp.value = val;
+    const dl = document.getElementById('unifiedHsnDatalist');
+    if (dl) {
+        const match = Array.from(dl.options).find(o => o.value.toUpperCase() === val);
+        if (match && match.getAttribute('data-gst') && document.getElementById('unifiedCatGstRate')) {
+            document.getElementById('unifiedCatGstRate').value = parseFloat(match.getAttribute('data-gst')).toFixed(2);
+        }
+    }
+}
+
+function onEditCatHsnSelect(val) {
+    if (!val) return;
+    const inp = document.getElementById('editFullCatHsn');
+    if (inp) inp.value = val;
+    const sel = document.getElementById('editFullCatHsnSelect');
+    const opt = sel.options[sel.selectedIndex];
+    const gst = opt?.getAttribute('data-gst');
+    if (gst && document.getElementById('editFullCatGstRate')) {
+        document.getElementById('editFullCatGstRate').value = parseFloat(gst).toFixed(2);
+    }
+    sel.value = '';
+}
+
+function onEditCatHsnChange() {
+    const inp = document.getElementById('editFullCatHsn');
+    if (!inp) return;
+    const val = inp.value.trim().toUpperCase();
+    inp.value = val;
+    const dl = document.getElementById('unifiedHsnDatalist');
+    if (dl) {
+        const match = Array.from(dl.options).find(o => o.value.toUpperCase() === val);
+        if (match && match.getAttribute('data-gst') && document.getElementById('editFullCatGstRate')) {
+            document.getElementById('editFullCatGstRate').value = parseFloat(match.getAttribute('data-gst')).toFixed(2);
+        }
+    }
 }
 
 </script>

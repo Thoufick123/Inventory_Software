@@ -445,12 +445,17 @@
                             <input type="date" name="expense_date" id="newExpenseDate" class="form-control form-control-sm fw-bold" value="<?= date('Y-m-d') ?>">
                         </div>
                         <div class="col-md-4 col-sm-12">
-                            <label class="form-label small fw-bold text-dark required mb-1">Expense Category</label>
-                            <select name="category" id="newCategory" class="form-select form-select-sm fw-bold">
-                                <option value="SEWING_MATERIALS" selected>Sewing Materials &amp; Trims (Threads, Needles, Zips)</option>
-                                <option value="MAINTENANCE_REPAIR">Machine Maintenance &amp; Repairs (Oil, Spares, Belts)</option>
-                                <option value="OPERATIONAL_UTILITY">Operational &amp; Utilities (Electricity, Fuel, Polybags)</option>
-                                <option value="OTHER">Other Floor Expenses</option>
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label class="form-label small fw-bold text-dark required mb-0">Expense Category</label>
+                                <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none fw-bold text-primary" style="font-size: 11px;" onclick="openQuickAddCategoryModal()">
+                                    <i class="bi bi-plus-circle me-1"></i>+ New Category
+                                </button>
+                            </div>
+                            <select name="category" id="newCategory" class="form-select form-select-sm fw-bold" onchange="onCategorySelectChange(this)">
+                                <?php foreach ($expenseCategoryOptions as $catVal => $catLbl): ?>
+                                    <option value="<?= e($catVal) ?>" <?= $catVal === 'SEWING_MATERIALS' ? 'selected' : '' ?>><?= e($catLbl) ?></option>
+                                <?php endforeach; ?>
+                                <option value="__ADD_NEW_CATEGORY__" class="fw-bold text-primary bg-light">+ Add New Category...</option>
                             </select>
                         </div>
                     </div>
@@ -464,50 +469,21 @@
                             <span class="small text-muted">Add 1 or more items to this voucher</span>
                         </div>
 
-                        <!-- Item Name Input with Side (+) Button -->
+                        <!-- Item Name Input (Clean, without + button or drawer) -->
                         <div class="mb-2">
                             <label class="form-label small fw-bold text-dark required mb-1">Item / Expense Type</label>
-                            <div class="input-group input-group-sm">
-                                <input type="text" 
-                                       id="newItemName" 
-                                       class="form-control fw-bold" 
-                                       list="expenseTypesList" 
-                                       placeholder="e.g. White Sewing Thread Cones, Machine Servicing, Overlock Needles..." 
-                                       autocomplete="off" 
-                                       oninput="onExpenseTypeSelect(this.value)">
-                                <button type="button" 
-                                        class="btn btn-primary px-3 fw-bold" 
-                                        id="btnAddExpenseType" 
-                                        onclick="toggleQuickAddTypeBox()" 
-                                        title="Quick Add New Expense Type">
-                                    <i class="bi bi-plus-lg"></i>
-                                </button>
-                            </div>
+                            <input type="text" 
+                                   id="newItemName" 
+                                   class="form-control form-control-sm fw-bold" 
+                                   list="expenseTypesList" 
+                                   placeholder="e.g. White Sewing Thread Cones, Machine Servicing, Overlock Needles..." 
+                                   autocomplete="off" 
+                                   oninput="onExpenseTypeSelect(this.value)">
                             <datalist id="expenseTypesList">
                                 <?php foreach ($expenseItems ?? [] as $item): ?>
                                     <option value="<?= htmlspecialchars($item['name']) ?>" data-rate="<?= (float)($item['default_rate'] ?? 0) ?>" data-unit="<?= htmlspecialchars($item['unit_type'] ?? 'PCS') ?>">
                                 <?php endforeach; ?>
                             </datalist>
-
-                            <!-- Quick Add Type Inline Drawer -->
-                            <div id="quickAddTypeDrawer" class="mt-2 p-2 bg-white rounded-3 border border-primary-subtle d-none">
-                                <label class="form-label small fw-bold text-dark mb-1">
-                                    <i class="bi bi-plus-circle-fill text-primary me-1"></i>Create New Expense Type
-                                </label>
-                                <div class="input-group input-group-sm">
-                                    <input type="text" 
-                                           id="quickTypeNameInput" 
-                                           class="form-control fw-bold" 
-                                           placeholder="e.g. Juki Machine Oil, Elastic 1-inch, Cutting Blades"
-                                           onkeydown="if(event.key==='Enter'){event.preventDefault();saveQuickType();}">
-                                    <button type="button" class="btn btn-primary px-3 fw-bold" id="btnSaveQuickType" onclick="saveQuickType()">
-                                        <i class="bi bi-check-lg me-1"></i> Add
-                                    </button>
-                                    <button type="button" class="btn btn-outline-secondary" onclick="toggleQuickAddTypeBox(false)">
-                                        Cancel
-                                    </button>
-                                </div>
-                            </div>
                         </div>
 
                         <!-- Row: Quantity, Unit, Rate, and Reason -->
@@ -524,17 +500,19 @@
                             </div>
 
                             <div class="col-sm-3 col-6">
-                                <label class="form-label small fw-bold text-dark mb-1">Unit</label>
-                                <select id="newUnitType" class="form-select form-select-sm fw-semibold">
-                                    <option value="PCS" selected>PCS</option>
-                                    <option value="CONE">CONE</option>
-                                    <option value="PKT">PKT</option>
-                                    <option value="BOX">BOX</option>
-                                    <option value="LTR">LTR</option>
-                                    <option value="MTR">MTR</option>
-                                    <option value="SET">SET</option>
-                                    <option value="ROLL">ROLL</option>
-                                    <option value="KG">KG</option>
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <label class="form-label small fw-bold text-dark mb-0">Unit</label>
+                                    <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none fw-bold text-primary" style="font-size: 11px;" onclick="openQuickAddUnitModal()">
+                                        <i class="bi bi-plus-circle me-1"></i>+ New Unit
+                                    </button>
+                                </div>
+                                <select id="newUnitType" class="form-select form-select-sm fw-semibold" onchange="onUnitSelectChange(this)">
+                                    <?php foreach ($unitsList as $u): ?>
+                                        <option value="<?= e($u['abbreviation']) ?>" <?= $u['abbreviation'] === 'PCS' ? 'selected' : '' ?>>
+                                            <?= e($u['abbreviation']) ?><?= (!empty($u['name']) && strtoupper($u['name']) !== strtoupper($u['abbreviation'])) ? ' (' . e($u['name']) . ')' : '' ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                    <option value="__ADD_NEW_UNIT__" class="fw-bold text-primary bg-light">+ Add New Unit...</option>
                                 </select>
                             </div>
 
@@ -699,10 +677,9 @@
                         <div class="col-md-4 col-sm-12">
                             <label class="form-label fw-bold text-dark required mb-1">Category</label>
                             <select name="category" id="editCategory" class="form-select form-select-sm fw-bold">
-                                <option value="SEWING_MATERIALS">Sewing Materials &amp; Trims</option>
-                                <option value="MAINTENANCE_REPAIR">Machine Maintenance &amp; Repairs</option>
-                                <option value="OPERATIONAL_UTILITY">Operations &amp; Utilities</option>
-                                <option value="OTHER">Other Floor Expenses</option>
+                                <?php foreach ($expenseCategoryOptions as $catVal => $catLbl): ?>
+                                    <option value="<?= e($catVal) ?>"><?= e($catLbl) ?></option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
                     </div>
@@ -733,15 +710,9 @@
                         <div class="col-md-4 col-6">
                             <label class="form-label fw-bold text-dark mb-1">Unit</label>
                             <select name="unit_type" id="editUnitType" class="form-select fw-semibold">
-                                <option value="PCS">PCS</option>
-                                <option value="CONE">CONE</option>
-                                <option value="PKT">PKT</option>
-                                <option value="BOX">BOX</option>
-                                <option value="LTR">LTR</option>
-                                <option value="MTR">MTR</option>
-                                <option value="SET">SET</option>
-                                <option value="ROLL">ROLL</option>
-                                <option value="KG">KG</option>
+                                <?php foreach ($unitsList as $u): ?>
+                                    <option value="<?= e($u['abbreviation']) ?>"><?= e($u['abbreviation']) ?><?= (!empty($u['name']) && strtoupper($u['name']) !== strtoupper($u['abbreviation'])) ? ' (' . e($u['name']) . ')' : '' ?></option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
                         <div class="col-md-4 col-12">
@@ -912,6 +883,89 @@
     </div>
 </div>
 
+<!-- 4. QUICK ADD EXPENSE CATEGORY MODAL -->
+<div class="modal fade" id="modalQuickAddCategory" tabindex="-1" aria-labelledby="modalQuickAddCategoryLabel" aria-hidden="true" style="z-index: 1065;">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content shadow-lg border-0 rounded-3">
+            <div class="modal-header py-2 px-3 bg-primary text-white">
+                <h6 class="modal-title fw-bold" id="modalQuickAddCategoryLabel" style="font-size: 14px;">
+                    <i class="bi bi-tag-fill me-1"></i>New Expense Category
+                </h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-3">
+                <div class="mb-2">
+                    <label class="form-label small fw-bold text-dark mb-1">Category Name <span class="text-danger">*</span></label>
+                    <input type="text" 
+                           id="quickCategoryNameInput" 
+                           class="form-control form-control-sm fw-bold" 
+                           placeholder="e.g. Embroidery Supplies, Generator Fuel" 
+                           autocomplete="off" 
+                           onkeydown="if(event.key==='Enter'){event.preventDefault();submitQuickAddCategory();}">
+                </div>
+                <div class="mb-1">
+                    <label class="form-label small fw-bold text-dark mb-1">Description (Optional)</label>
+                    <input type="text" 
+                           id="quickCategoryDescInput" 
+                           class="form-control form-control-sm" 
+                           placeholder="e.g. Direct factory expense category" 
+                           autocomplete="off" 
+                           onkeydown="if(event.key==='Enter'){event.preventDefault();submitQuickAddCategory();}">
+                </div>
+                <div id="quickCategoryError" class="text-danger small mt-2 d-none"></div>
+            </div>
+            <div class="modal-footer py-2 px-3 bg-light d-flex justify-content-between">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-sm btn-primary fw-bold" id="btnSubmitQuickCategory" onclick="submitQuickAddCategory()">
+                    <i class="bi bi-check-circle me-1"></i> Save Category
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 5. QUICK ADD MEASUREMENT UNIT MODAL -->
+<div class="modal fade" id="modalQuickAddUnit" tabindex="-1" aria-labelledby="modalQuickAddUnitLabel" aria-hidden="true" style="z-index: 1065;">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content shadow-lg border-0 rounded-3">
+            <div class="modal-header py-2 px-3 bg-primary text-white">
+                <h6 class="modal-title fw-bold" id="modalQuickAddUnitLabel" style="font-size: 14px;">
+                    <i class="bi bi-rulers me-1"></i>New Measurement Unit
+                </h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-3">
+                <div class="mb-2">
+                    <label class="form-label small fw-bold text-dark mb-1">Unit Symbol / Code <span class="text-danger">*</span></label>
+                    <input type="text" 
+                           id="quickUnitCodeInput" 
+                           class="form-control form-control-sm fw-bold font-monospace text-uppercase" 
+                           placeholder="e.g. BDL, DRUM, PKG" 
+                           maxlength="15" 
+                           autocomplete="off" 
+                           onkeydown="if(event.key==='Enter'){event.preventDefault();submitQuickAddUnit();}">
+                </div>
+                <div class="mb-1">
+                    <label class="form-label small fw-bold text-dark mb-1">Full Unit Name (Optional)</label>
+                    <input type="text" 
+                           id="quickUnitNameInput" 
+                           class="form-control form-control-sm" 
+                           placeholder="e.g. Bundle, Drum, Package" 
+                           autocomplete="off" 
+                           onkeydown="if(event.key==='Enter'){event.preventDefault();submitQuickAddUnit();}">
+                </div>
+                <div id="quickUnitError" class="text-danger small mt-2 d-none"></div>
+            </div>
+            <div class="modal-footer py-2 px-3 bg-light d-flex justify-content-between">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-sm btn-primary fw-bold" id="btnSubmitQuickUnit" onclick="submitQuickAddUnit()">
+                    <i class="bi bi-check-circle me-1"></i> Save Unit
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 let expenseTypesMaster = <?= json_encode($expenseItems ?? []) ?>;
 let stagedExpenseItems = [];
@@ -979,7 +1033,6 @@ function addExpenseItemToList() {
     qtyInput.value = '1';
     priceInput.value = '';
     if (reasonInput) reasonInput.value = '';
-    toggleQuickAddTypeBox(false);
     calculateNewExpenseTotal();
     nameInput.focus();
     return true;
@@ -1061,7 +1114,6 @@ function cancelExpenseEntry() {
     document.getElementById('newUnitCost').value = '';
     const reasonInput = document.getElementById('newReason');
     if (reasonInput) reasonInput.value = '';
-    toggleQuickAddTypeBox(false);
     calculateNewExpenseTotal();
     document.getElementById('newItemName').focus();
 }
@@ -1262,32 +1314,58 @@ function onExpenseTypeSelect(val) {
     }
 }
 
-function toggleQuickAddTypeBox(show) {
-    const drawer = document.getElementById('quickAddTypeDrawer');
-    if (!drawer) return;
-    if (typeof show === 'boolean') {
-        if (show) drawer.classList.remove('d-none');
-        else drawer.classList.add('d-none');
+let lastSelectedCategory = 'SEWING_MATERIALS';
+function onCategorySelectChange(select) {
+    if (select.value === '__ADD_NEW_CATEGORY__') {
+        select.value = lastSelectedCategory;
+        openQuickAddCategoryModal();
     } else {
-        drawer.classList.toggle('d-none');
-    }
-    if (!drawer.classList.contains('d-none')) {
-        document.getElementById('quickTypeNameInput')?.focus();
+        lastSelectedCategory = select.value;
     }
 }
 
-function saveQuickType() {
-    const input = document.getElementById('quickTypeNameInput');
+function openQuickAddCategoryModal() {
+    const input = document.getElementById('quickCategoryNameInput');
+    const desc = document.getElementById('quickCategoryDescInput');
+    const err = document.getElementById('quickCategoryError');
+    if (input) input.value = '';
+    if (desc) desc.value = '';
+    if (err) { err.textContent = ''; err.classList.add('d-none'); }
+    const modalEl = document.getElementById('modalQuickAddCategory');
+    if (modalEl) {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+        setTimeout(() => input?.focus(), 250);
+    }
+}
+
+function submitQuickAddCategory() {
+    const input = document.getElementById('quickCategoryNameInput');
+    const desc = document.getElementById('quickCategoryDescInput');
+    const err = document.getElementById('quickCategoryError');
+    const btn = document.getElementById('btnSubmitQuickCategory');
+
     const name = input ? input.value.trim() : '';
+    const description = desc ? desc.value.trim() : '';
+
     if (!name) {
-        alert('Please enter an Expense Type name.');
+        if (err) {
+            err.textContent = 'Please enter a category name.';
+            err.classList.remove('d-none');
+        } else {
+            alert('Please enter a category name.');
+        }
+        input?.focus();
         return;
     }
 
-    const btn = document.getElementById('btnSaveQuickType');
-    if (btn) btn.disabled = true;
+    if (err) err.classList.add('d-none');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+    }
 
-    fetch('<?= url('api/production/expenses/quick-add-item') ?>', {
+    fetch('<?= url('api/production/expenses/quick-add-category') ?>', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -1295,39 +1373,229 @@ function saveQuickType() {
         },
         body: JSON.stringify({
             name: name,
-            category: document.getElementById('newCategory')?.value || 'SEWING_MATERIALS',
-            unit_type: document.getElementById('newUnitType')?.value || 'PCS',
-            default_rate: parseFloat(document.getElementById('newUnitCost')?.value || 0)
+            description: description
         })
     })
     .then(r => r.json())
     .then(data => {
-        if (btn) btn.disabled = false;
-        if (data.success && data.item) {
-            expenseTypesMaster.push(data.item);
-            const dl = document.getElementById('expenseTypesList');
-            if (dl) {
-                const opt = document.createElement('option');
-                opt.value = data.item.name;
-                opt.dataset.rate = data.item.default_rate || 0;
-                dl.appendChild(opt);
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Save Category';
+        }
+        if (data.success && data.category) {
+            const catCode = data.category.code;
+            const catName = data.category.name;
+
+            // Add to newCategory dropdown
+            const newCatSelect = document.getElementById('newCategory');
+            if (newCatSelect) {
+                let opt = Array.from(newCatSelect.options).find(o => o.value === catCode);
+                if (!opt) {
+                    opt = document.createElement('option');
+                    opt.value = catCode;
+                    opt.textContent = catName;
+                    const lastOpt = newCatSelect.querySelector('option[value="__ADD_NEW_CATEGORY__"]');
+                    if (lastOpt) {
+                        newCatSelect.insertBefore(opt, lastOpt);
+                    } else {
+                        newCatSelect.appendChild(opt);
+                    }
+                }
+                newCatSelect.value = catCode;
+                lastSelectedCategory = catCode;
             }
-            document.getElementById('newItemName').value = data.item.name;
-            input.value = '';
-            toggleQuickAddTypeBox(false);
-            calculateNewExpenseTotal();
+
+            // Also add to editCategory if exists
+            const editCatSelect = document.getElementById('editCategory');
+            if (editCatSelect && !Array.from(editCatSelect.options).some(o => o.value === catCode)) {
+                const opt = document.createElement('option');
+                opt.value = catCode;
+                opt.textContent = catName;
+                editCatSelect.appendChild(opt);
+            }
+
+            // Also add to filter select if exists
+            const filterCatSelect = document.querySelector('select[name="category"]');
+            if (filterCatSelect && !Array.from(filterCatSelect.options).some(o => o.value === catCode)) {
+                const opt = document.createElement('option');
+                opt.value = catCode;
+                opt.textContent = catName;
+                filterCatSelect.appendChild(opt);
+            }
+
+            const modalEl = document.getElementById('modalQuickAddCategory');
+            if (modalEl) {
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if (modal) modal.hide();
+            }
         } else {
-            alert(data.message || 'Could not save expense type.');
+            if (err) {
+                err.textContent = data.message || 'Could not save category.';
+                err.classList.remove('d-none');
+            } else {
+                alert(data.message || 'Could not save category.');
+            }
         }
     })
-    .catch(err => {
-        if (btn) btn.disabled = false;
-        console.error(err);
-        document.getElementById('newItemName').value = name;
-        input.value = '';
-        toggleQuickAddTypeBox(false);
+    .catch(error => {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Save Category';
+        }
+        console.error(error);
+        if (err) {
+            err.textContent = 'Server communication error. Please try again.';
+            err.classList.remove('d-none');
+        } else {
+            alert('Server communication error.');
+        }
     });
 }
+
+let lastSelectedUnit = 'PCS';
+function onUnitSelectChange(select) {
+    if (select.value === '__ADD_NEW_UNIT__') {
+        select.value = lastSelectedUnit;
+        openQuickAddUnitModal();
+    } else {
+        lastSelectedUnit = select.value;
+    }
+}
+
+function openQuickAddUnitModal() {
+    const code = document.getElementById('quickUnitCodeInput');
+    const name = document.getElementById('quickUnitNameInput');
+    const err = document.getElementById('quickUnitError');
+    if (code) code.value = '';
+    if (name) name.value = '';
+    if (err) { err.textContent = ''; err.classList.add('d-none'); }
+    const modalEl = document.getElementById('modalQuickAddUnit');
+    if (modalEl) {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+        setTimeout(() => code?.focus(), 250);
+    }
+}
+
+function submitQuickAddUnit() {
+    const codeInput = document.getElementById('quickUnitCodeInput');
+    const nameInput = document.getElementById('quickUnitNameInput');
+    const err = document.getElementById('quickUnitError');
+    const btn = document.getElementById('btnSubmitQuickUnit');
+
+    const abbreviation = codeInput ? codeInput.value.trim().toUpperCase() : '';
+    const name = nameInput ? nameInput.value.trim() : '';
+
+    if (!abbreviation) {
+        if (err) {
+            err.textContent = 'Please enter a unit code (e.g. BDL, DRUM).';
+            err.classList.remove('d-none');
+        } else {
+            alert('Please enter a unit code.');
+        }
+        codeInput?.focus();
+        return;
+    }
+
+    if (err) err.classList.add('d-none');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+    }
+
+    fetch('<?= url('api/production/expenses/quick-add-unit') ?>', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({
+            abbreviation: abbreviation,
+            name: name || abbreviation
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Save Unit';
+        }
+        if (data.success && data.unit) {
+            const uAbbr = data.unit.abbreviation;
+            const uName = data.unit.name;
+            const label = (uName && uName.toUpperCase() !== uAbbr) ? `${uAbbr} (${uName})` : uAbbr;
+
+            // Add to newUnitType dropdown
+            const newUnitSelect = document.getElementById('newUnitType');
+            if (newUnitSelect) {
+                let opt = Array.from(newUnitSelect.options).find(o => o.value === uAbbr);
+                if (!opt) {
+                    opt = document.createElement('option');
+                    opt.value = uAbbr;
+                    opt.textContent = label;
+                    const lastOpt = newUnitSelect.querySelector('option[value="__ADD_NEW_UNIT__"]');
+                    if (lastOpt) {
+                        newUnitSelect.insertBefore(opt, lastOpt);
+                    } else {
+                        newUnitSelect.appendChild(opt);
+                    }
+                }
+                newUnitSelect.value = uAbbr;
+                lastSelectedUnit = uAbbr;
+            }
+
+            // Also add to editUnitType if exists
+            const editUnitSelect = document.getElementById('editUnitType');
+            if (editUnitSelect && !Array.from(editUnitSelect.options).some(o => o.value === uAbbr)) {
+                const opt = document.createElement('option');
+                opt.value = uAbbr;
+                opt.textContent = label;
+                editUnitSelect.appendChild(opt);
+            }
+
+            const modalEl = document.getElementById('modalQuickAddUnit');
+            if (modalEl) {
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if (modal) modal.hide();
+            }
+        } else {
+            if (err) {
+                err.textContent = data.message || 'Could not save unit.';
+                err.classList.remove('d-none');
+            } else {
+                alert(data.message || 'Could not save unit.');
+            }
+        }
+    })
+    .catch(error => {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Save Unit';
+        }
+        console.error(error);
+        if (err) {
+            err.textContent = 'Server communication error. Please try again.';
+            err.classList.remove('d-none');
+        } else {
+            alert('Server communication error.');
+        }
+    });
+}
+
+// Preserve modal scrolling when stacking modals
+document.addEventListener('DOMContentLoaded', function () {
+    ['modalQuickAddCategory', 'modalQuickAddUnit'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('hidden.bs.modal', function () {
+                if (document.getElementById('recordExpenseModal')?.classList.contains('show') ||
+                    document.getElementById('editExpenseModal')?.classList.contains('show')) {
+                    document.body.classList.add('modal-open');
+                }
+            });
+        }
+    });
+});
 
 // Table Pagination System
 let currentPage = 1;

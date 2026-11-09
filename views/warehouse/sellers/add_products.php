@@ -369,9 +369,22 @@
                         </div>
                     </div>
                 </div>
-                <div class="col-xl-1 col-lg-1 col-md-4 col-6">
-                    <label class="form-label fs-8 text-muted mb-1 fw-bold">HSN Code:</label>
-                    <input type="text" class="form-control form-control-sm font-monospace text-center fw-bold" id="qfHsn" placeholder="e.g. 4566">
+                <div class="col-xl-2 col-lg-2 col-md-4 col-6">
+                    <div class="d-flex align-items-center justify-content-between mb-1">
+                        <label class="form-label fs-8 text-muted mb-0 fw-bold">HSN Code:</label>
+                        <button type="button" class="btn btn-link p-0 fs-8 text-primary fw-bold text-decoration-none" onclick="openSupplierAddHsnModal()" title="Add New HSN Code">
+                            <i class="bi bi-plus-circle me-0.5"></i>+ New HSN
+                        </button>
+                    </div>
+                    <div class="input-group input-group-sm">
+                        <input type="text" class="form-control form-control-sm font-monospace fw-bold" id="qfHsn" list="supplierHsnCodesList" placeholder="e.g. 6109" onchange="onQfHsnChange()">
+                        <select class="form-select form-select-sm" id="qfHsnSelect" style="max-width:38px;" onchange="onQfHsnSelect(this.value)" title="Choose from HSN codes">
+                            <option value="">▼</option>
+                            <?php foreach (($hsnCodes ?? []) as $h): ?>
+                                <option value="<?= htmlspecialchars($h['hsn_code']) ?>" data-gst="<?= (float)($h['gst_rate'] ?? 5) ?>"><?= htmlspecialchars($h['hsn_code']) ?> &bull; <?= htmlspecialchars($h['description'] ?? '') ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
                 </div>
                 <div class="col-xl-1 col-lg-2 col-md-3 col-6">
                     <label class="form-label fs-8 text-muted mb-1 fw-bold">Weight (kg):</label>
@@ -408,6 +421,14 @@
                 <i class="bi bi-check-circle-fill me-1"></i><span id="quickFillNoticeText">All variants updated successfully.</span>
             </div>
         </div>
+
+        <!-- HSN CODES DATALIST FOR AUTOCOMPLETE -->
+        <datalist id="supplierHsnCodesList">
+            <?php foreach (($hsnCodes ?? []) as $h): ?>
+                <option value="<?= htmlspecialchars($h['hsn_code']) ?>"><?= htmlspecialchars($h['hsn_code']) ?> - <?= htmlspecialchars($h['description'] ?? '') ?> (<?= (float)($h['gst_rate'] ?? 5) ?>% GST)</option>
+            <?php endforeach; ?>
+        </datalist>
+
         <div class="table-responsive">
             <table class="table table-bordered table-hover align-middle mb-0" id="addedProductsTable">
                 <thead class="table-light text-nowrap">
@@ -487,6 +508,49 @@
     </div>
 </form>
 
+<!-- MODAL: QUICK ADD HSN CODE (SUPPLIER PURCHASE / INWARD) -->
+<div class="modal fade" id="modalSupplierAddHsn" tabindex="-1" aria-hidden="true" style="z-index: 1065;">
+    <div class="modal-dialog modal-dialog-centered" style="max-width: 440px;">
+        <div class="modal-content border-0 shadow-lg rounded-3">
+            <div class="modal-header bg-primary text-white py-2.5 px-3">
+                <h6 class="modal-title fw-bold mb-0 text-white">
+                    <i class="bi bi-upc-scan me-1.5"></i>Create New HSN Code
+                </h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="formSupplierAddHsn" onsubmit="submitSupplierAddHsn(event)">
+                <div class="modal-body p-3">
+                    <div class="mb-2.5">
+                        <label class="form-label small fw-bold text-dark mb-1">HSN Code <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control form-control-sm font-monospace text-uppercase fw-bold" id="supplierHsnCodeInput" placeholder="e.g. 6109 or 6205" required maxlength="15">
+                        <div class="form-text text-muted" style="font-size:.72rem;">Harmonized System Nomenclature code</div>
+                    </div>
+                    <div class="mb-2.5">
+                        <label class="form-label small fw-bold text-dark mb-1">Description / Garment Commodity <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control form-control-sm fw-semibold" id="supplierHsnDescInput" placeholder="e.g. Cotton T-Shirts &amp; Polos" required maxlength="255">
+                    </div>
+                    <div class="mb-1">
+                        <label class="form-label small fw-bold text-dark mb-1">GST Tax Rate (%) <span class="text-danger">*</span></label>
+                        <select class="form-select form-select-sm fw-semibold" id="supplierHsnGstInput">
+                            <option value="5.00" selected>5.00% (Standard Apparel)</option>
+                            <option value="12.00">12.00%</option>
+                            <option value="18.00">18.00%</option>
+                            <option value="0.00">0.00% (Nil / Exempt)</option>
+                            <option value="28.00">28.00%</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2 px-3 d-flex justify-content-between">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-sm btn-primary fw-bold" id="btnSaveSupplierHsn">
+                        <i class="bi bi-check-circle me-1"></i>Save HSN Code
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- ========================================================================= -->
 <!-- JAVASCRIPT: PHASE 2 DIRECT TABLE GENERATION & INLINE EDITING -->
 <!-- ========================================================================= -->
@@ -538,6 +602,12 @@ function selectCategoryTile(btn, catId, catName) {
     displayCategoryAttributes(catId, null, null);
 
     const catObj = CATEGORIES_DATA.find(c => String(c.id) === String(catId));
+    if (catObj && catObj.hsn_code) {
+        const qfHsnEl = document.getElementById('qfHsn');
+        if (qfHsnEl && !qfHsnEl.value) {
+            qfHsnEl.value = catObj.hsn_code;
+        }
+    }
     const subSection = document.getElementById('subcategoriesSection');
     const subContainer = document.getElementById('subcategoryTiles');
     const subSubSection = document.getElementById('subSubcategoriesSection');
@@ -898,6 +968,10 @@ function regenerateMatrixProducts() {
             const qfQty = parseInt(document.getElementById('qfQty')?.value) || 0;
             const qfFrom = parseInt(document.getElementById('qfSeriesFrom')?.value) || 1;
             const qfEnd = parseInt(document.getElementById('qfSeriesEnd')?.value) || (qfQty > 0 ? qfQty : 1);
+            const qfHsnVal = (document.getElementById('qfHsn')?.value || '').trim();
+            const activeCat = CATEGORIES_DATA.find(c => String(c.id) === String(catId));
+            const defaultHsn = qfHsnVal || (activeCat?.hsn_code || '');
+            const defaultGst = (activeCat?.gst_rate ? parseFloat(activeCat.gst_rate) : 5.00);
 
             updatedCategoryProducts.push({
                 id: Date.now() + Math.floor(Math.random() * 100000),
@@ -912,7 +986,7 @@ function regenerateMatrixProducts() {
                 sub_subcategory_name: sscName || null,
                 category_type: initialCatType,
                 product_name: vProductName,
-                hsn_code: '',
+                hsn_code: defaultHsn,
                 weight: 0,
                 mrp: 0,
                 selling_price: 0,
@@ -922,7 +996,7 @@ function regenerateMatrixProducts() {
                 series_end: isInitialSeriesOrComp ? qfEnd : 1,
                 series_start_code: isInitialSeriesOrComp ? String(qfFrom) : '',
                 series_end_code: isInitialSeriesOrComp ? String(qfEnd) : '',
-                gst_percentage: 5.00,
+                gst_percentage: defaultGst,
                 line_total: 0,
                 size_name: sizeVal,
                 color_name: colorVal,
@@ -1085,6 +1159,10 @@ function addSingleCategoryProduct() {
     const qfQty = parseInt(document.getElementById('qfQty')?.value) || 0;
     const qfFrom = parseInt(document.getElementById('qfSeriesFrom')?.value) || 1;
     const qfEnd = parseInt(document.getElementById('qfSeriesEnd')?.value) || (qfQty > 0 ? qfQty : 1);
+    const qfHsnVal = (document.getElementById('qfHsn')?.value || '').trim();
+    const activeCat = CATEGORIES_DATA.find(c => String(c.id) === String(catId));
+    const defaultHsn = qfHsnVal || (activeCat?.hsn_code || '');
+    const defaultGst = (activeCat?.gst_rate ? parseFloat(activeCat.gst_rate) : 5.00);
 
     addedProductsList.push({
         id: Date.now() + Math.floor(Math.random() * 10000),
@@ -1096,7 +1174,7 @@ function addSingleCategoryProduct() {
         sub_subcategory_name: sscName || null,
         category_type: initialCatType,
         product_name: pName,
-        hsn_code: '',
+        hsn_code: defaultHsn,
         weight: 0,
         mrp: 0,
         selling_price: 0,
@@ -1106,7 +1184,7 @@ function addSingleCategoryProduct() {
         series_end: isInitialSeriesOrComp ? qfEnd : 1,
         series_start_code: isInitialSeriesOrComp ? String(qfFrom) : '',
         series_end_code: isInitialSeriesOrComp ? String(qfEnd) : '',
-        gst_percentage: 5.00,
+        gst_percentage: defaultGst,
         line_total: 0,
         size_name: 'Standard',
         color_name: '',
@@ -1132,6 +1210,9 @@ function addTemplateProduct(t) {
     const qfQty = parseInt(document.getElementById('qfQty')?.value) || 0;
     const qfFrom = parseInt(document.getElementById('qfSeriesFrom')?.value) || 1;
     const qfEnd = parseInt(document.getElementById('qfSeriesEnd')?.value) || (qfQty > 0 ? qfQty : 1);
+    const qfHsnVal = (document.getElementById('qfHsn')?.value || '').trim();
+    const activeCat = CATEGORIES_DATA.find(c => String(c.id) === String(catId));
+    const defaultHsn = qfHsnVal || t.hsn_code || (activeCat?.hsn_code || '');
 
     addedProductsList.push({
         id: Date.now() + Math.floor(Math.random() * 10000),
@@ -1143,7 +1224,7 @@ function addTemplateProduct(t) {
         sub_subcategory_name: sscName || null,
         category_type: initialCatType,
         product_name: t.product_template_name || '',
-        hsn_code: t.hsn_code || '',
+        hsn_code: defaultHsn,
         weight: parseFloat(t.default_weight_kg) || 0,
         mrp: 0,
         selling_price: 0,
@@ -1259,6 +1340,7 @@ function renderAddedProductsTable() {
                     <input type="text" class="form-control form-control-sm font-monospace text-center fw-bold" id="hsn_${item.id}"
                             value="${escapeHtml(item.hsn_code || '')}" 
                             placeholder="HSN" maxlength="20"
+                            list="supplierHsnCodesList"
                             oninput="updateItemField(${item.id}, 'hsn_code', this.value)">
                 </td>
                 <td>
@@ -1766,6 +1848,101 @@ function escapeHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+}
+
+// =========================================================================
+// QUICK ADD HSN CODE LOGIC (SUPPLIER PURCHASE)
+// =========================================================================
+function openSupplierAddHsnModal() {
+    const hsnInp = document.getElementById('supplierHsnCodeInput');
+    const descInp = document.getElementById('supplierHsnDescInput');
+    const gstSel = document.getElementById('supplierHsnGstInput');
+    if (hsnInp) hsnInp.value = '';
+    if (descInp) descInp.value = '';
+    if (gstSel) gstSel.value = '5.00';
+
+    new bootstrap.Modal(document.getElementById('modalSupplierAddHsn')).show();
+    setTimeout(() => {
+        if (hsnInp) hsnInp.focus();
+    }, 400);
+}
+
+function submitSupplierAddHsn(e) {
+    e.preventDefault();
+    const hsn = (document.getElementById('supplierHsnCodeInput').value || '').trim().toUpperCase();
+    const desc = (document.getElementById('supplierHsnDescInput').value || '').trim();
+    const gst = document.getElementById('supplierHsnGstInput').value || '5.00';
+
+    if (!hsn) {
+        alert('Please enter an HSN code.');
+        return;
+    }
+
+    const btn = document.getElementById('btnSaveSupplierHsn');
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+
+    const p = new URLSearchParams();
+    p.append('hsn_code', hsn);
+    p.append('description', desc || `HSN ${hsn}`);
+    p.append('gst_rate', gst);
+
+    fetch(`${APP_URL}/api/hsn-codes/store`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+        body: p.toString()
+    })
+    .then(r => r.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+        if (data.success && data.data) {
+            bootstrap.Modal.getInstance(document.getElementById('modalSupplierAddHsn')).hide();
+
+            // Append to datalist
+            const dl = document.getElementById('supplierHsnCodesList');
+            if (dl) {
+                const opt = document.createElement('option');
+                opt.value = data.data.hsn_code;
+                opt.text = `${data.data.hsn_code} - ${data.data.description} (${data.data.gst_rate}% GST)`;
+                dl.appendChild(opt);
+            }
+
+            // Append to qfHsnSelect
+            const sel = document.getElementById('qfHsnSelect');
+            if (sel) {
+                const opt = document.createElement('option');
+                opt.value = data.data.hsn_code;
+                opt.textContent = `${data.data.hsn_code} (${data.data.description})`;
+                sel.appendChild(opt);
+            }
+
+            // Set qfHsn input value
+            const qfHsn = document.getElementById('qfHsn');
+            if (qfHsn) qfHsn.value = data.data.hsn_code;
+        } else {
+            alert(data.message || 'Error saving HSN code');
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+        alert('Error: ' + err.message);
+    });
+}
+
+function onQfHsnSelect(val) {
+    if (!val) return;
+    const qf = document.getElementById('qfHsn');
+    if (qf) qf.value = val;
+    const sel = document.getElementById('qfHsnSelect');
+    if (sel) sel.value = '';
+}
+
+function onQfHsnChange() {
+    const qf = document.getElementById('qfHsn');
+    if (qf) qf.value = qf.value.trim().toUpperCase();
 }
 </script>
 

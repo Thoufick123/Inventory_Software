@@ -1307,6 +1307,9 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(data => {
                 if (data.success) {
                     applyScannedVariant(data, (data.tag_code || tagCode).toUpperCase());
+                    if (data.has_partial_damage) {
+                        showScanAlert('warning', `📦 <strong>Partial Pack Stock:</strong> Scanned pack QR has ${data.available_stock} pcs available for allocation (${data.partial_damage_qty} pcs quarantined in Damage Case #${data.partial_damage_case}).`);
+                    }
                 } else if (data.is_damaged) {
                     playDuplicateSound();
                     showScanAlert('danger', `🚨 <strong>Damaged Product Blocked:</strong> ${data.message}`);

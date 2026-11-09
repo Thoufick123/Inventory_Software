@@ -1129,15 +1129,38 @@ class WarehouseService {
                 throw new RuntimeException("QR code '{$tag}' is allocated in pass #{$allocation['allocation_number']} ({$allocation['status']}) and cannot be removed from warehouse stock.");
             }
 
-            $damaged = Database::fetchOne(
-                "SELECT damage_number
-                 FROM warehouse_damages
-                 WHERE variant_id = ? AND UPPER(TRIM(COALESCE(tag_code, ''))) = ?
-                 LIMIT 1",
-                [$variantId, $tag]
+            $isPackOrSeries = false;
+            $vMeta = Database::fetchOne(
+                "SELECT pv.qr_type, pv.pack_quantity, COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
+                        COALESCE(wc.category_type, 'NORMAL') as cat_type
+                 FROM product_variants pv
+                 JOIN products p ON pv.product_id = p.id
+                 LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+                 WHERE pv.id = ?",
+                [$variantId]
             );
-            if ($damaged) {
-                throw new RuntimeException("QR code '{$tag}' is already recorded as damaged (#{$damaged['damage_number']}).");
+            if ($vMeta && (
+                $vMeta['qr_type'] === 'SERIES_BATCH'
+                || strtoupper($vMeta['cat_type'] ?? '') === 'SERIES'
+                || strtoupper($vMeta['cat_type'] ?? '') === 'COMPLEMENTARY'
+                || (int)($vMeta['pack_quantity'] ?? 0) > 1
+                || !empty($vMeta['is_comp'])
+            )) {
+                $isPackOrSeries = true;
+            }
+
+            if (!$isPackOrSeries || $available <= 0) {
+                $damaged = Database::fetchOne(
+                    "SELECT damage_number
+                     FROM warehouse_damages
+                     WHERE variant_id = ? AND UPPER(TRIM(COALESCE(tag_code, ''))) = ?
+                       AND status NOT IN ('REPAIRED', 'RESTOCKED', 'SALVAGED', 'WRITTEN_OFF')
+                     LIMIT 1",
+                    [$variantId, $tag]
+                );
+                if ($damaged) {
+                    throw new RuntimeException("QR code '{$tag}' is already recorded as damaged (#{$damaged['damage_number']}).");
+                }
             }
 
             $productionDamage = Database::fetchOne(
@@ -1370,7 +1393,7 @@ class WarehouseService {
              JOIN production_programs pp ON pb.program_id = pp.id
              LEFT JOIN products p ON pp.product_id = p.id
              JOIN warehouses w ON pb.destination_warehouse_id = w.id
-             LEFT JOIN production_outwards po ON po.production_batch_id = pb.id
+             LEFT JOIN production_outwards po ON (pb.production_outward_id = po.id OR po.production_batch_id = pb.id)
              WHERE pb.status = 'DISPATCHED'$whDestClause
              ORDER BY po.dispatch_date DESC LIMIT 5"
         );

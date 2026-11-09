@@ -7722,7 +7722,8 @@ class ProductionController {
              LEFT JOIN products p ON pp.product_id = p.id
              JOIN warehouses w ON pb.destination_warehouse_id = w.id
              WHERE pb.status = 'APPROVED'
-               AND pb.id NOT IN (SELECT production_batch_id FROM production_outwards WHERE production_batch_id IS NOT NULL)$unitClause
+               AND pb.id NOT IN (SELECT production_batch_id FROM production_outwards WHERE production_batch_id IS NOT NULL)
+               AND pb.id NOT IN (SELECT production_batch_id FROM production_outward_batches WHERE production_batch_id IS NOT NULL)$unitClause
              ORDER BY pb.created_at DESC"
         );
 
@@ -7746,26 +7747,30 @@ class ProductionController {
             Session::flash('error', 'Invalid security token. Please try again.');
             Response::back();
         }
-        $validator = Validator::make($_POST, [
-            'production_batch_id' => 'required|numeric',
-            'vehicle_number'      => 'required',
-        ]);
 
-        if ($validator->fails()) {
-            Session::flash('error', $validator->firstError());
+        // Support both single batch and multiple batches selection
+        $batchIds = [];
+        if (!empty($_POST['production_batch_ids']) && is_array($_POST['production_batch_ids'])) {
+            foreach ($_POST['production_batch_ids'] as $bid) {
+                $bid = (int)$bid;
+                if ($bid > 0 && !in_array($bid, $batchIds, true)) {
+                    $batchIds[] = $bid;
+                }
+            }
+        }
+        if (empty($batchIds) && !empty($_POST['production_batch_id'])) {
+            $batchIds[] = (int)$_POST['production_batch_id'];
+        }
+
+        if (empty($batchIds)) {
+            Session::flash('error', 'Please select at least one approved production batch to dispatch.');
             Response::back();
             return;
         }
 
-        $batchId = (int)$_POST['production_batch_id'];
-        $existingOutward = Database::fetchOne(
-            "SELECT id, outward_number FROM production_outwards WHERE production_batch_id = ?",
-            [$batchId]
-        );
-        if ($existingOutward) {
-            $pbInfo = ProductionBatch::find($batchId);
-            $pbNum = $pbInfo['batch_number'] ?? ('#' . $batchId);
-            Session::flash('error', "Validation Error: Finished Batch ({$pbNum}) has already been outward dispatched under Outward #{$existingOutward['outward_number']}. Duplicate outward dispatch is not allowed.");
+        $vehicleNumber = trim($_POST['vehicle_number'] ?? '');
+        if (empty($vehicleNumber)) {
+            Session::flash('error', 'Please enter Vehicle / Transport Number or Courier reference before dispatching.');
             Response::back();
             return;
         }
@@ -7773,13 +7778,21 @@ class ProductionController {
         try {
             $userId = Session::userId();
             $outwardId = ProductionService::createOutward([
-                'production_batch_id' => $batchId,
-                'dispatch_date'       => !empty($_POST['dispatch_date']) ? $_POST['dispatch_date'] : date('Y-m-d H:i:s'),
-                'vehicle_number'      => trim($_POST['vehicle_number']),
-                'notes'               => trim($_POST['notes'] ?? ''),
+                'production_batch_ids' => $batchIds,
+                'dispatch_date'        => !empty($_POST['dispatch_date']) ? $_POST['dispatch_date'] : date('Y-m-d H:i:s'),
+                'vehicle_number'       => $vehicleNumber,
+                'driver_name'          => trim($_POST['driver_name'] ?? ''),
+                'driver_contact'       => trim($_POST['driver_contact'] ?? ''),
+                'transporter_name'     => trim($_POST['transporter_name'] ?? ''),
+                'lr_number'            => trim($_POST['lr_number'] ?? ''),
+                'notes'                => trim($_POST['notes'] ?? ''),
             ], $userId);
 
-            Session::flash('success', 'Production batch dispatched to warehouse successfully.');
+            $batchCount = count($batchIds);
+            $msg = ($batchCount > 1) 
+                ? "Multiple batches ({$batchCount} batches) combined and dispatched to warehouse successfully under Outward #{$outwardId}."
+                : "Production batch dispatched to warehouse successfully.";
+            Session::flash('success', $msg);
             Response::redirect(url('production/outward'));
         } catch (Exception $e) {
             Session::flash('error', $e->getMessage());
@@ -7830,11 +7843,43 @@ class ProductionController {
         $batch = !empty($outward['production_batch_id']) ? ProductionBatch::find((int)$outward['production_batch_id']) : null;
         $items = !empty($outward['production_batch_id']) ? ProductionBatch::getItems((int)$outward['production_batch_id']) : [];
 
+        $batches = ProductionOutward::getBatchesForOutward($outwardId);
+
+        // Aggregate items across all batches if multi-batch
+        $allMixedItems = [];
+        $variantMap = [];
+        foreach ($batches as $b) {
+            foreach (($b['items'] ?? []) as $it) {
+                $vKey = (int)($it['variant_id'] ?? 0);
+                if (!isset($variantMap[$vKey])) {
+                    $variantMap[$vKey] = $it;
+                    $variantMap[$vKey]['quantity'] = 0;
+                    $variantMap[$vKey]['outward_piece_tags'] = [];
+                    $variantMap[$vKey]['batch_numbers'] = [];
+                }
+                $variantMap[$vKey]['quantity'] += (int)($it['quantity'] ?? 0);
+                $bNum = $b['batch_number'] ?? '';
+                if ($bNum && !in_array($bNum, $variantMap[$vKey]['batch_numbers'], true)) {
+                    $variantMap[$vKey]['batch_numbers'][] = $bNum;
+                }
+                $tags = is_array($it['piece_tags'] ?? null) ? $it['piece_tags'] : (json_decode($it['piece_tags'] ?? '', true) ?: []);
+                foreach ($tags as $t) {
+                    if (!in_array($t, $variantMap[$vKey]['outward_piece_tags'], true)) {
+                        $variantMap[$vKey]['outward_piece_tags'][] = $t;
+                    }
+                }
+            }
+        }
+        $allMixedItems = array_values($variantMap);
+
         Response::json([
-            'success' => true,
-            'outward' => $outward,
-            'batch'   => $batch,
-            'items'   => $items,
+            'success'        => true,
+            'outward'        => $outward,
+            'batch'          => $batch,
+            'items'          => count($batches) > 1 ? $allMixedItems : $items,
+            'batches'        => $batches,
+            'is_multi_batch' => count($batches) > 1,
+            'total_batches'  => count($batches),
         ]);
     }
 
@@ -10827,16 +10872,26 @@ class ProductionController {
         );
         $expenseCategoryOptions = [];
         $knownCategoryLabels = [
-            'SEWING_MATERIALS'    => 'Sewing Materials & Trims',
-            'MAINTENANCE_REPAIR'  => 'Maintenance & Repairs',
-            'OPERATIONAL_UTILITY' => 'Operations & Utilities',
+            'SEWING_MATERIALS'    => 'Sewing Materials & Trims (Threads, Needles, Zips)',
+            'MAINTENANCE_REPAIR'  => 'Machine Maintenance & Repairs (Oil, Spares, Belts)',
+            'OPERATIONAL_UTILITY' => 'Operational & Utilities (Electricity, Fuel, Polybags)',
             'MACHINERY_ASSET'     => 'Machine Maintenance & Parts',
             'OTHER'               => 'Other Floor Expenses',
             'GENERAL'             => 'General',
         ];
+
+        // Populate from active expense_categories database records
+        $dbCats = Database::fetchAll("SELECT code, name FROM expense_categories WHERE is_active = 1 AND department_scope IN ('PRODUCTION', 'ALL') ORDER BY name ASC");
+        foreach ($dbCats as $dbc) {
+            $cCode = trim((string)$dbc['code']);
+            if ($cCode !== '') {
+                $expenseCategoryOptions[$cCode] = trim((string)$dbc['name']);
+            }
+        }
+
         foreach ($savedExpenseCategories as $savedCategory) {
             $value = trim((string)$savedCategory['value']);
-            if ($value !== '') {
+            if ($value !== '' && !isset($expenseCategoryOptions[$value])) {
                 $expenseCategoryOptions[$value] = $knownCategoryLabels[$value] ?? ucwords(strtolower(str_replace(['_', '-'], ' ', $value)));
             }
         }
@@ -10875,6 +10930,22 @@ class ProductionController {
 
         $programs = Database::fetchAll("SELECT id, program_number, name FROM production_programs ORDER BY id DESC LIMIT 50");
         $expenseItems = Database::fetchAll("SELECT id, name, category, unit_type, default_rate FROM production_expense_items ORDER BY name ASC");
+        $unitsList = Database::fetchAll("SELECT id, name, abbreviation FROM units WHERE is_active = 1 ORDER BY abbreviation ASC");
+        if (empty($unitsList)) {
+            $unitsList = [
+                ['name' => 'Pieces', 'abbreviation' => 'PCS'],
+                ['name' => 'Cones', 'abbreviation' => 'CONE'],
+                ['name' => 'Packets', 'abbreviation' => 'PKT'],
+                ['name' => 'Boxes', 'abbreviation' => 'BOX'],
+                ['name' => 'Litres', 'abbreviation' => 'LTR'],
+                ['name' => 'Metres', 'abbreviation' => 'MTR'],
+                ['name' => 'Sets', 'abbreviation' => 'SET'],
+                ['name' => 'Rolls', 'abbreviation' => 'ROLL'],
+                ['name' => 'Kilograms', 'abbreviation' => 'KG'],
+                ['name' => 'Pairs', 'abbreviation' => 'PAIR'],
+                ['name' => 'Dozens', 'abbreviation' => 'DOZEN'],
+            ];
+        }
 
         Response::view('production.expenses.index', [
             'pageTitle'      => 'Production Expenses',
@@ -10884,6 +10955,7 @@ class ProductionController {
             'stats'          => $stats,
             'programs'       => $programs,
             'expenseItems'   => $expenseItems,
+            'unitsList'      => $unitsList,
             'productionUnitOptions' => $productionUnitOptions,
             'expenseCategoryOptions' => $expenseCategoryOptions,
             'search'         => $search,
@@ -11297,6 +11369,104 @@ class ProductionController {
     public function ajaxGetExpenseItems(): void {
         $items = Database::fetchAll("SELECT id, name, category, unit_type, default_rate FROM production_expense_items ORDER BY name ASC");
         Response::json(['success' => true, 'items' => $items]);
+    }
+
+    public function ajaxQuickAddExpenseCategory(): void {
+        $raw = file_get_contents('php://input');
+        $json = json_decode($raw, true) ?: [];
+        $name = trim($json['name'] ?? $_POST['name'] ?? '');
+        $desc = trim($json['description'] ?? $_POST['description'] ?? '');
+
+        if (empty($name)) {
+            Response::json(['success' => false, 'message' => 'Please enter a category name.'], 400);
+            return;
+        }
+
+        $code = trim($json['code'] ?? $_POST['code'] ?? '');
+        if (empty($code)) {
+            $clean = preg_replace('/[^a-zA-Z0-9]+/', '_', strtoupper($name));
+            $code = trim($clean, '_');
+            if (empty($code)) {
+                $code = 'CAT_' . time();
+            }
+        } else {
+            $code = strtoupper(preg_replace('/[^a-zA-Z0-9_]+/', '_', $code));
+        }
+
+        $existing = Database::fetchOne(
+            "SELECT id, name, code FROM expense_categories WHERE code = ? OR name = ?",
+            [$code, $name]
+        );
+        if ($existing) {
+            Response::json([
+                'success' => true,
+                'message' => 'Expense category already exists.',
+                'category' => $existing,
+                'is_existing' => true
+            ]);
+            return;
+        }
+
+        Database::execute(
+            "INSERT INTO expense_categories (name, code, department_scope, description, is_active) VALUES (?, ?, 'PRODUCTION', ?, 1)",
+            [$name, $code, $desc ?: $name]
+        );
+        $id = (int)Database::lastInsertId();
+
+        Response::json([
+            'success' => true,
+            'message' => 'Expense category created successfully.',
+            'category' => [
+                'id' => $id,
+                'name' => $name,
+                'code' => $code,
+            ],
+            'is_existing' => false
+        ]);
+    }
+
+    public function ajaxQuickAddUnit(): void {
+        $raw = file_get_contents('php://input');
+        $json = json_decode($raw, true) ?: [];
+        $abbr = strtoupper(trim($json['abbreviation'] ?? $_POST['abbreviation'] ?? ''));
+        $name = trim($json['name'] ?? $_POST['name'] ?? '');
+
+        if (empty($abbr)) {
+            Response::json(['success' => false, 'message' => 'Please enter a unit symbol / code (e.g. BDL, DRUM).'], 400);
+            return;
+        }
+
+        if (empty($name)) {
+            $name = $abbr;
+        }
+
+        $existing = Database::fetchOne("SELECT id, name, abbreviation FROM units WHERE abbreviation = ?", [$abbr]);
+        if ($existing) {
+            Response::json([
+                'success' => true,
+                'message' => 'Unit already exists.',
+                'unit' => $existing,
+                'is_existing' => true
+            ]);
+            return;
+        }
+
+        Database::execute(
+            "INSERT INTO units (name, abbreviation, is_active) VALUES (?, ?, 1)",
+            [$name, $abbr]
+        );
+        $id = (int)Database::lastInsertId();
+
+        Response::json([
+            'success' => true,
+            'message' => 'Unit created successfully.',
+            'unit' => [
+                'id' => $id,
+                'name' => $name,
+                'abbreviation' => $abbr,
+            ],
+            'is_existing' => false
+        ]);
     }
 
     public function viewDamage(string $id): void {

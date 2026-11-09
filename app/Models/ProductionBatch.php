@@ -398,19 +398,29 @@ class ProductionBatch {
                 $data['batch_number'] = 'BAT-' . date('Ymd') . '-' . sprintf('%04d', rand(1, 9999));
             }
         }
+        $additionalQc = null;
+        if (!empty($data['additional_qc_batch_ids'])) {
+            $additionalQc = is_array($data['additional_qc_batch_ids']) 
+                ? json_encode(array_values(array_map('intval', $data['additional_qc_batch_ids'])))
+                : (string)$data['additional_qc_batch_ids'];
+        }
+
         Database::execute(
             "INSERT INTO production_batches 
-             (batch_number, program_id, qc_batch_id, total_qty, box_count, destination_warehouse_id, status, prepared_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+             (batch_number, program_id, qc_batch_id, additional_qc_batch_ids, is_multi_qc, total_qty, box_count, destination_warehouse_id, status, prepared_by, notes)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 $data['batch_number'],
                 $data['program_id'],
                 $data['qc_batch_id'] ?? null,
+                $additionalQc,
+                !empty($data['is_multi_qc']) ? 1 : 0,
                 $data['total_qty'] ?? 0,
                 $data['box_count'] ?? 0,
                 $data['destination_warehouse_id'],
                 $data['status'] ?? 'PREPARING',
                 $data['prepared_by'] ?? null,
+                $data['notes'] ?? null,
             ]
         );
         return (int)Database::lastInsertId();

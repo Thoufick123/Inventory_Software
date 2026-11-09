@@ -460,6 +460,8 @@ class Router {
         $this->post('production/expenses/delete/{id}', 'ProductionController', 'deleteExpense', ['AuthMiddleware', ['PermissionMiddleware', 'production_expenses', 'delete']]);
         $this->get('production/expenses/receipt/{id}', 'ProductionController', 'expenseReceipt', ['AuthMiddleware', ['PermissionMiddleware', 'production_expenses', 'view']]);
         $this->post('api/production/expenses/quick-add-item', 'ProductionController', 'ajaxQuickAddExpenseItem', ['AuthMiddleware']);
+        $this->post('api/production/expenses/quick-add-category', 'ProductionController', 'ajaxQuickAddExpenseCategory', ['AuthMiddleware']);
+        $this->post('api/production/expenses/quick-add-unit', 'ProductionController', 'ajaxQuickAddUnit', ['AuthMiddleware']);
         $this->get('api/production/expenses/items', 'ProductionController', 'ajaxGetExpenseItems', ['AuthMiddleware']);
 
         // Label
@@ -630,6 +632,8 @@ class Router {
         $this->get('warehouse/labels', 'WarehouseController', 'labels', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'view']]);
         $this->get('warehouse/labels/ajax-source/{type}/{id}', 'WarehouseController', 'ajaxLabelSourceData', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'view']]);
         $this->post('warehouse/labels/generate', 'WarehouseController', 'generateLabels', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'create']]);
+        $this->post('warehouse/labels/produce-new-qr', 'WarehouseController', 'produceNewQrAjax', ['AuthMiddleware']);
+        $this->post('api/warehouse/labels/produce-new-qr', 'WarehouseController', 'produceNewQrAjax', ['AuthMiddleware']);
         $this->post('warehouse/labels/confirm-stickered-inward', 'WarehouseController', 'confirmStickeredInward', ['AuthMiddleware']);
         $this->post('api/warehouse/labels/confirm-stickered-inward', 'WarehouseController', 'confirmStickeredInward', ['AuthMiddleware']);
 

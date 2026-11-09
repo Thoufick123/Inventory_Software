@@ -1024,40 +1024,130 @@ class ProductionService {
     }
 
     /**
-     * Create Outward Dispatch for Finished Batch.
+     * Create Outward Dispatch for Finished Batch(es) — supports multiple batch selection.
      */
     public static function createOutward(array $outwardData, int $userId): int {
         Database::beginTransaction();
         try {
-            $batchId = (int)($outwardData['production_batch_id'] ?? 0);
-            $batch = ProductionBatch::find($batchId);
-            if (!$batch) {
-                throw new Exception("Production batch not found.");
+            $batchIds = [];
+            if (!empty($outwardData['production_batch_ids']) && is_array($outwardData['production_batch_ids'])) {
+                foreach ($outwardData['production_batch_ids'] as $bid) {
+                    $bid = (int)$bid;
+                    if ($bid > 0 && !in_array($bid, $batchIds, true)) {
+                        $batchIds[] = $bid;
+                    }
+                }
             }
-            if ($batch['status'] === 'DISPATCHED' || $batch['status'] === 'RECEIVED') {
-                throw new Exception("Batch {$batch['batch_number']} has already been dispatched and cannot be dispatched again.");
-            }
-            if ($batch['status'] !== 'APPROVED') {
-                throw new Exception("Only APPROVED batches can be dispatched. Current batch status is: {$batch['status']}.");
+            if (empty($batchIds) && !empty($outwardData['production_batch_id'])) {
+                $batchIds[] = (int)$outwardData['production_batch_id'];
             }
 
-            // Check if outward record already exists for this batch
-            $existingOutward = Database::fetchOne("SELECT id, outward_number FROM production_outwards WHERE production_batch_id = ?", [$batchId]);
-            if ($existingOutward) {
-                throw new Exception("Batch {$batch['batch_number']} has already been dispatched under Outward #{$existingOutward['outward_number']}.");
+            if (empty($batchIds)) {
+                throw new Exception("Please select at least one production batch to dispatch.");
+            }
+
+            $primaryBatchId = $batchIds[0];
+            $batches = [];
+            $totalQuantity = 0;
+            $totalBoxes = 0;
+            $destinationWhId = null;
+            $productionUnitId = null;
+
+            foreach ($batchIds as $bId) {
+                $batch = ProductionBatch::find($bId);
+                if (!$batch) {
+                    throw new Exception("Production batch #{$bId} not found.");
+                }
+                if ($batch['status'] === 'DISPATCHED' || $batch['status'] === 'RECEIVED') {
+                    throw new Exception("Batch {$batch['batch_number']} has already been dispatched and cannot be dispatched again.");
+                }
+                if ($batch['status'] !== 'APPROVED') {
+                    throw new Exception("Only APPROVED batches can be dispatched. Batch {$batch['batch_number']} status is: {$batch['status']}.");
+                }
+
+                // Check if outward record already exists for this batch
+                $existingOutward = Database::fetchOne("
+                    SELECT po.id, po.outward_number 
+                    FROM production_outwards po 
+                    WHERE po.production_batch_id = ? 
+                       OR EXISTS (SELECT 1 FROM production_outward_batches pob WHERE pob.production_outward_id = po.id AND pob.production_batch_id = ?)
+                ", [$bId, $bId]);
+                if ($existingOutward) {
+                    throw new Exception("Batch {$batch['batch_number']} has already been dispatched under Outward #{$existingOutward['outward_number']}.");
+                }
+
+                if ($destinationWhId === null) {
+                    $destinationWhId = (int)$batch['destination_warehouse_id'];
+                } elseif ($destinationWhId !== (int)$batch['destination_warehouse_id']) {
+                    throw new Exception("All selected batches must be assigned to the same destination warehouse to dispatch together in one vehicle.");
+                }
+
+                if ($productionUnitId === null && !empty($batch['production_unit_id'])) {
+                    $productionUnitId = (int)$batch['production_unit_id'];
+                }
+
+                $bQty = (int)($batch['total_qty'] ?: ($batch['quantity'] ?: 0));
+                $bBoxes = max(1, (int)($batch['box_count'] ?: 1));
+                $totalQuantity += $bQty;
+                $totalBoxes += $bBoxes;
+                $batches[] = $batch;
             }
 
             if (empty($outwardData['outward_number'])) {
                 $outwardData['outward_number'] = self::generateSequenceNumber('production_outwards', 'outward_number', 'OUT');
             }
-            $outwardData['created_by'] = $userId;
 
-            $outwardId = ProductionOutward::create($outwardData);
+            $isMulti = count($batchIds) > 1 ? 1 : 0;
+            $batchNumbers = array_column($batches, 'batch_number');
+            $multiNote = $isMulti ? ('[Multi-Batch Mixed Outward: ' . implode(', ', $batchNumbers) . ' (' . $totalQuantity . ' pcs)]') : '';
+            $finalNotes = trim(($outwardData['notes'] ?? '') . ($multiNote ? "\n" . $multiNote : ''));
 
-            // Update batch status to DISPATCHED
-            ProductionBatch::updateStatus($batch['id'], 'DISPATCHED');
+            $insertData = [
+                'production_batch_id' => $primaryBatchId,
+                'batch_ids'           => json_encode($batchIds),
+                'is_multi_batch'      => $isMulti,
+                'warehouse_id'        => $destinationWhId,
+                'production_unit_id'  => $productionUnitId,
+                'quantity'            => $totalQuantity,
+                'total_quantity'      => $totalQuantity,
+                'total_boxes'         => $totalBoxes,
+                'outward_number'      => $outwardData['outward_number'],
+                'dispatch_date'       => !empty($outwardData['dispatch_date']) ? $outwardData['dispatch_date'] : date('Y-m-d H:i:s'),
+                'vehicle_number'      => trim($outwardData['vehicle_number'] ?? ''),
+                'driver_name'         => trim($outwardData['driver_name'] ?? ''),
+                'driver_contact'      => trim($outwardData['driver_contact'] ?? ''),
+                'transporter_name'    => trim($outwardData['transporter_name'] ?? ''),
+                'lr_number'           => trim($outwardData['lr_number'] ?? ''),
+                'notes'               => $finalNotes,
+                'dispatched_by'       => $userId,
+                'created_by'          => $userId,
+                'status'              => 'DISPATCHED',
+            ];
 
-            AuditService::log('production', 'create', 'production_outward', $outwardId, null, $outwardData);
+            $outwardId = ProductionOutward::create($insertData);
+
+            // Record each batch in production_outward_batches and update batch status to DISPATCHED
+            foreach ($batches as $b) {
+                $bQty = (int)($b['total_qty'] ?: ($b['quantity'] ?: 0));
+                $bBoxes = max(1, (int)($b['box_count'] ?: 1));
+                Database::execute(
+                    "INSERT INTO production_outward_batches (production_outward_id, production_batch_id, total_qty, box_count) VALUES (?, ?, ?, ?)",
+                    [$outwardId, (int)$b['id'], $bQty, $bBoxes]
+                );
+                Database::execute(
+                    "UPDATE production_batches SET status = 'DISPATCHED', production_outward_id = ?, updated_at = NOW() WHERE id = ?",
+                    [$outwardId, (int)$b['id']]
+                );
+            }
+
+            AuditService::log('production', 'create', 'production_outward', $outwardId, null, [
+                'outward_number' => $outwardData['outward_number'],
+                'batch_ids'      => $batchIds,
+                'total_quantity' => $totalQuantity,
+                'total_boxes'    => $totalBoxes,
+                'is_multi_batch' => $isMulti,
+            ]);
+
             Database::commit();
             return $outwardId;
         } catch (Exception $e) {

@@ -1944,7 +1944,7 @@ function applyVariantToTable(matched, tagLabel = '') {
     const cleanTag = (tagLabel || '').trim() || (matched.qr_code || matched.sku || '');
 
     // 1. CROSS-CHECK IF THIS EXACT PIECE QR HAS ALREADY BEEN SCANNED IN ANY ROW (PREVENT DUPLICATE SCAN)
-    const isSeries = (matched.category_type === 'SERIES' || matched.qr_type === 'SERIES_BATCH' || matched.is_series == 1 || parseInt(matched.pack_quantity) > 1);
+    const isSeries = (matched.category_type === 'SERIES' || matched.category_type === 'COMPLEMENTARY' || matched.qr_type === 'SERIES_BATCH' || matched.is_series == 1 || matched.is_complementary == 1 || parseInt(matched.pack_quantity) > 1);
     if (cleanTag && !isSeries) {
         let isDuplicateTag = false;
         let dupRow = null;

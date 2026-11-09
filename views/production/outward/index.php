@@ -21,16 +21,24 @@
                     <small class="text-muted">The following approved finished production batches are packed and waiting for outward dispatch:</small>
                 </div>
             </div>
-            <span class="badge bg-primary rounded-pill px-3 py-2 fs-7 fw-semibold">
-                <i class="bi bi-clock-history me-1"></i><?= count($approvedBatches) ?> Batch(es) Ready
-            </span>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <button type="button" id="btnDispatchSelected" class="btn btn-success btn-sm fw-bold shadow-sm d-none" onclick="openMultiBatchDispatchModal()">
+                    <i class="bi bi-truck me-1"></i> Dispatch Selected (<span id="selectedBatchesCountBadge">0</span> Batches &bull; <span id="selectedBatchesQtyBadge">0</span> Pcs) &rarr;
+                </button>
+                <span class="badge bg-primary rounded-pill px-3 py-2 fs-7 fw-semibold">
+                    <i class="bi bi-clock-history me-1"></i><?= count($approvedBatches) ?> Batch(es) Ready
+                </span>
+            </div>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th style="width: 50px;">#</th>
+                            <th style="width: 40px;" class="text-center">
+                                <input type="checkbox" id="masterBatchCheckbox" class="form-check-input" onchange="toggleSelectAllApprovedBatches(this)" title="Select all approved batches for combined outward dispatch">
+                            </th>
+                            <th style="width: 45px;">#</th>
                             <th>Production Batch</th>
                             <th>Product &amp; Program</th>
                             <th>Destination Warehouse</th>
@@ -41,7 +49,15 @@
                     </thead>
                     <tbody>
                         <?php foreach ($approvedBatches as $idx => $ab): ?>
-                            <tr>
+                            <tr id="approved-batch-row-<?= $ab['id'] ?>">
+                                <td class="text-center">
+                                    <input type="checkbox" class="form-check-input approved-batch-chk" 
+                                           value="<?= $ab['id'] ?>" 
+                                           data-wh-id="<?= $ab['destination_warehouse_id'] ?>" 
+                                           data-wh-name="<?= e($ab['warehouse_name']) ?>" 
+                                           data-batch='<?= json_encode($ab, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>' 
+                                           onchange="onBatchCheckChange()">
+                                </td>
                                 <td class="text-muted fw-bold"><?= $idx + 1 ?></td>
                                 <td>
                                     <div class="fw-bold text-primary font-monospace fs-7">
@@ -144,10 +160,26 @@
                                     <div class="fw-bold text-primary font-monospace"><?= e($o['outward_number']) ?></div>
                                     <small class="text-muted">Dispatched by <?= e($o['created_by_name'] ?? 'Staff') ?></small>
                                 </td>
-                                <td><code class="fw-bold text-dark"><?= e($o['batch_number']) ?></code></td>
-                                <td><?= e($o['product_name']) ?></td>
+                                <td>
+                                    <?php if (!empty($o['linked_batches_count']) && $o['linked_batches_count'] > 1): ?>
+                                        <div class="d-flex align-items-center gap-1.5 flex-wrap">
+                                            <span class="badge bg-primary-subtle text-primary border" style="font-size: 0.68rem;" title="Combined Multi-Batch Dispatch">
+                                                <i class="bi bi-boxes me-1"></i><?= $o['linked_batches_count'] ?> Batches
+                                            </span>
+                                            <code class="fw-bold text-dark small" title="<?= e($o['all_batch_numbers']) ?>"><?= e($o['all_batch_numbers'] ?: $o['batch_number']) ?></code>
+                                        </div>
+                                    <?php else: ?>
+                                        <code class="fw-bold text-dark"><?= e($o['batch_number']) ?></code>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <div class="fw-bold text-dark"><?= e($o['product_name']) ?></div>
+                                    <?php if (!empty($o['linked_batches_count']) && $o['linked_batches_count'] > 1): ?>
+                                        <small class="text-primary fw-semibold"><i class="bi bi-shuffle me-0.5"></i>Mixed Batches Outward</small>
+                                    <?php endif; ?>
+                                </td>
                                 <td><span class="badge bg-light text-dark border"><?= e($o['warehouse_name']) ?></span></td>
-                                <td class="text-success fw-bold"><?= number_format($o['total_qty']) ?> pcs (<?= $o['box_count'] ?> <?= $o['box_count'] == 1 ? 'box' : 'boxes' ?>)</td>
+                                <td class="text-success fw-bold"><?= number_format($o['total_quantity'] ?: $o['total_qty']) ?> pcs (<?= (int)($o['total_boxes'] ?: $o['box_count']) ?> <?= ($o['total_boxes'] ?: $o['box_count']) == 1 ? 'box' : 'boxes' ?>)</td>
                                 <td><span class="badge bg-dark font-monospace"><?= e($o['vehicle_number'] ?: 'Direct Handover') ?></span></td>
                                 <td><?= formatDateTime($o['dispatch_date']) ?></td>
                                 <td><span class="badge bg-success px-2 py-1"><i class="bi bi-check-all me-1"></i>DISPATCHED</span></td>

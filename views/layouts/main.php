@@ -139,10 +139,6 @@ if (!empty($authUser['shop_name'])) {
                             <?php if (hasPermission('sellers', 'view') || hasPermission('purchases', 'view') || hasPermission('production', 'view')): ?>
                             <li><a href="<?= url('production/purchases') ?>" class="<?= ($activeMenu ?? '') === 'prod-purchases' ? 'active' : '' ?>">Purchases</a></li>
                             <?php endif; ?>
-                            <?php if (hasPermission('production_billing', 'view') || hasPermission('production', 'view')): ?>
-                            <li><a href="<?= url('production/billing') ?>" class="<?= ($activeMenu ?? '') === 'prod-billing' ? 'active' : '' ?>">Billing</a></li>
-                            <li><a href="<?= url('production/returns') ?>" class="<?= ($activeMenu ?? '') === 'prod-returns' ? 'active' : '' ?>">Returns &amp; Exchanges</a></li>
-                            <?php endif; ?>
                             <?php if (hasPermission('damages', 'view') || hasPermission('production', 'view')): ?>
                             <li><a href="<?= url('production/damages') ?>" class="<?= ($activeMenu ?? '') === 'prod-damages' ? 'active' : '' ?>">Damages</a></li>
                             <?php endif; ?>
@@ -164,17 +160,21 @@ if (!empty($authUser['shop_name'])) {
                             <?php if (hasPermission('stitching_wastage', 'view') || hasPermission('production', 'view')): ?>
                             <li><a href="<?= url('production/stitching-wastage') ?>" class="<?= ($activeMenu ?? '') === 'stitching-wastage' ? 'active' : '' ?>">Stitching Wastage</a></li>
                             <?php endif; ?>
+                            <?php if (hasPermission('labels', 'view') || hasPermission('production', 'view')): ?>
+                            <li><a href="<?= url('production/labels') ?>" class="<?= ($activeMenu ?? '') === 'labels' ? 'active' : '' ?>">Labels</a></li>
+                            <?php endif; ?>
+                            <?php if (hasPermission('qc', 'view') || hasPermission('production', 'view')): ?>
+                            <li><a href="<?= url('production/qc') ?>" class="<?= ($activeMenu ?? '') === 'qc' ? 'active' : '' ?>">QC</a></li>
+                            <?php endif; ?>
                             <?php if (hasPermission('inventory', 'view') || hasPermission('production', 'view')): ?>
                             <li><a href="<?= url('production/inventory') ?>" class="<?= ($activeMenu ?? '') === 'prod-inventory' ? 'active' : '' ?>">Inventory</a></li>
                             <?php endif; ?>
                             <?php if (hasPermission('production_expenses', 'view') || hasPermission('production', 'view')): ?>
                             <li><a href="<?= url('production/expenses') ?>" class="<?= ($activeMenu ?? '') === 'production-expenses' ? 'active' : '' ?>">Expenses</a></li>
                             <?php endif; ?>
-                            <?php if (hasPermission('labels', 'view') || hasPermission('production', 'view')): ?>
-                            <li><a href="<?= url('production/labels') ?>" class="<?= ($activeMenu ?? '') === 'labels' ? 'active' : '' ?>">Labels</a></li>
-                            <?php endif; ?>
-                            <?php if (hasPermission('qc', 'view') || hasPermission('production', 'view')): ?>
-                            <li><a href="<?= url('production/qc') ?>" class="<?= ($activeMenu ?? '') === 'qc' ? 'active' : '' ?>">QC</a></li>
+                            <?php if (hasPermission('production_billing', 'view') || hasPermission('production', 'view')): ?>
+                            <li><a href="<?= url('production/billing') ?>" class="<?= ($activeMenu ?? '') === 'prod-billing' ? 'active' : '' ?>">Billing</a></li>
+                            <li><a href="<?= url('production/returns') ?>" class="<?= ($activeMenu ?? '') === 'prod-returns' ? 'active' : '' ?>">Returns &amp; Exchanges</a></li>
                             <?php endif; ?>
                             <?php if (hasPermission('batches', 'view') || hasPermission('production', 'view')): ?>
                             <li><a href="<?= url('production/batches') ?>" class="<?= in_array($activeMenu ?? '', ['batches', 'prod-batches']) ? 'active' : '' ?>">Batches</a></li>
