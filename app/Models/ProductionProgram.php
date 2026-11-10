@@ -298,10 +298,38 @@ class ProductionProgram {
     }
 
     /**
-     * Delete / soft-delete a program.
+     * Delete / cascade-delete a program and its associated child batches/records.
      */
     public static function delete(int $id): bool {
-        return Database::execute("UPDATE production_programs SET is_active = 0, status = 'CANCELLED' WHERE id = ?", [$id]) >= 0;
+        try {
+            Database::beginTransaction();
+            // 1. Production outwards
+            Database::execute("DELETE FROM production_outwards WHERE production_batch_id IN (SELECT id FROM production_batches WHERE program_id = ?)", [$id]);
+            // 2. Production batches & items
+            Database::execute("DELETE FROM production_batch_items WHERE production_batch_id IN (SELECT id FROM production_batches WHERE program_id = ?)", [$id]);
+            Database::execute("DELETE FROM production_batches WHERE program_id = ?", [$id]);
+            // 3. QC batches & items
+            Database::execute("DELETE FROM qc_batch_items WHERE qc_batch_id IN (SELECT id FROM qc_batches WHERE program_id = ?)", [$id]);
+            Database::execute("DELETE FROM qc_batches WHERE program_id = ?", [$id]);
+            // 4. Stitching batches & items
+            Database::execute("DELETE FROM stitching_batch_items WHERE stitching_batch_id IN (SELECT id FROM stitching_batches WHERE program_id = ?)", [$id]);
+            Database::execute("DELETE FROM stitching_batches WHERE program_id = ?", [$id]);
+            // 5. Cutting batches & items
+            Database::execute("DELETE FROM cutting_batch_items WHERE cutting_batch_id IN (SELECT id FROM cutting_batches WHERE program_id = ?)", [$id]);
+            Database::execute("DELETE FROM cutting_batches WHERE program_id = ?", [$id]);
+            // 6. Label batches, program items, program rolls
+            Database::execute("DELETE FROM label_batches WHERE program_id = ?", [$id]);
+            Database::execute("DELETE FROM production_program_items WHERE program_id = ?", [$id]);
+            Database::execute("DELETE FROM production_program_rolls WHERE program_id = ?", [$id]);
+            // 7. Delete the program
+            $res = Database::execute("DELETE FROM production_programs WHERE id = ?", [$id]) >= 0;
+            Database::commit();
+            return $res;
+        } catch (\Exception $e) {
+            Database::rollback();
+            // Fallback soft-delete if foreign key constraint exists elsewhere
+            return Database::execute("UPDATE production_programs SET is_active = 0, status = 'CANCELLED', production_unit_id = NULL WHERE id = ?", [$id]) >= 0;
+        }
     }
 
     /**

@@ -1204,7 +1204,7 @@ class ProductionService {
         $unitClauseProg = $unitId ? " AND production_unit_id = $unitId" : "";
         $unitClausePP = $unitId ? " AND pp.production_unit_id = $unitId" : "";
 
-        // 1. Programs: Total & Finished
+        // 1. Programs: Total & Finished (Excludes cancelled/soft-deleted)
         $activePrograms = Database::fetchOne(
             "SELECT
                 COUNT(*) as count,
@@ -1212,7 +1212,7 @@ class ProductionService {
                 COALESCE(SUM(planned_quantity), 0) as total_planned,
                 COALESCE(SUM(completed_quantity), 0) as total_completed
              FROM production_programs
-             WHERE 1=1$unitClauseProg"
+             WHERE (is_active IS NULL OR is_active = 1) AND status != 'CANCELLED'$unitClauseProg"
         );
 
         // 2. Cutting Batches: Total & Finished
@@ -1229,7 +1229,7 @@ class ProductionService {
                 COALESCE(SUM(CASE WHEN cb.cut_qty > 0 THEN cb.cut_qty ELSE COALESCE(cb.planned_qty, 0) END), 0) as total_completed
              FROM cutting_batches cb
              LEFT JOIN production_programs pp ON cb.program_id = pp.id
-             WHERE 1=1$unitClausePP"
+             WHERE (pp.id IS NULL OR ((pp.is_active IS NULL OR pp.is_active = 1) AND pp.status != 'CANCELLED'))$unitClausePP"
         );
 
         // 3. Stitching Batches: Total & Finished
@@ -1246,7 +1246,7 @@ class ProductionService {
                 COALESCE(SUM(COALESCE(sb.total_stitched_qty, sb.stitched_qty, 0)), 0) as total_completed
              FROM stitching_batches sb
              LEFT JOIN production_programs pp ON sb.program_id = pp.id
-             WHERE 1=1$unitClausePP"
+             WHERE (pp.id IS NULL OR ((pp.is_active IS NULL OR pp.is_active = 1) AND pp.status != 'CANCELLED'))$unitClausePP"
         );
 
         // 4. QC Batches: Total & Finished (Passed / Audited)
@@ -1268,7 +1268,7 @@ class ProductionService {
                 END), 0) as total_completed
              FROM qc_batches qb
              LEFT JOIN production_programs pp ON qb.program_id = pp.id
-             WHERE 1=1$unitClausePP"
+             WHERE (pp.id IS NULL OR ((pp.is_active IS NULL OR pp.is_active = 1) AND pp.status != 'CANCELLED'))$unitClausePP"
         );
 
         // 5. Packed / Ready Dispatch Batches: Total & Finished
@@ -1280,7 +1280,7 @@ class ProductionService {
                 COALESCE(SUM(pb.total_qty), 0) as total_completed
              FROM production_batches pb
              LEFT JOIN production_programs pp ON pb.program_id = pp.id
-             WHERE 1=1$unitClausePP"
+             WHERE (pp.id IS NULL OR ((pp.is_active IS NULL OR pp.is_active = 1) AND pp.status != 'CANCELLED'))$unitClausePP"
         );
 
         // 6. Outward Dispatches: Total & Finished (Dispatched or Delivered to WH)
@@ -1293,7 +1293,7 @@ class ProductionService {
              FROM production_outwards po
              JOIN production_batches pb ON po.production_batch_id = pb.id
              LEFT JOIN production_programs pp ON pb.program_id = pp.id
-             WHERE 1=1$unitClausePP"
+             WHERE (pp.id IS NULL OR ((pp.is_active IS NULL OR pp.is_active = 1) AND pp.status != 'CANCELLED'))$unitClausePP"
         );
 
         // Active programs not yet completed against their planned quantity
@@ -1315,7 +1315,7 @@ class ProductionService {
              JOIN production_programs pp ON qb.program_id = pp.id
              LEFT JOIN products p ON pp.product_id = p.id
              LEFT JOIN users u ON qb.inspector_id = u.id
-             WHERE 1=1$unitClausePP
+             WHERE (pp.is_active IS NULL OR pp.is_active = 1) AND pp.status != 'CANCELLED'$unitClausePP
              ORDER BY qb.created_at DESC LIMIT 5"
         );
 
@@ -1326,7 +1326,7 @@ class ProductionService {
              JOIN production_batches pb ON po.production_batch_id = pb.id
              LEFT JOIN production_programs pp ON pb.program_id = pp.id
              JOIN warehouses w ON pb.destination_warehouse_id = w.id
-             WHERE 1=1$unitClausePP
+             WHERE (pp.id IS NULL OR ((pp.is_active IS NULL OR pp.is_active = 1) AND pp.status != 'CANCELLED'))$unitClausePP
              ORDER BY po.created_at DESC LIMIT 5"
         );
 
@@ -1339,7 +1339,7 @@ class ProductionService {
                 COALESCE(SUM(qb.total_qty), 0) as total_inspected
              FROM qc_batches qb
              LEFT JOIN production_programs pp ON qb.program_id = pp.id
-             WHERE 1=1$unitClausePP"
+             WHERE (pp.id IS NULL OR ((pp.is_active IS NULL OR pp.is_active = 1) AND pp.status != 'CANCELLED'))$unitClausePP"
         );
 
         // Daily Throughput Trends (Last 7 Days)
@@ -1361,7 +1361,8 @@ class ProductionService {
             "SELECT DATE(cb.created_at) as log_date, COALESCE(SUM(cb.cut_qty), SUM(cb.planned_qty), 0) as qty
              FROM cutting_batches cb
              LEFT JOIN production_programs pp ON cb.program_id = pp.id
-             WHERE cb.created_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 DAY)$unitClausePP
+             WHERE cb.created_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 DAY)
+               AND (pp.id IS NULL OR ((pp.is_active IS NULL OR pp.is_active = 1) AND pp.status != 'CANCELLED'))$unitClausePP
              GROUP BY DATE(cb.created_at)"
         );
         foreach ($cutRows as $r) {
@@ -1375,7 +1376,8 @@ class ProductionService {
             "SELECT DATE(sb.created_at) as log_date, COALESCE(SUM(sb.stitched_qty), SUM(sb.received_qty), 0) as qty
              FROM stitching_batches sb
              LEFT JOIN production_programs pp ON sb.program_id = pp.id
-             WHERE sb.created_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 DAY)$unitClausePP
+             WHERE sb.created_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 DAY)
+               AND (pp.id IS NULL OR ((pp.is_active IS NULL OR pp.is_active = 1) AND pp.status != 'CANCELLED'))$unitClausePP
              GROUP BY DATE(sb.created_at)"
         );
         foreach ($stitchRows as $r) {
@@ -1389,7 +1391,8 @@ class ProductionService {
             "SELECT DATE(qb.created_at) as log_date, COALESCE(SUM(qb.passed_qty), 0) as qty
              FROM qc_batches qb
              LEFT JOIN production_programs pp ON qb.program_id = pp.id
-             WHERE qb.created_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 DAY)$unitClausePP
+             WHERE qb.created_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 DAY)
+               AND (pp.id IS NULL OR ((pp.is_active IS NULL OR pp.is_active = 1) AND pp.status != 'CANCELLED'))$unitClausePP
              GROUP BY DATE(qb.created_at)"
         );
         foreach ($qcRows as $r) {
@@ -1404,7 +1407,8 @@ class ProductionService {
              FROM production_outwards po
              JOIN production_batches pb ON po.production_batch_id = pb.id
              LEFT JOIN production_programs pp ON pb.program_id = pp.id
-             WHERE po.created_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 DAY)$unitClausePP
+             WHERE po.created_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 DAY)
+               AND (pp.id IS NULL OR ((pp.is_active IS NULL OR pp.is_active = 1) AND pp.status != 'CANCELLED'))$unitClausePP
              GROUP BY DATE(po.created_at)"
         );
         foreach ($outRows as $r) {
