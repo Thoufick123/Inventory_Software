@@ -57,82 +57,165 @@
 
 <!-- 1. KPI Stats Row -->
 <div class="row g-3 mb-4">
+    <!-- 1. Programs -->
     <div class="col-sm-6 col-xl-2">
-        <div class="stat-card p-3 shadow-sm h-100">
+        <div class="stat-card p-3 shadow-sm h-100 bg-white border-0 rounded-3">
             <div class="d-flex align-items-center justify-content-between mb-2">
                 <div class="stat-icon icon-primary bg-primary-subtle text-primary p-2 rounded-circle">
                     <i class="bi bi-kanban fs-5"></i>
                 </div>
                 <span class="badge bg-primary-subtle text-primary font-monospace">Programs</span>
             </div>
-            <div class="stat-value fs-3 fw-bold text-dark"><?= number_format($activePrograms['count'] ?? 0) ?></div>
-            <div class="stat-label text-muted small text-uppercase fw-semibold">Total Programs</div>
-            <div class="small text-secondary mt-1"><i class="bi bi-bullseye me-1 text-primary"></i><?= number_format($activePrograms['total_planned'] ?? 0) ?> pcs planned</div>
+            <div class="d-flex align-items-center justify-content-between my-2">
+                <div>
+                    <div class="fs-4 fw-bold text-dark mb-0"><?= number_format($activePrograms['count'] ?? 0) ?></div>
+                    <div class="text-muted small text-uppercase fw-semibold" style="font-size: 10px;">Total</div>
+                </div>
+                <div class="border-start ps-2 text-end">
+                    <div class="fs-4 fw-bold text-success mb-0"><?= number_format($activePrograms['finished_count'] ?? 0) ?></div>
+                    <div class="text-success small text-uppercase fw-semibold" style="font-size: 10px;">Finished</div>
+                </div>
+            </div>
+            <div class="stat-label text-muted small text-uppercase fw-semibold mb-1">Programs</div>
+            <div class="small text-secondary pt-1 border-top d-flex justify-content-between align-items-center">
+                <span title="Finished Pieces" class="text-success fw-bold"><i class="bi bi-check2-circle me-1"></i><?= number_format($activePrograms['total_completed'] ?? 0) ?></span>
+                <span title="Total Planned Pieces" class="text-muted">/ <?= number_format($activePrograms['total_planned'] ?? 0) ?> pcs</span>
+            </div>
         </div>
     </div>
+
+    <!-- 2. Cutting -->
     <div class="col-sm-6 col-xl-2">
-        <div class="stat-card p-3 shadow-sm h-100">
+        <div class="stat-card p-3 shadow-sm h-100 bg-white border-0 rounded-3">
             <div class="d-flex align-items-center justify-content-between mb-2">
                 <div class="stat-icon icon-info bg-info-subtle text-info p-2 rounded-circle">
                     <i class="bi bi-scissors fs-5"></i>
                 </div>
                 <span class="badge bg-info-subtle text-info font-monospace">Cutting</span>
             </div>
-            <div class="stat-value fs-3 fw-bold text-dark"><?= number_format($pendingCutting['count'] ?? 0) ?></div>
-            <div class="stat-label text-muted small text-uppercase fw-semibold">Total Cutting</div>
-            <div class="small text-secondary mt-1"><i class="bi bi-layers me-1 text-info"></i><?= number_format($pendingCutting['total_qty'] ?? 0) ?> pcs cut</div>
+            <div class="d-flex align-items-center justify-content-between my-2">
+                <div>
+                    <div class="fs-4 fw-bold text-dark mb-0"><?= number_format($pendingCutting['count'] ?? 0) ?></div>
+                    <div class="text-muted small text-uppercase fw-semibold" style="font-size: 10px;">Total</div>
+                </div>
+                <div class="border-start ps-2 text-end">
+                    <div class="fs-4 fw-bold text-success mb-0"><?= number_format($pendingCutting['finished_count'] ?? 0) ?></div>
+                    <div class="text-success small text-uppercase fw-semibold" style="font-size: 10px;">Finished</div>
+                </div>
+            </div>
+            <div class="stat-label text-muted small text-uppercase fw-semibold mb-1">Cutting Batches</div>
+            <div class="small text-secondary pt-1 border-top d-flex justify-content-between align-items-center">
+                <span title="Cut Pieces" class="text-success fw-bold"><i class="bi bi-scissors me-1"></i><?= number_format($pendingCutting['total_completed'] ?? 0) ?></span>
+                <span title="Planned Pieces" class="text-muted">/ <?= number_format($pendingCutting['total_planned'] ?? 0) ?> pcs</span>
+            </div>
         </div>
     </div>
+
+    <!-- 3. Stitching -->
     <div class="col-sm-6 col-xl-2">
-        <div class="stat-card p-3 shadow-sm h-100">
+        <div class="stat-card p-3 shadow-sm h-100 bg-white border-0 rounded-3">
             <div class="d-flex align-items-center justify-content-between mb-2">
                 <div class="stat-icon icon-warning bg-warning-subtle text-warning p-2 rounded-circle">
                     <i class="bi bi-threads fs-5"></i>
                 </div>
                 <span class="badge bg-warning-subtle text-warning font-monospace">Stitching</span>
             </div>
-            <div class="stat-value fs-3 fw-bold text-dark"><?= number_format($pendingStitching['count'] ?? 0) ?></div>
-            <div class="stat-label text-muted small text-uppercase fw-semibold">Total Stitching</div>
-            <div class="small text-secondary mt-1"><i class="bi bi-cpu me-1 text-warning"></i><?= number_format($pendingStitching['total_qty'] ?? 0) ?> pcs sewing</div>
+            <div class="d-flex align-items-center justify-content-between my-2">
+                <div>
+                    <div class="fs-4 fw-bold text-dark mb-0"><?= number_format($pendingStitching['count'] ?? 0) ?></div>
+                    <div class="text-muted small text-uppercase fw-semibold" style="font-size: 10px;">Total</div>
+                </div>
+                <div class="border-start ps-2 text-end">
+                    <div class="fs-4 fw-bold text-success mb-0"><?= number_format($pendingStitching['finished_count'] ?? 0) ?></div>
+                    <div class="text-success small text-uppercase fw-semibold" style="font-size: 10px;">Finished</div>
+                </div>
+            </div>
+            <div class="stat-label text-muted small text-uppercase fw-semibold mb-1">Stitching Batches</div>
+            <div class="small text-secondary pt-1 border-top d-flex justify-content-between align-items-center">
+                <span title="Stitched Pieces" class="text-success fw-bold"><i class="bi bi-check2-circle me-1"></i><?= number_format($pendingStitching['total_completed'] ?? 0) ?></span>
+                <span title="Total Received Pieces" class="text-muted">/ <?= number_format($pendingStitching['total_planned'] ?? 0) ?> pcs</span>
+            </div>
         </div>
     </div>
+
+    <!-- 4. QC -->
     <div class="col-sm-6 col-xl-2">
-        <div class="stat-card p-3 shadow-sm h-100">
+        <div class="stat-card p-3 shadow-sm h-100 bg-white border-0 rounded-3">
             <div class="d-flex align-items-center justify-content-between mb-2">
                 <div class="stat-icon icon-danger bg-danger-subtle text-danger p-2 rounded-circle">
                     <i class="bi bi-patch-check fs-5"></i>
                 </div>
                 <span class="badge bg-danger-subtle text-danger font-monospace">QC</span>
             </div>
-            <div class="stat-value fs-3 fw-bold text-dark"><?= number_format($pendingQC['count'] ?? 0) ?></div>
-            <div class="stat-label text-muted small text-uppercase fw-semibold">Total QC Batches</div>
-            <div class="small text-secondary mt-1"><i class="bi bi-search me-1 text-danger"></i><?= number_format($pendingQC['total_qty'] ?? 0) ?> pcs audited</div>
+            <div class="d-flex align-items-center justify-content-between my-2">
+                <div>
+                    <div class="fs-4 fw-bold text-dark mb-0"><?= number_format($pendingQC['count'] ?? 0) ?></div>
+                    <div class="text-muted small text-uppercase fw-semibold" style="font-size: 10px;">Total</div>
+                </div>
+                <div class="border-start ps-2 text-end">
+                    <div class="fs-4 fw-bold text-success mb-0"><?= number_format($pendingQC['finished_count'] ?? 0) ?></div>
+                    <div class="text-success small text-uppercase fw-semibold" style="font-size: 10px;">Finished</div>
+                </div>
+            </div>
+            <div class="stat-label text-muted small text-uppercase fw-semibold mb-1">QC Inspections</div>
+            <div class="small text-secondary pt-1 border-top d-flex justify-content-between align-items-center">
+                <span title="Passed Pieces" class="text-success fw-bold"><i class="bi bi-shield-check me-1"></i><?= number_format($pendingQC['total_completed'] ?? 0) ?></span>
+                <span title="Total Inspected Pieces" class="text-muted">/ <?= number_format($pendingQC['total_planned'] ?? 0) ?> pcs</span>
+            </div>
         </div>
     </div>
+
+    <!-- 5. Packed / Ready Dispatch -->
     <div class="col-sm-6 col-xl-2">
-        <div class="stat-card p-3 shadow-sm h-100">
+        <div class="stat-card p-3 shadow-sm h-100 bg-white border-0 rounded-3">
             <div class="d-flex align-items-center justify-content-between mb-2">
                 <div class="stat-icon icon-success bg-success-subtle text-success p-2 rounded-circle">
                     <i class="bi bi-box-seam fs-5"></i>
                 </div>
                 <span class="badge bg-success-subtle text-success font-monospace">Packed</span>
             </div>
-            <div class="stat-value fs-3 fw-bold text-dark"><?= number_format($readyDispatch['count'] ?? 0) ?></div>
-            <div class="stat-label text-muted small text-uppercase fw-semibold">Ready Dispatch</div>
-            <div class="small text-secondary mt-1"><i class="bi bi-check2-circle me-1 text-success"></i><?= number_format($readyDispatch['total_qty'] ?? 0) ?> pcs boxed</div>
+            <div class="d-flex align-items-center justify-content-between my-2">
+                <div>
+                    <div class="fs-4 fw-bold text-dark mb-0"><?= number_format($readyDispatch['count'] ?? 0) ?></div>
+                    <div class="text-muted small text-uppercase fw-semibold" style="font-size: 10px;">Total</div>
+                </div>
+                <div class="border-start ps-2 text-end">
+                    <div class="fs-4 fw-bold text-success mb-0"><?= number_format($readyDispatch['finished_count'] ?? 0) ?></div>
+                    <div class="text-success small text-uppercase fw-semibold" style="font-size: 10px;">Finished</div>
+                </div>
+            </div>
+            <div class="stat-label text-muted small text-uppercase fw-semibold mb-1">Packed Batches</div>
+            <div class="small text-secondary pt-1 border-top d-flex justify-content-between align-items-center">
+                <span title="Dispatched Pieces" class="text-success fw-bold"><i class="bi bi-box-seam me-1"></i><?= number_format($readyDispatch['total_completed'] ?? 0) ?></span>
+                <span title="Total Packed Pieces" class="text-muted">/ <?= number_format($readyDispatch['total_planned'] ?? 0) ?> pcs</span>
+            </div>
         </div>
     </div>
+
+    <!-- 6. Dispatches -->
     <div class="col-sm-6 col-xl-2">
-        <div class="stat-card p-3 shadow-sm h-100">
+        <div class="stat-card p-3 shadow-sm h-100 bg-white border-0 rounded-3">
             <div class="d-flex align-items-center justify-content-between mb-2">
                 <div class="stat-icon icon-primary bg-primary-subtle text-primary p-2 rounded-circle">
                     <i class="bi bi-truck fs-5"></i>
                 </div>
                 <span class="badge bg-primary-subtle text-primary font-monospace">Outward</span>
             </div>
-            <div class="stat-value fs-3 fw-bold text-dark"><?= number_format($monthOutward['count'] ?? 0) ?></div>
-            <div class="stat-label text-muted small text-uppercase fw-semibold">Total Dispatches</div>
-            <div class="small text-secondary mt-1"><i class="bi bi-buildings me-1 text-primary"></i><?= number_format($monthOutward['total_qty'] ?? 0) ?> pcs to WH</div>
+            <div class="d-flex align-items-center justify-content-between my-2">
+                <div>
+                    <div class="fs-4 fw-bold text-dark mb-0"><?= number_format($monthOutward['count'] ?? 0) ?></div>
+                    <div class="text-muted small text-uppercase fw-semibold" style="font-size: 10px;">Total</div>
+                </div>
+                <div class="border-start ps-2 text-end">
+                    <div class="fs-4 fw-bold text-success mb-0"><?= number_format($monthOutward['finished_count'] ?? 0) ?></div>
+                    <div class="text-success small text-uppercase fw-semibold" style="font-size: 10px;">Finished</div>
+                </div>
+            </div>
+            <div class="stat-label text-muted small text-uppercase fw-semibold mb-1">Dispatches to WH</div>
+            <div class="small text-secondary pt-1 border-top d-flex justify-content-between align-items-center">
+                <span title="Delivered Pieces" class="text-success fw-bold"><i class="bi bi-truck me-1"></i><?= number_format($monthOutward['total_completed'] ?? 0) ?></span>
+                <span title="Total Dispatched Pieces" class="text-muted">/ <?= number_format($monthOutward['total_planned'] ?? 0) ?> pcs</span>
+            </div>
         </div>
     </div>
 </div>
