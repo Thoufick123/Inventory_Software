@@ -650,6 +650,7 @@ class Router {
         $this->get('warehouse/shop-requests/view/{id}', 'WarehouseController', 'viewShopRequest', ['AuthMiddleware', ['PermissionMiddleware', 'shop_requests', 'view']]);
         // WhatsApp Channel Module
         $this->get('warehouse/whatsapp-orders', 'WhatsappController', 'index', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_dashboard', 'view']]);
+        $this->get('warehouse/whatsapp-orders/reports/download/{module}', 'WhatsappController', 'downloadWhatsappReport', ['AuthMiddleware']);
         $this->get('warehouse/whatsapp-orders/inward', 'WhatsappController', 'whatsappInwardIndex', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inward', 'view']]);
         $this->get('warehouse/whatsapp-orders/inward/view/{id}', 'WhatsappController', 'viewWhatsappInward', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inward', 'view']]);
         $this->post('warehouse/whatsapp-orders/inward/receive/{id}', 'WhatsappController', 'receiveWhatsappInward', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inward', 'receive']]);
@@ -829,6 +830,11 @@ class Router {
 
         // Shop Inventory
         $this->get('shop/inventory', 'ShopController', 'inventoryList', ['AuthMiddleware', ['PermissionMiddleware', 'shop_stock', 'view']]);
+        $this->get('shop/inventory/adjustments', 'ShopController', 'inventoryAdjustments', ['AuthMiddleware', ['PermissionMiddleware', 'shop_stock', 'view']]);
+        $this->post('shop/inventory/adjustments/store', 'ShopController', 'storeShopStockAdjustment', ['AuthMiddleware', ['PermissionMiddleware', 'shop_stock', 'adjust']]);
+        $this->post('shop/inventory/adjustments/approve/{id}', 'ShopController', 'approveShopStockAdjustment', ['AuthMiddleware', ['PermissionMiddleware', 'shop_stock', 'adjust']]);
+        $this->get('api/shop/inventory/adjustments/variants', 'ShopController', 'ajaxShopAdjustmentVariants', ['AuthMiddleware', ['PermissionMiddleware', 'shop_stock', 'adjust']]);
+        $this->get('api/shop/inventory/adjustments/lookup', 'ShopController', 'ajaxValidateShopAdjustmentQr', ['AuthMiddleware', ['PermissionMiddleware', 'shop_stock', 'adjust']]);
         $this->get('shop/inventory/detail/{id}', 'ShopController', 'inventoryDetail', ['AuthMiddleware', ['PermissionMiddleware', 'shop_stock', 'view']]);
         $this->get('shop/inventory/ajax-detail/{id}', 'ShopController', 'ajaxProductDetail', ['AuthMiddleware', ['PermissionMiddleware', 'shop_stock', 'view']]);
         $this->post('shop/inventory/request', 'ShopController', 'requestStock', ['AuthMiddleware', ['PermissionMiddleware', 'shop_stock', 'request']]);
@@ -851,6 +857,9 @@ class Router {
 
         // Customer Returns & Exchanges
         $this->get('shop/returns', 'ShopController', 'returnList', ['AuthMiddleware', ['PermissionMiddleware', 'shop_returns', 'view']]);
+        $this->get('shop/returns/returned-products', 'ShopController', 'shopReturnedProducts', ['AuthMiddleware', ['PermissionMiddleware', 'shop_returns', 'view']]);
+        $this->get('shop/returns/returned-products/label/{id}', 'ShopController', 'shopReturnedProductLabel', ['AuthMiddleware', ['PermissionMiddleware', 'shop_returns', 'view']]);
+        $this->post('shop/returns/returned-products/printed/{id}', 'ShopController', 'markShopReturnedProductPrinted', ['AuthMiddleware', ['PermissionMiddleware', 'shop_returns', 'view']]);
         $this->get('shop/returns/lookup', 'ShopController', 'ajaxReturnsLookup', ['AuthMiddleware', ['PermissionMiddleware', 'shop_returns', 'view']]);
         $this->get('api/shop/returns/lookup-piece', 'ShopController', 'ajaxLookupReturnPiece', ['AuthMiddleware', ['PermissionMiddleware', 'shop_returns', 'view']]);
         $this->post('api/shop/returns/lookup-piece', 'ShopController', 'ajaxLookupReturnPiece', ['AuthMiddleware', ['PermissionMiddleware', 'shop_returns', 'view']]);

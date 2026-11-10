@@ -173,12 +173,13 @@ foreach ($hierarchicalModules as $m) {
                                 <table class="table table-hover align-middle mb-0 permissions-table">
                                     <thead class="table-light">
                                         <tr class="text-uppercase small text-muted" style="font-size: 11px;">
-                                            <th class="ps-3 py-2" style="width: 36%;">Submodule</th>
-                                            <th class="text-center py-2" style="width: 14%;">View</th>
-                                            <th class="text-center py-2" style="width: 14%;">Create</th>
-                                            <th class="text-center py-2" style="width: 14%;">Edit</th>
-                                            <th class="text-center py-2" style="width: 14%;">Delete</th>
-                                            <th class="text-center pe-3 py-2" style="width: 8%;">Row All</th>
+                                            <th class="ps-3 py-2" style="width: 30%;">Submodule</th>
+                                            <th class="text-center py-2" style="width: 12%;">View</th>
+                                            <th class="text-center py-2" style="width: 12%;">Create</th>
+                                            <th class="text-center py-2" style="width: 12%;">Edit</th>
+                                            <th class="text-center py-2" style="width: 12%;">Delete</th>
+                                            <th class="text-center py-2" style="width: 12%;">Adjust</th>
+                                            <th class="text-center pe-3 py-2" style="width: 10%;">Row All</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -190,6 +191,9 @@ foreach ($hierarchicalModules as $m) {
                                             $subDesc = $sub['desc'] ?? '';
 
                                             $crudColumns = Role::getCrudPermissionsByAction($subPerms);
+                                            $shopAdjustPermissions = $subKey === 'shop_stock'
+                                                ? array_values(array_filter($subPerms, static fn(array $permission): bool => ($permission['action'] ?? '') === 'adjust'))
+                                                : [];
                                             ?>
                                             <tr class="submodule-row-item" data-submodule-key="<?= e($subKey) ?>">
                                                 <!-- Submodule Info -->
@@ -229,6 +233,26 @@ foreach ($hierarchicalModules as $m) {
                                                         <?php endif; ?>
                                                     </td>
                                                 <?php endforeach; ?>
+
+                                                <td class="text-center py-2.5">
+                                                    <?php if ($shopAdjustPermissions): ?>
+                                                        <?php foreach ($shopAdjustPermissions as $permission): ?>
+                                                            <label class="form-check-label d-inline-flex align-items-center justify-content-center gap-1 small" title="<?= e($permission['description'] ?? 'Adjust shop stock') ?>">
+                                                                <input class="form-check-input perm-check perm-adjust mod-<?= e($modKey) ?> row-<?= e($subKey) ?>"
+                                                                       type="checkbox"
+                                                                       name="permissions[]"
+                                                                       value="<?= (int)$permission['id'] ?>"
+                                                                       data-module="<?= e($modKey) ?>"
+                                                                       data-submodule="<?= e($subKey) ?>"
+                                                                       data-action="adjust"
+                                                                       <?= in_array((int)$permission['id'], $assigned, true) ? 'checked' : '' ?>>
+                                                                <span>Adjust</span>
+                                                            </label>
+                                                        <?php endforeach; ?>
+                                                    <?php else: ?>
+                                                        <span class="text-muted small opacity-50">—</span>
+                                                    <?php endif; ?>
+                                                </td>
 
                                                 <!-- Row Toggle -->
                                                 <td class="text-center pe-3 py-2.5">

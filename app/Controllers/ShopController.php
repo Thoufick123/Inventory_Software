@@ -12,6 +12,7 @@ require_once BASE_PATH . '/app/Models/AllocationItem.php';
 require_once BASE_PATH . '/app/Models/Warehouse.php';
 require_once BASE_PATH . '/app/Models/Shop.php';
 require_once BASE_PATH . '/app/Models/ShopDamage.php';
+require_once BASE_PATH . '/app/Models/ShopStockAdjustment.php';
 
 class ShopController {
 
@@ -423,6 +424,516 @@ class ShopController {
         ]);
     }
 
+    public function inventoryAdjustments(): void {
+        $requestedShopId = isset($_GET['shop_id']) ? (int)$_GET['shop_id'] : null;
+        if ($requestedShopId !== null && $requestedShopId <= 0) {
+            $requestedShopId = null;
+        }
+        $shop = $this->resolveInventoryShop($requestedShopId);
+        if (!$shop) {
+            Response::error(403, 'You do not have access to the selected shop inventory.');
+            return;
+        }
+        $shopId = (int)$shop['id'];
+        Response::view('shop.inventory.adjustments', [
+            'pageTitle' => 'Shop Stock Adjustments',
+            'activeModule' => 'shop',
+            'activeMenu' => 'shop-inventory',
+            'breadcrumb' => [
+                ['label' => 'Shop', 'url' => url('shop/dashboard')],
+                ['label' => 'Inventory', 'url' => url('shop/inventory') . '?shop_id=' . $shopId],
+                ['label' => 'Stock Adjustments'],
+            ],
+            'shop' => $shop,
+            'adjustments' => ShopStockAdjustment::getAll($shopId),
+        ]);
+    }
+
+    public function ajaxShopAdjustmentVariants(): void {
+        if (!hasPermission('shop_stock', 'adjust')) {
+            Response::json(['success' => false, 'message' => 'Access denied.'], 403);
+            return;
+        }
+        $shop = $this->resolveInventoryShop(isset($_GET['shop_id']) ? (int)$_GET['shop_id'] : null);
+        if (!$shop) {
+            Response::json(['success' => false, 'message' => 'You do not have access to the selected shop inventory.'], 403);
+            return;
+        }
+
+        $variants = Database::fetchAll(
+            "SELECT pv.id, pv.sku, p.name as product_name, s.name as size_name, c.name as color_name,
+                    SUM(sb.quantity) as available_quantity
+             FROM stock_balances sb
+             JOIN product_variants pv ON pv.id = sb.variant_id
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN sizes s ON s.id = pv.size_id
+             LEFT JOIN colors c ON c.id = pv.color_id
+             WHERE sb.location_type = 'SHOP'
+               AND sb.location_id = ?
+               AND sb.stock_state = 'AVAILABLE'
+               AND sb.quantity > 0
+               AND pv.is_active = 1
+             GROUP BY pv.id, pv.sku, p.name, s.name, c.name
+             HAVING SUM(sb.quantity) > 0
+             ORDER BY p.name ASC, pv.sku ASC",
+            [(int)$shop['id']]
+        );
+        Response::json(['success' => true, 'variants' => $variants]);
+    }
+
+    public function storeShopStockAdjustment(): void {
+        $requestedShopId = isset($_POST['shop_id']) ? (int)$_POST['shop_id'] : null;
+        if ($requestedShopId !== null && $requestedShopId <= 0) {
+            $requestedShopId = null;
+        }
+        $shop = $this->resolveInventoryShop($requestedShopId);
+        if (!$shop) {
+            Response::error(403, 'You do not have access to the selected shop inventory.');
+            return;
+        }
+        $shopId = (int)$shop['id'];
+        $redirectUrl = url('shop/inventory/adjustments') . '?shop_id=' . $shopId;
+        if (!hasPermission('shop_stock', 'adjust')) {
+            Response::redirect($redirectUrl, 'error', 'Access denied.');
+            return;
+        }
+
+        try {
+            $variantId = (int)($_POST['variant_id'] ?? 0);
+            $adjustmentType = strtoupper(trim((string)($_POST['adjustment_type'] ?? '')));
+            $quantity = (int)($_POST['quantity'] ?? 0);
+            $reason = trim((string)($_POST['reason'] ?? ''));
+            $notes = trim((string)($_POST['notes'] ?? ''));
+            $rawQrCodes = $_POST['qr_codes'] ?? '[]';
+            $qrCodes = is_array($rawQrCodes) ? $rawQrCodes : json_decode((string)$rawQrCodes, true);
+
+            if ($variantId <= 0 || !in_array($adjustmentType, ['INCREASE', 'DECREASE'], true) || $quantity <= 0 || $reason === '') {
+                throw new InvalidArgumentException('Complete all required adjustment fields with a positive quantity.');
+            }
+            if (!is_array($qrCodes)) {
+                throw new InvalidArgumentException('Scanned QR code list is invalid.');
+            }
+            if (StockService::getBalance($variantId, 'SHOP', $shopId, 'AVAILABLE') <= 0) {
+                throw new InvalidArgumentException('The selected variant has no available stock in this shop.');
+            }
+            if ($adjustmentType === 'DECREASE') {
+                $this->validateShopAdjustmentQrCodes($shopId, $variantId, $qrCodes, $quantity);
+            } else {
+                $qrCodes = [];
+            }
+
+            $adjustmentNumber = 'SHA-' . date('YmdHis') . '-' . random_int(100000, 999999);
+            $id = ShopStockAdjustment::create([
+                'adjustment_number' => $adjustmentNumber,
+                'shop_id' => $shopId,
+                'variant_id' => $variantId,
+                'adjustment_type' => $adjustmentType,
+                'quantity' => $quantity,
+                'reason' => $reason,
+                'requested_by' => Session::userId(),
+                'notes' => $notes,
+                'qr_codes' => $qrCodes,
+            ]);
+            AuditService::log('shop', 'request_stock_adjustment', 'shop_stock_adjustments', $id, null, [
+                'shop_id' => $shopId,
+                'variant_id' => $variantId,
+                'adjustment_type' => $adjustmentType,
+                'quantity' => $quantity,
+            ]);
+            Response::redirect($redirectUrl, 'success', 'Shop stock adjustment request submitted for approval.');
+        } catch (Exception $e) {
+            Response::redirect($redirectUrl, 'error', 'Error creating adjustment: ' . $e->getMessage());
+        }
+    }
+
+    public function approveShopStockAdjustment(string $id): void {
+        $requestedShopId = isset($_POST['shop_id']) ? (int)$_POST['shop_id'] : null;
+        if ($requestedShopId !== null && $requestedShopId <= 0) {
+            $requestedShopId = null;
+        }
+        $shop = $this->resolveInventoryShop($requestedShopId);
+        if (!$shop) {
+            Response::error(403, 'You do not have access to the selected shop inventory.');
+            return;
+        }
+        $shopId = (int)$shop['id'];
+        $redirectUrl = url('shop/inventory/adjustments') . '?shop_id=' . $shopId;
+        if (!hasPermission('shop_stock', 'adjust')) {
+            Response::redirect($redirectUrl, 'error', 'Access denied.');
+            return;
+        }
+
+        $transactionStarted = false;
+        try {
+            $adjustmentId = (int)$id;
+            $action = strtoupper(trim((string)($_POST['action'] ?? 'APPROVE')));
+            if (!in_array($action, ['APPROVE', 'REJECT'], true)) {
+                throw new InvalidArgumentException('Invalid adjustment action.');
+            }
+            $userId = Session::userId();
+            if (!$userId) {
+                throw new RuntimeException('Your user session is invalid. Please sign in again.');
+            }
+
+            ShopStockAdjustment::ensureTable();
+            Database::beginTransaction();
+            $transactionStarted = true;
+            $adjustment = ShopStockAdjustment::find($adjustmentId, $shopId, true);
+            if (!$adjustment || $adjustment['status'] !== 'PENDING') {
+                throw new RuntimeException('This adjustment is missing or has already been processed.');
+            }
+            if ($action === 'APPROVE') {
+                $qrCodes = json_decode((string)($adjustment['qr_codes'] ?? '[]'), true);
+                $qrCodes = is_array($qrCodes) ? $qrCodes : [];
+                if ($adjustment['adjustment_type'] === 'DECREASE') {
+                    $this->validateShopAdjustmentQrCodes(
+                        $shopId,
+                        (int)$adjustment['variant_id'],
+                        $qrCodes,
+                        (int)$adjustment['quantity'],
+                        $adjustmentId
+                    );
+                } else {
+                    $lockedBalance = Database::fetchOne(
+                        "SELECT id FROM stock_balances
+                         WHERE variant_id = ? AND location_type = 'SHOP'
+                           AND location_id = ? AND stock_state = 'AVAILABLE'
+                         FOR UPDATE",
+                        [(int)$adjustment['variant_id'], $shopId]
+                    );
+                    if (!$lockedBalance) {
+                        throw new RuntimeException('Shop stock balance is unavailable for this adjustment.');
+                    }
+                    $qrCodes = $this->generateShopAdjustmentQrCodes(
+                        $shopId,
+                        (int)$adjustment['variant_id'],
+                        (int)$adjustment['quantity']
+                    );
+                }
+                $qrNote = $qrCodes ? ' Removed QR codes: ' . implode(', ', $qrCodes) : '';
+                if ($adjustment['adjustment_type'] === 'INCREASE' && $qrCodes) {
+                    $qrNote = ' Added QR codes: ' . implode(', ', $qrCodes);
+                }
+                if (!StockService::adjust(
+                    variantId: (int)$adjustment['variant_id'],
+                    locationType: 'SHOP',
+                    locationId: $shopId,
+                    adjustmentType: $adjustment['adjustment_type'],
+                    quantity: (float)$adjustment['quantity'],
+                    reason: $adjustment['reason'],
+                    userId: (int)$userId,
+                    notes: 'Shop Audit Ref: ' . $adjustment['adjustment_number'] . $qrNote
+                )) {
+                    throw new RuntimeException('Could not update the shop stock balance.');
+                }
+            }
+            $status = $action === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+            $qrCodesToPersist = $action === 'APPROVE' ? $qrCodes : null;
+            if (!ShopStockAdjustment::updateStatus($adjustmentId, $shopId, $status, (int)$userId, $qrCodesToPersist)) {
+                throw new RuntimeException('Could not update the adjustment status.');
+            }
+            AuditService::log(
+                'shop',
+                $action === 'APPROVE' ? 'approve_stock_adjustment' : 'reject_stock_adjustment',
+                'shop_stock_adjustments',
+                $adjustmentId,
+                ['status' => 'PENDING'],
+                ['status' => $status, 'shop_id' => $shopId]
+            );
+            Database::commit();
+            $transactionStarted = false;
+            Response::redirect(
+                $redirectUrl,
+                'success',
+                $action === 'APPROVE' ? 'Shop stock adjustment approved and stock updated.' : 'Shop stock adjustment rejected.'
+            );
+        } catch (Exception $e) {
+            if ($transactionStarted) {
+                Database::rollback();
+            }
+            Response::redirect($redirectUrl, 'error', 'Adjustment failed: ' . $e->getMessage());
+        }
+    }
+
+    public function ajaxValidateShopAdjustmentQr(): void {
+        if (!hasPermission('shop_stock', 'adjust')) {
+            Response::json(['success' => false, 'message' => 'Access denied.'], 403);
+            return;
+        }
+        $requestedShopId = isset($_GET['shop_id']) ? (int)$_GET['shop_id'] : null;
+        $shop = $this->resolveInventoryShop($requestedShopId);
+        if (!$shop) {
+            Response::json(['success' => false, 'message' => 'You do not have access to the selected shop inventory.'], 403);
+            return;
+        }
+        try {
+            $variantId = (int)($_GET['variant_id'] ?? 0);
+            $tag = strtoupper(trim((string)($_GET['code'] ?? '')));
+            if ($tag === '' || $variantId <= 0) {
+                throw new InvalidArgumentException('Select a product and scan a QR code.');
+            }
+            $quantity = $this->shopAdjustmentQuantityPerTag($variantId);
+            $this->validateShopAdjustmentQrCodes((int)$shop['id'], $variantId, [$tag], $quantity);
+            Response::json(['success' => true, 'tag' => $tag, 'quantity' => $quantity]);
+        } catch (Exception $e) {
+            Response::json(['success' => false, 'message' => $e->getMessage()], 400);
+        }
+    }
+
+    private function shopAdjustmentQuantityPerTag(int $variantId): int {
+        $variant = Database::fetchOne(
+            "SELECT pv.pack_quantity, pv.qr_type, pv.is_complementary,
+                    p.is_complementary as product_is_complementary, wc.category_type
+             FROM product_variants pv
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+             WHERE pv.id = ?",
+            [$variantId]
+        );
+        if (!$variant) {
+            throw new RuntimeException('Product variant not found.');
+        }
+        $isPack = in_array(strtoupper((string)($variant['qr_type'] ?? '')), ['SERIES_BATCH', 'SERIES'], true)
+            || in_array(strtoupper((string)($variant['category_type'] ?? '')), ['SERIES', 'COMPLEMENTARY'], true)
+            || (int)($variant['pack_quantity'] ?? 0) > 1
+            || !empty($variant['is_complementary'])
+            || !empty($variant['product_is_complementary']);
+        return $isPack ? max(1, (int)($variant['pack_quantity'] ?? 1)) : 1;
+    }
+
+    private function generateShopAdjustmentQrCodes(int $shopId, int $variantId, int $quantity): array {
+        $variant = Database::fetchOne(
+            "SELECT pv.sku, pv.pack_quantity, pv.qr_type, pv.is_complementary,
+                    p.is_complementary as product_is_complementary, p.mfg_date,
+                    p.qr_code_prefix, p.category_code, p.subcategory_code, p.sub_subcategory_code,
+                    wc.category_type, wc.name as warehouse_category_name,
+                    wsc.name as warehouse_subcategory_name, wssc.name as warehouse_sub_subcategory_name,
+                    cat.name as category_name, subcat.name as subcategory_name, subsubcat.name as sub_subcategory_name
+             FROM product_variants pv
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+             LEFT JOIN warehouse_subcategories wsc ON wsc.id = COALESCE(p.warehouse_subcategory_id, (
+                 SELECT parent.subcategory_id FROM warehouse_sub_subcategories parent WHERE parent.id = p.warehouse_sub_subcategory_id
+             ))
+             LEFT JOIN warehouse_sub_subcategories wssc ON wssc.id = p.warehouse_sub_subcategory_id
+             LEFT JOIN categories cat ON cat.id = p.category_id
+             LEFT JOIN subcategories subcat ON subcat.id = p.subcategory_id
+             LEFT JOIN sub_subcategories subsubcat ON subsubcat.id = p.sub_subcategory_id
+             WHERE pv.id = ?",
+            [$variantId]
+        );
+        if (!$variant) {
+            throw new RuntimeException('Product variant not found for QR generation.');
+        }
+
+        $categoryType = strtoupper((string)($variant['category_type'] ?? 'NORMAL'));
+        $isPack = in_array($categoryType, ['SERIES', 'COMPLEMENTARY'], true)
+            || in_array(strtoupper((string)($variant['qr_type'] ?? '')), ['SERIES_BATCH', 'SERIES'], true)
+            || (int)($variant['pack_quantity'] ?? 1) > 1
+            || !empty($variant['is_complementary'])
+            || !empty($variant['product_is_complementary']);
+        if ($isPack) {
+            return [];
+        }
+        if ($quantity <= 0) {
+            throw new InvalidArgumentException('QR generation quantity must be positive.');
+        }
+
+        $inventoryItem = ShopService::getShopInventoryItem($shopId, $variantId);
+        $existingTags = array_values(array_filter(array_map(
+            static fn(array $piece): string => strtoupper(trim((string)($piece['tag_code'] ?? ''))),
+            $inventoryItem['individual_pieces'] ?? []
+        )));
+        $tagPrefixes = [];
+        foreach ($existingTags as $tag) {
+            if (preg_match('/^(.*?)(\d+)$/', $tag, $matches)) {
+                $prefix = $matches[1];
+                $tagPrefixes[$prefix] = max($tagPrefixes[$prefix] ?? 0, (int)$matches[2]);
+            }
+        }
+
+        if ($tagPrefixes) {
+            uksort($tagPrefixes, static fn(string $a, string $b): int => $tagPrefixes[$b] <=> $tagPrefixes[$a]);
+            $basePrefix = (string)array_key_first($tagPrefixes);
+            $maxSequence = (int)$tagPrefixes[$basePrefix];
+            $sampleTag = '';
+            foreach ($existingTags as $existingTag) {
+                if (str_starts_with($existingTag, $basePrefix) && preg_match('/\d+$/', $existingTag, $suffix)) {
+                    $sampleTag = $suffix[0];
+                    break;
+                }
+            }
+            $padding = max(2, strlen($sampleTag));
+        } else {
+            $categoryName = $variant['warehouse_category_name'] ?: ($variant['category_name'] ?: ($variant['category_code'] ?? ''));
+            $subcategoryName = $variant['warehouse_subcategory_name'] ?: ($variant['subcategory_name'] ?: ($variant['subcategory_code'] ?? ''));
+            $subSubcategoryName = $variant['warehouse_sub_subcategory_name'] ?: ($variant['sub_subcategory_name'] ?: ($variant['sub_subcategory_code'] ?? ''));
+            $basePrefix = '';
+            foreach ([$categoryName, $subcategoryName, $subSubcategoryName] as $name) {
+                if (trim((string)$name) !== '') {
+                    $basePrefix .= strtoupper(substr(trim((string)$name), 0, 1));
+                }
+            }
+            if (strlen($basePrefix) < 2) {
+                $basePrefix = strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', (string)($variant['qr_code_prefix'] ?? $variant['sku'] ?? 'TTS')), 0, 3));
+            }
+            $manufacturedAt = !empty($variant['mfg_date']) ? strtotime((string)$variant['mfg_date']) : time();
+            $basePrefix .= date('my', $manufacturedAt);
+            $maxSequence = 0;
+            $padding = 2;
+        }
+
+        $pattern = '/' . preg_quote($basePrefix, '/') . '(\d+)/i';
+        $tagSources = [
+            Database::fetchAll(
+                "SELECT selected_qr_codes as tag_codes FROM allocation_items
+                 WHERE selected_qr_codes LIKE ?
+                 UNION ALL
+                 SELECT received_qr_codes as tag_codes FROM allocation_items
+                 WHERE received_qr_codes LIKE ?",
+                ['%' . $basePrefix . '%', '%' . $basePrefix . '%']
+            ),
+            Database::fetchAll(
+                "SELECT received_qr_codes as tag_codes FROM production_batch_items
+                 WHERE received_qr_codes LIKE ?",
+                ['%' . $basePrefix . '%']
+            ),
+            Database::fetchAll(
+                "SELECT qr_codes as tag_codes FROM shop_stock_adjustments WHERE qr_codes LIKE ?",
+                ['%' . $basePrefix . '%']
+            ),
+            Database::fetchAll(
+                "SELECT notes as tag_codes FROM stock_transactions WHERE notes LIKE ?",
+                ['%' . $basePrefix . '%']
+            ),
+        ];
+        foreach ($tagSources as $sourceRows) {
+            foreach ($sourceRows as $sourceRow) {
+                if (preg_match_all($pattern, strtoupper((string)($sourceRow['tag_codes'] ?? '')), $matches)) {
+                    foreach ($matches[1] as $sequence) {
+                        $maxSequence = max($maxSequence, (int)$sequence);
+                    }
+                }
+            }
+        }
+
+        $generated = [];
+        $sequence = $maxSequence;
+        while (count($generated) < $quantity) {
+            $sequence++;
+            if ($sequence > 999999) {
+                throw new RuntimeException('Could not generate a unique QR sequence for this product.');
+            }
+            $tag = $basePrefix . str_pad((string)$sequence, $padding, '0', STR_PAD_LEFT);
+            if (in_array($tag, $generated, true)) {
+                continue;
+            }
+            if (!$this->shopAdjustmentQrExists($tag)) {
+                $generated[] = $tag;
+            }
+        }
+
+        return $generated;
+    }
+
+    private function shopAdjustmentQrExists(string $tag): bool {
+        $allocationRows = Database::fetchAll(
+            "SELECT selected_qr_codes as tag_codes FROM allocation_items WHERE selected_qr_codes LIKE ?
+             UNION ALL
+             SELECT received_qr_codes as tag_codes FROM allocation_items WHERE received_qr_codes LIKE ?
+             UNION ALL
+             SELECT received_qr_codes as tag_codes FROM production_batch_items WHERE received_qr_codes LIKE ?",
+            ['%' . $tag . '%', '%' . $tag . '%', '%' . $tag . '%']
+        );
+        foreach ($allocationRows as $row) {
+            $codes = json_decode((string)($row['tag_codes'] ?? ''), true);
+            $codes = is_array($codes) ? $codes : explode(',', (string)($row['tag_codes'] ?? ''));
+            foreach ($codes as $code) {
+                $code = is_array($code) ? ($code['tag_code'] ?? $code['qr_code'] ?? '') : $code;
+                if (strcasecmp(trim((string)$code), $tag) === 0) {
+                    return true;
+                }
+            }
+        }
+
+        $adjustmentRows = Database::fetchAll(
+            "SELECT qr_codes FROM shop_stock_adjustments
+             WHERE qr_codes LIKE ? AND status IN ('PENDING', 'APPROVED')",
+            ['%' . $tag . '%']
+        );
+        foreach ($adjustmentRows as $row) {
+            $codes = json_decode((string)($row['qr_codes'] ?? ''), true);
+            if (is_array($codes) && in_array($tag, array_map(static fn($code): string => strtoupper(trim((string)$code)), $codes), true)) {
+                return true;
+            }
+        }
+
+        $transactionRows = Database::fetchAll(
+            "SELECT notes FROM stock_transactions WHERE notes LIKE ?",
+            ['%' . $tag . '%']
+        );
+        foreach ($transactionRows as $row) {
+            if (preg_match('/(?<![A-Z0-9])' . preg_quote($tag, '/') . '(?![A-Z0-9])/i', (string)($row['notes'] ?? ''))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function validateShopAdjustmentQrCodes(
+        int $shopId,
+        int $variantId,
+        array $tagCodes,
+        int $quantity,
+        int $excludeAdjustmentId = 0
+    ): void {
+        if ($shopId <= 0 || $variantId <= 0 || empty($tagCodes)) {
+            throw new InvalidArgumentException('Select a shop, product, and scan at least one QR code.');
+        }
+        $tags = array_values(array_unique(array_map(
+            static fn($tag): string => strtoupper(trim((string)$tag)),
+            $tagCodes
+        )));
+        foreach ($tags as $tag) {
+            if ($tag === '' || !preg_match('/^[A-Z0-9_-]+$/', $tag)) {
+                throw new InvalidArgumentException('A scanned QR code is invalid.');
+            }
+        }
+        if (count($tags) !== count($tagCodes)) {
+            throw new InvalidArgumentException('A QR code can only be scanned once per adjustment.');
+        }
+
+        $quantityPerTag = $this->shopAdjustmentQuantityPerTag($variantId);
+        $scannedQuantity = count($tags) * $quantityPerTag;
+        if ($scannedQuantity !== $quantity) {
+            throw new InvalidArgumentException("The scanned QR codes represent {$scannedQuantity} pcs; the adjustment quantity does not match.");
+        }
+        $available = StockService::getBalance($variantId, 'SHOP', $shopId, 'AVAILABLE');
+        if ($available < $quantity) {
+            throw new RuntimeException("Insufficient available shop stock. Available: {$available} pcs; requested: {$quantity} pcs.");
+        }
+
+        $item = ShopService::getShopInventoryItem($shopId, $variantId);
+        if (!$item) {
+            throw new RuntimeException('The selected product has no available stock in this shop.');
+        }
+        $availableTags = [];
+        foreach (($item['individual_pieces'] ?? []) as $piece) {
+            if (in_array(strtoupper((string)($piece['status'] ?? '')), ['IN STOCK', 'AVAILABLE'], true)) {
+                $availableTags[strtoupper((string)$piece['tag_code'])] = true;
+            }
+        }
+        foreach ($tags as $tag) {
+            $usage = ShopStockAdjustment::findQrCodeUsage($shopId, $tag, $excludeAdjustmentId);
+            if ($usage) {
+                throw new RuntimeException("QR code '{$tag}' is already in adjustment #{$usage['adjustment_number']} ({$usage['status']}).");
+            }
+            if (!isset($availableTags[$tag])) {
+                throw new RuntimeException("QR code '{$tag}' is not currently available in this shop for the selected variant.");
+            }
+        }
+    }
+
     /**
      * Shop Stock Inventory Detail View
      */
@@ -509,11 +1020,14 @@ class ShopController {
                     COALESCE(c.phone, s.customer_phone, '-') as customer_phone
              FROM return_items ri
              JOIN returns r ON ri.return_id = r.id
-             LEFT JOIN sales s ON r.sale_id = s.id
+             JOIN sales s ON r.sale_id = s.id
              LEFT JOIN customers c ON r.customer_id = c.id
-             WHERE ri.variant_id = ? AND r.source_type = 'SHOP'
+             WHERE ri.variant_id = ?
+               AND s.shop_id = ?
+               AND s.sale_type = 'SHOP'
+               AND r.source_type = 'SHOP'
              ORDER BY r.created_at DESC",
-            [$variantId]
+            [$variantId, $shopId]
         );
 
         // 6. Shop Customer Exchanges History for this variant (strictly SHOP exchanges)
@@ -525,11 +1039,14 @@ class ShopController {
              FROM exchange_items ei
              JOIN exchanges e ON ei.exchange_id = e.id
              LEFT JOIN returns r ON e.return_id = r.id
-             LEFT JOIN sales s ON e.sale_id = s.id
+             JOIN sales s ON s.id = COALESCE(e.sale_id, r.sale_id)
              LEFT JOIN customers c ON s.customer_id = c.id
-             WHERE ei.variant_id = ? AND e.source_type = 'SHOP'
+             WHERE ei.variant_id = ?
+               AND s.shop_id = ?
+               AND s.sale_type = 'SHOP'
+               AND e.source_type = 'SHOP'
              ORDER BY e.created_at DESC",
-            [$variantId]
+            [$variantId, $shopId]
         );
 
         // 7. Warehouse Returns History (dispatched back to Central Warehouse)
@@ -1080,6 +1597,101 @@ class ShopController {
         ]);
     }
 
+    public function shopReturnedProducts(): void {
+        $shop = ShopService::getActiveShop();
+        $shopId = (int)$shop['id'];
+        $products = ShopReturnedProduct::getAll($shopId);
+
+        Response::view('shop.returns.returned_products', [
+            'pageTitle' => 'Shop Returned Products',
+            'activeModule' => 'shop',
+            'activeMenu' => 'shop-returned-products',
+            'breadcrumb' => [
+                ['label' => 'Shop', 'url' => url('shop/dashboard')],
+                ['label' => 'Returns & Exchanges', 'url' => url('shop/returns')],
+                ['label' => 'Returned Products'],
+            ],
+            'shop' => $shop,
+            'products' => $products,
+        ]);
+    }
+
+    public function shopReturnedProductLabel(int $id): void {
+        $shop = ShopService::getActiveShop();
+        $product = ShopReturnedProduct::find($id, (int)$shop['id']);
+        if (!$product) {
+            Session::setFlash('error', 'Returned product label was not found in this shop.');
+            Response::redirect(url('shop/returns/returned-products'));
+            return;
+        }
+
+        Response::viewOnly('shop.returns.returned_product_label', [
+            'pageTitle' => 'Returned Product Label ' . $product['returned_tag'],
+            'product' => $product,
+            'csrfToken' => CSRF::token(),
+        ]);
+    }
+
+    private function ensureShopReturnedProductStock(array $product, int $shopId, int $userId): void {
+        $alreadyRestocked = Database::fetchOne(
+            "SELECT id FROM stock_transactions
+             WHERE reference_type = 'shop_returned_products' AND reference_id = ?
+             LIMIT 1 FOR UPDATE",
+            [(int)$product['id']]
+        );
+        if ($alreadyRestocked) {
+            return;
+        }
+
+        $isGood = strtoupper((string)($product['item_condition'] ?? 'GOOD')) === 'GOOD';
+        StockService::increase(
+            (int)$product['variant_id'],
+            'SHOP',
+            $shopId,
+            $isGood ? 'AVAILABLE' : 'DAMAGED',
+            1,
+            $isGood ? 'RETURN_REINWARD' : 'RETURN_DAMAGED',
+            'shop_returned_products',
+            (int)$product['id'],
+            $userId,
+            'Shop customer return added after returned QR label print'
+        );
+    }
+
+    public function markShopReturnedProductPrinted(int $id): void {
+        CSRF::verify();
+        ShopReturnedProduct::ensureReady();
+        $shop = ShopService::getActiveShop();
+        $shopId = (int)$shop['id'];
+        $userId = Auth::id() ?? Session::userId() ?? 1;
+
+        Database::beginTransaction();
+        try {
+            $product = ShopReturnedProduct::find($id, $shopId, true);
+            if (!$product) {
+                Database::rollback();
+                Response::jsonError('Returned product was not found in this shop.', [], 404);
+                return;
+            }
+            if (empty($product['printed_at'])) {
+                if (!ShopReturnedProduct::markPrinted($id, $shopId, $userId)) {
+                    throw new RuntimeException('Could not update the returned product print status.');
+                }
+                $this->ensureShopReturnedProductStock($product, $shopId, $userId);
+            }
+            Database::commit();
+        } catch (Throwable $e) {
+            if (Database::inTransaction()) {
+                Database::rollback();
+            }
+            error_log('Shop returned product print/reinward failed: ' . $e->getMessage());
+            Response::jsonError('Could not complete the returned product print and inventory update.', [], 500);
+            return;
+        }
+
+        Response::jsonSuccess('Returned product label printed and inventory updated.');
+    }
+
     /**
      * AJAX Lookup for Return & Exchange Piece Tag / Barcode / SKU
      */
@@ -1105,14 +1717,6 @@ class ShopController {
                 return;
             }
             if (!empty($replacement['aggregate_stock'])) {
-                $validCodes = array_filter([
-                    strtoupper(trim((string)($replacement['sku'] ?? ''))),
-                    strtoupper(trim((string)($replacement['qr_code'] ?? ''))),
-                ]);
-                if (!in_array(strtoupper((string)$replacement['matched_scan_code']), $validCodes, true)) {
-                    Response::jsonError('Series or complementary replacements require a valid product code and positive shop stock.');
-                    return;
-                }
                 $replacement['piece_available'] = false;
             } else {
                 $pieceStatus = $this->isShopPieceAvailableForDamage(
@@ -1382,6 +1986,7 @@ class ShopController {
             return;
         }
 
+        ShopReturnedProduct::ensureReady();
         $shop = ShopService::getActiveShop();
         $shopId = (int)($shop['id'] ?? 1);
         $userId = Auth::id() ?? Session::userId() ?? 1;
@@ -1518,6 +2123,10 @@ class ShopController {
                         );
                     }
                 }
+                $item['piece_tags'] = array_values(array_unique(array_map(
+                    static fn($tag): string => trim((string)$tag, " \t\n\r\0\x0B\"'"),
+                    $submittedPieceTags
+                )));
 
                 $unitPrice = $this->getShopSaleItemPaidUnitPrice($saleItem);
                 $item['sale_item_id'] = $saleItemId;
@@ -1544,19 +2153,15 @@ class ShopController {
                          FROM product_variants WHERE id = ? AND is_active = 1",
                         [$swapVariantId]
                     );
-                    if (!$swapVariant || (int)$swapVariant['product_id'] !== (int)$saleItem['product_id']) {
-                        throw new RuntimeException('A same-product exchange must use an active size/color variant of the returned product.');
+                    if (!$swapVariant) {
+                        throw new RuntimeException('The replacement must be an active product variant.');
                     }
                     if (!empty($scannedReplacement['aggregate_stock'])) {
-                        $validCodes = array_filter([
-                            strtoupper(trim((string)($scannedReplacement['sku'] ?? ''))),
-                            strtoupper(trim((string)($scannedReplacement['qr_code'] ?? ''))),
-                        ]);
-                        if (!in_array(strtoupper($replacementTag), $validCodes, true)) {
-                            throw new RuntimeException('Series or complementary replacements require a valid product code and positive shop stock.');
+                        if ((float)($scannedReplacement['available_stock'] ?? 0) <= 0) {
+                            throw new RuntimeException('Series or complementary replacements require positive shop stock.');
                         }
                     } else {
-                        if ($swapQty !== 1) {
+                        if ($qty !== 1) {
                             throw new RuntimeException('Normal shop products must be exchanged one available scanned piece at a time.');
                         }
                         if ($this->isShopPieceAvailableForDamage($swapVariantId, $shopId, $replacementTag) !== true) {
@@ -1714,17 +2319,70 @@ class ShopController {
                         $varId,
                         $qty,
                         $cond,
-                        $cond === 'GOOD' ? 'AVAILABLE' : 'DAMAGE',
+                        'REWORK',
                         $qty * $uPrice,
                         $cond,
                         $reason
                     ]
                 );
 
-                if ($cond === 'GOOD') {
-                    StockService::increase($varId, 'SHOP', $shopId, 'AVAILABLE', (float)$qty, 'RETURN_REINWARD', 'returns', $returnId, $userId, "Shop Return Good Stock Re-Inward");
-                } else {
-                    StockService::increase($varId, 'SHOP', $shopId, 'DAMAGED', (float)$qty, 'RETURN_DAMAGED', 'returns', $returnId, $userId, "Shop Return Damaged Stock");
+                $submittedTags = $itm['piece_tags'] ?? [];
+                if (!is_array($submittedTags)) {
+                    $submittedTags = preg_split('/[,|]/', (string)$submittedTags) ?: [];
+                }
+                $tagCandidates = [];
+                foreach ($submittedTags as $submittedTag) {
+                    $submittedTag = trim((string)$submittedTag, " \t\n\r\0\x0B\"'");
+                    if ($submittedTag !== '') {
+                        $tagCandidates[strtoupper($submittedTag)] = $submittedTag;
+                    }
+                }
+                $saleTagsRow = $saleItemId > 0
+                    ? Database::fetchOne("SELECT scanned_qr_codes, qr_code FROM sale_items WHERE id = ?", [$saleItemId])
+                    : null;
+                $decodedSaleTags = json_decode((string)($saleTagsRow['scanned_qr_codes'] ?? ''), true);
+                $saleTags = is_array($decodedSaleTags)
+                    ? $decodedSaleTags
+                    : (preg_split('/[,|]/', (string)($saleTagsRow['scanned_qr_codes'] ?? '')) ?: []);
+                $saleQrCode = trim((string)($saleTagsRow['qr_code'] ?? ''));
+                if ($saleQrCode !== '') {
+                    $saleTags[] = $saleQrCode;
+                }
+                $usedSourceTags = array_fill_keys(ShopReturnedProduct::getReturnedSourceTags($saleItemId), true);
+                foreach ($saleTags as $saleTag) {
+                    if (is_array($saleTag)) {
+                        $saleTag = $saleTag['tag_code'] ?? $saleTag['qr_code'] ?? '';
+                    }
+                    $saleTag = trim((string)$saleTag, " \t\n\r\0\x0B\"'");
+                    if ($saleTag !== '' && !isset($usedSourceTags[strtoupper($saleTag)])) {
+                        $tagCandidates[strtoupper($saleTag)] = $saleTag;
+                    }
+                }
+                $skuRow = Database::fetchOne("SELECT sku FROM product_variants WHERE id = ?", [$varId]);
+                $tagCandidates = array_values($tagCandidates);
+                for ($pieceIndex = 0; $pieceIndex < $qty; $pieceIndex++) {
+                    $originalTag = $tagCandidates[$pieceIndex] ?? '';
+                    $baseTag = $originalTag !== ''
+                        ? 'R' . $originalTag
+                        : 'R' . preg_replace('/[^A-Za-z0-9_-]/', '', (string)($skuRow['sku'] ?? 'ITEM'))
+                            . '-' . $returnNumber . '-' . ($pieceIndex + 1);
+                    $returnedTag = $baseTag;
+                    $collision = 1;
+                    while (ShopReturnedProduct::tagExists($returnedTag)) {
+                        $returnedTag = $baseTag . '-' . $returnId . '-' . $collision++;
+                    }
+                    ShopReturnedProduct::create([
+                        'shop_id' => $shopId,
+                        'return_id' => $returnId,
+                        'sale_item_id' => $saleItemId,
+                        'variant_id' => $varId,
+                        'original_piece_tag' => $originalTag,
+                        'returned_tag' => $returnedTag,
+                        'item_condition' => $cond,
+                    ]);
+                    if ($originalTag !== '') {
+                        $usedSourceTags[strtoupper($originalTag)] = true;
+                    }
                 }
             }
         }
@@ -4024,6 +4682,13 @@ class ShopController {
             );
             if ($variant) {
                 return $loadVariant((int)$variant['id'], $code);
+            }
+        }
+
+        foreach ($codes as $code) {
+            $returnedProduct = ShopReturnedProduct::findByTag($code, $shopId);
+            if ($returnedProduct && !empty($returnedProduct['printed_at'])) {
+                return $loadVariant((int)$returnedProduct['variant_id'], $code);
             }
         }
 

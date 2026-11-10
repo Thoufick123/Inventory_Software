@@ -12,8 +12,636 @@ require_once BASE_PATH . '/app/Models/WarehouseReturn.php';
 require_once BASE_PATH . '/app/Models/WarehouseReturnItem.php';
 require_once BASE_PATH . '/app/Models/WhatsappStockAdjustment.php';
 require_once BASE_PATH . '/app/Models/WhatsappReturnedProduct.php';
+require_once BASE_PATH . '/app/Services/WhatsappReportExportService.php';
 
 class WhatsappController {
+
+    public function downloadWhatsappReport(string $module): void {
+        $permissions = [
+            'dashboard' => 'whatsapp_dashboard',
+            'inward' => 'whatsapp_inward',
+            'inventory' => 'whatsapp_inventory',
+            'allocations' => 'whatsapp_inventory',
+            'returned-products' => 'whatsapp_inventory',
+            'adjustments' => 'whatsapp_inventory',
+            'orders' => 'whatsapp_orders',
+            'damage' => 'whatsapp_damage',
+            'returns' => 'whatsapp_returns',
+            'customers' => 'whatsapp_customers',
+            'return-to-warehouse' => 'whatsapp_return_to_wh',
+            'expenses' => 'whatsapp_expenses',
+        ];
+        if (!isset($permissions[$module])) {
+            Response::error(404, 'The requested WhatsApp report was not found.');
+            return;
+        }
+        if (!hasPermission($permissions[$module], 'view')) {
+            Response::error(403, 'You do not have permission to export this WhatsApp report.');
+            return;
+        }
+
+        $format = strtolower(trim((string)($_GET['format'] ?? 'csv')));
+        $scope = strtolower(trim((string)($_GET['scope'] ?? 'filtered')));
+        if (!in_array($format, ['csv', 'pdf'], true) || !in_array($scope, ['filtered', 'all'], true)) {
+            Response::error(400, 'Select a valid WhatsApp report format and scope.');
+            return;
+        }
+
+        [$title, $rows] = $this->buildWhatsappReportRows(
+            $module,
+            $scope === 'filtered',
+            $this->getWhatsappChannelIds()
+        );
+        $scopeLabel = $scope === 'all' ? 'all_records' : 'filtered';
+        $title .= $scope === 'all' ? ' — All Records' : ' — Current Filters';
+        $filename = 'whatsapp_' . $module . '_' . $scopeLabel . '_' . date('Ymd_His');
+        if ($format === 'pdf') {
+            WhatsappReportExportService::downloadPdf($title, $rows, $filename);
+        }
+        WhatsappReportExportService::downloadCsv($title, $rows, $filename);
+    }
+
+    private function buildWhatsappReportRows(string $module, bool $filtered, array $channelIds): array {
+        $filters = $filtered ? $_GET : [];
+        $channelIds = array_values(array_filter(array_map('intval', $channelIds)));
+        if (!$channelIds) {
+            return [$this->whatsappReportTitle($module), []];
+        }
+        $channelPlaceholders = implode(',', array_fill(0, count($channelIds), '?'));
+
+        switch ($module) {
+            case 'dashboard':
+                return [$this->whatsappReportTitle($module), $this->whatsappDashboardReportRows($filters, $channelIds)];
+
+            case 'allocations':
+                [$baseWhere, $params] = $this->buildWhatsappAllocWhere('wa');
+                $where = [$baseWhere, "wa.status NOT IN ('REQUESTED', 'PENDING', 'CANCELLED', 'REJECTED')"];
+                if (!empty($filters['search'])) {
+                    $where[] = '(wa.allocation_number LIKE ? OR sc.name LIKE ? OR wa.notes LIKE ?)';
+                    $like = '%' . trim((string)$filters['search']) . '%';
+                    array_push($params, $like, $like, $like);
+                }
+                if (!empty($filters['alloc_status'])) {
+                    $where[] = 'wa.status = ?';
+                    $params[] = trim((string)$filters['alloc_status']);
+                }
+                $this->appendReportDateFilters($where, $params, 'wa.created_at', $filters);
+                $rows = Database::fetchAll(
+                    "SELECT wa.allocation_number, wa.created_at, wa.status,
+                            COALESCE(sc.name, 'WhatsApp Channel') as channel_name,
+                            (SELECT COALESCE(SUM(GREATEST(dispatched_qty, requested_qty)), 0)
+                             FROM allocation_items WHERE allocation_id = wa.id) as total_quantity,
+                            (SELECT COALESCE(SUM(GREATEST(ai.dispatched_qty, ai.requested_qty)
+                                                  * COALESCE(NULLIF(pv.selling_price, 0), NULLIF(pv.mrp, 0), 250)), 0)
+                             FROM allocation_items ai
+                             JOIN product_variants pv ON pv.id = ai.variant_id
+                             WHERE ai.allocation_id = wa.id) as total_value
+                     FROM warehouse_allocations wa
+                     LEFT JOIN sales_channels sc ON sc.id = wa.channel_id
+                     WHERE " . implode(' AND ', $where) . "
+                     ORDER BY wa.created_at DESC",
+                    $params
+                );
+                return [$this->whatsappReportTitle($module), $rows];
+
+            case 'inward':
+                [$baseWhere, $params] = $this->buildWhatsappAllocWhere('wa');
+                $where = [$baseWhere, "wa.status NOT IN ('REQUESTED', 'PENDING', 'CANCELLED', 'REJECTED')"];
+                if (!empty($filters['search'])) {
+                    $where[] = "(wa.allocation_number LIKE ? OR sc.name LIKE ? OR wa.notes LIKE ?)";
+                    $like = '%' . trim((string)$filters['search']) . '%';
+                    array_push($params, $like, $like, $like);
+                }
+                if (!empty($filters['status'])) {
+                    $where[] = 'wa.status = ?';
+                    $params[] = trim((string)$filters['status']);
+                }
+                if (!empty($filters['warehouse_id'])) {
+                    $where[] = 'wa.warehouse_id = ?';
+                    $params[] = (int)$filters['warehouse_id'];
+                }
+                $this->appendReportDateFilters($where, $params, 'wa.created_at', $filters);
+                $rows = Database::fetchAll(
+                    "SELECT wa.allocation_number, wa.created_at, wa.status, sc.name as channel_name,
+                            w.name as warehouse_name, pv.sku, p.name as product_name,
+                            ai.requested_qty, ai.dispatched_qty, ai.received_qty, ai.damaged_qty,
+                            ai.received_qr_codes
+                     FROM warehouse_allocations wa
+                     JOIN allocation_items ai ON ai.allocation_id = wa.id
+                     JOIN product_variants pv ON pv.id = ai.variant_id
+                     JOIN products p ON p.id = pv.product_id
+                     LEFT JOIN sales_channels sc ON sc.id = wa.channel_id
+                     LEFT JOIN warehouses w ON w.id = wa.warehouse_id
+                     WHERE " . implode(' AND ', $where) . "
+                     ORDER BY wa.created_at DESC, ai.id ASC",
+                    $params
+                );
+                $rows = array_map(static function (array $row): array {
+                    return [
+                        'record_type' => 'Warehouse Allocation Inward',
+                        'reference' => $row['allocation_number'] ?? '',
+                        'created_at' => $row['created_at'] ?? '',
+                        'status' => $row['status'] ?? '',
+                        'channel_or_customer' => $row['channel_name'] ?? '',
+                        'warehouse_name' => $row['warehouse_name'] ?? '',
+                        'invoice_number' => '',
+                        'sku' => $row['sku'] ?? '',
+                        'product_name' => $row['product_name'] ?? '',
+                        'requested_qty' => $row['requested_qty'] ?? 0,
+                        'dispatched_qty' => $row['dispatched_qty'] ?? 0,
+                        'received_qty' => $row['received_qty'] ?? 0,
+                        'damaged_qty' => $row['damaged_qty'] ?? 0,
+                        'received_qr_codes' => $row['received_qr_codes'] ?? '',
+                        'return_condition' => '',
+                    ];
+                }, $rows);
+                $returnRows = Database::fetchAll(
+                    "SELECT r.return_number as allocation_number, r.created_at, r.status, s.invoice_number,
+                            COALESCE(c.name, s.customer_name, 'WhatsApp Customer') as customer_name,
+                            pv.sku, p.name as product_name, ri.quantity as received_qty,
+                            ri.quantity as requested_qty, ri.quantity as dispatched_qty,
+                            CASE WHEN ri.item_condition = 'DAMAGED' THEN ri.quantity ELSE 0 END as damaged_qty,
+                            ri.item_condition as return_condition
+                     FROM returns r
+                     JOIN sales s ON s.id = r.sale_id
+                     JOIN return_items ri ON ri.return_id = r.id
+                     JOIN product_variants pv ON pv.id = ri.variant_id
+                     JOIN products p ON p.id = pv.product_id
+                     LEFT JOIN customers c ON c.id = s.customer_id
+                     WHERE (s.sales_channel = 'WHATSAPP' OR s.notes LIKE '%WhatsApp%')
+                     ORDER BY r.created_at DESC, ri.id ASC"
+                );
+                foreach ($returnRows as $returnRow) {
+                    $rows[] = [
+                        'record_type' => 'Customer Return Inward',
+                        'reference' => $returnRow['allocation_number'],
+                        'created_at' => $returnRow['created_at'],
+                        'status' => $returnRow['status'],
+                        'channel_or_customer' => $returnRow['customer_name'],
+                        'warehouse_name' => '',
+                        'invoice_number' => $returnRow['invoice_number'],
+                        'sku' => $returnRow['sku'],
+                        'product_name' => $returnRow['product_name'],
+                        'requested_qty' => $returnRow['requested_qty'],
+                        'dispatched_qty' => $returnRow['dispatched_qty'],
+                        'received_qty' => $returnRow['received_qty'],
+                        'damaged_qty' => $returnRow['damaged_qty'],
+                        'received_qr_codes' => '',
+                        'return_condition' => $returnRow['return_condition'],
+                    ];
+                }
+                return [$this->whatsappReportTitle($module), $rows];
+
+            case 'inventory':
+                if ($filtered && empty($filters['product_type'])) {
+                    $filters['product_type'] = 'normal';
+                }
+                $destinationTypes = array_map(static fn(int $id): string => 'CHANNEL_' . $id, $channelIds);
+                $destinationPlaceholders = implode(',', array_fill(0, count($destinationTypes), '?'));
+                $where = [
+                    "(EXISTS (SELECT 1 FROM stock_balances sb
+                              WHERE sb.variant_id = pv.id AND sb.location_type = 'CHANNEL'
+                                AND sb.location_id IN ($channelPlaceholders) AND sb.quantity > 0)
+                      OR EXISTS (SELECT 1 FROM allocation_items ai
+                                 JOIN warehouse_allocations wa ON wa.id = ai.allocation_id
+                                 WHERE ai.variant_id = pv.id
+                                   AND wa.status NOT IN ('REQUESTED', 'PENDING', 'CANCELLED', 'REJECTED')
+                                   AND ((wa.destination_type = 'CHANNEL' AND wa.destination_id IN ($channelPlaceholders))
+                                        OR wa.destination_type IN ($destinationPlaceholders)
+                                        OR wa.destination_type = 'WHATSAPP')))",
+                ];
+                $params = array_merge($channelIds, $channelIds, $destinationTypes);
+                if (!empty($filters['search'])) {
+                    $where[] = '(pv.sku LIKE ? OR pv.qr_code LIKE ? OR p.name LIKE ? OR p.code LIKE ? OR cat.name LIKE ?)';
+                    $like = '%' . trim((string)$filters['search']) . '%';
+                    array_push($params, $like, $like, $like, $like, $like);
+                }
+                if (!empty($filters['category_id'])) {
+                    $where[] = 'p.category_id = ?';
+                    $params[] = (int)$filters['category_id'];
+                }
+                if (($filters['product_type'] ?? '') === 'series') {
+                    $where[] = "(pv.qr_type = 'SERIES_BATCH' OR pv.pack_quantity > 1)";
+                } elseif (($filters['product_type'] ?? '') === 'complementary') {
+                    $where[] = '(p.is_complementary = 1 OR pv.is_complementary = 1)';
+                } elseif (($filters['product_type'] ?? '') === 'normal') {
+                    $where[] = "(pv.qr_type <> 'SERIES_BATCH' OR pv.qr_type IS NULL) AND COALESCE(pv.pack_quantity, 1) <= 1 AND COALESCE(p.is_complementary, 0) = 0 AND COALESCE(pv.is_complementary, 0) = 0";
+                }
+                $stockSelectParams = array_merge(
+                    $channelIds,
+                    $channelIds,
+                    $channelIds,
+                    $destinationTypes
+                );
+                $rows = Database::fetchAll(
+                    "SELECT p.name as product_name, p.min_stock, pv.sku, pv.qr_code, pv.selling_price, pv.mrp,
+                            pv.qr_type, pv.pack_quantity, p.is_complementary, pv.is_complementary as variant_is_complementary,
+                            p.code as product_code, cat.name as category_name, sz.name as size_name, clr.name as color_name,
+                            COALESCE((SELECT SUM(sb.quantity) FROM stock_balances sb
+                                      WHERE sb.variant_id = pv.id AND sb.location_type = 'CHANNEL'
+                                        AND sb.location_id IN ($channelPlaceholders) AND sb.stock_state = 'AVAILABLE'), 0) as available_quantity,
+                            COALESCE((SELECT SUM(sb.quantity) FROM stock_balances sb
+                                      WHERE sb.variant_id = pv.id AND sb.location_type = 'CHANNEL'
+                                        AND sb.location_id IN ($channelPlaceholders) AND sb.stock_state = 'DAMAGED'), 0) as damaged_quantity,
+                            GREATEST(0, COALESCE((SELECT SUM(si.quantity) FROM sale_items si
+                                                 JOIN sales sl ON sl.id = si.sale_id
+                                                 WHERE si.variant_id = pv.id
+                                                   AND (sl.sales_channel = 'WHATSAPP' OR sl.notes LIKE '%WhatsApp%')
+                                                   AND sl.status <> 'CANCELLED'), 0)
+                                     - COALESCE((SELECT SUM(ri.quantity) FROM return_items ri
+                                                 JOIN returns r ON r.id = ri.return_id
+                                                 WHERE ri.variant_id = pv.id
+                                                   AND (r.source_type = 'WHATSAPP' OR r.notes LIKE '%WhatsApp%')
+                                                   AND r.status <> 'REJECTED'), 0)
+                                     + COALESCE((SELECT SUM(ei.quantity) FROM exchange_items ei
+                                                 JOIN exchanges e ON e.id = ei.exchange_id
+                                                 WHERE ei.variant_id = pv.id AND ei.item_type = 'NEW'
+                                                   AND (e.source_type = 'WHATSAPP' OR e.notes LIKE '%WhatsApp%')), 0)) as sold_quantity,
+                            COALESCE((SELECT SUM(ai.received_qty) FROM allocation_items ai
+                                      JOIN warehouse_allocations wa ON wa.id = ai.allocation_id
+                                      WHERE ai.variant_id = pv.id
+                                        AND ((wa.destination_type = 'CHANNEL' AND wa.destination_id IN ($channelPlaceholders))
+                                             OR wa.destination_type IN ($destinationPlaceholders)
+                                             OR wa.destination_type = 'WHATSAPP')), 0) as total_inward_quantity
+                     FROM product_variants pv
+                     JOIN products p ON p.id = pv.product_id
+                     LEFT JOIN categories cat ON cat.id = p.category_id
+                     LEFT JOIN sizes sz ON sz.id = pv.size_id
+                     LEFT JOIN colors clr ON clr.id = pv.color_id
+                     WHERE " . implode(' AND ', $where) . "
+                     ORDER BY p.name, pv.sku",
+                    array_merge($stockSelectParams, $params)
+                );
+                $rows = array_values(array_filter($rows, static function (array $row) use ($filters): bool {
+                    $isComplementary = !empty($row['is_complementary']) || !empty($row['variant_is_complementary']);
+                    $isSeries = ($row['qr_type'] ?? '') === 'SERIES_BATCH' || (int)($row['pack_quantity'] ?? 1) > 1;
+                    $productType = $isComplementary ? 'complementary' : ($isSeries ? 'series' : 'normal');
+                    if (!empty($filters['product_type']) && $filters['product_type'] !== $productType) {
+                        return false;
+                    }
+                    return true;
+                }));
+                if (!empty($filters['stock_status'])) {
+                    $rows = array_values(array_filter($rows, static function (array $row) use ($filters): bool {
+                        $available = (float)$row['available_quantity'];
+                        $damaged = (float)$row['damaged_quantity'];
+                        $minimum = (int)($row['min_stock'] ?? 5);
+                        return match ($filters['stock_status']) {
+                            'in_stock' => $available > $minimum,
+                            'low_stock' => $available > 0 && $available <= $minimum,
+                            'out_of_stock' => $available <= 0,
+                            'damaged' => $damaged > 0,
+                            default => true,
+                        };
+                    }));
+                }
+                if (($filters['sort'] ?? '') !== '') {
+                    $sort = $filters['sort'];
+                    usort($rows, static function (array $a, array $b) use ($sort): int {
+                        return match ($sort) {
+                            'stock_desc' => (float)$b['available_quantity'] <=> (float)$a['available_quantity'],
+                            'stock_asc' => (float)$a['available_quantity'] <=> (float)$b['available_quantity'],
+                            'price_desc' => (float)$b['selling_price'] <=> (float)$a['selling_price'],
+                            'price_asc' => (float)$a['selling_price'] <=> (float)$b['selling_price'],
+                            'name_desc' => strcasecmp($b['product_name'] ?? '', $a['product_name'] ?? ''),
+                            'sku_asc' => strcasecmp($a['sku'] ?? '', $b['sku'] ?? ''),
+                            default => strcasecmp($a['product_name'] ?? '', $b['product_name'] ?? ''),
+                        };
+                    });
+                }
+                $rows = array_map(static function (array $row): array {
+                    $available = (float)$row['available_quantity'];
+                    $minimum = (int)($row['min_stock'] ?? 5);
+                    $row['stock_status'] = $available <= 0 ? 'OUT OF STOCK' : ($available <= $minimum ? 'LOW STOCK' : 'IN STOCK');
+                    $row['available_value'] = $available * (float)(($row['selling_price'] ?? 0) > 0 ? $row['selling_price'] : ($row['mrp'] ?? 0));
+                    return $row;
+                }, $rows);
+                return [$this->whatsappReportTitle($module), $rows];
+
+            case 'returned-products':
+                $rows = WhatsappReturnedProduct::getAll($channelIds);
+                if (!empty($filters['search'])) {
+                    $needle = strtolower(trim((string)$filters['search']));
+                    $rows = array_values(array_filter($rows, static function (array $row) use ($needle): bool {
+                        return str_contains(strtolower(implode(' ', array_map('strval', [
+                            $row['returned_tag'] ?? '', $row['original_piece_tag'] ?? '',
+                            $row['sku'] ?? '', $row['product_name'] ?? '', $row['invoice_number'] ?? '',
+                        ]))), $needle);
+                    }));
+                }
+                return [$this->whatsappReportTitle($module), $this->selectWhatsappReportFields($rows, [
+                    'returned_tag', 'original_piece_tag', 'product_name', 'sku', 'size_name', 'color_name',
+                    'item_condition', 'printed_at', 'printed_by_name', 'return_number', 'invoice_number', 'created_at',
+                ])];
+
+            case 'adjustments':
+                $channelSet = array_fill_keys($channelIds, true);
+                $rows = array_values(array_filter(WhatsappStockAdjustment::getAll(), static fn(array $row): bool => isset($channelSet[(int)$row['channel_id']])));
+                if (!empty($filters['status'])) {
+                    $rows = array_values(array_filter($rows, static fn(array $row): bool => strcasecmp((string)$row['status'], (string)$filters['status']) === 0));
+                }
+                if (!empty($filters['search'])) {
+                    $needle = strtolower(trim((string)$filters['search']));
+                    $rows = array_values(array_filter($rows, static fn(array $row): bool => str_contains(strtolower(implode(' ', array_map('strval', [$row['adjustment_number'] ?? '', $row['sku'] ?? '', $row['product_name'] ?? '', $row['reason'] ?? '']))), $needle)));
+                }
+                return [$this->whatsappReportTitle($module), $this->selectWhatsappReportFields($rows, [
+                    'adjustment_number', 'channel_name', 'sku', 'product_name', 'size_name', 'color_name',
+                    'adjustment_type', 'quantity', 'reason', 'status', 'requested_by_name', 'approved_by_name',
+                    'created_at', 'updated_at', 'notes', 'qr_codes',
+                ])];
+
+            case 'orders':
+                $where = ["(s.sales_channel = 'WHATSAPP' OR s.notes LIKE '%WhatsApp%')"];
+                $params = [];
+                if (!empty($filters['search'])) {
+                    $where[] = "(s.invoice_number LIKE ? OR c.name LIKE ? OR c.phone LIKE ? OR s.notes LIKE ? OR s.biller_name LIKE ?)";
+                    $like = '%' . trim((string)$filters['search']) . '%';
+                    array_push($params, $like, $like, $like, $like, $like);
+                }
+                if (!empty($filters['status'])) {
+                    $where[] = 's.status = ?';
+                    $params[] = trim((string)$filters['status']);
+                }
+                $this->appendReportDateFilters($where, $params, 's.created_at', $filters);
+                $rows = Database::fetchAll(
+                    "SELECT s.invoice_number, s.created_at, s.status, COALESCE(c.name, s.customer_name, 'WhatsApp Customer') as customer_name,
+                            COALESCE(c.phone, s.customer_phone, '-') as customer_phone, s.payment_method, s.total_amount,
+                            (SELECT COALESCE(SUM(quantity), 0) FROM sale_items WHERE sale_id = s.id) as total_quantity,
+                            s.notes
+                     FROM sales s LEFT JOIN customers c ON c.id = s.customer_id
+                     WHERE " . implode(' AND ', $where) . "
+                     ORDER BY s.created_at DESC",
+                    $params
+                );
+                return [$this->whatsappReportTitle($module), $rows];
+
+            case 'returns':
+                $where = ["(s.sales_channel = 'WHATSAPP' OR s.notes LIKE '%WhatsApp%')"];
+                $params = [];
+                if (!empty($filters['search'])) {
+                    $where[] = "(r.return_number LIKE ? OR s.invoice_number LIKE ? OR c.name LIKE ? OR c.phone LIKE ?)";
+                    $like = '%' . trim((string)$filters['search']) . '%';
+                    array_push($params, $like, $like, $like, $like);
+                }
+                if (!empty($filters['status'])) {
+                    $where[] = 'r.status = ?';
+                    $params[] = trim((string)$filters['status']);
+                }
+                if (!empty($filters['type'])) {
+                    $where[] = 'r.return_type = ?';
+                    $params[] = trim((string)$filters['type']);
+                }
+                $this->appendReportDateFilters($where, $params, 'r.created_at', $filters);
+                $rows = Database::fetchAll(
+                    "SELECT r.return_number, r.created_at, r.return_type, r.status, s.invoice_number,
+                            COALESCE(c.name, s.customer_name, 'WhatsApp Customer') as customer_name,
+                            COALESCE(c.phone, s.customer_phone, '-') as customer_phone,
+                            (SELECT COALESCE(SUM(quantity), 0) FROM return_items WHERE return_id = r.id) as returned_quantity,
+                            r.refund_amount, r.refund_mode, r.reason, e.exchange_number, e.difference_amount, r.notes
+                     FROM returns r JOIN sales s ON s.id = r.sale_id
+                     LEFT JOIN customers c ON c.id = s.customer_id
+                     LEFT JOIN exchanges e ON e.return_id = r.id
+                     WHERE " . implode(' AND ', $where) . "
+                     ORDER BY r.created_at DESC",
+                    $params
+                );
+                return [$this->whatsappReportTitle($module), $rows];
+
+            case 'customers':
+                $where = ["(s.sales_channel = 'WHATSAPP' OR s.notes LIKE '%WhatsApp%')"];
+                $params = [];
+                if (!empty($filters['search'])) {
+                    $where[] = '(c.name LIKE ? OR c.phone LIKE ? OR c.email LIKE ?)';
+                    $like = '%' . trim((string)$filters['search']) . '%';
+                    array_push($params, $like, $like, $like);
+                }
+                $rows = Database::fetchAll(
+                    "SELECT c.name, c.phone, c.email, c.city, COUNT(DISTINCT s.id) as total_orders,
+                            COALESCE(SUM(s.total_amount), 0) as total_spent, MAX(s.created_at) as last_order_date
+                     FROM customers c JOIN sales s ON s.customer_id = c.id
+                     WHERE " . implode(' AND ', $where) . "
+                     GROUP BY c.id, c.name, c.phone, c.email, c.city
+                     ORDER BY total_spent DESC",
+                    $params
+                );
+                return [$this->whatsappReportTitle($module), $rows];
+
+            case 'damage':
+                $damageFilters = ['channel_ids' => $channelIds];
+                if (!empty($filters['status'])) $damageFilters['status'] = $filters['status'];
+                if (!empty($filters['defect_type'])) $damageFilters['defect_type'] = $filters['defect_type'];
+                if (!empty($filters['search'])) $damageFilters['search'] = $filters['search'];
+                $this->appendDamageReportDates($damageFilters, $filters);
+                $rows = ChannelDamage::getAll($damageFilters);
+                return [$this->whatsappReportTitle($module), $this->selectWhatsappReportFields($rows, [
+                    'damage_number', 'created_at', 'product_name', 'sku', 'size_name', 'color_name', 'tag_code',
+                    'quantity', 'defect_type', 'damage_reason', 'status', 'source_type', 'total_loss',
+                    'reported_by_name', 'inspected_by_name', 'allocation_number', 'outward_batch_number',
+                ])];
+
+            case 'return-to-warehouse':
+                $returnFilters = [];
+                if (!empty($filters['search'])) $returnFilters['search'] = $filters['search'];
+                $returnFilters['status'] = !empty($filters['status']) ? $filters['status'] : 'ALL';
+                $data = $this->getWhatsappWarehouseReturns((int)($this->getChannel()['id'] ?? 0), $returnFilters);
+                return [$this->whatsappReportTitle($module), $this->selectWhatsappReportFields($data['returns'], [
+                    'return_number', 'created_at', 'status', 'warehouse_name', 'reason', 'item_count',
+                    'total_returned_qty', 'total_good_qty', 'total_damaged_qty', 'notes',
+                ])];
+
+            case 'expenses':
+                $where = ["e.location_type = 'WHATSAPP'", "e.location_id = ?"];
+                $params = [(int)($this->getChannel()['id'] ?? 0)];
+                if (!empty($filters['search'])) {
+                    $where[] = '(e.expense_number LIKE ? OR e.category LIKE ? OR e.item_name LIKE ? OR e.paid_to LIKE ? OR e.invoice_number LIKE ? OR e.notes LIKE ?)';
+                    $like = '%' . trim((string)$filters['search']) . '%';
+                    array_push($params, $like, $like, $like, $like, $like, $like);
+                }
+                if (!empty($filters['category']) && $filters['category'] !== 'all') {
+                    $where[] = 'e.category = ?';
+                    $params[] = $filters['category'];
+                }
+                if (!empty($filters['payment_method']) && $filters['payment_method'] !== 'all') {
+                    $where[] = 'e.payment_method = ?';
+                    $params[] = $filters['payment_method'];
+                }
+                $startDate = $filtered ? ($filters['start_date'] ?? date('Y-m-01')) : '';
+                $endDate = $filtered ? ($filters['end_date'] ?? date('Y-m-d')) : '';
+                if (!empty($startDate)) {
+                    $where[] = 'e.expense_date >= ?';
+                    $params[] = $startDate;
+                }
+                if (!empty($endDate)) {
+                    $where[] = 'e.expense_date <= ?';
+                    $params[] = $endDate;
+                }
+                $rows = Database::fetchAll(
+                    "SELECT e.expense_number, e.expense_date, e.category, e.item_name, e.total_cost, e.paid_amount,
+                            e.payment_method, e.payment_status, e.paid_to, e.invoice_number, e.notes,
+                            u.full_name as created_by_name
+                     FROM expenses e LEFT JOIN users u ON u.id = e.created_by
+                     WHERE " . implode(' AND ', $where) . "
+                     ORDER BY e.expense_date DESC, e.id DESC",
+                    $params
+                );
+                return [$this->whatsappReportTitle($module), $rows];
+        }
+
+        Response::error(404, 'The requested WhatsApp report was not found.');
+        return [$this->whatsappReportTitle($module), []];
+    }
+
+    private function whatsappReportTitle(string $module): string {
+        return [
+            'dashboard' => 'WhatsApp Dashboard Report',
+            'inward' => 'WhatsApp Inward / GRN Report',
+            'inventory' => 'WhatsApp Inventory Report',
+            'allocations' => 'WhatsApp Stock Allocations Report',
+            'returned-products' => 'WhatsApp Returned Products Report',
+            'adjustments' => 'WhatsApp Stock Adjustments Report',
+            'orders' => 'WhatsApp Orders History Report',
+            'damage' => 'WhatsApp Damage Management Report',
+            'returns' => 'WhatsApp Returns & Exchanges Report',
+            'customers' => 'WhatsApp Customers Report',
+            'return-to-warehouse' => 'WhatsApp Return to Warehouse Report',
+            'expenses' => 'WhatsApp Channel Expenses Report',
+        ][$module] ?? 'WhatsApp Report';
+    }
+
+    private function appendReportDateFilters(array &$where, array &$params, string $column, array $filters): void {
+        if (!empty($filters['date_from'])) {
+            $where[] = "DATE($column) >= ?";
+            $params[] = $filters['date_from'];
+        }
+        if (!empty($filters['date_to'])) {
+            $where[] = "DATE($column) <= ?";
+            $params[] = $filters['date_to'];
+        }
+    }
+
+    private function appendDamageReportDates(array &$damageFilters, array $filters): void {
+        foreach (['date_from', 'date_to'] as $key) {
+            if (!empty($filters[$key])) $damageFilters[$key] = $filters[$key];
+        }
+    }
+
+    private function selectWhatsappReportFields(array $rows, array $fields): array {
+        return array_map(static function (array $row) use ($fields): array {
+            $selected = [];
+            foreach ($fields as $field) $selected[$field] = $row[$field] ?? '';
+            return $selected;
+        }, $rows);
+    }
+
+    private function whatsappDashboardReportRows(array $filters, array $channelIds): array {
+        $rows = [];
+        $summary = Database::fetchOne(
+            "SELECT COUNT(*) as order_count, COALESCE(SUM(s.total_amount), 0) as revenue,
+                    COALESCE(SUM((SELECT SUM(quantity) FROM sale_items WHERE sale_id = s.id)), 0) as sold_quantity
+             FROM sales s
+             WHERE (s.sales_channel = 'WHATSAPP' OR s.notes LIKE '%WhatsApp%') AND s.status <> 'CANCELLED'"
+        ) ?: [];
+        $placeholders = implode(',', array_fill(0, count($channelIds), '?'));
+        $stock = Database::fetchOne(
+            "SELECT COALESCE(SUM(CASE WHEN stock_state = 'AVAILABLE' THEN quantity ELSE 0 END), 0) as available_quantity,
+                    COALESCE(SUM(CASE WHEN stock_state = 'DAMAGED' THEN quantity ELSE 0 END), 0) as damaged_quantity
+             FROM stock_balances WHERE location_type = 'CHANNEL' AND location_id IN ($placeholders)",
+            $channelIds
+        ) ?: [];
+        foreach ([
+            ['Orders', $summary['order_count'] ?? 0, ''],
+            ['Sales Revenue', '', $summary['revenue'] ?? 0],
+            ['Sold Units', $summary['sold_quantity'] ?? 0, ''],
+            ['Available Stock', $stock['available_quantity'] ?? 0, ''],
+            ['Damaged Stock', $stock['damaged_quantity'] ?? 0, ''],
+        ] as [$metric, $quantity, $amount]) {
+            $rows[] = ['section' => 'Summary KPI', 'reference' => $metric, 'date' => '', 'status' => '', 'customer_or_warehouse' => '', 'product_sku' => '', 'product_name' => '', 'quantity' => $quantity, 'amount' => $amount, 'details' => ''];
+        }
+
+        $orderWhere = ["(s.sales_channel = 'WHATSAPP' OR s.notes LIKE '%WhatsApp%')", "s.status <> 'CANCELLED'"];
+        $orderParams = [];
+        if (!empty($filters['search'])) {
+            $orderWhere[] = '(s.invoice_number LIKE ? OR s.customer_name LIKE ? OR s.customer_phone LIKE ?
+                              OR s.notes LIKE ? OR s.biller_name LIKE ? OR c.name LIKE ? OR c.phone LIKE ?)';
+            $like = '%' . trim((string)$filters['search']) . '%';
+            array_push($orderParams, $like, $like, $like, $like, $like, $like, $like);
+        }
+        if (!empty($filters['status'])) {
+            $orderWhere[] = 's.status = ?';
+            $orderParams[] = $filters['status'];
+        }
+        $this->appendReportDateFilters($orderWhere, $orderParams, 's.created_at', $filters);
+        foreach (Database::fetchAll(
+            "SELECT s.invoice_number, s.created_at, s.status, COALESCE(c.name, s.customer_name, 'WhatsApp Customer') as customer_name,
+                    (SELECT COALESCE(SUM(quantity), 0) FROM sale_items WHERE sale_id = s.id) as quantity, s.total_amount, s.notes
+             FROM sales s
+             LEFT JOIN customers c ON c.id = s.customer_id
+             WHERE " . implode(' AND ', $orderWhere) . " ORDER BY s.created_at DESC",
+            $orderParams
+        ) as $order) {
+            $rows[] = ['section' => 'Order', 'reference' => $order['invoice_number'], 'date' => $order['created_at'], 'status' => $order['status'], 'customer_or_warehouse' => $order['customer_name'], 'product_sku' => '', 'product_name' => '', 'quantity' => $order['quantity'], 'amount' => $order['total_amount'], 'details' => $order['notes']];
+        }
+
+        [$allocationBase, $allocationParams] = $this->buildWhatsappAllocWhere('wa');
+        $allocationWhere = [$allocationBase, "wa.status NOT IN ('REQUESTED', 'PENDING', 'CANCELLED', 'REJECTED')"];
+        if (!empty($filters['search'])) {
+            $allocationWhere[] = "(wa.allocation_number LIKE ? OR sc.name LIKE ? OR wa.notes LIKE ?
+                                   OR ao.outward_number LIKE ? OR ao.vehicle_number LIKE ? OR ao.driver_name LIKE ?
+                                   OR w.name LIKE ?
+                                   OR EXISTS (SELECT 1 FROM allocation_items ai
+                                              JOIN product_variants pv ON pv.id = ai.variant_id
+                                              JOIN products p ON p.id = pv.product_id
+                                              WHERE ai.allocation_id = wa.id AND (pv.sku LIKE ? OR p.name LIKE ?)))";
+            $like = '%' . trim((string)$filters['search']) . '%';
+            array_push($allocationParams, $like, $like, $like, $like, $like, $like, $like, $like, $like);
+        }
+        if (!empty($filters['status'])) {
+            if ($filters['status'] === 'RECEIVED') {
+                $allocationWhere[] = "wa.status IN ('RECEIVED', 'COMPLETED', 'DELIVERED')";
+            } elseif ($filters['status'] === 'PARTIAL_RECEIVED') {
+                $allocationWhere[] = "wa.status IN ('PARTIAL_RECEIVED', 'IN_PROGRESS')";
+            } elseif ($filters['status'] === 'DISPATCHED') {
+                $allocationWhere[] = "wa.status IN ('DISPATCHED', 'APPROVED')";
+            } else {
+                $allocationWhere[] = 'wa.status = ?';
+                $allocationParams[] = $filters['status'];
+            }
+        }
+        if (!empty($filters['warehouse_id'])) {
+            $allocationWhere[] = 'wa.warehouse_id = ?';
+            $allocationParams[] = (int)$filters['warehouse_id'];
+        }
+        $this->appendReportDateFilters($allocationWhere, $allocationParams, 'wa.created_at', $filters);
+        foreach (Database::fetchAll(
+            "SELECT wa.allocation_number, wa.created_at, wa.status, w.name as warehouse_name,
+                    SUM(COALESCE(ai.received_qty, ai.dispatched_qty, ai.requested_qty, 0)) as quantity,
+                    SUM(COALESCE(ai.received_qty, ai.dispatched_qty, ai.requested_qty, 0) * COALESCE(NULLIF(pv.selling_price, 0), NULLIF(pv.mrp, 0), 0)) as amount
+             FROM warehouse_allocations wa JOIN allocation_items ai ON ai.allocation_id = wa.id
+             LEFT JOIN sales_channels sc ON sc.id = wa.channel_id
+             LEFT JOIN allocation_outwards ao ON ao.allocation_id = wa.id
+             LEFT JOIN warehouses w ON w.id = wa.warehouse_id
+             JOIN product_variants pv ON pv.id = ai.variant_id
+             WHERE " . implode(' AND ', $allocationWhere) . "
+             GROUP BY wa.id, wa.allocation_number, wa.created_at, wa.status, w.name
+             ORDER BY wa.created_at DESC",
+            $allocationParams
+        ) as $allocation) {
+            $rows[] = ['section' => 'Inward Allocation', 'reference' => $allocation['allocation_number'], 'date' => $allocation['created_at'], 'status' => $allocation['status'], 'customer_or_warehouse' => $allocation['warehouse_name'], 'product_sku' => '', 'product_name' => '', 'quantity' => $allocation['quantity'], 'amount' => $allocation['amount'], 'details' => ''];
+        }
+
+        foreach (Database::fetchAll(
+            "SELECT p.name as product_name, pv.sku, SUM(CASE WHEN sb.stock_state = 'AVAILABLE' THEN sb.quantity ELSE 0 END) as quantity,
+                    SUM(CASE WHEN sb.stock_state = 'AVAILABLE' THEN sb.quantity * COALESCE(NULLIF(pv.selling_price, 0), NULLIF(pv.mrp, 0), 0) ELSE 0 END) as amount
+             FROM stock_balances sb JOIN product_variants pv ON pv.id = sb.variant_id
+             JOIN products p ON p.id = pv.product_id
+             WHERE sb.location_type = 'CHANNEL' AND sb.location_id IN ($placeholders) AND sb.stock_state = 'AVAILABLE'
+             GROUP BY p.name, pv.sku ORDER BY p.name, pv.sku",
+            $channelIds
+        ) as $product) {
+            $rows[] = ['section' => 'Available Inventory', 'reference' => '', 'date' => '', 'status' => 'AVAILABLE', 'customer_or_warehouse' => '', 'product_sku' => $product['sku'], 'product_name' => $product['product_name'], 'quantity' => $product['quantity'], 'amount' => $product['amount'], 'details' => ''];
+        }
+        return $rows;
+    }
 
     /**
      * Helper to get WhatsApp channel record
@@ -310,6 +938,11 @@ class WhatsappController {
         if (!empty($status)) {
             $where[] = "wa.status = ?";
             $params[] = $status;
+        }
+
+        if ($warehouseId !== '') {
+            $where[] = 'wa.warehouse_id = ?';
+            $params[] = (int)$warehouseId;
         }
 
         if (!empty($dateFrom)) {

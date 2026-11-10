@@ -459,7 +459,7 @@ class Role {
     }
 
     /**
-     * Keep only valid permission IDs for CRUD actions.
+     * Keep valid CRUD permission IDs and the dedicated shop stock adjustment permission.
      */
     public static function filterCrudPermissionIds(array $permissionIds): array {
         $permissionIds = array_values(array_unique(array_filter(
@@ -472,7 +472,12 @@ class Role {
 
         $placeholders = implode(',', array_fill(0, count($permissionIds), '?'));
         $rows = Database::fetchAll(
-            "SELECT id FROM permissions WHERE id IN ($placeholders) AND action IN ('view', 'create', 'edit', 'delete')",
+            "SELECT id FROM permissions
+             WHERE id IN ($placeholders)
+               AND (
+                    action IN ('view', 'create', 'edit', 'delete')
+                    OR (module = 'shop_stock' AND action = 'adjust')
+               )",
             $permissionIds
         );
         $allowedIds = array_fill_keys(array_map('intval', array_column($rows, 'id')), true);

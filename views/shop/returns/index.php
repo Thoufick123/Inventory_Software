@@ -3,6 +3,9 @@
         <h2 class="mb-1"><i class="bi bi-arrow-left-right me-2 text-primary"></i>Shop Returns &amp; Exchanges</h2>
         <span class="text-muted">Process retail POS returns, size &amp; color exchanges, and refunds for Shop customers</span>
     </div>
+    <a href="<?= url('shop/returns/returned-products') ?>" class="btn btn-outline-success rounded-pill px-3">
+        <i class="bi bi-box-seam me-1"></i>Returned Products
+    </a>
 </div>
 
 <?php if (hasPermission('shop_returns', 'create') || hasPermission('shop_returns', 'process')): ?>
@@ -349,7 +352,7 @@
                                     </div>
                                 </div>
 
-                                <!-- Card 2: Exchange Same Product -->
+                                <!-- Card 2: Product Exchange -->
                                 <div class="col-12 col-md-6">
                                     <div class="action-type-card card border-2 h-100 p-3 shadow-sm" 
                                          id="waCard_EXCHANGE_SAME" onclick="selectWaActionCard('EXCHANGE_SAME')"
@@ -360,10 +363,10 @@
                                                 <i class="bi bi-arrow-left-right text-success" style="font-size:15px;"></i>
                                             </span>
                                             <strong class="text-dark" style="font-size:14px;">Exchanged Product</strong>
-                                            <span class="ms-auto badge bg-success-subtle text-success" style="font-size:11px;">Size / Color</span>
+                                            <span class="ms-auto badge bg-success-subtle text-success" style="font-size:11px;">Any Product</span>
                                         </div>
                                         <p class="text-muted mb-0" style="font-size:12px; line-height:1.45;">
-                                            Exchange for different size or color variant of the same garment.
+                                            Exchange for any eligible product available in shop stock.
                                         </p>
                                     </div>
                                 </div>
@@ -483,6 +486,31 @@
                                     </thead>
                                     <tbody id="returnItemsTbody">
                                         <!-- Populated via JS -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div id="sameExchangeSection" class="card border-0 shadow-sm mb-4 d-none" style="border-radius:12px; overflow:hidden;">
+                            <div class="card-header bg-white py-2 px-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill font-monospace px-2.5 py-1" style="font-size:11px;">
+                                        <i class="bi bi-upc-scan me-1"></i>STEP 2B: NEW REPLACEMENT PRODUCTS
+                                    </span>
+                                </div>
+                                <span class="small text-muted">Scan any replacement product. Series / Complementary need quantity &gt; 0; Normal needs a good available piece QR.</span>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle mb-0" style="font-size:13px;">
+                                    <thead style="background:#f0fdf4; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:#166534; font-weight:700;">
+                                        <tr>
+                                            <th style="min-width:220px;">RETURNED PRODUCT</th>
+                                            <th style="min-width:270px;">SCAN REPLACEMENT PRODUCT</th>
+                                            <th style="min-width:220px;">SCANNED REPLACEMENT</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="sameExchangeTbody">
+                                        <tr><td colspan="3" class="text-center text-muted py-3">Select items from the old-product list to scan their replacements.</td></tr>
                                     </tbody>
                                 </table>
                             </div>
@@ -685,14 +713,101 @@ const updateReturnItemCount = () => {
 
 window.renderSameExchangeTable = function() {
     const isExchange = document.getElementById('formReturnTypeInput')?.value === 'EXCHANGE_SAME';
-    document.querySelectorAll('.replacement-scan-controls').forEach(controls => {
-        const itemId = controls.getAttribute('data-item-id');
-        const quantity = parseInt(document.getElementById('qty_' + itemId)?.value || 0, 10) || 0;
-        const isSelected = quantity > 0;
-        controls.classList.toggle('d-none', !isExchange || !isSelected);
+    const section = document.getElementById('sameExchangeSection');
+    const tbody = document.getElementById('sameExchangeTbody');
+    if (!section || !tbody) return;
+    section.classList.toggle('d-none', !isExchange);
+    tbody.replaceChildren();
 
-        const variantInput = document.getElementById('swapVariant_' + itemId);
-        if (variantInput) variantInput.disabled = !isExchange || !isSelected;
+    const selectedItemIds = isExchange ? getReturnItemIds() : [];
+    Object.keys(currentSwapValues).forEach(itemId => {
+        if (!selectedItemIds.includes(itemId)) {
+            delete currentSwapValues[itemId];
+            delete currentSwapTags[itemId];
+        }
+    });
+
+    if (selectedItemIds.length === 0) {
+        const row = document.createElement('tr');
+        const message = document.createElement('td');
+        message.colSpan = 3;
+        message.className = 'text-center text-muted py-3';
+        message.textContent = isExchange
+            ? 'Select items from the old-product list to scan their replacements.'
+            : 'Replacement scanning is available for exchanges.';
+        row.appendChild(message);
+        tbody.appendChild(row);
+        return;
+    }
+
+    selectedItemIds.forEach(itemId => {
+        const item = loadedOrderItemsMap[itemId];
+        if (!item) return;
+        const replacement = currentSwapValues[itemId];
+        const row = document.createElement('tr');
+        const productCell = document.createElement('td');
+        const oldName = document.createElement('div');
+        oldName.className = 'fw-semibold';
+        oldName.textContent = item.product_name || '';
+        const oldMeta = document.createElement('small');
+        oldMeta.className = 'text-muted';
+        oldMeta.textContent = `${item.sku || ''} · Qty: ${parseInt(document.getElementById('qty_' + itemId)?.value || 0, 10) || 0}`;
+        productCell.append(oldName, oldMeta);
+
+        const scanCell = document.createElement('td');
+        const hiddenVariant = document.createElement('input');
+        hiddenVariant.type = 'hidden';
+        hiddenVariant.name = `items[${itemId}][exchange_variant_id]`;
+        hiddenVariant.id = 'swapVariant_' + itemId;
+        hiddenVariant.value = replacement ? replacement.variant_id : '';
+        scanCell.appendChild(hiddenVariant);
+
+        const inputGroup = document.createElement('div');
+        inputGroup.className = 'input-group input-group-sm';
+        const scanIcon = document.createElement('span');
+        scanIcon.className = 'input-group-text bg-success-subtle text-success border-success';
+        scanIcon.innerHTML = '<i class="bi bi-upc-scan"></i>';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.id = 'swapTagInput_' + itemId;
+        input.className = 'form-control font-monospace border-success';
+        input.placeholder = 'Scan QR / barcode';
+        input.autocomplete = 'off';
+        input.addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                scanSameProductSwap(itemId, input.value, input);
+            }
+        });
+        const scanButton = document.createElement('button');
+        scanButton.type = 'button';
+        scanButton.className = 'btn btn-outline-success fw-semibold';
+        scanButton.textContent = 'Scan';
+        scanButton.addEventListener('click', () => scanSameProductSwap(itemId, input.value, input));
+        inputGroup.append(scanIcon, input, scanButton);
+        scanCell.appendChild(inputGroup);
+        const error = document.createElement('div');
+        error.id = 'swapScanError_' + itemId;
+        error.className = 'small text-danger mt-1 d-none';
+        scanCell.appendChild(error);
+
+        const statusCell = document.createElement('td');
+        const name = document.createElement('div');
+        name.id = 'swapProdName_' + itemId;
+        name.className = 'small fw-semibold text-dark';
+        name.textContent = replacement ? replacement.product_name : 'No replacement scanned';
+        const sku = document.createElement('div');
+        sku.id = 'swapSku_' + itemId;
+        sku.className = 'small text-muted font-monospace';
+        sku.textContent = replacement ? `${replacement.sku} · ${replacement.tag_code}` : 'Scan an available replacement QR/barcode';
+        const stock = document.createElement('small');
+        stock.id = 'swapStock_' + itemId;
+        stock.className = `badge bg-success-subtle text-success border border-success-subtle mt-1${replacement ? '' : ' d-none'}`;
+        stock.textContent = replacement ? `${replacement.available_stock} pcs in shop` : '';
+        statusCell.append(name, sku, stock);
+
+        row.append(productCell, scanCell, statusCell);
+        tbody.appendChild(row);
     });
 };
 
@@ -927,20 +1042,6 @@ document.addEventListener('DOMContentLoaded', function() {
                                 SKU: <strong class="text-dark font-monospace">${item.sku || '-'}</strong> | Size: <span class="badge bg-light text-dark border" style="font-size:10px;">${item.size_name || '-'}</span> | Color: <span class="badge bg-light text-dark border" style="font-size:10px;">${item.color_name || '-'}</span>
                             </div>
                             <div class="scanned-tags-display d-flex flex-wrap gap-1 mt-1" id="waTagsDisplay_${item.id}"></div>
-                            <input type="hidden" name="items[${item.id}][exchange_variant_id]" id="swapVariant_${item.id}" value="" disabled>
-                            <div class="replacement-scan-controls d-none mt-2" data-item-id="${item.id}">
-                                <div class="small fw-semibold text-success mb-1">Scan replacement piece</div>
-                                <div class="input-group input-group-sm" style="max-width:240px;">
-                                    <span class="input-group-text bg-success-subtle text-success border-success"><i class="bi bi-upc-scan"></i></span>
-                                    <input type="text" id="swapTagInput_${item.id}" class="form-control form-control-sm font-monospace border-success" placeholder="Scan replacement..." style="font-size:11px;"
-                                           onkeydown="if(event.key === 'Enter') { event.preventDefault(); scanSameProductSwap(${item.id}, this.value, this); }">
-                                    <button type="button" class="btn btn-sm btn-outline-success fw-semibold" onclick="scanSameProductSwap(${item.id}, document.getElementById('swapTagInput_${item.id}').value, document.getElementById('swapTagInput_${item.id}'))">Scan</button>
-                                </div>
-                                <div class="small text-danger mt-1 d-none" id="swapScanError_${item.id}"></div>
-                                <div class="small fw-semibold text-dark mt-1" id="swapProdName_${item.id}">No replacement scanned</div>
-                                <div class="small text-muted font-monospace" id="swapSku_${item.id}">Scan a replacement QR/barcode</div>
-                                <small class="badge bg-success-subtle text-success border border-success-subtle mt-1 d-none" id="swapStock_${item.id}"></small>
-                            </div>
                         </td>
                         <td class="text-center fw-bold text-dark">
                             ${item.quantity}
@@ -1096,10 +1197,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (!res.success || !variant) {
                     throw new Error(res.message || 'Scanned replacement was not found.');
                 }
-                if (String(variant.product_id) !== String(item.product_id)) {
-                    throw new Error(`Scan a replacement variant of ${item.product_name}.`);
-                }
-
                 const qty = parseInt(document.getElementById('qty_' + itemId)?.value || 1) || 1;
                 const stock = parseFloat(variant.available_stock || 0);
                 if (stock < qty) {
@@ -1127,6 +1224,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     size_name: variant.size_name || '',
                     color_name: variant.color_name || '',
                     available_stock: stock,
+                    aggregate_stock: Boolean(variant.aggregate_stock),
                     unit_price: parseFloat(variant.selling_price || variant.mrp || item.unit_price || 0),
                     tag_code: replacementTag
                 };
@@ -1233,7 +1331,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const missingScan = selectedItemIds.find(itemId => {
                 const replacement = currentSwapValues[itemId];
                 const qty = parseInt(document.getElementById('qty_' + itemId)?.value || 1) || 1;
-                return !replacement || replacement.available_stock < qty;
+                return !replacement
+                    || replacement.available_stock < qty
+                    || (!replacement.aggregate_stock && qty !== 1);
             });
             if (missingScan) {
                 e.preventDefault();
