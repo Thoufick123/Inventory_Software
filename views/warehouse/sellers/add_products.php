@@ -369,7 +369,7 @@
             <div class="row g-2 align-items-end">
                 <div class="col-xl-2 col-lg-3 col-md-4 col-12">
                     <label class="form-label fs-8 text-muted mb-1 fw-bold">Product Name:</label>
-                    <input type="text" class="form-control form-control-sm fw-semibold text-uppercase" id="qfProductName" placeholder="e.g. Cotton Shirt" oninput="this.value=this.value.toUpperCase()">
+                    <input type="text" class="form-control form-control-sm fw-semibold text-uppercase" id="qfProductName" placeholder="" oninput="this.value=this.value.toUpperCase()">
                 </div>
                 <div class="col-xl-2 col-lg-2 col-md-4 col-6">
                     <label class="form-label fs-8 text-muted mb-1 fw-bold">Category Type:</label>
@@ -383,12 +383,12 @@
                         <div class="d-flex align-items-center gap-1">
                             <div class="input-group input-group-sm">
                                 <span class="input-group-text py-0 px-1 font-monospace fs-8 text-muted bg-light">From</span>
-                                <input type="number" min="1" step="1" id="qfSeriesFrom" class="form-control form-control-sm text-center px-1 font-monospace fw-bold" value="1" placeholder="1" disabled>
+                                <input type="number" min="1" step="1" id="qfSeriesFrom" class="form-control form-control-sm text-center px-1 font-monospace fw-bold" value="1" placeholder="" disabled>
                             </div>
                             <span class="text-muted small">&rarr;</span>
                             <div class="input-group input-group-sm">
                                 <span class="input-group-text py-0 px-1 font-monospace fs-8 text-muted bg-light">End</span>
-                                <input type="number" min="1" step="1" id="qfSeriesEnd" class="form-control form-control-sm text-center px-1 font-monospace fw-bold" value="1" placeholder="1" disabled>
+                                <input type="number" min="1" step="1" id="qfSeriesEnd" class="form-control form-control-sm text-center px-1 font-monospace fw-bold" value="1" placeholder="" disabled>
                             </div>
                         </div>
                     </div>
@@ -400,45 +400,51 @@
                             <i class="bi bi-plus-circle me-0.5"></i>+ New HSN
                         </button>
                     </div>
+                    <select class="form-select form-select-sm font-monospace fw-bold" id="qfHsnSelect" onchange="onQfHsnSelect(this.value)">
+                        <option value="">-- Select HSN --</option>
+                        <?php foreach (($hsnCodes ?? []) as $h): ?>
+                            <option value="<?= htmlspecialchars($h['hsn_code']) ?>" data-gst="<?= (float)($h['gst_rate'] ?? 5) ?>">
+                                <?= htmlspecialchars($h['hsn_code']) ?><?= !empty($h['description']) ? ' &bull; ' . htmlspecialchars($h['description']) : '' ?> (<?= (float)($h['gst_rate'] ?? 5) ?>%)
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-xl-1 col-lg-1 col-md-2 col-6">
+                    <label class="form-label fs-8 text-muted mb-1 fw-bold">GST (%):</label>
                     <div class="input-group input-group-sm">
-                        <input type="text" class="form-control form-control-sm font-monospace fw-bold" id="qfHsn" list="supplierHsnCodesList" placeholder="e.g. 6109" onchange="onQfHsnChange()">
-                        <select class="form-select form-select-sm" id="qfHsnSelect" style="max-width:38px;" onchange="onQfHsnSelect(this.value)" title="Choose from HSN codes">
-                            <option value="">▼</option>
-                            <?php foreach (($hsnCodes ?? []) as $h): ?>
-                                <option value="<?= htmlspecialchars($h['hsn_code']) ?>" data-gst="<?= (float)($h['gst_rate'] ?? 5) ?>"><?= htmlspecialchars($h['hsn_code']) ?> &bull; <?= htmlspecialchars($h['description'] ?? '') ?></option>
-                            <?php endforeach; ?>
-                        </select>
+                        <input type="number" step="0.01" min="0" max="100" class="form-control form-control-sm text-center fw-bold" id="qfGst" value="5.00">
+                        <span class="input-group-text bg-white px-1 fs-8">%</span>
                     </div>
                 </div>
-                <div class="col-xl-1 col-lg-2 col-md-3 col-6">
+                <div class="col-xl-1 col-lg-1 col-md-2 col-6">
                     <label class="form-label fs-8 text-muted mb-1 fw-bold">Weight (kg):</label>
-                    <input type="number" step="0.001" min="0" class="form-control form-control-sm text-end font-monospace" id="qfWeight" placeholder="0.500">
+                    <input type="number" step="0.001" min="0" class="form-control form-control-sm text-end font-monospace" id="qfWeight" placeholder="">
                 </div>
-                <div class="col-xl-2 col-lg-2 col-md-3 col-6">
+                <div class="col-xl-1 col-lg-1 col-md-3 col-6">
                     <label class="form-label fs-8 text-muted mb-1 fw-bold">Base MRP (₹):</label>
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white px-1.5 fs-8">₹</span>
-                        <input type="number" step="0.01" min="0" class="form-control form-control-sm text-end text-success fw-bold" id="qfMrp" placeholder="250.00" oninput="validateQuickFillPricing()">
+                        <input type="number" step="0.01" min="0" class="form-control form-control-sm text-end text-success fw-bold" id="qfMrp" placeholder="" oninput="validateQuickFillPricing()">
                     </div>
                 </div>
-                <div class="col-xl-2 col-lg-2 col-md-3 col-6">
+                <div class="col-xl-1 col-lg-1 col-md-3 col-6">
                     <label class="form-label fs-8 text-muted mb-1 fw-bold">Selling Price (₹):</label>
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white px-1.5 fs-8">₹</span>
-                        <input type="number" step="0.01" min="0" class="form-control form-control-sm text-end text-primary fw-bold" id="qfSp" placeholder="200.00" oninput="validateQuickFillPricing()">
+                        <input type="number" step="0.01" min="0" class="form-control form-control-sm text-end text-primary fw-bold" id="qfSp" placeholder="" oninput="validateQuickFillPricing()">
                     </div>
                     <div id="qfPriceWarn" class="text-danger fs-8 fw-bold mt-1 d-none"></div>
                 </div>
-                <div class="col-xl-1 col-lg-2 col-md-3 col-6">
+                <div class="col-xl-1 col-lg-1 col-md-3 col-6">
                     <label class="form-label fs-8 text-muted mb-1 fw-bold">Supplier Cost (₹):</label>
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white px-1.5 fs-8">₹</span>
-                        <input type="number" step="0.01" min="0" class="form-control form-control-sm text-end text-dark fw-bold" id="qfCost" placeholder="666.00" oninput="validateQuickFillPricing()">
+                        <input type="number" step="0.01" min="0" class="form-control form-control-sm text-end text-dark fw-bold" id="qfCost" placeholder="" oninput="validateQuickFillPricing()">
                     </div>
                 </div>
                 <div class="col-xl-1 col-lg-1 col-md-3 col-6">
                     <label class="form-label fs-8 text-muted mb-1 fw-bold">Qty / Var:</label>
-                    <input type="number" min="0" step="1" class="form-control form-control-sm text-center fw-bold fs-7" id="qfQty" placeholder="15" oninput="handleQfQtyInput(this.value)">
+                    <input type="number" min="0" step="1" class="form-control form-control-sm text-center fw-bold fs-7" id="qfQty" placeholder="" oninput="handleQfQtyInput(this.value)">
                 </div>
             </div>
             <div id="quickFillSuccessNotice" class="alert alert-success alert-dismissible fade show py-1.5 px-3 mb-0 mt-2 fs-8 fw-semibold d-none" role="alert">
@@ -461,7 +467,8 @@
                         <th style="min-width: 140px;">Category Hierarchy</th>
                         <th style="min-width: 195px;">Category Type</th>
                         <th style="min-width: 220px;">Product Name <span class="text-danger">*</span></th>
-                        <th style="width: 105px;" class="text-center">HSN <span class="text-danger">*</span></th>
+                        <th style="width: 135px;" class="text-center">HSN <span class="text-danger">*</span></th>
+                        <th style="width: 95px;" class="text-center">GST (%) <span class="text-danger">*</span></th>
                         <th style="width: 100px;" class="text-end">Weight (kg) <span class="text-danger">*</span></th>
                         <th style="min-width: 115px;" class="text-center">Variant / Size</th>
                         <th style="width: 125px;" class="text-end">Base MRP (₹) <span class="text-danger">*</span></th>
@@ -474,7 +481,7 @@
                 </thead>
                 <tbody id="addedProductsTableBody">
                     <tr id="emptyProductListNotice">
-                        <td colspan="13" class="text-center py-5 text-muted">
+                        <td colspan="14" class="text-center py-5 text-muted">
                             <i class="bi bi-cart-x fs-1 opacity-50 d-block mb-2"></i>
                             <div class="fw-semibold">No Products in Inward List Yet</div>
                             <div class="small">Choose a category and click attribute options above to directly load products here.</div>
@@ -483,16 +490,21 @@
                 </tbody>
                 <tfoot class="table-light fw-bold">
                     <tr>
-                        <td colspan="5" class="text-end">Retail Totals:</td>
+                        <td colspan="6" class="text-end">Retail Totals:</td>
                         <td class="text-end font-monospace" id="footerTotalWeight">0.000 kg</td>
                         <td colspan="4"></td>
                         <td class="text-center fs-7" id="footerTotalQty">0 pcs</td>
                         <td class="text-end text-primary fs-6" id="footerGrandTotal">₹0.00</td>
                         <td></td>
                     </tr>
-                    <tr>
-                        <td colspan="11" class="text-end">Supplier Product Total (Cost + GST):</td>
-                        <td class="text-end text-success fs-6" id="footerSupplierProductTotal">₹0.00</td>
+                    <tr class="table-warning-subtle">
+                        <td colspan="10" class="text-end small">
+                            <span class="text-muted">Supplier Net Cost:</span> <span class="text-dark fw-bold me-2" id="footerSupplierGrossCost">₹0.00</span>
+                            <span class="text-muted">| Total GST:</span> <span class="text-danger fw-bold me-2" id="footerSupplierGstTotal">₹0.00</span>
+                            <span class="text-muted">|</span>
+                        </td>
+                        <td colspan="2" class="text-end text-nowrap">Supplier Product Total (Cost + GST):</td>
+                        <td class="text-end text-success fs-6 fw-bolder" id="footerSupplierProductTotal">₹0.00</td>
                         <td></td>
                     </tr>
                 </tfoot>
@@ -584,6 +596,14 @@ const ATTRIBUTES_DATA = <?= json_encode($allAttributes ?? [], JSON_UNESCAPED_UNI
 const DEFAULT_PRODUCTS_DATA = <?= json_encode($allDefaultProducts ?? [], JSON_UNESCAPED_UNICODE) ?>;
 const DEFAULT_BRAND_ID = <?= json_encode(!empty($billSetup['brand_id']) ? (int)$billSetup['brand_id'] : (!empty($seller['brand_id']) ? (int)$seller['brand_id'] : null)) ?>;
 const DEFAULT_BRAND_NAME = <?= json_encode(!empty($billSetup['brand_name']) ? $billSetup['brand_name'] : '') ?>;
+let HSN_OPTIONS = <?= json_encode(array_values(array_map(function($h) {
+    return [
+        'hsn_code'    => (string)$h['hsn_code'],
+        'description' => (string)($h['description'] ?? ''),
+        'gst_rate'    => (float)($h['gst_rate'] ?? 5.00),
+    ];
+}, $hsnCodes ?? [])), JSON_UNESCAPED_UNICODE) ?>;
+
 // Array of active inward products
 let addedProductsList = [];
 
@@ -627,9 +647,13 @@ function selectCategoryTile(btn, catId, catName) {
 
     const catObj = CATEGORIES_DATA.find(c => String(c.id) === String(catId));
     if (catObj && catObj.hsn_code) {
-        const qfHsnEl = document.getElementById('qfHsn');
+        const qfHsnEl = document.getElementById('qfHsnSelect');
         if (qfHsnEl && !qfHsnEl.value) {
             qfHsnEl.value = catObj.hsn_code;
+            if (catObj.gst_rate) {
+                const qfGst = document.getElementById('qfGst');
+                if (qfGst) qfGst.value = parseFloat(catObj.gst_rate).toFixed(2);
+            }
         }
     }
     const subSection = document.getElementById('subcategoriesSection');
@@ -992,10 +1016,11 @@ function regenerateMatrixProducts() {
             const qfQty = parseInt(document.getElementById('qfQty')?.value) || 0;
             const qfFrom = parseInt(document.getElementById('qfSeriesFrom')?.value) || 1;
             const qfEnd = parseInt(document.getElementById('qfSeriesEnd')?.value) || (qfQty > 0 ? qfQty : 1);
-            const qfHsnVal = (document.getElementById('qfHsn')?.value || '').trim();
+            const qfHsnVal = (document.getElementById('qfHsnSelect')?.value || '').trim();
+            const qfGstVal = document.getElementById('qfGst')?.value;
             const activeCat = CATEGORIES_DATA.find(c => String(c.id) === String(catId));
             const defaultHsn = qfHsnVal || (activeCat?.hsn_code || '');
-            const defaultGst = (activeCat?.gst_rate ? parseFloat(activeCat.gst_rate) : 5.00);
+            const defaultGst = (qfGstVal !== undefined && qfGstVal !== '') ? (parseFloat(qfGstVal) || 0) : (activeCat?.gst_rate ? parseFloat(activeCat.gst_rate) : 5.00);
 
             updatedCategoryProducts.push({
                 id: Date.now() + Math.floor(Math.random() * 100000),
@@ -1183,10 +1208,11 @@ function addSingleCategoryProduct() {
     const qfQty = parseInt(document.getElementById('qfQty')?.value) || 0;
     const qfFrom = parseInt(document.getElementById('qfSeriesFrom')?.value) || 1;
     const qfEnd = parseInt(document.getElementById('qfSeriesEnd')?.value) || (qfQty > 0 ? qfQty : 1);
-    const qfHsnVal = (document.getElementById('qfHsn')?.value || '').trim();
+    const qfHsnVal = (document.getElementById('qfHsnSelect')?.value || '').trim();
+    const qfGstVal = document.getElementById('qfGst')?.value;
     const activeCat = CATEGORIES_DATA.find(c => String(c.id) === String(catId));
     const defaultHsn = qfHsnVal || (activeCat?.hsn_code || '');
-    const defaultGst = (activeCat?.gst_rate ? parseFloat(activeCat.gst_rate) : 5.00);
+    const defaultGst = (qfGstVal !== undefined && qfGstVal !== '') ? (parseFloat(qfGstVal) || 0) : (activeCat?.gst_rate ? parseFloat(activeCat.gst_rate) : 5.00);
 
     addedProductsList.push({
         id: Date.now() + Math.floor(Math.random() * 10000),
@@ -1234,9 +1260,11 @@ function addTemplateProduct(t) {
     const qfQty = parseInt(document.getElementById('qfQty')?.value) || 0;
     const qfFrom = parseInt(document.getElementById('qfSeriesFrom')?.value) || 1;
     const qfEnd = parseInt(document.getElementById('qfSeriesEnd')?.value) || (qfQty > 0 ? qfQty : 1);
-    const qfHsnVal = (document.getElementById('qfHsn')?.value || '').trim();
+    const qfHsnVal = (document.getElementById('qfHsnSelect')?.value || '').trim();
+    const qfGstVal = document.getElementById('qfGst')?.value;
     const activeCat = CATEGORIES_DATA.find(c => String(c.id) === String(catId));
     const defaultHsn = qfHsnVal || t.hsn_code || (activeCat?.hsn_code || '');
+    const defaultGst = (qfGstVal !== undefined && qfGstVal !== '') ? (parseFloat(qfGstVal) || 0) : (parseFloat(t.default_gst_pct) || 5.00);
 
     addedProductsList.push({
         id: Date.now() + Math.floor(Math.random() * 10000),
@@ -1258,7 +1286,7 @@ function addTemplateProduct(t) {
         series_end: isInitialSeriesOrComp ? qfEnd : 1,
         series_start_code: isInitialSeriesOrComp ? String(qfFrom) : '',
         series_end_code: isInitialSeriesOrComp ? String(qfEnd) : '',
-        gst_percentage: parseFloat(t.default_gst_pct) || 5.00,
+        gst_percentage: defaultGst,
         line_total: 0,
         size_name: 'Standard',
         color_name: '',
@@ -1319,6 +1347,18 @@ function renderAddedProductsTable() {
         const sFromVal = (item.series_from !== undefined && item.series_from !== null) ? item.series_from : 1;
         const sEndVal = (item.series_end !== undefined && item.series_end !== null) ? item.series_end : ((item.quantity && parseInt(item.quantity) > 0) ? parseInt(item.quantity) : 1);
 
+        let hsnOptionsHtml = `<option value="">-- HSN --</option>`;
+        let hasSelectedHsn = false;
+        HSN_OPTIONS.forEach(h => {
+            const isSel = (item.hsn_code && String(h.hsn_code).toUpperCase() === String(item.hsn_code).toUpperCase());
+            if (isSel) hasSelectedHsn = true;
+            const label = h.description ? `${h.hsn_code} - ${h.description} (${parseFloat(h.gst_rate)}%)` : `${h.hsn_code} (${parseFloat(h.gst_rate)}%)`;
+            hsnOptionsHtml += `<option value="${escapeHtml(h.hsn_code)}" data-gst="${parseFloat(h.gst_rate)}" ${isSel ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+        });
+        if (item.hsn_code && !hasSelectedHsn) {
+            hsnOptionsHtml += `<option value="${escapeHtml(item.hsn_code)}" data-gst="${parseFloat(item.gst_percentage || 5)}" selected>${escapeHtml(item.hsn_code)}</option>`;
+        }
+
         html += `
             <tr id="row_${item.id}">
                 <td class="text-center fw-bold text-muted">${idx + 1}</td>
@@ -1338,7 +1378,7 @@ function renderAddedProductsTable() {
                                        class="form-control form-control-sm text-center px-1 font-monospace fw-bold series-range-input"
                                        disabled
                                        value="${sFromVal}"
-                                       placeholder="1"
+                                       placeholder=""
                                        oninput="updateItemField(${item.id}, 'series_from', this.value)">
                             </div>
                             <span class="text-muted small">&rarr;</span>
@@ -1348,7 +1388,7 @@ function renderAddedProductsTable() {
                                        class="form-control form-control-sm text-center px-1 font-monospace fw-bold series-range-input"
                                        disabled
                                        value="${sEndVal}"
-                                       placeholder="1"
+                                       placeholder=""
                                        oninput="updateItemField(${item.id}, 'series_end', this.value)">
                             </div>
                         </div>
@@ -1357,21 +1397,30 @@ function renderAddedProductsTable() {
                 <td>
                     <input type="text" class="form-control form-control-sm fw-semibold text-uppercase" id="name_${item.id}"
                             value="${escapeHtml(item.product_name || '')}" 
-                            placeholder="Product Name"
+                            placeholder=""
                             oninput="this.value=this.value.toUpperCase();updateItemField(${item.id}, 'product_name', this.value)">
                 </td>
                 <td>
-                    <input type="text" class="form-control form-control-sm font-monospace text-center fw-bold" id="hsn_${item.id}"
-                            value="${escapeHtml(item.hsn_code || '')}" 
-                            placeholder="HSN" maxlength="20"
-                            list="supplierHsnCodesList"
-                            oninput="updateItemField(${item.id}, 'hsn_code', this.value)">
+                    <select class="form-select form-select-sm font-monospace fw-bold" id="hsn_${item.id}"
+                            onchange="handleRowHsnChange(${item.id}, this)">
+                        ${hsnOptionsHtml}
+                    </select>
+                </td>
+                <td>
+                    <div class="input-group input-group-sm">
+                        <input type="number" step="0.01" min="0" max="100" id="gst_${item.id}"
+                               class="form-control form-control-sm text-center fw-bold"
+                               value="${(item.gst_percentage !== undefined && item.gst_percentage !== null) ? parseFloat(item.gst_percentage).toFixed(2) : '5.00'}"
+                               placeholder=""
+                               oninput="updateItemField(${item.id}, 'gst_percentage', this.value)">
+                        <span class="input-group-text bg-light text-muted px-1 fs-8">%</span>
+                    </div>
                 </td>
                 <td>
                     <input type="number" step="0.001" min="0" id="wt_${item.id}"
                             class="form-control form-control-sm text-end font-monospace" 
                             value="${(item.weight && parseFloat(item.weight) > 0) ? parseFloat(item.weight).toFixed(3) : ''}" 
-                            placeholder="0.000"
+                            placeholder=""
                             oninput="updateItemField(${item.id}, 'weight', this.value)">
                 </td>
                 <td class="text-center">
@@ -1385,7 +1434,7 @@ function renderAddedProductsTable() {
                         <input type="number" step="0.01" min="0" id="mrp_${item.id}"
                                class="form-control form-control-sm text-end text-success fw-bold ${(sp > 0 && mrp > 0 && sp >= mrp) ? 'is-invalid border-danger' : ''}" 
                                value="${(item.mrp && parseFloat(item.mrp) > 0) ? parseFloat(item.mrp).toFixed(2) : ''}" 
-                               placeholder="0.00"
+                               placeholder=""
                                oninput="updateItemField(${item.id}, 'mrp', this.value)">
                     </div>
                 </td>
@@ -1395,7 +1444,7 @@ function renderAddedProductsTable() {
                         <input type="number" step="0.01" min="0" id="sp_${item.id}"
                                class="form-control form-control-sm text-end text-primary fw-bold ${isPriceInvalid ? 'is-invalid border-danger' : ''}" 
                                value="${(item.selling_price && parseFloat(item.selling_price) > 0) ? parseFloat(item.selling_price).toFixed(2) : ''}" 
-                               placeholder="0.00"
+                               placeholder=""
                                oninput="updateItemField(${item.id}, 'selling_price', this.value)">
                     </div>
                     <div id="valWarn_${item.id}" class="${isPriceInvalid ? '' : 'd-none'} text-danger fs-8 fw-bold mt-1 text-end">
@@ -1408,7 +1457,7 @@ function renderAddedProductsTable() {
                         <input type="number" step="0.01" min="0" id="cost_${item.id}"
                                class="form-control form-control-sm text-end text-dark fw-bold ${(sp > 0 && cost > 0 && sp <= cost) ? 'is-invalid border-danger' : ''}" 
                                value="${(item.purchase_price && parseFloat(item.purchase_price) > 0) ? parseFloat(item.purchase_price).toFixed(2) : ''}" 
-                               placeholder="0.00"
+                               placeholder=""
                                oninput="updateItemField(${item.id}, 'purchase_price', this.value)">
                     </div>
                 </td>
@@ -1416,7 +1465,7 @@ function renderAddedProductsTable() {
                     <input type="number" min="0" step="1" id="qty_${item.id}"
                            class="form-control form-control-sm text-center fw-bold fs-7" 
                            value="${(item.quantity && parseInt(item.quantity) > 0) ? item.quantity : ''}" 
-                           placeholder="0"
+                           placeholder=""
                            oninput="updateItemField(${item.id}, 'quantity', this.value)">
                 </td>
                 <td class="text-end fw-bold text-primary fs-7" id="lineTotal_${item.id}">
@@ -1438,6 +1487,25 @@ function renderAddedProductsTable() {
 
     tbody.innerHTML = html;
     if (btnSubmit) btnSubmit.disabled = false;
+    recalculateAllTotals();
+}
+
+function handleRowHsnChange(itemId, selectEl) {
+    const val = (selectEl.value || '').trim();
+    const item = addedProductsList.find(it => it.id === itemId);
+    if (!item) return;
+
+    item.hsn_code = val;
+
+    const selectedOpt = selectEl.options[selectEl.selectedIndex];
+    if (selectedOpt && selectedOpt.dataset && selectedOpt.dataset.gst !== undefined) {
+        const gstVal = parseFloat(selectedOpt.dataset.gst);
+        if (!isNaN(gstVal)) {
+            item.gst_percentage = gstVal;
+            const gstInp = document.getElementById(`gst_${itemId}`);
+            if (gstInp) gstInp.value = gstVal.toFixed(2);
+        }
+    }
     recalculateAllTotals();
 }
 
@@ -1506,6 +1574,8 @@ function updateItemField(itemId, fieldName, value) {
         }
     } else if (fieldName === 'weight') {
         item.weight = parseFloat(value) || 0;
+    } else if (fieldName === 'gst_percentage') {
+        item.gst_percentage = parseFloat(value) || 0;
     } else {
         item[fieldName] = value;
     }
@@ -1673,7 +1743,8 @@ function applyQuickFillToAll() {
 
     const pName = (document.getElementById('qfProductName')?.value || '').trim().toUpperCase();
     const catType = (document.getElementById('qfCategoryType')?.value || 'NORMAL');
-    const hsn = (document.getElementById('qfHsn')?.value || '').trim();
+    const hsn = (document.getElementById('qfHsnSelect')?.value || '').trim();
+    const qfGstVal = document.getElementById('qfGst')?.value;
     const weightVal = document.getElementById('qfWeight')?.value;
     const mrpVal = document.getElementById('qfMrp')?.value;
     const spVal = document.getElementById('qfSp')?.value;
@@ -1707,6 +1778,7 @@ function applyQuickFillToAll() {
             item.qr_type = (catType === 'SERIES') ? 'SERIES_BATCH' : 'INDIVIDUAL';
         }
         if (hsn) item.hsn_code = hsn;
+        if (qfGstVal !== undefined && qfGstVal !== '') item.gst_percentage = parseFloat(qfGstVal) || 0;
         if (weightVal !== undefined && weightVal !== '') item.weight = parseFloat(weightVal) || 0;
         if (mrpVal !== undefined && mrpVal !== '') item.mrp = parseFloat(mrpVal) || 0;
         if (spVal !== undefined && spVal !== '') item.selling_price = parseFloat(spVal) || 0;
@@ -1738,6 +1810,8 @@ function recalculateAllTotals() {
     let totalQty = 0;
     let totalWeight = 0.000;
     let retailTotal = 0.00;
+    let supplierGrossCost = 0.00;
+    let supplierGstTotal = 0.00;
     let supplierProductTotal = 0.00;
 
     addedProductsList.forEach(item => {
@@ -1745,20 +1819,26 @@ function recalculateAllTotals() {
         const wt = parseFloat(item.weight) || 0;
         const sp = parseFloat(item.selling_price) || 0;
         const cost = parseFloat(item.purchase_price) || 0;
-        const gstPct = parseFloat(item.gst_percentage) || 0;
+        const gstPct = (item.gst_percentage !== undefined && item.gst_percentage !== null) ? parseFloat(item.gst_percentage) : 5.00;
         item.line_total = sp * qty;
         totalQty += qty;
         totalWeight += (wt * qty);
         retailTotal += item.line_total;
         const lineCost = Math.round((cost * qty + Number.EPSILON) * 100) / 100;
-        const lineTax = Math.round((lineCost * gstPct / 100 + Number.EPSILON) * 100) / 100;
-        supplierProductTotal += lineCost + lineTax;
+        const lineTax = Math.round((lineCost * (gstPct / 100) + Number.EPSILON) * 100) / 100;
+        supplierGrossCost += lineCost;
+        supplierGstTotal += lineTax;
+        supplierProductTotal += (lineCost + lineTax);
     });
 
     document.getElementById('badgeItemCount').textContent = `${addedProductsList.length} Product(s)`;
     document.getElementById('footerTotalQty').textContent = `${totalQty} pcs`;
     document.getElementById('footerTotalWeight').textContent = `${totalWeight.toFixed(3)} kg`;
     document.getElementById('footerGrandTotal').textContent = '₹' + retailTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const grossCostEl = document.getElementById('footerSupplierGrossCost');
+    if (grossCostEl) grossCostEl.textContent = '₹' + supplierGrossCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const gstTotalEl = document.getElementById('footerSupplierGstTotal');
+    if (gstTotalEl) gstTotalEl.textContent = '₹' + supplierGstTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const supplierTotalEl = document.getElementById('footerSupplierProductTotal');
     if (supplierTotalEl) supplierTotalEl.textContent = '₹' + supplierProductTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const btnSubmit = document.getElementById('btnSaveAllProducts');
@@ -1924,27 +2004,48 @@ function submitSupplierAddHsn(e) {
         if (data.success && data.data) {
             bootstrap.Modal.getInstance(document.getElementById('modalSupplierAddHsn')).hide();
 
-            // Append to datalist
-            const dl = document.getElementById('supplierHsnCodesList');
-            if (dl) {
-                const opt = document.createElement('option');
-                opt.value = data.data.hsn_code;
-                opt.text = `${data.data.hsn_code} - ${data.data.description} (${data.data.gst_rate}% GST)`;
-                dl.appendChild(opt);
+            const newHsn = data.data.hsn_code;
+            const newGst = parseFloat(data.data.gst_rate) || 5.00;
+            const newDesc = data.data.description || '';
+
+            // Update in-memory HSN_OPTIONS
+            if (!HSN_OPTIONS.some(h => String(h.hsn_code).toUpperCase() === String(newHsn).toUpperCase())) {
+                HSN_OPTIONS.push({
+                    hsn_code: newHsn,
+                    description: newDesc,
+                    gst_rate: newGst
+                });
             }
 
-            // Append to qfHsnSelect
+            // Append & select in qfHsnSelect
             const sel = document.getElementById('qfHsnSelect');
             if (sel) {
-                const opt = document.createElement('option');
-                opt.value = data.data.hsn_code;
-                opt.textContent = `${data.data.hsn_code} (${data.data.description})`;
-                sel.appendChild(opt);
+                let existingOpt = Array.from(sel.options).find(o => o.value === newHsn);
+                if (!existingOpt) {
+                    existingOpt = document.createElement('option');
+                    existingOpt.value = newHsn;
+                    existingOpt.dataset.gst = newGst;
+                    existingOpt.textContent = `${newHsn}${newDesc ? ' • ' + newDesc : ''} (${newGst}%)`;
+                    sel.appendChild(existingOpt);
+                }
+                sel.value = newHsn;
             }
 
-            // Set qfHsn input value
-            const qfHsn = document.getElementById('qfHsn');
-            if (qfHsn) qfHsn.value = data.data.hsn_code;
+            // Set Quick Fill GST %
+            const qfGst = document.getElementById('qfGst');
+            if (qfGst) qfGst.value = newGst.toFixed(2);
+
+            // Dynamically add to any rendered row dropdowns
+            addedProductsList.forEach(item => {
+                const rowSel = document.getElementById(`hsn_${item.id}`);
+                if (rowSel && !Array.from(rowSel.options).some(o => o.value === newHsn)) {
+                    const opt = document.createElement('option');
+                    opt.value = newHsn;
+                    opt.dataset.gst = newGst;
+                    opt.textContent = `${newHsn}${newDesc ? ' • ' + newDesc : ''} (${newGst}%)`;
+                    rowSel.appendChild(opt);
+                }
+            });
         } else {
             alert(data.message || 'Error saving HSN code');
         }
@@ -1958,15 +2059,15 @@ function submitSupplierAddHsn(e) {
 
 function onQfHsnSelect(val) {
     if (!val) return;
-    const qf = document.getElementById('qfHsn');
-    if (qf) qf.value = val;
     const sel = document.getElementById('qfHsnSelect');
-    if (sel) sel.value = '';
-}
-
-function onQfHsnChange() {
-    const qf = document.getElementById('qfHsn');
-    if (qf) qf.value = qf.value.trim().toUpperCase();
+    const selectedOpt = sel ? sel.options[sel.selectedIndex] : null;
+    if (selectedOpt && selectedOpt.dataset && selectedOpt.dataset.gst !== undefined) {
+        const gstVal = parseFloat(selectedOpt.dataset.gst);
+        const qfGst = document.getElementById('qfGst');
+        if (qfGst && !isNaN(gstVal)) {
+            qfGst.value = gstVal.toFixed(2);
+        }
+    }
 }
 
 // =========================================================================
@@ -2108,24 +2209,24 @@ function submitEditSupplierProduct(e) {
                             <div class="row g-3">
                                 <div class="col-md-8 col-12">
                                     <label class="form-label small fw-bold text-dark mb-1">Product / Style Name <span class="text-danger">*</span></label>
-                                    <input type="text" id="editSpProductName" name="product_name" class="form-control form-control-sm fw-semibold text-uppercase" placeholder="Product Style Name" required>
+                                    <input type="text" id="editSpProductName" name="product_name" class="form-control form-control-sm fw-semibold text-uppercase" placeholder="" required>
                                 </div>
                                 <div class="col-md-4 col-12">
                                     <label class="form-label small fw-bold text-dark mb-1">Variant (Spec / Size-Color)</label>
-                                    <input type="text" id="editSpVariantName" name="variant_name" class="form-control form-control-sm text-uppercase" placeholder="e.g. S-RED or Free Size">
+                                    <input type="text" id="editSpVariantName" name="variant_name" class="form-control form-control-sm text-uppercase" placeholder="">
                                 </div>
                                 <div class="col-md-6 col-12">
                                     <label class="form-label small fw-bold text-dark mb-1">SKU / Item Code <span class="text-danger">*</span></label>
-                                    <input type="text" id="editSpSku" name="sku" class="form-control form-control-sm font-monospace text-uppercase fw-bold" placeholder="e.g. SKU-CAT-0001" required>
+                                    <input type="text" id="editSpSku" name="sku" class="form-control form-control-sm font-monospace text-uppercase fw-bold" placeholder="" required>
                                 </div>
                                 <div class="col-md-3 col-6">
                                     <label class="form-label small fw-bold text-dark mb-1">HSN Code</label>
-                                    <input type="text" id="editSpHsnCode" name="hsn_code" class="form-control form-control-sm font-monospace text-uppercase" placeholder="e.g. 6109">
+                                    <input type="text" id="editSpHsnCode" name="hsn_code" class="form-control form-control-sm font-monospace text-uppercase" placeholder="">
                                 </div>
                                 <div class="col-md-3 col-6">
                                     <label class="form-label small fw-bold text-dark mb-1">Unit Weight (kg)</label>
                                     <div class="input-group input-group-sm">
-                                        <input type="number" id="editSpWeight" name="weight" class="form-control form-control-sm text-end" step="0.001" min="0" placeholder="0.000">
+                                        <input type="number" id="editSpWeight" name="weight" class="form-control form-control-sm text-end" step="0.001" min="0" placeholder="">
                                         <span class="input-group-text">kg</span>
                                     </div>
                                 </div>
@@ -2143,21 +2244,21 @@ function submitEditSupplierProduct(e) {
                                     <label class="form-label small fw-bold text-dark mb-1">Supplier Cost (₹)</label>
                                     <div class="input-group input-group-sm">
                                         <span class="input-group-text">₹</span>
-                                        <input type="number" id="editSpPurchasePrice" name="purchase_price" class="form-control form-control-sm text-end fw-bold" step="0.01" min="0" placeholder="0.00">
+                                        <input type="number" id="editSpPurchasePrice" name="purchase_price" class="form-control form-control-sm text-end fw-bold" step="0.01" min="0" placeholder="">
                                     </div>
                                 </div>
                                 <div class="col-md-3 col-6">
                                     <label class="form-label small fw-bold text-dark mb-1">Selling Price (₹)</label>
                                     <div class="input-group input-group-sm">
                                         <span class="input-group-text">₹</span>
-                                        <input type="number" id="editSpSellingPrice" name="selling_price" class="form-control form-control-sm text-end fw-bold text-success" step="0.01" min="0" placeholder="0.00">
+                                        <input type="number" id="editSpSellingPrice" name="selling_price" class="form-control form-control-sm text-end fw-bold text-success" step="0.01" min="0" placeholder="">
                                     </div>
                                 </div>
                                 <div class="col-md-3 col-6">
                                     <label class="form-label small fw-bold text-dark mb-1">MRP Price (₹)</label>
                                     <div class="input-group input-group-sm">
                                         <span class="input-group-text">₹</span>
-                                        <input type="number" id="editSpMrp" name="mrp" class="form-control form-control-sm text-end fw-semibold" step="0.01" min="0" placeholder="0.00">
+                                        <input type="number" id="editSpMrp" name="mrp" class="form-control form-control-sm text-end fw-semibold" step="0.01" min="0" placeholder="">
                                     </div>
                                 </div>
                                 <div class="col-md-3 col-6">

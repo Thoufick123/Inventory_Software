@@ -393,7 +393,7 @@ if (!function_exists('renderCategoryTypeBadge')) {
                                 <th class="price-checkbox-col" style="display: none; width: 44px; text-align: center;">
                                     <input type="checkbox" class="form-check-input select-all-price-chk" onchange="toggleSelectAllPriceCheckboxes(this.checked)" title="Select all on this page">
                                 </th>
-                                <th>SKU / QR</th>
+                                <th>SKU</th>
                                 <th>Product Style &amp; Category</th>
                                 <th>Category Type</th>
                                 <th>Variant (Size / Color)</th>
@@ -422,34 +422,6 @@ if (!function_exists('renderCategoryTypeBadge')) {
                                     </td>
                                     <td>
                                         <span class="fw-bold font-monospace text-primary"><?= e($item['sku']) ?></span>
-                                        <?php 
-                                        $variantQrs = $pieceQrsByVariant[(int)$item['variant_id']] ?? [];
-                                        $totalVariantQrs = count($variantQrs);
-                                        if ($totalVariantQrs === 1): 
-                                            $singleTag = $variantQrs[0]['tag_code'] ?? ($item['qr_code'] ?? '');
-                                        ?>
-                                            <div class="mt-1">
-                                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace fs-8" title="QR Code">
-                                                    <i class="bi bi-qr-code me-1"></i><?= e($singleTag) ?>
-                                                </span>
-                                            </div>
-                                        <?php elseif ($totalVariantQrs > 1): 
-                                            $firstTag = $variantQrs[0]['tag_code'] ?? '';
-                                            $lastTag = $variantQrs[$totalVariantQrs - 1]['tag_code'] ?? '';
-                                        ?>
-                                            <div class="mt-1">
-                                                <button type="button" class="btn btn-xs btn-outline-primary rounded-pill py-0.5 px-2 fw-semibold d-inline-flex align-items-center gap-1 font-monospace shadow-2xs" 
-                                                        data-bs-toggle="modal" 
-                                                        data-bs-target="#viewVariantQrsModal_<?= (int)$item['variant_id'] ?>" 
-                                                        title="Click to view &amp; find all <?= $totalVariantQrs ?> QR codes for this variant">
-                                                    <i class="bi bi-qr-code-scan text-primary"></i> <?= $totalVariantQrs ?> QRs <span class="text-muted small d-none d-sm-inline">(<?= e($firstTag) ?>...<?= e($lastTag) ?>)</span>
-                                                </button>
-                                            </div>
-                                        <?php elseif (!empty($item['qr_code'])): ?>
-                                            <div class="mt-1">
-                                                <small class="text-muted font-monospace"><i class="bi bi-qr-code me-1"></i><?= e($item['qr_code']) ?></small>
-                                            </div>
-                                        <?php endif; ?>
                                     </td>
                                     <td>
                                         <div class="fw-semibold text-dark d-flex align-items-center gap-1.5 flex-wrap">
@@ -561,7 +533,7 @@ if (!function_exists('renderCategoryTypeBadge')) {
                                 <th class="price-checkbox-col" style="display: none; width: 44px; text-align: center;">
                                     <input type="checkbox" class="form-check-input select-all-price-chk" onchange="toggleSelectAllPriceCheckboxes(this.checked)" title="Select all on this page">
                                 </th>
-                                <th>SKU / QR</th>
+                                <th>SKU</th>
                                 <th>Product Style &amp; Supplier</th>
                                 <th>Category Type</th>
                                 <th>Variant (Size / Color)</th>
@@ -592,34 +564,6 @@ if (!function_exists('renderCategoryTypeBadge')) {
                                     </td>
                                     <td>
                                         <span class="fw-bold font-monospace text-primary"><?= e($item['sku']) ?></span>
-                                        <?php 
-                                        $variantQrs = $pieceQrsByVariant[(int)$item['variant_id']] ?? [];
-                                        $totalVariantQrs = count($variantQrs);
-                                        if ($totalVariantQrs === 1): 
-                                            $singleTag = $variantQrs[0]['tag_code'] ?? ($item['qr_code'] ?? '');
-                                        ?>
-                                            <div class="mt-1">
-                                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace fs-8" title="QR Code">
-                                                    <i class="bi bi-qr-code me-1"></i><?= e($singleTag) ?>
-                                                </span>
-                                            </div>
-                                        <?php elseif ($totalVariantQrs > 1): 
-                                            $firstTag = $variantQrs[0]['tag_code'] ?? '';
-                                            $lastTag = $variantQrs[$totalVariantQrs - 1]['tag_code'] ?? '';
-                                        ?>
-                                            <div class="mt-1">
-                                                <button type="button" class="btn btn-xs btn-outline-primary rounded-pill py-0.5 px-2 fw-semibold d-inline-flex align-items-center gap-1 font-monospace shadow-2xs" 
-                                                        data-bs-toggle="modal" 
-                                                        data-bs-target="#viewVariantQrsModal_<?= (int)$item['variant_id'] ?>" 
-                                                        title="Click to view &amp; find all <?= $totalVariantQrs ?> QR codes for this variant">
-                                                    <i class="bi bi-qr-code-scan text-primary"></i> <?= $totalVariantQrs ?> QRs <span class="text-muted small d-none d-sm-inline">(<?= e($firstTag) ?>...<?= e($lastTag) ?>)</span>
-                                                </button>
-                                            </div>
-                                        <?php elseif (!empty($item['qr_code'])): ?>
-                                            <div class="mt-1">
-                                                <small class="text-muted font-monospace"><i class="bi bi-qr-code me-1"></i><?= e($item['qr_code']) ?></small>
-                                            </div>
-                                        <?php endif; ?>
                                     </td>
                                     <td>
                                         <div class="fw-semibold text-dark d-flex align-items-center gap-1.5 flex-wrap">
@@ -743,7 +687,7 @@ if (!function_exists('renderCategoryTypeBadge')) {
                                 <th class="price-checkbox-col" style="display: none; width: 44px; text-align: center;">
                                     <input type="checkbox" class="form-check-input select-all-price-chk" onchange="toggleSelectAllPriceCheckboxes(this.checked)" title="Select all on this page">
                                 </th>
-                                <th>SKU / QR</th>
+                                <th>SKU</th>
                                 <th>Product Style &amp; Supplier</th>
                                 <th>Category Type</th>
                                 <th>Variant (Size / Color)</th>
@@ -773,34 +717,6 @@ if (!function_exists('renderCategoryTypeBadge')) {
                                     </td>
                                     <td>
                                         <span class="fw-bold font-monospace text-primary"><?= e($item['sku']) ?></span>
-                                        <?php 
-                                        $variantQrs = $pieceQrsByVariant[(int)$item['variant_id']] ?? [];
-                                        $totalVariantQrs = count($variantQrs);
-                                        if ($totalVariantQrs === 1): 
-                                            $singleTag = $variantQrs[0]['tag_code'] ?? ($item['qr_code'] ?? '');
-                                        ?>
-                                            <div class="mt-1">
-                                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace fs-8" title="QR Code">
-                                                    <i class="bi bi-qr-code me-1"></i><?= e($singleTag) ?>
-                                                </span>
-                                            </div>
-                                        <?php elseif ($totalVariantQrs > 1): 
-                                            $firstTag = $variantQrs[0]['tag_code'] ?? '';
-                                            $lastTag = $variantQrs[$totalVariantQrs - 1]['tag_code'] ?? '';
-                                        ?>
-                                            <div class="mt-1">
-                                                <button type="button" class="btn btn-xs btn-outline-primary rounded-pill py-0.5 px-2 fw-semibold d-inline-flex align-items-center gap-1 font-monospace shadow-2xs" 
-                                                        data-bs-toggle="modal" 
-                                                        data-bs-target="#viewVariantQrsModal_<?= (int)$item['variant_id'] ?>" 
-                                                        title="Click to view &amp; find all <?= $totalVariantQrs ?> QR codes for this variant">
-                                                    <i class="bi bi-qr-code-scan text-primary"></i> <?= $totalVariantQrs ?> QRs <span class="text-muted small d-none d-sm-inline">(<?= e($firstTag) ?>...<?= e($lastTag) ?>)</span>
-                                                </button>
-                                            </div>
-                                        <?php elseif (!empty($item['qr_code'])): ?>
-                                            <div class="mt-1">
-                                                <small class="text-muted font-monospace"><i class="bi bi-qr-code me-1"></i><?= e($item['qr_code']) ?></small>
-                                            </div>
-                                        <?php endif; ?>
                                     </td>
                                     <td>
                                         <div class="fw-semibold text-dark d-flex align-items-center gap-1.5 flex-wrap">
