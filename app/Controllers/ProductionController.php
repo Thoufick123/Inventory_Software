@@ -4623,12 +4623,21 @@ class ProductionController {
         $count = Database::fetchOne("SELECT COUNT(*) as c FROM production_programs")['c'] ?? 0;
         $suggestedProgramNumber = 'PRG-' . date('Ymd') . '-' . str_pad((string)($count + 1), 4, '0', STR_PAD_LEFT);
 
+        $allSubcategories = Database::fetchAll(
+            "SELECT id, category_id, name, slug FROM subcategories WHERE is_active = 1 ORDER BY sort_order ASC, name ASC"
+        );
+        $allSubSubcategories = Database::fetchAll(
+            "SELECT id, subcategory_id, name, slug FROM sub_subcategories WHERE is_active = 1 ORDER BY name ASC"
+        );
+
         Response::view('production.programs.create', [
             'pageTitle'              => 'Create Production Program',
             'activeModule'           => 'production',
             'activeMenu'             => 'programs',
             'units'                  => $units,
             'categories'             => $categories,
+            'allSubcategories'       => $allSubcategories,
+            'allSubSubcategories'    => $allSubSubcategories,
             'rolls'                  => $rolls,
             'users'                  => $users,
             'scopedUnitId'           => $scopedUnitId,
@@ -4853,7 +4862,7 @@ class ProductionController {
 
             AuditService::log('production', 'create', 'production_programs', $programId, null, ['name' => $name, 'program_number' => $programNumber, 'roll_count' => count($validRolls)]);
             Session::flash('success', "Production Program '{$name}' created with " . count($validRolls) . " fabric roll(s).");
-            Response::redirect(url('production/programs/view/' . $programId));
+            Response::redirect(url('production/programs'));
         } catch (Exception $e) {
             Session::flash('error', 'Error creating program: ' . $e->getMessage());
             Response::back();
@@ -4918,19 +4927,28 @@ class ProductionController {
         );
         $programRolls = ProductionProgram::getRolls((int)$id);
 
+        $allSubcategories = Database::fetchAll(
+            "SELECT id, category_id, name, slug FROM subcategories WHERE is_active = 1 ORDER BY sort_order ASC, name ASC"
+        );
+        $allSubSubcategories = Database::fetchAll(
+            "SELECT id, subcategory_id, name, slug FROM sub_subcategories WHERE is_active = 1 ORDER BY name ASC"
+        );
+
         Response::view('production.programs.edit', [
-            'pageTitle'        => 'Edit Program — ' . ($program['name'] ?: $program['program_number']),
-            'activeModule'     => 'production',
-            'activeMenu'       => 'programs',
-            'program'          => $program,
-            'programRolls'     => $programRolls,
-            'units'            => $units,
-            'categories'       => $categories,
-            'subcategories'    => $subcategories,
-            'subSubcategories' => $subSubcategories,
-            'rolls'            => $rolls,
-            'users'            => $users,
-            'scopedUnitId'     => $scopedUnitId,
+            'pageTitle'           => 'Edit Program — ' . ($program['name'] ?: $program['program_number']),
+            'activeModule'        => 'production',
+            'activeMenu'          => 'programs',
+            'program'             => $program,
+            'programRolls'        => $programRolls,
+            'units'               => $units,
+            'categories'          => $categories,
+            'subcategories'       => $subcategories,
+            'subSubcategories'    => $subSubcategories,
+            'allSubcategories'    => $allSubcategories,
+            'allSubSubcategories' => $allSubSubcategories,
+            'rolls'               => $rolls,
+            'users'               => $users,
+            'scopedUnitId'        => $scopedUnitId,
             'breadcrumb'       => [
                 ['label' => 'Production', 'url' => url('production/dashboard')],
                 ['label' => 'Programs', 'url' => url('production/programs')],

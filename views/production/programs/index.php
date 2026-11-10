@@ -106,9 +106,6 @@
                                     <?php if (!empty($prog['person_name'])): ?>
                                         <div class="small text-dark fw-semibold mt-0.5" title="Planner / Creator"><i class="bi bi-person-fill text-primary me-1"></i><?= e($prog['person_name']) ?></div>
                                     <?php endif; ?>
-                                    <?php if (!empty($prog['person_name'])): ?>
-                                        <div class="small text-dark fw-semibold mt-0.5" title="Planner / Creator"><i class="bi bi-person-fill text-primary me-1"></i><?= e($prog['person_name']) ?></div>
-                                    <?php endif; ?>
                                     <small class="text-muted"><i class="bi bi-calendar3 me-1"></i><?= formatDate($prog['created_at']) ?></small>
                                 </td>
                                 <td>

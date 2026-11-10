@@ -307,9 +307,11 @@
 </div>
 
 <script>
-const baseUrl = '<?= rtrim(url(''), '/') ?>';
+const baseUrl = (window.location.origin && window.location.origin !== 'null') ? (window.location.origin + '<?= parse_url(url(''), PHP_URL_PATH) ?: '' ?>') : '<?= rtrim(url(''), '/') ?>';
 const availableSellerRolls = <?= json_encode($rolls ?? []) ?>;
 const allCategories = <?= json_encode($categories ?? []) ?>;
+const allSubcategories = <?= json_encode($allSubcategories ?? []) ?>;
+const allSubSubcategories = <?= json_encode($allSubSubcategories ?? []) ?>;
 let rollCounter = 0;
 
 function buildCategoryOptionsHtml(selectedCatId = '') {
@@ -319,6 +321,36 @@ function buildCategoryOptionsHtml(selectedCatId = '') {
             const isSel = (selectedCatId && String(cat.id) === String(selectedCatId)) ? 'selected' : '';
             html += `<option value="${cat.id}" ${isSel}>${escapeHtml(cat.name)}</option>`;
         });
+    }
+    return html;
+}
+
+function buildSubcategoryOptionsHtml(catId, selectedSubcatId = '') {
+    let html = '<option value="">-- Select Sub Category --</option>';
+    if (!catId) return html;
+    const filtered = (allSubcategories || []).filter(s => String(s.category_id) === String(catId));
+    if (filtered.length > 0) {
+        filtered.forEach(item => {
+            const isSel = (selectedSubcatId && String(item.id) === String(selectedSubcatId)) ? 'selected' : '';
+            html += `<option value="${item.id}" ${isSel}>${escapeHtml(item.name)}</option>`;
+        });
+    } else {
+        html = '<option value="">-- No Subcategories Found --</option>';
+    }
+    return html;
+}
+
+function buildSubSubcategoryOptionsHtml(subcatId, selectedSubSubcatId = '') {
+    let html = '<option value="">-- Select Sub Sub Category --</option>';
+    if (!subcatId) return html;
+    const filtered = (allSubSubcategories || []).filter(s => String(s.subcategory_id) === String(subcatId));
+    if (filtered.length > 0) {
+        filtered.forEach(item => {
+            const isSel = (selectedSubSubcatId && String(item.id) === String(selectedSubSubcatId)) ? 'selected' : '';
+            html += `<option value="${item.id}" ${isSel}>${escapeHtml(item.name)}</option>`;
+        });
+    } else {
+        html = '<option value="">-- No Sub-Subcategories --</option>';
     }
     return html;
 }
@@ -414,6 +446,8 @@ function addProgramRollRow(rollData = null) {
     const subSubcatId = rollData ? (rollData.sub_subcategory_id || '') : '';
 
     const categoryOptionsHtml = buildCategoryOptionsHtml(catId);
+    const subcategoryOptionsHtml = buildSubcategoryOptionsHtml(catId, subcatId);
+    const subSubcategoryOptionsHtml = buildSubSubcategoryOptionsHtml(subcatId, subSubcatId);
 
     rowDiv.innerHTML = `
         <div class="d-flex align-items-center justify-content-between mb-2 pb-1 border-bottom">
@@ -510,13 +544,13 @@ function addProgramRollRow(rollData = null) {
                 <div class="col-6">
                     <label class="form-label small text-muted mb-0" style="font-size: 11px;">Sub Category</label>
                     <select name="rolls[${idx}][subcategory_id]" class="form-select form-select-sm roll-subcat-select" id="roll_subcat_${idx}" onchange="handleRollSubcategoryChange(${idx}, this.value)" ${catId ? '' : 'disabled'}>
-                        <option value="">-- Sub Category --</option>
+                        ${subcategoryOptionsHtml}
                     </select>
                 </div>
                 <div class="col-6">
                     <label class="form-label small text-muted mb-0" style="font-size: 11px;">Sub Sub Category</label>
                     <select name="rolls[${idx}][sub_subcategory_id]" class="form-select form-select-sm roll-subsubcat-select" id="roll_subsubcat_${idx}" onchange="handleRollSubSubcategoryChange(${idx}, this.value)" ${subcatId ? '' : 'disabled'}>
-                        <option value="">-- Sub Sub Category --</option>
+                        ${subSubcategoryOptionsHtml}
                     </select>
                 </div>
             </div>
@@ -538,7 +572,7 @@ function addProgramRollRow(rollData = null) {
     }
 
     syncRollStockAllocations();
-    renderRollPieces(counterId);
+    renderRollPieces(idx);
 }
 
 function removeProgramRollRow(counterId) {
@@ -838,35 +872,32 @@ function handleRollCategoryChange(counterId, catId) {
 
     if (subcatSelect) {
         subcatSelect.disabled = false;
-        subcatSelect.innerHTML = '<option value="">-- Loading Subcategories... --</option>';
+        subcatSelect.innerHTML = buildSubcategoryOptionsHtml(catId);
     }
     if (subSubcatSelect) {
         subSubcatSelect.innerHTML = '<option value="">-- Sub Sub Category --</option>';
         subSubcatSelect.disabled = true;
     }
+    updateRollCatalogBadge(counterId);
 
+    // Fetch via API to ensure latest catalog sync
     fetch(`${baseUrl}/api/subcategories/${catId}`)
         .then(res => res.json())
         .then(res => {
-            let options = '<option value="">-- Select Sub Category --</option>';
-            if (res.success && res.data && res.data.length > 0) {
-                res.data.forEach(item => {
-                    options += `<option value="${item.id}">${escapeHtml(item.name)}</option>`;
+            const list = (res.success && res.data) ? res.data : (Array.isArray(res) ? res : []);
+            if (list.length > 0 && subcatSelect) {
+                const currentVal = subcatSelect.value;
+                let options = '<option value="">-- Select Sub Category --</option>';
+                list.forEach(item => {
+                    const isSel = (currentVal && String(item.id) === String(currentVal)) ? 'selected' : '';
+                    options += `<option value="${item.id}" ${isSel}>${escapeHtml(item.name)}</option>`;
                 });
-            } else if (Array.isArray(res) && res.length > 0) {
-                res.forEach(item => {
-                    options += `<option value="${item.id}">${escapeHtml(item.name)}</option>`;
-                });
-            } else {
-                options = '<option value="">-- No Subcategories Found --</option>';
+                subcatSelect.innerHTML = options;
             }
-            if (subcatSelect) subcatSelect.innerHTML = options;
             updateRollCatalogBadge(counterId);
         })
         .catch(err => {
-            console.error('Error fetching subcategories for roll ' + counterId, err);
-            if (subcatSelect) subcatSelect.innerHTML = '<option value="">-- No Subcategories --</option>';
-            updateRollCatalogBadge(counterId);
+            console.warn('API subcategory notice for roll ' + counterId, err);
         });
 }
 
@@ -884,31 +915,28 @@ function handleRollSubcategoryChange(counterId, subcatId) {
 
     if (subSubcatSelect) {
         subSubcatSelect.disabled = false;
-        subSubcatSelect.innerHTML = '<option value="">-- Loading Sub-Subcategories... --</option>';
+        subSubcatSelect.innerHTML = buildSubSubcategoryOptionsHtml(subcatId);
     }
+    updateRollCatalogBadge(counterId);
 
+    // Fetch via API to ensure latest catalog sync
     fetch(`${baseUrl}/api/sub-subcategories/${subcatId}`)
         .then(res => res.json())
         .then(res => {
-            let options = '<option value="">-- Select Sub Sub Category --</option>';
-            if (res.success && res.data && res.data.length > 0) {
-                res.data.forEach(item => {
-                    options += `<option value="${item.id}">${escapeHtml(item.name)}</option>`;
+            const list = (res.success && res.data) ? res.data : (Array.isArray(res) ? res : []);
+            if (list.length > 0 && subSubcatSelect) {
+                const currentVal = subSubcatSelect.value;
+                let options = '<option value="">-- Select Sub Sub Category --</option>';
+                list.forEach(item => {
+                    const isSel = (currentVal && String(item.id) === String(currentVal)) ? 'selected' : '';
+                    options += `<option value="${item.id}" ${isSel}>${escapeHtml(item.name)}</option>`;
                 });
-            } else if (Array.isArray(res) && res.length > 0) {
-                res.forEach(item => {
-                    options += `<option value="${item.id}">${escapeHtml(item.name)}</option>`;
-                });
-            } else {
-                options = '<option value="">-- No Sub-Subcategories --</option>';
+                subSubcatSelect.innerHTML = options;
             }
-            if (subSubcatSelect) subSubcatSelect.innerHTML = options;
             updateRollCatalogBadge(counterId);
         })
         .catch(err => {
-            console.error('Error fetching sub-subcategories for roll ' + counterId, err);
-            if (subSubcatSelect) subSubcatSelect.innerHTML = '<option value="">-- No Sub-Subcategories --</option>';
-            updateRollCatalogBadge(counterId);
+            console.warn('API sub-subcategory notice for roll ' + counterId, err);
         });
 }
 
@@ -921,33 +949,34 @@ function loadRollSubcategories(counterId, catId, selectedSubcatId = '', selected
     if (!subcatSelect || !catId) return;
 
     subcatSelect.disabled = false;
-    subcatSelect.innerHTML = '<option value="">-- Loading Subcategories... --</option>';
+    subcatSelect.innerHTML = buildSubcategoryOptionsHtml(catId, selectedSubcatId);
 
+    if (selectedSubcatId) {
+        loadRollSubSubcategories(counterId, selectedSubcatId, selectedSubSubcatId);
+    } else {
+        updateRollCatalogBadge(counterId);
+    }
+
+    // Secondary fetch from API to ensure sync
     fetch(`${baseUrl}/api/subcategories/${catId}`)
         .then(res => res.json())
         .then(res => {
-            let options = '<option value="">-- Select Sub Category --</option>';
             const list = (res.success && res.data) ? res.data : (Array.isArray(res) ? res : []);
             if (list.length > 0) {
+                let options = '<option value="">-- Select Sub Category --</option>';
                 list.forEach(item => {
                     const isSel = (selectedSubcatId && String(item.id) === String(selectedSubcatId)) ? 'selected' : '';
                     options += `<option value="${item.id}" ${isSel}>${escapeHtml(item.name)}</option>`;
                 });
-            } else {
-                options = '<option value="">-- No Subcategories Found --</option>';
+                subcatSelect.innerHTML = options;
+                if (selectedSubcatId) {
+                    loadRollSubSubcategories(counterId, selectedSubcatId, selectedSubSubcatId);
+                }
             }
-            subcatSelect.innerHTML = options;
-
-            if (selectedSubcatId) {
-                loadRollSubSubcategories(counterId, selectedSubcatId, selectedSubSubcatId);
-            } else {
-                updateRollCatalogBadge(counterId);
-            }
+            updateRollCatalogBadge(counterId);
         })
         .catch(err => {
-            console.error('Error loading subcategories:', err);
-            subcatSelect.innerHTML = '<option value="">-- No Subcategories --</option>';
-            updateRollCatalogBadge(counterId);
+            console.warn('API subcategories fetch notice:', err);
         });
 }
 
@@ -956,28 +985,26 @@ function loadRollSubSubcategories(counterId, subcatId, selectedSubSubcatId = '')
     if (!subSubcatSelect || !subcatId) return;
 
     subSubcatSelect.disabled = false;
-    subSubcatSelect.innerHTML = '<option value="">-- Loading Sub-Subcategories... --</option>';
+    subSubcatSelect.innerHTML = buildSubSubcategoryOptionsHtml(subcatId, selectedSubSubcatId);
+    updateRollCatalogBadge(counterId);
 
+    // Secondary fetch from API to ensure sync
     fetch(`${baseUrl}/api/sub-subcategories/${subcatId}`)
         .then(res => res.json())
         .then(res => {
-            let options = '<option value="">-- Select Sub Sub Category --</option>';
             const list = (res.success && res.data) ? res.data : (Array.isArray(res) ? res : []);
             if (list.length > 0) {
+                let options = '<option value="">-- Select Sub Sub Category --</option>';
                 list.forEach(item => {
                     const isSel = (selectedSubSubcatId && String(item.id) === String(selectedSubSubcatId)) ? 'selected' : '';
                     options += `<option value="${item.id}" ${isSel}>${escapeHtml(item.name)}</option>`;
                 });
-            } else {
-                options = '<option value="">-- No Sub-Subcategories --</option>';
+                subSubcatSelect.innerHTML = options;
             }
-            subSubcatSelect.innerHTML = options;
             updateRollCatalogBadge(counterId);
         })
         .catch(err => {
-            console.error('Error loading sub-subcategories:', err);
-            subSubcatSelect.innerHTML = '<option value="">-- No Sub-Subcategories --</option>';
-            updateRollCatalogBadge(counterId);
+            console.warn('API sub-subcategories fetch notice:', err);
         });
 }
 

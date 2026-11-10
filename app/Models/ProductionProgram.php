@@ -342,15 +342,22 @@ class ProductionProgram {
                     sr.roll_number, sr.color as roll_color, sr.design_name as roll_design,
                     sr.weight as original_weight, sr.price as original_price, sr.quantity as stock_quantity,
                     s.name as seller_name, s.company as seller_company, s.material_type,
-                    c.name as category_name,
-                    sc.name as subcategory_name,
-                    ssc.name as sub_subcategory_name
+                    COALESCE(ppr.category_id, pp.category_id) as category_id,
+                    COALESCE(ppr.subcategory_id, pp.subcategory_id) as subcategory_id,
+                    COALESCE(ppr.sub_subcategory_id, pp.sub_subcategory_id) as sub_subcategory_id,
+                    COALESCE(c.name, pc.name) as category_name,
+                    COALESCE(sc.name, psc.name) as subcategory_name,
+                    COALESCE(ssc.name, pssc.name) as sub_subcategory_name
              FROM production_program_rolls ppr
+             JOIN production_programs pp ON ppr.production_program_id = pp.id
              JOIN seller_rolls sr ON ppr.seller_roll_id = sr.id
              LEFT JOIN sellers s ON (ppr.seller_id = s.id OR sr.seller_id = s.id)
              LEFT JOIN categories c ON ppr.category_id = c.id
              LEFT JOIN subcategories sc ON ppr.subcategory_id = sc.id
              LEFT JOIN sub_subcategories ssc ON ppr.sub_subcategory_id = ssc.id
+             LEFT JOIN categories pc ON pp.category_id = pc.id
+             LEFT JOIN subcategories psc ON pp.subcategory_id = psc.id
+             LEFT JOIN sub_subcategories pssc ON pp.sub_subcategory_id = pssc.id
              WHERE ppr.production_program_id = ?
              ORDER BY ppr.id ASC",
             [$programId]

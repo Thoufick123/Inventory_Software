@@ -40,7 +40,14 @@
             <?php endif; ?>
         </span>
     </div>
-  
+    <div class="d-flex align-items-center gap-2">
+        <a href="<?= url('production/programs') ?>" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Back to Programs
+        </a>
+        <a href="<?= url('production/programs/edit/' . $program['id']) ?>" class="btn btn-primary">
+            <i class="bi bi-pencil me-1"></i> Edit Program
+        </a>
+    </div>
 </div>
 
 <!-- Key Info Cards -->
@@ -93,9 +100,6 @@
             <div class="small text-muted mb-1"><i class="bi bi-person-badge text-primary me-1"></i>Supervisor & Unit</div>
             <div class="fw-bold fs-6 text-dark"><?= e($program['assigned_to_name'] ?? 'Unassigned') ?></div>
             <div class="small text-muted"><?= e($program['unit_name'] ?? 'No unit assigned') ?></div>
-            <?php if (!empty($program['person_name'])): ?>
-                <div class="small text-primary fw-semibold mt-1"><i class="bi bi-person-fill me-1"></i>Planner: <?= e($program['person_name']) ?></div>
-            <?php endif; ?>
             <?php if (!empty($program['person_name'])): ?>
                 <div class="small text-primary fw-semibold mt-1"><i class="bi bi-person-fill me-1"></i>Planner: <?= e($program['person_name']) ?></div>
             <?php endif; ?>
