@@ -1992,17 +1992,32 @@ class ShopService {
                 [$variantId, $shopId]
             );
 
+            $parsePieceTags = static function (?string $rawTags): array {
+                $decodedTags = json_decode((string)$rawTags, true);
+                $tags = is_array($decodedTags)
+                    ? $decodedTags
+                    : (preg_split('/[,|]/', (string)$rawTags) ?: []);
+                $normalizedTags = [];
+                foreach ($tags as $tag) {
+                    if (is_array($tag)) {
+                        $tag = $tag['tag_code'] ?? $tag['qr_code'] ?? $tag['tag'] ?? '';
+                    }
+                    $tag = trim((string)$tag, " \t\n\r\0\x0B\"'");
+                    if ($tag !== '') {
+                        $normalizedTags[strtoupper($tag)] = $tag;
+                    }
+                }
+                return array_values($normalizedTags);
+            };
+
             $soldTagsMap = [];
             $totalSoldQuantity = 0;
             foreach ($salesRecords as $sr) {
                 $totalSoldQuantity += (int)($sr['quantity'] ?? 1);
                 if (!empty($sr['scanned_qr_codes'])) {
-                    $tags = array_map('trim', explode(',', $sr['scanned_qr_codes']));
-                    foreach ($tags as $t) {
+                    foreach ($parsePieceTags((string)$sr['scanned_qr_codes']) as $t) {
                         $tagKey = strtoupper($t);
-                        if ($tagKey !== '') {
-                            $soldTagsMap[$tagKey] = $sr;
-                        }
+                        $soldTagsMap[$tagKey] = $sr;
                     }
                 }
             }
@@ -2032,10 +2047,9 @@ class ShopService {
                     $rawTagString = $rr['scanned_qr_codes'];
                 }
                 if (!empty($rawTagString)) {
-                    $tags = array_map('trim', explode(',', $rawTagString));
-                    foreach ($tags as $t) {
+                    foreach ($parsePieceTags((string)$rawTagString) as $t) {
                         $tagKey = strtoupper($t);
-                        if ($tagKey !== '' && !str_starts_with($tagKey, 'TP-') && !str_starts_with($tagKey, 'SKU-')) {
+                        if (!str_starts_with($tagKey, 'TP-') && !str_starts_with($tagKey, 'SKU-')) {
                             $returnedTagsMap[$tagKey] = $rr;
                         }
                     }

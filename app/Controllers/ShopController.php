@@ -3774,19 +3774,29 @@ class ShopController {
         // Fetch catalog variants with current available stock in this shop
         $variants = Database::fetchAll(
             "SELECT pv.*, p.name as product_name, p.code as product_code,
+                    COALESCE(wc.category_type, 'NORMAL') as category_type,
                     cat.name as category_name, subcat.name as subcategory_name, subsubcat.name as sub_subcategory_name,
                     s.name as size_name, c.name as color_name,
-                    COALESCE((SELECT quantity FROM stock_balances WHERE variant_id = pv.id AND location_type = 'SHOP' AND location_id = ? AND stock_state = 'AVAILABLE' LIMIT 1), 0) as available_qty
+                    COALESCE((SELECT SUM(quantity) FROM stock_balances WHERE variant_id = pv.id AND location_type = 'SHOP' AND location_id = ? AND stock_state = 'AVAILABLE'), 0) as available_qty
              FROM product_variants pv
              JOIN products p ON pv.product_id = p.id
              LEFT JOIN categories cat ON p.category_id = cat.id
              LEFT JOIN subcategories subcat ON p.subcategory_id = subcat.id
              LEFT JOIN sub_subcategories subsubcat ON p.sub_subcategory_id = subsubcat.id
+             LEFT JOIN warehouse_sub_subcategories wssc ON wssc.id = p.warehouse_sub_subcategory_id
+             LEFT JOIN warehouse_subcategories wssc_parent ON wssc.subcategory_id = wssc_parent.id
+             LEFT JOIN warehouse_subcategories wsc ON COALESCE(p.warehouse_subcategory_id, wssc.subcategory_id) = wsc.id
+             LEFT JOIN warehouse_categories wc ON wc.id = COALESCE(p.warehouse_category_id, wsc.category_id, wssc_parent.category_id)
              LEFT JOIN sizes s ON pv.size_id = s.id
              LEFT JOIN colors c ON pv.color_id = c.id
              WHERE pv.is_active = 1
+               AND EXISTS (
+                    SELECT 1 FROM stock_balances sb
+                    WHERE sb.variant_id = pv.id AND sb.location_type = 'SHOP'
+                      AND sb.location_id = ? AND sb.stock_state = 'AVAILABLE' AND sb.quantity > 0
+               )
              ORDER BY p.name ASC, pv.sku ASC",
-            [$shopId]
+            [$shopId, $shopId]
         );
 
         $prefillVariantId = (int)($_GET['variant_id'] ?? 0);
@@ -3883,6 +3893,7 @@ class ShopController {
         $savedCount = 0;
         $totalQty = 0;
         $processedQtyByVariant = [];
+        $processedTags = [];
         $availableQtyByVariant = [];
 
         try {
@@ -3898,10 +3909,14 @@ class ShopController {
                     "SELECT COALESCE(wc.category_type, 'NORMAL') as category_type,
                             COALESCE(pv.qr_type, '') as qr_type,
                             COALESCE(pv.pack_quantity, 1) as pack_quantity,
-                            GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary
+                            GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
+                            pv.sku, pv.qr_code, p.code as product_code
                      FROM product_variants pv
                      JOIN products p ON pv.product_id = p.id
-                     LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+                     LEFT JOIN warehouse_sub_subcategories wssc ON wssc.id = p.warehouse_sub_subcategory_id
+                     LEFT JOIN warehouse_subcategories wssc_parent ON wssc.subcategory_id = wssc_parent.id
+                     LEFT JOIN warehouse_subcategories wsc ON COALESCE(p.warehouse_subcategory_id, wssc.subcategory_id) = wsc.id
+                     LEFT JOIN warehouse_categories wc ON COALESCE(p.warehouse_category_id, wsc.category_id, wssc_parent.category_id) = wc.id
                      WHERE pv.id = ? AND pv.is_active = 1",
                     [$variantId]
                 );
@@ -3913,19 +3928,16 @@ class ShopController {
                 $isComplementary = !empty($productType['is_complementary']) || $categoryType === 'COMPLEMENTARY';
                 $isSeries = !$isComplementary && (
                     $categoryType === 'SERIES'
-                    || strtoupper((string)$productType['qr_type']) === 'SERIES_BATCH'
+                    || in_array(strtoupper((string)$productType['qr_type']), ['SERIES_BATCH', 'SERIES'], true)
                     || (int)$productType['pack_quantity'] > 1
                 );
+                $isAggregate = $isSeries || $isComplementary;
                 $tagCode = trim($it['tag_code'] ?? '');
-                if (!$isSeries && !$isComplementary && $tagCode !== '') {
-                    $pieceAvailable = $this->isShopPieceAvailableForDamage($variantId, $shopId, $tagCode);
-                    if ($pieceAvailable === false) {
-                        throw new RuntimeException("Piece tag '{$tagCode}' is not available in this shop's inventory.");
-                    }
+                $requestedQty = (int)($it['quantity'] ?? 0);
+                $qty = $isAggregate ? $requestedQty : 1;
+                if ($qty <= 0) {
+                    throw new RuntimeException('Damage quantity must be greater than zero.');
                 }
-                $qty = ($isSeries || $isComplementary)
-                    ? max(1, (int)($it['quantity'] ?? 1))
-                    : 1;
                 if (!array_key_exists($variantId, $availableQtyByVariant)) {
                     $availableQtyByVariant[$variantId] = (float)StockService::getBalance($variantId, 'SHOP', $shopId, 'AVAILABLE');
                 }
@@ -3937,6 +3949,45 @@ class ShopController {
                 if ($previouslyQueuedQty + $qty > $availableBalance) {
                     throw new RuntimeException("Damage quantity for variant {$variantId} exceeds available shop stock.");
                 }
+
+                if (!$isAggregate) {
+                    if ($tagCode === '') {
+                        throw new RuntimeException('Scan an eligible good-stock piece QR tag. Normal products cannot be damaged by SKU alone.');
+                    }
+                    $returnedProduct = ShopReturnedProduct::findByTag($tagCode, $shopId);
+                    if ($returnedProduct
+                        && (!str_starts_with(strtoupper($tagCode), 'R')
+                            || (int)$returnedProduct['variant_id'] !== $variantId
+                            || empty($returnedProduct['printed_at'])
+                            || strtoupper((string)($returnedProduct['item_condition'] ?? '')) !== 'GOOD')) {
+                        throw new RuntimeException('Returned products can be damaged only by scanning their printed R-prefixed QR tag when it is in good stock.');
+                    }
+                    if ($this->isShopPieceSold($variantId, $shopId, $tagCode)) {
+                        throw new RuntimeException('Billed products cannot be marked damaged. Scan the printed R-prefixed QR issued for a returned product.');
+                    }
+                    if ($this->isShopPieceActivelyDamaged($variantId, $shopId, $tagCode)) {
+                        throw new RuntimeException("Piece tag '{$tagCode}' is already recorded in Shop Damage Management.");
+                    }
+                    if ($this->getShopPieceStatus($variantId, $shopId, $tagCode) !== 'IN STOCK') {
+                        throw new RuntimeException("Piece tag '{$tagCode}' is billed, already damaged, or not currently in good available shop stock.");
+                    }
+                    $normalizedTag = strtoupper($tagCode);
+                    if (isset($processedTags[$normalizedTag])) {
+                        throw new RuntimeException("Piece tag '{$tagCode}' is already included in this damage submission.");
+                    }
+                    $processedTags[$normalizedTag] = true;
+                } elseif ($tagCode !== '' && !in_array(
+                    strtoupper($tagCode),
+                    array_map('strtoupper', array_filter([
+                        trim((string)($productType['sku'] ?? '')),
+                        trim((string)($productType['qr_code'] ?? '')),
+                        trim((string)($productType['product_code'] ?? '')),
+                    ])),
+                    true
+                )) {
+                    throw new RuntimeException('Series and complementary stock must be selected by their product SKU or QR code.');
+                }
+
                 $processedQtyByVariant[$variantId] = $previouslyQueuedQty + $qty;
                 $costPerUnit = max(0.0, (float)($it['cost_per_unit'] ?? 0.0));
                 $totalLoss = max(0.0, (float)($it['total_loss'] ?? ($qty * $costPerUnit)));
@@ -4233,45 +4284,80 @@ class ShopController {
                        LEFT JOIN sub_subcategories subsubcat ON p.sub_subcategory_id = subsubcat.id
                        LEFT JOIN sizes s ON pv.size_id = s.id
                        LEFT JOIN colors col ON pv.color_id = col.id
-                       LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id";
+                       LEFT JOIN warehouse_sub_subcategories wssc ON wssc.id = p.warehouse_sub_subcategory_id
+                       LEFT JOIN warehouse_subcategories wssc_parent ON wssc.subcategory_id = wssc_parent.id
+                       LEFT JOIN warehouse_subcategories wsc ON COALESCE(p.warehouse_subcategory_id, wssc.subcategory_id) = wsc.id
+                       LEFT JOIN warehouse_categories wc ON COALESCE(p.warehouse_category_id, wsc.category_id, wssc_parent.category_id) = wc.id";
 
         $matchedTagCode = $extractedTag;
-        $matchedAllocId = null;
+
+        foreach ($candidateCodes as $candidateCode) {
+            $candidateCode = trim((string)$candidateCode);
+            if ($candidateCode === '' || !str_starts_with(strtoupper($candidateCode), 'R')) {
+                continue;
+            }
+            $returnedProduct = ShopReturnedProduct::findByTag($candidateCode, $shopId);
+            if (!$returnedProduct) {
+                continue;
+            }
+            if (empty($returnedProduct['printed_at'])) {
+                echo json_encode(['success' => false, 'message' => 'This returned-product QR cannot be used until its label is printed.']);
+                exit;
+            }
+            if (strtoupper((string)($returnedProduct['item_condition'] ?? '')) !== 'GOOD') {
+                echo json_encode(['success' => false, 'message' => 'Only returned products in good available stock can be added to damage management.']);
+                exit;
+            }
+            $foundVariant = Database::fetchOne(
+                "{$baseSelect} WHERE pv.id = ? LIMIT 1",
+                [(int)$returnedProduct['variant_id']]
+            );
+            if (!$foundVariant) {
+                echo json_encode(['success' => false, 'message' => 'The returned product is no longer available in this shop.']);
+                exit;
+            }
+            $matchedTagCode = $candidateCode;
+            break;
+        }
 
         // Strategy 1: Check piece serial tag in allocation_items (selected_qr_codes)
-        foreach ($candidateCodes as $c) {
-            if (empty($c) || strlen($c) < 2) continue;
-            $allocItem = Database::fetchOne(
-                "SELECT ai.variant_id, ai.allocation_id, ai.selected_qr_codes
-                 FROM allocation_items ai
-                 JOIN warehouse_allocations wa ON ai.allocation_id = wa.id
-                 WHERE (ai.selected_qr_codes = ? 
-                    OR ai.selected_qr_codes LIKE ? 
-                    OR ai.selected_qr_codes LIKE ?
-                    OR ai.selected_qr_codes LIKE ?)
-                 AND ((wa.destination_type = 'SHOP' AND wa.destination_id = ?) OR wa.shop_id = ?)
-                 ORDER BY ai.id DESC LIMIT 1",
-                [$c, '%' . $c . '%', '%"' . $c . '"%', '%' . trim($c, '"') . '%', $shopId, $shopId]
-            );
-            if (!$allocItem) {
-                // Fallback across all allocations
-                $allocItem = Database::fetchOne(
-                    "SELECT ai.variant_id, ai.allocation_id, ai.selected_qr_codes
+        if (!$foundVariant) {
+            foreach ($candidateCodes as $c) {
+                if (empty($c) || strlen($c) < 2) continue;
+                $allocItems = Database::fetchAll(
+                    "SELECT ai.variant_id, ai.selected_qr_codes, ai.received_qr_codes
                      FROM allocation_items ai
-                     WHERE (ai.selected_qr_codes = ? 
-                        OR ai.selected_qr_codes LIKE ? 
-                        OR ai.selected_qr_codes LIKE ?
-                        OR ai.selected_qr_codes LIKE ?)
-                     ORDER BY ai.id DESC LIMIT 1",
-                    [$c, '%' . $c . '%', '%"' . $c . '"%', '%' . trim($c, '"') . '%']
+                     JOIN warehouse_allocations wa ON ai.allocation_id = wa.id
+                     WHERE wa.destination_type = 'SHOP' AND (wa.destination_id = ? OR wa.shop_id = ?)
+                       AND wa.status <> 'CANCELLED'
+                       AND (ai.selected_qr_codes LIKE ? OR ai.received_qr_codes LIKE ?)
+                     ORDER BY ai.id DESC",
+                    [$shopId, $shopId, '%' . $c . '%', '%' . $c . '%']
                 );
-            }
-            if ($allocItem && !empty($allocItem['variant_id'])) {
-                $foundVariant = Database::fetchOne("{$baseSelect} WHERE pv.id = ? LIMIT 1", [$allocItem['variant_id']]);
-                if ($foundVariant) {
-                    $matchedTagCode = $c;
-                    $matchedAllocId = $allocItem['allocation_id'] ?? null;
-                    break;
+                foreach ($allocItems as $allocItem) {
+                    $exactTagFound = false;
+                    foreach (['selected_qr_codes', 'received_qr_codes'] as $tagField) {
+                        $rawTags = (string)($allocItem[$tagField] ?? '');
+                        $decodedTags = json_decode($rawTags, true);
+                        $tags = is_array($decodedTags) ? $decodedTags : (preg_split('/[,|]/', $rawTags) ?: []);
+                        foreach ($tags as $tag) {
+                            if (is_array($tag)) {
+                                $tag = $tag['tag_code'] ?? $tag['qr_code'] ?? $tag['tag'] ?? '';
+                            }
+                            if (strcasecmp(trim((string)$tag, " \t\n\r\0\x0B\"'"), trim($c)) === 0) {
+                                $exactTagFound = true;
+                                break 2;
+                            }
+                        }
+                    }
+                    if (!$exactTagFound || empty($allocItem['variant_id'])) {
+                        continue;
+                    }
+                    $foundVariant = Database::fetchOne("{$baseSelect} WHERE pv.id = ? LIMIT 1", [(int)$allocItem['variant_id']]);
+                    if ($foundVariant) {
+                        $matchedTagCode = $c;
+                        break 2;
+                    }
                 }
             }
         }
@@ -4317,16 +4403,16 @@ class ShopController {
             foreach ($candidateCodes as $c) {
                 if (empty($c)) continue;
                 $sd = Database::fetchOne(
-                    "SELECT variant_id FROM shop_damages WHERE tag_code = ? OR damage_number = ? ORDER BY id DESC LIMIT 1",
-                    [$c, $c]
+                    "SELECT variant_id FROM shop_damages WHERE tag_code = ? AND shop_id = ? ORDER BY id DESC LIMIT 1",
+                    [$c, $shopId]
                 );
                 if ($sd && !empty($sd['variant_id'])) {
                     $foundVariant = Database::fetchOne("{$baseSelect} WHERE pv.id = ? LIMIT 1", [$sd['variant_id']]);
                     if ($foundVariant) break;
                 }
                 $wd = Database::fetchOne(
-                    "SELECT variant_id FROM warehouse_damages WHERE tag_code = ? OR damage_number = ? ORDER BY id DESC LIMIT 1",
-                    [$c, $c]
+                    "SELECT variant_id FROM warehouse_damages WHERE tag_code = ? ORDER BY id DESC LIMIT 1",
+                    [$c]
                 );
                 if ($wd && !empty($wd['variant_id'])) {
                     $foundVariant = Database::fetchOne("{$baseSelect} WHERE pv.id = ? LIMIT 1", [$wd['variant_id']]);
@@ -4494,19 +4580,17 @@ class ShopController {
             $isComplementary = !empty($foundVariant['is_complementary']) || $categoryType === 'COMPLEMENTARY';
             $isSeries = !$isComplementary && (
                 $categoryType === 'SERIES'
-                || strtoupper((string)($foundVariant['qr_type'] ?? '')) === 'SERIES_BATCH'
+                || in_array(strtoupper((string)($foundVariant['qr_type'] ?? '')), ['SERIES_BATCH', 'SERIES'], true)
                 || (int)($foundVariant['pack_quantity'] ?? 1) > 1
             );
             if (!$isReturnLookup && !$isSeries && !$isComplementary) {
-                $pieceAvailable = $this->isShopPieceAvailableForDamage(
-                    (int)$foundVariant['id'],
-                    $shopId,
-                    $matchedTagCode
-                );
-                if ($pieceAvailable === false || ($matchedAllocId !== null && $pieceAvailable !== true)) {
+                $pieceAvailable = $this->isShopPieceAvailableForDamage((int)$foundVariant['id'], $shopId, $matchedTagCode);
+                if ($pieceAvailable !== true
+                    || $this->isShopPieceSold((int)$foundVariant['id'], $shopId, $matchedTagCode)
+                    || $this->isShopPieceActivelyDamaged((int)$foundVariant['id'], $shopId, $matchedTagCode)) {
                     echo json_encode([
                         'success' => false,
-                        'message' => 'This piece tag is not available in the selected shop. Only pieces currently in shop inventory can be added to damage.',
+                        'message' => 'Scan a currently good, unbilled piece QR. Billed or already-damaged pieces cannot be selected; returned items must use their printed R-prefixed QR.',
                     ]);
                     exit;
                 }
@@ -4541,7 +4625,7 @@ class ShopController {
             if (!$isReturnLookup && (float)($foundVariant['available_qty'] ?? 0) <= 0) {
                 echo json_encode([
                     'success' => false,
-                    'message' => 'This QR/product has no available stock in the selected shop. Sold or out-of-stock items cannot be added to damage.',
+                    'message' => 'This product has no good available stock in the selected shop and cannot be added to damage.',
                 ]);
                 exit;
             }
@@ -4549,9 +4633,19 @@ class ShopController {
             $cost = (float)($foundVariant['production_cost'] > 0 ? $foundVariant['production_cost'] : ($foundVariant['purchase_price'] > 0 ? $foundVariant['purchase_price'] : ($foundVariant['selling_price'] ?? 0)));
             $mrp = (float)($foundVariant['mrp'] ?? $foundVariant['selling_price'] ?? 0);
 
+            $responseTagCode = $matchedTagCode;
+            if (($isSeries || $isComplementary)
+                && !in_array(strtoupper(trim($responseTagCode)), array_map('strtoupper', array_filter([
+                    trim((string)($foundVariant['sku'] ?? '')),
+                    trim((string)($foundVariant['qr_code'] ?? '')),
+                    trim((string)($foundVariant['product_code'] ?? '')),
+                ])), true)) {
+                $responseTagCode = (string)($foundVariant['sku'] ?? '');
+            }
+
             echo json_encode([
                 'success'       => true,
-                'tag_code'      => $extractedTag,
+                'tag_code'      => $responseTagCode,
                 'variant_id'    => (int)$foundVariant['id'],
                 'product_id'    => (int)$foundVariant['product_id'],
                 'product_name'  => $foundVariant['product_name'],
@@ -4600,6 +4694,57 @@ class ShopController {
         }
 
         return null;
+    }
+
+    private function isShopPieceSold(int $variantId, int $shopId, string $tagCode): bool {
+        $sales = Database::fetchAll(
+            "SELECT si.scanned_qr_codes, si.qr_code
+             FROM sale_items si
+             JOIN sales s ON s.id = si.sale_id
+             WHERE si.variant_id = ? AND s.shop_id = ? AND s.sale_type = 'SHOP'
+               AND s.status <> 'CANCELLED'",
+            [$variantId, $shopId]
+        );
+        $normalizedTag = strtoupper(trim($tagCode, " \t\n\r\0\x0B\"'"));
+        foreach ($sales as $sale) {
+            $rawTags = (string)($sale['scanned_qr_codes'] ?? '');
+            $decodedTags = json_decode($rawTags, true);
+            $tags = is_array($decodedTags) ? $decodedTags : (preg_split('/[,|]/', $rawTags) ?: []);
+            if (!empty($sale['qr_code'])) {
+                $tags[] = $sale['qr_code'];
+            }
+            foreach ($tags as $tag) {
+                if (is_array($tag)) {
+                    $tag = $tag['tag_code'] ?? $tag['qr_code'] ?? $tag['tag'] ?? '';
+                }
+                if (strtoupper(trim((string)$tag, " \t\n\r\0\x0B\"'")) === $normalizedTag && $normalizedTag !== '') {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private function isShopPieceActivelyDamaged(int $variantId, int $shopId, string $tagCode): bool {
+        $damageCases = Database::fetchAll(
+            "SELECT tag_code
+             FROM shop_damages
+             WHERE variant_id = ? AND shop_id = ?
+               AND status NOT IN ('RESTOCKED', 'REPAIRED', 'SALVAGED', 'WRITTEN_OFF', 'CANCELLED')
+               AND tag_code IS NOT NULL AND tag_code <> ''",
+            [$variantId, $shopId]
+        );
+        $normalizedTag = strtoupper(trim($tagCode, " \t\n\r\0\x0B\"'"));
+        foreach ($damageCases as $damageCase) {
+            foreach (ShopDamage::resolvePieceTags($damageCase) as $damageTag) {
+                if (strtoupper(trim($damageTag)) === $normalizedTag && $normalizedTag !== '') {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private function findExactShopReplacement(string $rawCode, int $shopId): ?array {
