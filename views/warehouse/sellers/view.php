@@ -279,13 +279,14 @@
                                             <th class="text-center">Warehouse Stock</th>
                                             <th class="text-end">Cost Rate (₹)</th>
                                             <th class="text-end">MRP / Selling</th>
-                                            <!-- <th class="text-center">QR &amp; Actions</th> -->
+                                            <th class="text-center" style="width: 80px;">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <?php foreach ($purchasedProducts as $prod): ?>
                                             <?php 
                                                 $qrVal = !empty($prod['qr_code']) ? $prod['qr_code'] : $prod['sku'];
+                                                $viewRowUid = 'viewSpRow_' . (int)($prod['variant_id'] ?? $prod['product_id']);
                                                 $prodPayload = json_encode([
                                                     'name'    => $prod['product_name'],
                                                     'sku'     => $prod['sku'],
@@ -296,11 +297,27 @@
                                                     'qr_code' => $qrVal,
                                                     'seller'  => $seller['name']
                                                 ]);
+                                                $editPayload = [
+                                                    'product_id'     => (int)($prod['product_id'] ?? 0),
+                                                    'variant_id'     => (int)($prod['variant_id'] ?? 0),
+                                                    'product_name'   => $prod['product_name'] ?? '',
+                                                    'sku'            => $prod['sku'] ?? '',
+                                                    'hsn_code'       => $prod['hsn_code'] ?? '',
+                                                    'variant_name'   => trim(($prod['size_name'] ?? '') . ' / ' . ($prod['color_name'] ?? ''), ' /'),
+                                                    'size_name'      => $prod['size_name'] ?? '',
+                                                    'color_name'     => $prod['color_name'] ?? '',
+                                                    'weight'         => (float)($prod['weight'] ?? 0),
+                                                    'mrp'            => (float)($prod['mrp'] ?? 0),
+                                                    'selling_price'  => (float)($prod['selling_price'] ?? 0),
+                                                    'purchase_price' => (float)($prod['last_unit_price'] ?? 0),
+                                                    'available_stock'=> (float)($prod['current_stock_qty'] ?? 0),
+                                                    'row_id'         => $viewRowUid,
+                                                ];
                                             ?>
-                                            <tr>
+                                            <tr id="<?= $viewRowUid ?>">
                                                 <td>
                                                     <div class="fw-bold text-dark d-flex align-items-center gap-1.5 flex-wrap">
-                                                        <span><?= e($prod['product_name']) ?></span>
+                                                        <span class="view-sp-name"><?= e($prod['product_name']) ?></span>
                                                         <?php if (!empty($prod['is_complementary']) || !empty($prod['variant_is_complementary'])): ?>
                                                             <span class="badge bg-warning text-dark border border-warning fw-bold px-2 py-0.5 shadow-xs" style="font-size: 0.70rem;" title="Complementary Product (Direct Warehouse Stock)">
                                                                 <i class="bi bi-gift-fill me-1 text-danger"></i>COMPLEMENTARY
@@ -310,7 +327,7 @@
                                                     <small class="text-muted"><?= e($prod['category_name'] ?? 'Garments') ?> &bull; <?= e($prod['product_code']) ?></small>
                                                 </td>
                                                 <td>
-                                                    <span class="font-monospace fw-semibold text-primary"><?= e($prod['sku']) ?></span>
+                                                    <span class="font-monospace fw-semibold text-primary view-sp-sku"><?= e($prod['sku']) ?></span>
                                                     <div class="mt-1">
                                                         <span class="badge bg-dark-subtle text-dark border font-monospace fs-8 cursor-pointer" onclick='openSingleQrModal(<?= htmlspecialchars($prodPayload, ENT_QUOTES) ?>)' title="Click to view QR label">
                                                             <i class="bi bi-qr-code me-1 text-primary"></i><?= e($qrVal) ?>
@@ -318,7 +335,7 @@
                                                     </div>
                                                 </td>
                                                 <td>
-                                                    <span class="badge bg-secondary-subtle text-secondary border px-2 py-1">
+                                                    <span class="badge bg-secondary-subtle text-secondary border px-2 py-1 view-sp-variant">
                                                         <?= e($prod['size_name'] ?? 'Free') ?> / <?= e($prod['color_name'] ?? 'Std') ?>
                                                     </span>
                                                 </td>
@@ -327,24 +344,29 @@
                                                 </td>
                                                 <td class="text-center">
                                                     <?php if (($prod['current_stock_qty'] ?? 0) > 0): ?>
-                                                        <span class="badge bg-success-subtle text-success border border-success-subtle fw-bold fs-7">
+                                                        <span class="badge bg-success-subtle text-success border border-success-subtle fw-bold fs-7 view-sp-stock">
                                                             <i class="bi bi-check-circle me-1"></i><?= number_format($prod['current_stock_qty']) ?> pcs
                                                         </span>
                                                     <?php else: ?>
-                                                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle fs-8">
+                                                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle fs-8 view-sp-stock">
                                                             0 pcs (Pending Inward)
                                                         </span>
                                                     <?php endif; ?>
                                                 </td>
                                                 <td class="text-end">
-                                                    <span class="fw-bold text-dark">₹<?= number_format($prod['last_unit_price'], 2) ?></span>
+                                                    <span class="fw-bold text-dark view-sp-cost">₹<?= number_format($prod['last_unit_price'], 2) ?></span>
                                                     <?php if ($prod['avg_unit_price'] != $prod['last_unit_price']): ?>
                                                         <small class="text-muted d-block">avg ₹<?= number_format($prod['avg_unit_price'], 2) ?></small>
                                                     <?php endif; ?>
                                                 </td>
                                                 <td class="text-end">
-                                                    <div class="text-secondary small">MRP: ₹<?= number_format($prod['mrp'], 2) ?></div>
-                                                    <div class="fw-bold text-success fs-7">Discount: ₹<?= number_format($prod['selling_price'] ?: $prod['mrp'], 2) ?></div>
+                                                    <div class="text-secondary small view-sp-mrp">MRP: ₹<?= number_format($prod['mrp'], 2) ?></div>
+                                                    <div class="fw-bold text-success fs-7 view-sp-selling">Selling: ₹<?= number_format($prod['selling_price'] ?: $prod['mrp'], 2) ?></div>
+                                                </td>
+                                                <td class="text-center">
+                                                    <button type="button" class="btn btn-xs btn-outline-primary py-1 px-2 fw-semibold shadow-xs" onclick='openEditSupplierProductModal(<?= htmlspecialchars(json_encode($editPayload, JSON_UNESCAPED_UNICODE), ENT_QUOTES, "UTF-8") ?>)' title="Edit Product Details &amp; Pricing">
+                                                        <i class="bi bi-pencil-square me-1"></i>Edit
+                                                    </button>
                                                 </td>
                                             </tr>
                                         <?php endforeach; ?>
@@ -880,4 +902,195 @@ function renderVariantCards(products, brandName) {
     });
     grid.innerHTML = html;
 }
+
+// =========================================================================
+// EDIT SUPPLIER PRODUCT MODAL LOGIC (VIEW PAGE)
+// =========================================================================
+let viewEditSpModalInstance = null;
+function openEditSupplierProductModal(prod) {
+    if (!prod) return;
+    document.getElementById('editSpProductId').value = prod.product_id || 0;
+    document.getElementById('editSpVariantId').value = prod.variant_id || 0;
+    document.getElementById('editSpRowId').value = prod.row_id || '';
+    document.getElementById('editSpProductName').value = prod.product_name || '';
+    document.getElementById('editSpSku').value = prod.sku || '';
+    document.getElementById('editSpHsnCode').value = prod.hsn_code || '';
+    document.getElementById('editSpVariantName').value = prod.variant_name || '';
+    document.getElementById('editSpWeight').value = prod.weight !== undefined ? parseFloat(prod.weight) : 0;
+    document.getElementById('editSpMrp').value = prod.mrp !== undefined ? parseFloat(prod.mrp) : 0;
+    document.getElementById('editSpSellingPrice').value = prod.selling_price !== undefined ? parseFloat(prod.selling_price) : 0;
+    document.getElementById('editSpPurchasePrice').value = prod.purchase_price !== undefined ? parseFloat(prod.purchase_price) : 0;
+    document.getElementById('editSpStock').value = prod.available_stock !== undefined ? parseInt(prod.available_stock) : 0;
+
+    const modalEl = document.getElementById('modalEditSupplierProduct');
+    if (modalEl) {
+        if (!viewEditSpModalInstance) viewEditSpModalInstance = new bootstrap.Modal(modalEl);
+        viewEditSpModalInstance.show();
+    }
+}
+
+function submitEditSupplierProduct(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btnSubmitEditSupplierProduct');
+    const origHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+
+    const formData = new FormData(document.getElementById('formEditSupplierProduct'));
+    formData.append('csrf_token', '<?= CSRF::getToken() ?>');
+
+    fetch('<?= url("warehouse/sellers/update-product") ?>', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+        if (data.success) {
+            if (viewEditSpModalInstance) viewEditSpModalInstance.hide();
+            const rowId = document.getElementById('editSpRowId').value;
+            const row = document.getElementById(rowId);
+            const p = data.product || {};
+            if (row) {
+                const nameEl = row.querySelector('.view-sp-name');
+                if (nameEl) nameEl.textContent = p.product_name || document.getElementById('editSpProductName').value;
+                const skuEl = row.querySelector('.view-sp-sku');
+                if (skuEl) skuEl.textContent = p.sku || document.getElementById('editSpSku').value;
+                const varEl = row.querySelector('.view-sp-variant');
+                if (varEl) varEl.textContent = p.variant_name || document.getElementById('editSpVariantName').value || 'Standard';
+                const mrpEl = row.querySelector('.view-sp-mrp');
+                if (mrpEl) mrpEl.textContent = 'MRP: ₹' + parseFloat(p.mrp || document.getElementById('editSpMrp').value || 0).toFixed(2);
+                const sellEl = row.querySelector('.view-sp-selling');
+                if (sellEl) sellEl.textContent = 'Selling: ₹' + parseFloat(p.selling_price || document.getElementById('editSpSellingPrice').value || 0).toFixed(2);
+                const costEl = row.querySelector('.view-sp-cost');
+                if (costEl) costEl.textContent = '₹' + parseFloat(p.purchase_price || document.getElementById('editSpPurchasePrice').value || 0).toFixed(2);
+                const stockEl = row.querySelector('.view-sp-stock');
+                if (stockEl) {
+                    const stVal = parseInt(p.available_stock || document.getElementById('editSpStock').value || 0);
+                    stockEl.innerHTML = `<i class="bi bi-check-circle me-1"></i>${stVal} pcs`;
+                }
+            }
+            if (typeof showToast === 'function') {
+                showToast('Success', data.message || 'Product updated successfully', 'success');
+            } else {
+                alert(data.message || 'Product updated successfully');
+            }
+        } else {
+            alert(data.message || 'Error updating product');
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.innerHTML = origHtml;
+        alert('Request failed: ' + err.message);
+    });
+}
 </script>
+
+<!-- MODAL: EDIT EXISTING SUPPLIER PRODUCT -->
+<div class="modal fade" id="modalEditSupplierProduct" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow-lg rounded-3">
+            <div class="modal-header bg-dark text-white py-3 px-4">
+                <div class="d-flex align-items-center gap-2">
+                    <div style="background:#4f46e5;color:#fff;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;">
+                        <i class="bi bi-pencil-square"></i>
+                    </div>
+                    <div>
+                        <h5 class="modal-title fw-bold mb-0 text-white">Edit Supplier Product &amp; Pricing</h5>
+                        <small class="text-white-50">Update product name, SKU, HSN, weights, prices and inventory</small>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="formEditSupplierProduct" onsubmit="submitEditSupplierProduct(event)">
+                <input type="hidden" id="editSpProductId" name="product_id">
+                <input type="hidden" id="editSpVariantId" name="variant_id">
+                <input type="hidden" id="editSpRowId" name="row_id">
+                <div class="modal-body p-4 bg-light">
+                    <div class="card border-0 shadow-xs rounded-3 bg-white mb-3">
+                        <div class="card-body p-3">
+                            <h6 class="fw-bold mb-3 text-dark border-bottom pb-2">
+                                <i class="bi bi-tag-fill text-primary me-1.5"></i>General Product &amp; Identification Details
+                            </h6>
+                            <div class="row g-3">
+                                <div class="col-md-8 col-12">
+                                    <label class="form-label small fw-bold text-dark mb-1">Product / Style Name <span class="text-danger">*</span></label>
+                                    <input type="text" id="editSpProductName" name="product_name" class="form-control form-control-sm fw-semibold text-uppercase" placeholder="Product Style Name" required>
+                                </div>
+                                <div class="col-md-4 col-12">
+                                    <label class="form-label small fw-bold text-dark mb-1">Variant (Spec / Size-Color)</label>
+                                    <input type="text" id="editSpVariantName" name="variant_name" class="form-control form-control-sm text-uppercase" placeholder="e.g. S-RED or Free Size">
+                                </div>
+                                <div class="col-md-6 col-12">
+                                    <label class="form-label small fw-bold text-dark mb-1">SKU / Item Code <span class="text-danger">*</span></label>
+                                    <input type="text" id="editSpSku" name="sku" class="form-control form-control-sm font-monospace text-uppercase fw-bold" placeholder="e.g. SKU-CAT-0001" required>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <label class="form-label small fw-bold text-dark mb-1">HSN Code</label>
+                                    <input type="text" id="editSpHsnCode" name="hsn_code" class="form-control form-control-sm font-monospace text-uppercase" placeholder="e.g. 6109">
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <label class="form-label small fw-bold text-dark mb-1">Unit Weight (kg)</label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" id="editSpWeight" name="weight" class="form-control form-control-sm text-end" step="0.001" min="0" placeholder="0.000">
+                                        <span class="input-group-text">kg</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card border-0 shadow-xs rounded-3 bg-white">
+                        <div class="card-body p-3">
+                            <h6 class="fw-bold mb-3 text-dark border-bottom pb-2">
+                                <i class="bi bi-currency-rupee text-success me-1.5"></i>Pricing &amp; Live Stock Levels
+                            </h6>
+                            <div class="row g-3">
+                                <div class="col-md-3 col-6">
+                                    <label class="form-label small fw-bold text-dark mb-1">Supplier Cost (₹)</label>
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text">₹</span>
+                                        <input type="number" id="editSpPurchasePrice" name="purchase_price" class="form-control form-control-sm text-end fw-bold" step="0.01" min="0" placeholder="0.00">
+                                    </div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <label class="form-label small fw-bold text-dark mb-1">Selling Price (₹)</label>
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text">₹</span>
+                                        <input type="number" id="editSpSellingPrice" name="selling_price" class="form-control form-control-sm text-end fw-bold text-success" step="0.01" min="0" placeholder="0.00">
+                                    </div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <label class="form-label small fw-bold text-dark mb-1">MRP Price (₹)</label>
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text">₹</span>
+                                        <input type="number" id="editSpMrp" name="mrp" class="form-control form-control-sm text-end fw-semibold" step="0.01" min="0" placeholder="0.00">
+                                    </div>
+                                </div>
+                                <div class="col-md-3 col-6">
+                                    <label class="form-label small fw-bold text-dark mb-1">Available Stock (Pcs)</label>
+                                    <div class="input-group input-group-sm">
+                                        <input type="number" id="editSpStock" name="available_stock" class="form-control form-control-sm text-center fw-bold text-primary" step="1" min="0">
+                                        <span class="input-group-text">pcs</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2 px-4 d-flex justify-content-between align-items-center">
+                    <span class="text-muted small"><i class="bi bi-info-circle me-1 text-primary"></i>Changes will update the supplier catalog style directly.</span>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary fw-semibold px-4 shadow-sm" id="btnSubmitEditSupplierProduct">
+                            <i class="bi bi-check2-circle me-1"></i> Save Changes
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

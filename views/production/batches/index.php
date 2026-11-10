@@ -309,14 +309,16 @@
             <form method="POST" id="editBatchForm" action="">
                 <?= CSRF::field() ?>
                 <div class="modal-body p-4">
-                    <div class="d-flex justify-content-between align-items-center p-3 rounded-3 bg-light border mb-4 flex-wrap gap-2">
-                        <div>
-                            <span class="text-uppercase small text-muted fw-bold d-block">Batch Number</span>
-                            <span class="fs-5 fw-bold text-primary font-monospace" id="editBatchNumberBadge">—</span>
+                    <div class="row g-3 p-3 rounded-3 bg-light border mb-4">
+                        <div class="col-md-5 col-12">
+                            <label class="form-label small fw-bold text-dark mb-1">
+                                <i class="bi bi-upc-scan text-primary me-1"></i>Batch Number / Code <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" name="batch_number" id="editBatchNumberInput" class="form-control form-control-sm font-monospace fw-bold text-uppercase" placeholder="e.g. BAT-20261110-0001" required>
                         </div>
-                        <div>
-                            <span class="small text-muted d-block fw-bold text-uppercase">Program &amp; Product</span>
-                            <span class="fw-semibold text-dark" id="editBatchProgramProduct">—</span>
+                        <div class="col-md-7 col-12">
+                            <label class="form-label small fw-bold text-muted mb-1 text-uppercase">Program &amp; Product</label>
+                            <div class="form-control form-control-sm bg-white fw-semibold text-truncate text-dark" id="editBatchProgramProduct" readonly>—</div>
                         </div>
                     </div>
 
@@ -349,8 +351,11 @@
                         </div>
                     </div>
 
-                    <div>
-                        <h6 class="fw-bold mb-2"><i class="bi bi-layers-fill text-primary me-1"></i> Packed Variant Items Breakdown</h6>
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="fw-bold mb-0"><i class="bi bi-layers-fill text-primary me-1"></i> Packed Variant Items Breakdown</h6>
+                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle small">Editable Quantities</span>
+                        </div>
                         <div class="table-responsive border rounded-3">
                             <table class="table table-sm table-hover align-middle mb-0">
                                 <thead class="table-light">
@@ -359,7 +364,7 @@
                                         <th>SKU / Variant</th>
                                         <th>Size</th>
                                         <th>Color</th>
-                                        <th class="text-end">Quantity (pcs)</th>
+                                        <th class="text-end" style="width: 140px;">Quantity (pcs)</th>
                                     </tr>
                                 </thead>
                                 <tbody id="editBatchItemsTbody">
@@ -367,7 +372,39 @@
                                         <td colspan="5" class="text-center py-2 text-muted small">Loading items...</td>
                                     </tr>
                                 </tbody>
+                                <tfoot class="table-light fw-bold">
+                                    <tr>
+                                        <td colspan="4" class="text-end small">Total Packed Quantity:</td>
+                                        <td class="text-end text-primary"><span id="editBatchTotalQtyDisplay">0</span> pcs</td>
+                                    </tr>
+                                </tfoot>
                             </table>
+                        </div>
+                    </div>
+
+                    <div class="p-3 rounded-3 bg-light border">
+                        <h6 class="fw-bold mb-3 text-dark small text-uppercase"><i class="bi bi-truck text-primary me-1"></i> Logistics &amp; Transport Details (Optional)</h6>
+                        <div class="row g-2">
+                            <div class="col-md-6 col-12">
+                                <label class="form-label small text-muted mb-1">Transporter Name</label>
+                                <input type="text" name="transporter_name" id="editBatchTransporter" class="form-control form-control-sm" placeholder="e.g. VRL Logistics, Self Vehicle">
+                            </div>
+                            <div class="col-md-6 col-12">
+                                <label class="form-label small text-muted mb-1">Vehicle Number</label>
+                                <input type="text" name="vehicle_number" id="editBatchVehicle" class="form-control form-control-sm text-uppercase" placeholder="e.g. TN-38-AA-1234">
+                            </div>
+                            <div class="col-md-4 col-12">
+                                <label class="form-label small text-muted mb-1">LR / Tracking / Waybill #</label>
+                                <input type="text" name="lr_number" id="editBatchLrNumber" class="form-control form-control-sm" placeholder="e.g. LR-99201">
+                            </div>
+                            <div class="col-md-4 col-6">
+                                <label class="form-label small text-muted mb-1">Driver Name</label>
+                                <input type="text" name="driver_name" id="editBatchDriverName" class="form-control form-control-sm" placeholder="e.g. Ramesh">
+                            </div>
+                            <div class="col-md-4 col-6">
+                                <label class="form-label small text-muted mb-1">Driver Contact Phone</label>
+                                <input type="text" name="driver_contact" id="editBatchDriverContact" class="form-control form-control-sm" placeholder="e.g. 9876543210">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -381,13 +418,25 @@
 </div>
 
 <script>
+function recalcEditBatchTotal() {
+    let total = 0;
+    document.querySelectorAll('.batch-item-qty').forEach(inp => {
+        total += parseInt(inp.value || 0, 10);
+    });
+    const totalEl = document.getElementById('editBatchTotalQtyDisplay');
+    if (totalEl) totalEl.textContent = total;
+}
+
 function openEditBatchModal(batch) {
     if (!batch) return;
     const form = document.getElementById('editBatchForm');
     if (form) {
         form.action = '<?= url('production/batches/update') ?>/' + batch.id;
     }
-    document.getElementById('editBatchNumberBadge').textContent = batch.batch_number || ('#' + batch.id);
+    const batchNumInput = document.getElementById('editBatchNumberInput');
+    if (batchNumInput) {
+        batchNumInput.value = batch.batch_number || '';
+    }
     document.getElementById('editBatchProgramProduct').textContent = (batch.program_number ? batch.program_number + ' — ' : '') + (batch.product_name || 'Finished Goods');
 
     const whSelect = document.getElementById('editBatchWarehouse');
@@ -407,26 +456,59 @@ function openEditBatchModal(batch) {
         notesInput.value = batch.notes || '';
     }
 
+    // Reset logistics fields
+    const transporterInput = document.getElementById('editBatchTransporter');
+    const vehicleInput = document.getElementById('editBatchVehicle');
+    const lrInput = document.getElementById('editBatchLrNumber');
+    const driverNameInput = document.getElementById('editBatchDriverName');
+    const driverContactInput = document.getElementById('editBatchDriverContact');
+    if (transporterInput) transporterInput.value = '';
+    if (vehicleInput) vehicleInput.value = '';
+    if (lrInput) lrInput.value = '';
+    if (driverNameInput) driverNameInput.value = '';
+    if (driverContactInput) driverContactInput.value = '';
+
     const itemsTbody = document.getElementById('editBatchItemsTbody');
+    const totalEl = document.getElementById('editBatchTotalQtyDisplay');
+    if (totalEl) totalEl.textContent = parseInt(batch.total_qty || batch.quantity || 0, 10);
+
     if (itemsTbody) {
         itemsTbody.innerHTML = '<tr><td colspan="5" class="text-center py-2 text-muted small"><div class="spinner-border spinner-border-sm me-1"></div>Loading items...</td></tr>';
         fetch('<?= url('production/batches/view-ajax') ?>/' + batch.id)
             .then(res => res.json())
             .then(data => {
-                if (data.success && data.items && data.items.length) {
-                    let html = '';
-                    data.items.forEach((it, idx) => {
-                        html += `<tr>
-                            <td class="small text-muted">${idx + 1}</td>
-                            <td class="fw-semibold small">${escapeHtml(it.sku || it.product_name || 'Variant')}</td>
-                            <td class="small"><span class="badge bg-light text-dark border">${escapeHtml(it.size_name || 'STD')}</span></td>
-                            <td class="small">${escapeHtml(it.color_name || 'Standard')}</td>
-                            <td class="text-end fw-bold text-success">${parseInt(it.quantity || 0)} pcs</td>
-                        </tr>`;
-                    });
-                    itemsTbody.innerHTML = html;
+                if (data.success) {
+                    if (data.outward) {
+                        if (transporterInput) transporterInput.value = data.outward.transporter_name || '';
+                        if (vehicleInput) vehicleInput.value = data.outward.vehicle_number || '';
+                        if (lrInput) lrInput.value = data.outward.lr_number || '';
+                        if (driverNameInput) driverNameInput.value = data.outward.driver_name || '';
+                        if (driverContactInput) driverContactInput.value = data.outward.driver_contact || '';
+                    }
+
+                    if (data.items && data.items.length) {
+                        let html = '';
+                        let runTotal = 0;
+                        data.items.forEach((it, idx) => {
+                            const q = parseInt(it.quantity || 0, 10);
+                            runTotal += q;
+                            html += `<tr>
+                                <td class="small text-muted">${idx + 1}</td>
+                                <td class="fw-semibold small">${escapeHtml(it.sku || it.product_name || 'Variant')}</td>
+                                <td class="small"><span class="badge bg-light text-dark border">${escapeHtml(it.size_name || 'STD')}</span></td>
+                                <td class="small">${escapeHtml(it.color_name || 'Standard')}</td>
+                                <td class="text-end">
+                                    <input type="number" name="item_qty[${it.id}]" class="form-control form-control-sm text-end fw-bold batch-item-qty text-primary" min="0" value="${q}" oninput="recalcEditBatchTotal()">
+                                </td>
+                            </tr>`;
+                        });
+                        itemsTbody.innerHTML = html;
+                        if (totalEl) totalEl.textContent = runTotal;
+                    } else {
+                        itemsTbody.innerHTML = '<tr><td colspan="5" class="text-center py-2 text-muted small">No variant items found</td></tr>';
+                    }
                 } else {
-                    itemsTbody.innerHTML = '<tr><td colspan="5" class="text-center py-2 text-muted small">No variant items found</td></tr>';
+                    itemsTbody.innerHTML = '<tr><td colspan="5" class="text-center py-2 text-danger small">Failed to load batch details</td></tr>';
                 }
             })
             .catch(() => {

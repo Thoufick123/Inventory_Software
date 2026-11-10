@@ -13228,6 +13228,7 @@ class WarehouseController {
         $purchasedProducts = Database::fetchAll(
             "SELECT pv.id as variant_id, pv.sku, pv.qr_code, pv.selling_price, pv.is_complementary as variant_is_complementary,
                     p.id as product_id, p.name as product_name, p.code as product_code, p.is_complementary,
+                    COALESCE(p.hsn_code, '') as hsn_code, COALESCE(pv.weight, p.weight, 0) as weight,
                     c.name as category_name,
                     sz.name as size_name, cl.name as color_name,
                     SUM(pi.quantity) as total_bought_qty,
@@ -13253,7 +13254,7 @@ class WarehouseController {
              LEFT JOIN colors cl ON pv.color_id = cl.id
              LEFT JOIN warehouses w ON po.warehouse_id = w.id
              WHERE (po.warehouse_supplier_id = ? OR po.seller_id = ?)
-             GROUP BY pv.id, pv.sku, pv.qr_code, pv.selling_price, p.id, p.name, p.code, c.name, sz.name, cl.name
+             GROUP BY pv.id, pv.sku, pv.qr_code, pv.selling_price, p.id, p.name, p.code, p.hsn_code, pv.weight, p.weight, c.name, sz.name, cl.name
              ORDER BY total_bought_qty DESC",
             [$id, $id]
         );
@@ -13782,6 +13783,216 @@ class WarehouseController {
             Database::rollback();
             Session::flash('error', 'Failed to update supplier: ' . $e->getMessage());
             Response::redirect(url('warehouse/sellers/edit/' . $id));
+        }
+    }
+
+    /**
+     * Update individual supplier product / variant via AJAX modal
+     */
+    public function updateSupplierProductAjax(): void {
+        if (!CSRF::validateRequest()) {
+            Response::json(['success' => false, 'message' => 'Invalid security token.'], 403);
+            return;
+        }
+
+        if (!hasPermission('wh_sellers', 'edit')) {
+            Response::json(['success' => false, 'message' => 'Access denied.'], 403);
+            return;
+        }
+
+        $variantId = (int)($_POST['variant_id'] ?? 0);
+        $productId = (int)($_POST['product_id'] ?? 0);
+
+        if ($variantId <= 0 && $productId <= 0) {
+            Response::json(['success' => false, 'message' => 'Missing product or variant identifier.'], 400);
+            return;
+        }
+
+        if ($variantId <= 0 && $productId > 0) {
+            $vRow = Database::fetchOne("SELECT id FROM product_variants WHERE product_id = ? AND is_active = 1 LIMIT 1", [$productId]);
+            if ($vRow) {
+                $variantId = (int)$vRow['id'];
+            }
+        }
+
+        if ($productId <= 0 && $variantId > 0) {
+            $vRow = Database::fetchOne("SELECT product_id FROM product_variants WHERE id = ?", [$variantId]);
+            if ($vRow) {
+                $productId = (int)$vRow['product_id'];
+            }
+        }
+
+        $productName = trim((string)($_POST['product_name'] ?? ''));
+        $sku = trim((string)($_POST['sku'] ?? ''));
+        $hsnCode = trim((string)($_POST['hsn_code'] ?? ''));
+        $sizeName = trim((string)($_POST['size_name'] ?? ''));
+        $colorName = trim((string)($_POST['color_name'] ?? ''));
+        $variantName = trim((string)($_POST['variant_name'] ?? ''));
+        $weight = isset($_POST['weight']) ? max(0.0, (float)$_POST['weight']) : null;
+        $mrp = isset($_POST['mrp']) ? max(0.0, (float)$_POST['mrp']) : null;
+        $sellingPrice = isset($_POST['selling_price']) ? max(0.0, (float)$_POST['selling_price']) : null;
+        $purchasePrice = isset($_POST['purchase_price']) ? max(0.0, (float)$_POST['purchase_price']) : null;
+        $availableStock = isset($_POST['available_stock']) && $_POST['available_stock'] !== '' ? max(0.0, (float)$_POST['available_stock']) : null;
+
+        if ($productId <= 0) {
+            Response::json(['success' => false, 'message' => 'Target product not found.'], 404);
+            return;
+        }
+
+        Database::beginTransaction();
+        try {
+            // 1. Update product
+            $pUpdates = [];
+            $pParams = [];
+            if ($productName !== '') {
+                $pUpdates[] = "name = ?";
+                $pParams[] = $productName;
+            }
+            if ($hsnCode !== '') {
+                $pUpdates[] = "hsn_code = ?";
+                $pParams[] = $hsnCode;
+            }
+            if ($weight !== null) {
+                $pUpdates[] = "weight = ?";
+                $pParams[] = $weight;
+            }
+            if (!empty($pUpdates)) {
+                $pUpdates[] = "updated_at = NOW()";
+                $pParams[] = $productId;
+                Database::execute("UPDATE products SET " . implode(', ', $pUpdates) . " WHERE id = ?", $pParams);
+            }
+
+            // 2. Update variant
+            if ($variantId > 0) {
+                $vUpdates = [];
+                $vParams = [];
+                if ($sku !== '') {
+                    $vUpdates[] = "sku = ?";
+                    $vUpdates[] = "qr_code = ?";
+                    $vParams[] = $sku;
+                    $vParams[] = $sku;
+                }
+                if ($mrp !== null) {
+                    $vUpdates[] = "mrp = ?";
+                    $vParams[] = $mrp;
+                }
+                if ($sellingPrice !== null) {
+                    $vUpdates[] = "selling_price = ?";
+                    $vParams[] = $sellingPrice;
+                }
+                if ($purchasePrice !== null) {
+                    $vUpdates[] = "purchase_price = ?";
+                    $vUpdates[] = "production_cost = ?";
+                    $vParams[] = $purchasePrice;
+                    $vParams[] = $purchasePrice;
+                }
+                if ($weight !== null) {
+                    $vUpdates[] = "weight = ?";
+                    $vParams[] = $weight;
+                }
+
+                // Color / Size handling
+                if ($colorName !== '') {
+                    $cRow = Database::fetchOne("SELECT id FROM colors WHERE UPPER(name) = ? LIMIT 1", [strtoupper($colorName)]);
+                    $colorId = $cRow ? (int)$cRow['id'] : null;
+                    if (!$colorId) {
+                        try {
+                            Database::execute("INSERT INTO colors (name, hex_code, is_active, created_at) VALUES (?, '#4f46e5', 1, NOW())", [strtoupper($colorName)]);
+                            $colorId = (int)Database::lastInsertId();
+                        } catch (\Throwable $e) {}
+                    }
+                    if ($colorId) {
+                        $vUpdates[] = "color_id = ?";
+                        $vParams[] = $colorId;
+                    }
+                }
+
+                if ($sizeName !== '') {
+                    $sRow = Database::fetchOne("SELECT id FROM sizes WHERE UPPER(name) = ? OR UPPER(code) = ? LIMIT 1", [strtoupper($sizeName), strtoupper($sizeName)]);
+                    $sizeId = $sRow ? (int)$sRow['id'] : null;
+                    if (!$sizeId) {
+                        try {
+                            $sCode = substr(preg_replace('/[^A-Z0-9]/', '', strtoupper($sizeName)), 0, 10) ?: strtoupper($sizeName);
+                            Database::execute("INSERT INTO sizes (name, code, is_active, created_at) VALUES (?, ?, 1, NOW())", [strtoupper($sizeName), $sCode]);
+                            $sizeId = (int)Database::lastInsertId();
+                        } catch (\Throwable $e) {}
+                    }
+                    if ($sizeId) {
+                        $vUpdates[] = "size_id = ?";
+                        $vParams[] = $sizeId;
+                    }
+                }
+
+                if (!empty($vUpdates)) {
+                    $vUpdates[] = "updated_at = NOW()";
+                    $vParams[] = $variantId;
+                    Database::execute("UPDATE product_variants SET " . implode(', ', $vUpdates) . " WHERE id = ?", $vParams);
+                }
+
+                // 3. Stock adjustment if provided
+                if ($availableStock !== null) {
+                    $whId = function_exists('currentWarehouseId') && currentWarehouseId() ? currentWarehouseId() : 1;
+                    $currBalanceRow = Database::fetchOne(
+                        "SELECT quantity FROM stock_balances WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND location_id = ? AND stock_state = 'AVAILABLE'",
+                        [$variantId, $whId]
+                    );
+                    $currentQty = (float)($currBalanceRow['quantity'] ?? 0);
+                    if ($availableStock != $currentQty) {
+                        Database::execute(
+                            "INSERT INTO stock_balances (variant_id, location_type, location_id, stock_state, quantity, last_updated, created_at)
+                             VALUES (?, 'WAREHOUSE', ?, 'AVAILABLE', ?, NOW(), NOW())
+                             ON DUPLICATE KEY UPDATE quantity = VALUES(quantity), last_updated = NOW()",
+                            [$variantId, $whId, $availableStock]
+                        );
+                        $diff = $availableStock - $currentQty;
+                        try {
+                            StockTransaction::create([
+                                'variant_id'       => $variantId,
+                                'location_type'    => 'WAREHOUSE',
+                                'location_id'      => $whId,
+                                'stock_state'      => 'AVAILABLE',
+                                'transaction_type' => 'SUPPLIER_PRODUCT_EDIT_STOCK',
+                                'quantity'         => $diff,
+                                'notes'            => 'Manual stock correction from supplier product edit',
+                                'created_by'       => Session::userId() ?? 1,
+                            ]);
+                        } catch (\Throwable $e) {}
+                    }
+                }
+            }
+
+            Database::commit();
+
+            // Fetch refreshed variant and product data to return
+            $refreshed = Database::fetchOne(
+                "SELECT p.id AS product_id, pv.id AS variant_id, p.name AS product_name,
+                        p.hsn_code, COALESCE(pv.weight, p.weight, 0) AS weight,
+                        pv.sku, pv.mrp, pv.selling_price, pv.purchase_price,
+                        COALESCE(sz.name, '') AS size_name, COALESCE(cl.name, '') AS color_name,
+                        COALESCE(sz.name, cl.name, 'Standard') AS variant_name,
+                        COALESCE((
+                            SELECT SUM(sb.quantity)
+                            FROM stock_balances sb
+                            WHERE sb.variant_id = pv.id
+                              AND sb.stock_state = 'AVAILABLE'
+                              AND sb.location_type = 'WAREHOUSE'
+                        ), 0) AS available_stock
+                 FROM products p
+                 LEFT JOIN product_variants pv ON pv.product_id = p.id
+                 LEFT JOIN sizes sz ON sz.id = pv.size_id
+                 LEFT JOIN colors cl ON cl.id = pv.color_id
+                 WHERE p.id = ? AND pv.id = ? LIMIT 1",
+                [$productId, $variantId]
+            );
+
+            Response::json([
+                'success' => true,
+                'message' => 'Supplier product updated successfully.',
+                'product' => $refreshed,
+            ]);
+        } catch (\Throwable $e) {
+            Database::rollback();
+            Response::json(['success' => false, 'message' => 'Error updating product: ' . $e->getMessage()], 500);
         }
     }
 
@@ -15431,7 +15642,7 @@ class WarehouseController {
         $billSetup = Session::get('seller_bill_setup_' . $id) ?? [];
 
         $existingSupplierProducts = Database::fetchAll(
-            "SELECT p.id AS product_id, p.name AS product_name, p.code AS product_code,
+            "SELECT p.id AS product_id, pv.id AS variant_id, p.name AS product_name, p.code AS product_code,
                     COALESCE(wc.name, '') AS category_name,
                     COALESCE(wsc.name, '') AS subcategory_name,
                     COALESCE(wss.name, '') AS sub_subcategory_name,
@@ -15448,6 +15659,8 @@ class WarehouseController {
                     COALESCE(pv.purchase_price, 0) AS purchase_price,
                     COALESCE(pv.sku, '') AS sku,
                     COALESCE(sz.name, cl.name, 'Standard') AS variant_name,
+                    COALESCE(sz.name, '') AS size_name,
+                    COALESCE(cl.name, '') AS color_name,
                     COALESCE((
                         SELECT SUM(sb.quantity)
                         FROM stock_balances sb

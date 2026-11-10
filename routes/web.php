@@ -602,6 +602,7 @@ class Router {
         $this->get('warehouse/sellers/view/{id}', 'WarehouseController', 'viewSeller', ['AuthMiddleware', ['PermissionMiddleware', 'wh_sellers', 'view']]);
         $this->get('warehouse/sellers/edit/{id}', 'WarehouseController', 'editSeller', ['AuthMiddleware', ['PermissionMiddleware', 'wh_sellers', 'edit']]);
         $this->post('warehouse/sellers/update/{id}', 'WarehouseController', 'updateSeller', ['AuthMiddleware', ['PermissionMiddleware', 'wh_sellers', 'edit']]);
+        $this->post('warehouse/sellers/update-product', 'WarehouseController', 'updateSupplierProductAjax', ['AuthMiddleware', ['PermissionMiddleware', 'wh_sellers', 'edit']]);
         $this->post('warehouse/sellers/delete/{id}', 'WarehouseController', 'deleteSeller', ['AuthMiddleware', ['PermissionMiddleware', 'wh_sellers', 'delete']]);
         $this->post('warehouse/sellers/inward-bill/{id}', 'WarehouseController', 'inwardSellerBill', ['AuthMiddleware', ['PermissionMiddleware', 'purchases', 'receive']]);
         $this->post('api/warehouse/sellers/quick-add', 'WarehouseController', 'ajaxQuickAddSeller', ['AuthMiddleware', ['PermissionMiddleware', 'wh_sellers', 'create']]);

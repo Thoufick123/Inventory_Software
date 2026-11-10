@@ -8278,12 +8278,14 @@ class ProductionController {
             return;
         }
 
+        $batchNumber = !empty($_POST['batch_number']) ? trim((string)$_POST['batch_number']) : ($batch['batch_number'] ?? '');
         $warehouseId = !empty($_POST['destination_warehouse_id']) ? (int)$_POST['destination_warehouse_id'] : (int)$batch['destination_warehouse_id'];
         $boxCount = isset($_POST['box_count']) ? (int)$_POST['box_count'] : (int)($batch['box_count'] ?? 0);
         $status = !empty($_POST['status']) ? trim($_POST['status']) : ($batch['status'] ?? 'PREPARING');
         $notes = trim($_POST['notes'] ?? '');
 
         $updateData = [
+            'batch_number'             => $batchNumber ?: ($batch['batch_number'] ?? ''),
             'destination_warehouse_id' => $warehouseId,
             'box_count'                => max(1, $boxCount),
             'status'                   => $status,
@@ -8305,10 +8307,27 @@ class ProductionController {
 
         ProductionBatch::update($batchId, $updateData);
 
-        // Keep outward in sync if destination warehouse changed
-        Database::execute("UPDATE production_outwards SET warehouse_id = ?, total_boxes = ? WHERE production_batch_id = ?", [$warehouseId, max(1, $boxCount), $batchId]);
+        // Keep outward in sync if outward exists or destination warehouse / logistics changed
+        $transporterName = trim((string)($_POST['transporter_name'] ?? ''));
+        $vehicleNumber = trim((string)($_POST['vehicle_number'] ?? ''));
+        $lrNumber = trim((string)($_POST['lr_number'] ?? ''));
+        $driverName = trim((string)($_POST['driver_name'] ?? ''));
+        $driverContact = trim((string)($_POST['driver_contact'] ?? ''));
+        $totalQty = $updateData['total_qty'] ?? ($batch['total_qty'] ?? 0);
 
-        Session::flash('success', 'Production Batch ' . ($batch['batch_number'] ?? ('#' . $batchId)) . ' updated successfully.');
+        Database::execute(
+            "UPDATE production_outwards 
+             SET warehouse_id = ?, total_boxes = ?, total_quantity = ?,
+                 transporter_name = COALESCE(NULLIF(?, ''), transporter_name),
+                 vehicle_number = COALESCE(NULLIF(?, ''), vehicle_number),
+                 lr_number = COALESCE(NULLIF(?, ''), lr_number),
+                 driver_name = COALESCE(NULLIF(?, ''), driver_name),
+                 driver_contact = COALESCE(NULLIF(?, ''), driver_contact)
+             WHERE production_batch_id = ?",
+            [$warehouseId, max(1, $boxCount), $totalQty, $transporterName, $vehicleNumber, $lrNumber, $driverName, $driverContact, $batchId]
+        );
+
+        Session::flash('success', 'Production Batch ' . ($updateData['batch_number'] ?? ('#' . $batchId)) . ' updated successfully.');
         Response::redirect(url('production/batches'));
     }
 
