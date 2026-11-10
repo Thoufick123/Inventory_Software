@@ -103,12 +103,26 @@ class Warehouse {
      */
     public static function create(array $data): int {
         self::ensureSchema();
+        $code = strtoupper(trim($data['code'] ?? ''));
+        if (empty($code)) {
+            $num = 1;
+            do {
+                $code = 'WH-' . str_pad((string)$num, 2, '0', STR_PAD_LEFT);
+                $exists = self::findByCode($code);
+                if ($exists) {
+                    $num++;
+                } else {
+                    break;
+                }
+            } while (true);
+        }
+
         Database::execute(
             "INSERT INTO warehouses (name, code, manager_name, address, phone, gst_number, manager_id, is_active, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())",
             [
                 trim($data['name']),
-                strtoupper(trim($data['code'])),
+                $code,
                 trim($data['manager_name'] ?? ''),
                 $data['address'] ?? null,
                 trim($data['phone'] ?? ''),

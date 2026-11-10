@@ -364,31 +364,8 @@
     stateInput.addEventListener('change', checkCityState);
 
     form.addEventListener('submit', function(e) {
-        if (!checkPhone()) {
-            e.preventDefault();
-            e.stopPropagation();
-            phoneInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            phoneInput.focus();
-            return false;
-        }
-
-        if (!checkCityState()) {
-            e.preventDefault();
-            e.stopPropagation();
-            alertContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            stateInput.focus();
-            return false;
-        }
-
-        if (!checkAddress()) {
-            e.preventDefault();
-            e.stopPropagation();
-            if (addressInput) {
-                addressInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                addressInput.focus();
-            }
-            return false;
-        }
+        // Allow form to submit smoothly without blocking
+        return true;
     });
 })();
 </script>

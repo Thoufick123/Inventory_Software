@@ -15,10 +15,33 @@ require_once BASE_PATH . '/app/Models/LabelBatch.php';
 
 class ProductionController {
 
+    private static bool $schemaEnsured = false;
+
+    /**
+     * Ensure database table schema has required columns like hsn_code.
+     */
+    public static function ensureDatabaseSchema(): void {
+        if (self::$schemaEnsured) return;
+        self::$schemaEnsured = true;
+        try {
+            $col1 = Database::fetchOne("SHOW COLUMNS FROM production_purchase_items LIKE 'hsn_code'");
+            if (!$col1) {
+                Database::execute("ALTER TABLE production_purchase_items ADD COLUMN hsn_code VARCHAR(20) DEFAULT NULL AFTER seller_roll_id");
+            }
+        } catch (\Throwable $e) {}
+        try {
+            $col2 = Database::fetchOne("SHOW COLUMNS FROM seller_rolls LIKE 'hsn_code'");
+            if (!$col2) {
+                Database::execute("ALTER TABLE seller_rolls ADD COLUMN hsn_code VARCHAR(20) DEFAULT NULL AFTER qr_code");
+            }
+        } catch (\Throwable $e) {}
+    }
+
     /**
      * Production Dashboard.
      */
     public function dashboard(): void {
+        self::ensureDatabaseSchema();
         $scopedUnitId = function_exists('currentProductionUnitId') ? currentProductionUnitId() : null;
         $stats = ProductionService::getDashboardStats($scopedUnitId);
         Response::view('production.dashboard', array_merge($stats, [
@@ -258,74 +281,46 @@ class ProductionController {
     }
 
     private function storeSupplierProfile(): void {
-        $validator = Validator::make($_POST, [
-            'name' => 'required|minLength:2|maxLength:200',
-            'company' => 'required|minLength:2|maxLength:300',
-            'phone' => 'required',
-            'email' => 'maxLength:255',
-            'city' => 'required|maxLength:100',
-            'state' => 'required|maxLength:100',
-            'address' => 'required|maxLength:500',
-            'gst_number' => 'maxLength:20',
-        ]);
-        if ($validator->fails()) {
-            Session::flash('error', $validator->firstError());
-            Response::back();
-            return;
-        }
-
-        $name = mb_strtoupper(trim((string)$_POST['name']));
-        $company = mb_strtoupper(trim((string)$_POST['company']));
-        $phone = trim((string)$_POST['phone']);
+        $name = mb_strtoupper(trim((string)($_POST['name'] ?? '')));
+        $company = mb_strtoupper(trim((string)($_POST['company'] ?? '')));
+        $phone = trim((string)($_POST['phone'] ?? ''));
         $email = trim((string)($_POST['email'] ?? ''));
-        $city = mb_strtoupper(trim((string)$_POST['city']));
-        $state = mb_strtoupper(trim((string)$_POST['state']));
-        $address = mb_strtoupper(trim((string)$_POST['address']));
+        $city = mb_strtoupper(trim((string)($_POST['city'] ?? '')));
+        $state = mb_strtoupper(trim((string)($_POST['state'] ?? '')));
+        $address = mb_strtoupper(trim((string)($_POST['address'] ?? '')));
         $gstNumber = mb_strtoupper(trim((string)($_POST['gst_number'] ?? '')));
 
-        if (preg_match('/[0-9]/', $name) || preg_match('/[0-9]/', $company)
-            || preg_match('/[0-9]/', $city) || preg_match('/[0-9]/', $state)) {
-            Session::flash('error', 'Supplier, company, city, and state fields cannot contain numbers.');
-            Response::back();
-            return;
-        }
-        if (!preg_match('/^[0-9]{10}$/', $phone)) {
-            Session::flash('error', 'Phone number must be exactly 10 digits.');
-            Response::back();
-            return;
-        }
-        if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            Session::flash('error', 'Please enter a valid email address.');
-            Response::back();
-            return;
-        }
-        if ($gstNumber !== '' && !preg_match('/^[0-9A-Z]{15}$/', $gstNumber)) {
-            Session::flash('error', 'GST number must be a valid 15-character alphanumeric code.');
+        if ($name === '') {
+            Session::flash('error', 'Supplier / Contact Person Name is required.');
             Response::back();
             return;
         }
 
-        if (mb_strlen($address) < 6 || !preg_match('/[a-zA-Z]/', $address)) {
-            $msg = 'Full Business Address must include valid street/door/area details (at least 6 characters).';
-            Session::flash('error', $msg);
-            Session::flash('city_state_error', $msg);
-            Response::back();
-            return;
+        if ($company === '') {
+            $company = $name;
         }
 
-        $cityStateError = $this->validateCityAndState($city, $state);
-        if ($cityStateError !== null) {
-            Session::flash('error', $cityStateError);
-            Session::flash('city_state_error', $cityStateError);
-            Response::back();
-            return;
+        $cleanPhone = preg_replace('/\D/', '', $phone);
+        if ($cleanPhone !== '') {
+            $phone = substr($cleanPhone, 0, 15);
+        }
+
+        $allIndianStateNames = ['TAMIL NADU', 'ANDHRA PRADESH', 'KARNATAKA', 'KERALA', 'MAHARASHTRA', 'GUJARAT', 'TELANGANA', 'DELHI', 'HARYANA', 'MADHYA PRADESH', 'PUNJAB', 'RAJASTHAN', 'UTTAR PRADESH', 'WEST BENGAL', 'ODISHA', 'BIHAR', 'ASSAM', 'GOA'];
+        if (in_array($city, $allIndianStateNames, true) && !in_array($state, $allIndianStateNames, true) && $state !== '') {
+            $tmp = $city;
+            $city = $state;
+            $state = $tmp;
+        }
+
+        if ($state === '') {
+            $state = 'TAMIL NADU';
         }
 
         Database::execute(
             "INSERT INTO sellers (name, company, phone, email, gst_number, city, state, address, seller_type, is_active)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MATERIAL_SUPPLIER', 1)",
-            [$name, $company, $phone, $email !== '' ? $email : null, $gstNumber !== '' ? $gstNumber : null,
-                $city, $state, $address]
+            [$name, $company, $phone ?: null, $email !== '' ? $email : null, $gstNumber !== '' ? $gstNumber : null,
+                $city ?: null, $state ?: null, $address ?: null]
         );
         $sellerId = (int)Database::lastInsertId();
         AuditService::log('production', 'CREATE', 'sellers', $sellerId, null, [
@@ -347,81 +342,53 @@ class ProductionController {
             return;
         }
 
-        $validator = Validator::make($_POST, [
-            'name' => 'required|minLength:2|maxLength:200',
-            'company' => 'required|minLength:2|maxLength:300',
-            'phone' => 'required',
-            'email' => 'maxLength:255',
-            'city' => 'required|maxLength:100',
-            'state' => 'required|maxLength:100',
-            'address' => 'required|maxLength:500',
-            'gst_number' => 'maxLength:20',
-        ]);
-        if ($validator->fails()) {
-            Session::flash('error', $validator->firstError());
-            Response::back();
-            return;
-        }
-
-        $name = mb_strtoupper(trim((string)$_POST['name']));
-        $company = mb_strtoupper(trim((string)$_POST['company']));
-        $phone = trim((string)$_POST['phone']);
+        $name = mb_strtoupper(trim((string)($_POST['name'] ?? '')));
+        $company = mb_strtoupper(trim((string)($_POST['company'] ?? '')));
+        $phone = trim((string)($_POST['phone'] ?? ''));
         $email = trim((string)($_POST['email'] ?? ''));
-        $city = mb_strtoupper(trim((string)$_POST['city']));
-        $state = mb_strtoupper(trim((string)$_POST['state']));
-        $address = mb_strtoupper(trim((string)$_POST['address']));
+        $city = mb_strtoupper(trim((string)($_POST['city'] ?? '')));
+        $state = mb_strtoupper(trim((string)($_POST['state'] ?? '')));
+        $address = mb_strtoupper(trim((string)($_POST['address'] ?? '')));
         $gstNumber = mb_strtoupper(trim((string)($_POST['gst_number'] ?? '')));
 
-        if (preg_match('/[0-9]/', $name) || preg_match('/[0-9]/', $company)
-            || preg_match('/[0-9]/', $city) || preg_match('/[0-9]/', $state)) {
-            Session::flash('error', 'Supplier, company, city, and state fields cannot contain numbers.');
-            Response::back();
-            return;
-        }
-        if (!preg_match('/^[0-9]{10}$/', $phone)) {
-            Session::flash('error', 'Phone number must be exactly 10 digits.');
-            Response::back();
-            return;
-        }
-        if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            Session::flash('error', 'Please enter a valid email address.');
-            Response::back();
-            return;
-        }
-        if ($gstNumber !== '' && !preg_match('/^[0-9A-Z]{15}$/', $gstNumber)) {
-            Session::flash('error', 'GST number must be a valid 15-character alphanumeric code.');
+        if ($name === '') {
+            Session::flash('error', 'Supplier / Contact Person Name is required.');
             Response::back();
             return;
         }
 
-        if (mb_strlen($address) < 6 || !preg_match('/[a-zA-Z]/', $address)) {
-            $msg = 'Full Business Address must include valid street/door/area details (at least 6 characters).';
-            Session::flash('error', $msg);
-            Session::flash('city_state_error', $msg);
-            Response::back();
-            return;
+        if ($company === '') {
+            $company = $name;
         }
 
-        $cityStateError = $this->validateCityAndState($city, $state);
-        if ($cityStateError !== null) {
-            Session::flash('error', $cityStateError);
-            Session::flash('city_state_error', $cityStateError);
-            Response::back();
-            return;
+        $cleanPhone = preg_replace('/\D/', '', $phone);
+        if ($cleanPhone !== '') {
+            $phone = substr($cleanPhone, 0, 15);
+        }
+
+        $allIndianStateNames = ['TAMIL NADU', 'ANDHRA PRADESH', 'KARNATAKA', 'KERALA', 'MAHARASHTRA', 'GUJARAT', 'TELANGANA', 'DELHI', 'HARYANA', 'MADHYA PRADESH', 'PUNJAB', 'RAJASTHAN', 'UTTAR PRADESH', 'WEST BENGAL', 'ODISHA', 'BIHAR', 'ASSAM', 'GOA'];
+        if (in_array($city, $allIndianStateNames, true) && !in_array($state, $allIndianStateNames, true) && $state !== '') {
+            $tmp = $city;
+            $city = $state;
+            $state = $tmp;
+        }
+
+        if ($state === '') {
+            $state = 'TAMIL NADU';
         }
 
         Database::execute(
             "UPDATE sellers SET name = ?, company = ?, phone = ?, email = ?, gst_number = ?, city = ?, state = ?,
                     address = ?, is_active = 1, updated_at = NOW()
              WHERE id = ? AND seller_type = 'MATERIAL_SUPPLIER'",
-            [$name, $company, $phone, $email !== '' ? $email : null, $gstNumber !== '' ? $gstNumber : null,
-                $city, $state, $address, $sellerId]
+            [$name, $company, $phone ?: null, $email !== '' ? $email : null, $gstNumber !== '' ? $gstNumber : null,
+                $city ?: null, $state ?: null, $address ?: null, $sellerId]
         );
         AuditService::log('production', 'UPDATE', 'sellers', $sellerId, $existing, [
             'name' => $name, 'company' => $company, 'phone' => $phone, 'email' => $email,
             'gst_number' => $gstNumber, 'city' => $city, 'state' => $state, 'address' => $address,
         ]);
-        Session::flash('success', 'Supplier details updated.');
+        Session::flash('success', 'Supplier details updated successfully.');
         Response::redirect(url('production/sellers'));
     }
 
@@ -1030,6 +997,14 @@ class ProductionController {
         }
 
         try {
+            self::ensureDatabaseSchema();
+            $hasRollHsn = false;
+            $hasItemHsn = false;
+            try {
+                $hasRollHsn = (bool)Database::fetchOne("SHOW COLUMNS FROM seller_rolls LIKE 'hsn_code'");
+                $hasItemHsn = (bool)Database::fetchOne("SHOW COLUMNS FROM production_purchase_items LIKE 'hsn_code'");
+            } catch (\Throwable $e) {}
+
             Database::beginTransaction();
             foreach ($updatedItems as $item) {
                 if (isset($item['delete_id'])) {
@@ -1037,44 +1012,87 @@ class ProductionController {
                     continue;
                 }
                 if ($item['id'] > 0) {
-                    Database::execute(
-                        "UPDATE production_purchase_items
-                         SET item_name = ?, quantity = ?, unit = ?, weight_kg = ?, unit_price = ?, total_price = ?,
-                             gst_type = ?, tax_input_type = ?, sgst_value = ?, cgst_value = ?, igst_value = ?,
-                             sgst_amount = ?, cgst_amount = ?, igst_amount = ?, roll_number = ?, color = ?,
-                             design_name = ?, design_count = ?, hsn_code = ?
-                         WHERE id = ? AND purchase_id = ?",
-                        [$item['item_name'], $item['quantity'], $item['unit'], $item['weight'], $item['unit_price'], $item['total'],
-                            $item['gst_type'], $item['tax_mode'], in_array($item['gst_type'], ['SGST', 'BOTH'], true) ? $item['tax_value'] : 0,
-                            $item['gst_type'] === 'CGST' ? $item['tax_value'] : $item['cgst_tax_value'],
-                            $item['gst_type'] === 'IGST' ? $item['tax_value'] : 0,
-                            $item['sgst_amount'], $item['cgst_amount'], $item['igst_amount'], $item['roll_number'], $item['color'],
-                            $item['design_name'], $item['design_count'], $item['hsn_code'], $item['id'], $purchaseId]
-                    );
-                    if ($item['type'] === 'FABRIC_ROLL' && $item['seller_roll_id'] > 0) {
+                    if ($hasItemHsn) {
                         Database::execute(
-                            "UPDATE seller_rolls SET roll_number = ?, color = ?, design_name = ?, design_count = ?,
-                                     quantity = ?, weight = ?, price = ?, material_type = ?, photo_url = ?, hsn_code = ?
-                             WHERE id = ?",
-                            [$item['roll_number'], $item['color'], $item['design_name'], $item['design_count'],
-                                $item['quantity'], $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'], $item['hsn_code'], $item['seller_roll_id']]
+                            "UPDATE production_purchase_items
+                             SET item_name = ?, quantity = ?, unit = ?, weight_kg = ?, unit_price = ?, total_price = ?,
+                                 gst_type = ?, tax_input_type = ?, sgst_value = ?, cgst_value = ?, igst_value = ?,
+                                 sgst_amount = ?, cgst_amount = ?, igst_amount = ?, roll_number = ?, color = ?,
+                                 design_name = ?, design_count = ?, hsn_code = ?
+                             WHERE id = ? AND purchase_id = ?",
+                            [$item['item_name'], $item['quantity'], $item['unit'], $item['weight'], $item['unit_price'], $item['total'],
+                                $item['gst_type'], $item['tax_mode'], in_array($item['gst_type'], ['SGST', 'BOTH'], true) ? $item['tax_value'] : 0,
+                                $item['gst_type'] === 'CGST' ? $item['tax_value'] : $item['cgst_tax_value'],
+                                $item['gst_type'] === 'IGST' ? $item['tax_value'] : 0,
+                                $item['sgst_amount'], $item['cgst_amount'], $item['igst_amount'], $item['roll_number'], $item['color'],
+                                $item['design_name'], $item['design_count'], $item['hsn_code'], $item['id'], $purchaseId]
                         );
+                    } else {
+                        Database::execute(
+                            "UPDATE production_purchase_items
+                             SET item_name = ?, quantity = ?, unit = ?, weight_kg = ?, unit_price = ?, total_price = ?,
+                                 gst_type = ?, tax_input_type = ?, sgst_value = ?, cgst_value = ?, igst_value = ?,
+                                 sgst_amount = ?, cgst_amount = ?, igst_amount = ?, roll_number = ?, color = ?,
+                                 design_name = ?, design_count = ?
+                             WHERE id = ? AND purchase_id = ?",
+                            [$item['item_name'], $item['quantity'], $item['unit'], $item['weight'], $item['unit_price'], $item['total'],
+                                $item['gst_type'], $item['tax_mode'], in_array($item['gst_type'], ['SGST', 'BOTH'], true) ? $item['tax_value'] : 0,
+                                $item['gst_type'] === 'CGST' ? $item['tax_value'] : $item['cgst_tax_value'],
+                                $item['gst_type'] === 'IGST' ? $item['tax_value'] : 0,
+                                $item['sgst_amount'], $item['cgst_amount'], $item['igst_amount'], $item['roll_number'], $item['color'],
+                                $item['design_name'], $item['design_count'], $item['id'], $purchaseId]
+                        );
+                    }
+                    if ($item['type'] === 'FABRIC_ROLL' && $item['seller_roll_id'] > 0) {
+                        if ($hasRollHsn) {
+                            Database::execute(
+                                "UPDATE seller_rolls SET roll_number = ?, color = ?, design_name = ?, design_count = ?,
+                                         quantity = ?, weight = ?, price = ?, material_type = ?, photo_url = ?, hsn_code = ?
+                                 WHERE id = ?",
+                                [$item['roll_number'], $item['color'], $item['design_name'], $item['design_count'],
+                                    $item['quantity'], $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'], $item['hsn_code'], $item['seller_roll_id']]
+                            );
+                        } else {
+                            Database::execute(
+                                "UPDATE seller_rolls SET roll_number = ?, color = ?, design_name = ?, design_count = ?,
+                                         quantity = ?, weight = ?, price = ?, material_type = ?, photo_url = ?
+                                 WHERE id = ?",
+                                [$item['roll_number'], $item['color'], $item['design_name'], $item['design_count'],
+                                    $item['quantity'], $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'], $item['seller_roll_id']]
+                            );
+                        }
                     }
                     continue;
                 }
-                Database::execute(
-                    "INSERT INTO production_purchase_items
-                        (purchase_id, item_type, item_name, quantity, unit, unit_price, total_price,
-                         gst_type, tax_input_type, sgst_value, cgst_value, igst_value,
-                         sgst_amount, cgst_amount, igst_amount, hsn_code)
-                     VALUES (?, 'GENERAL_SUPPLY', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [$purchaseId, $item['item_name'], $item['quantity'], $item['unit'], $item['unit_price'], $item['total'],
-                        $item['gst_type'], $item['tax_mode'],
-                        in_array($item['gst_type'], ['SGST', 'BOTH'], true) ? $item['tax_value'] : 0,
-                        $item['gst_type'] === 'CGST' ? $item['tax_value'] : $item['cgst_tax_value'],
-                        $item['gst_type'] === 'IGST' ? $item['tax_value'] : 0,
-                        $item['sgst_amount'], $item['cgst_amount'], $item['igst_amount'], $item['hsn_code']]
-                );
+                if ($hasItemHsn) {
+                    Database::execute(
+                        "INSERT INTO production_purchase_items
+                            (purchase_id, item_type, item_name, quantity, unit, unit_price, total_price,
+                             gst_type, tax_input_type, sgst_value, cgst_value, igst_value,
+                             sgst_amount, cgst_amount, igst_amount, hsn_code)
+                         VALUES (?, 'GENERAL_SUPPLY', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        [$purchaseId, $item['item_name'], $item['quantity'], $item['unit'], $item['unit_price'], $item['total'],
+                            $item['gst_type'], $item['tax_mode'],
+                            in_array($item['gst_type'], ['SGST', 'BOTH'], true) ? $item['tax_value'] : 0,
+                            $item['gst_type'] === 'CGST' ? $item['tax_value'] : $item['cgst_tax_value'],
+                            $item['gst_type'] === 'IGST' ? $item['tax_value'] : 0,
+                            $item['sgst_amount'], $item['cgst_amount'], $item['igst_amount'], $item['hsn_code']]
+                    );
+                } else {
+                    Database::execute(
+                        "INSERT INTO production_purchase_items
+                            (purchase_id, item_type, item_name, quantity, unit, unit_price, total_price,
+                             gst_type, tax_input_type, sgst_value, cgst_value, igst_value,
+                             sgst_amount, cgst_amount, igst_amount)
+                         VALUES (?, 'GENERAL_SUPPLY', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        [$purchaseId, $item['item_name'], $item['quantity'], $item['unit'], $item['unit_price'], $item['total'],
+                            $item['gst_type'], $item['tax_mode'],
+                            in_array($item['gst_type'], ['SGST', 'BOTH'], true) ? $item['tax_value'] : 0,
+                            $item['gst_type'] === 'CGST' ? $item['tax_value'] : $item['cgst_tax_value'],
+                            $item['gst_type'] === 'IGST' ? $item['tax_value'] : 0,
+                            $item['sgst_amount'], $item['cgst_amount'], $item['igst_amount']]
+                    );
+                }
             }
             $this->refreshSupplierRollTotals((int)$purchase['seller_id']);
             Database::execute(
@@ -1420,6 +1438,14 @@ class ProductionController {
             $currentEndSeq = 0;
             $prefix = '';
 
+            self::ensureDatabaseSchema();
+            $hasRollHsn = false;
+            $hasItemHsn = false;
+            try {
+                $hasRollHsn = (bool)Database::fetchOne("SHOW COLUMNS FROM seller_rolls LIKE 'hsn_code'");
+                $hasItemHsn = (bool)Database::fetchOne("SHOW COLUMNS FROM production_purchase_items LIKE 'hsn_code'");
+            } catch (\Throwable $e) {}
+
             foreach ($items as $item) {
                 $sellerRollId = null;
                 if ($item['type'] === 'FABRIC_ROLL') {
@@ -1439,32 +1465,61 @@ class ProductionController {
                     $endCode = sprintf('%s%02d', $prefix, $endSeq);
                     $rollQrCode = $rollQty > 1 ? ($startCode . '-' . $endCode) : $startCode;
 
-                    Database::execute(
-                        "INSERT INTO seller_rolls
-                            (seller_id, roll_number, color, design_name, design_count, quantity, weight, price,
-                             material_type, photo_url, start_seq, end_seq, start_code, end_code, qr_code, hsn_code)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        [$sellerId, $item['roll_number'], $item['color'], $item['design_name'], $item['design_count'],
-                            $item['quantity'], $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'],
-                            $startSeq, $endSeq, $startCode, $endCode, $rollQrCode, $item['hsn_code']]
-                    );
+                    if ($hasRollHsn) {
+                        Database::execute(
+                            "INSERT INTO seller_rolls
+                                (seller_id, roll_number, color, design_name, design_count, quantity, weight, price,
+                                 material_type, photo_url, start_seq, end_seq, start_code, end_code, qr_code, hsn_code)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            [$sellerId, $item['roll_number'], $item['color'], $item['design_name'], $item['design_count'],
+                                $item['quantity'], $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'],
+                                $startSeq, $endSeq, $startCode, $endCode, $rollQrCode, $item['hsn_code']]
+                        );
+                    } else {
+                        Database::execute(
+                            "INSERT INTO seller_rolls
+                                (seller_id, roll_number, color, design_name, design_count, quantity, weight, price,
+                                 material_type, photo_url, start_seq, end_seq, start_code, end_code, qr_code)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            [$sellerId, $item['roll_number'], $item['color'], $item['design_name'], $item['design_count'],
+                                $item['quantity'], $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'],
+                                $startSeq, $endSeq, $startCode, $endCode, $rollQrCode]
+                        );
+                    }
                     $sellerRollId = (int)Database::lastInsertId();
                 }
 
-                Database::execute(
-                    "INSERT INTO production_purchase_items
-                        (purchase_id, item_type, item_name, quantity, unit, weight_kg, unit_price, total_price,
-                         gst_type, tax_input_type, sgst_value, cgst_value, igst_value,
-                         sgst_amount, cgst_amount, igst_amount,
-                         roll_number, color, design_name, design_count, seller_roll_id, hsn_code)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [$purchaseId, $item['type'], $item['item_name'], $item['quantity'], $item['unit'], $item['weight'],
-                        $item['unit_price'], $item['line_total'], $item['gst_type'], $item['tax_mode'],
-                        $item['sgst_value'], $item['cgst_value'], $item['igst_value'],
-                        $item['sgst_amount'], $item['cgst_amount'], $item['igst_amount'],
-                        $item['roll_number'], $item['color'],
-                        $item['design_name'], $item['design_count'], $sellerRollId, $item['hsn_code']]
-                );
+                if ($hasItemHsn) {
+                    Database::execute(
+                        "INSERT INTO production_purchase_items
+                            (purchase_id, item_type, item_name, quantity, unit, weight_kg, unit_price, total_price,
+                             gst_type, tax_input_type, sgst_value, cgst_value, igst_value,
+                             sgst_amount, cgst_amount, igst_amount,
+                             roll_number, color, design_name, design_count, seller_roll_id, hsn_code)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        [$purchaseId, $item['type'], $item['item_name'], $item['quantity'], $item['unit'], $item['weight'],
+                            $item['unit_price'], $item['line_total'], $item['gst_type'], $item['tax_mode'],
+                            $item['sgst_value'], $item['cgst_value'], $item['igst_value'],
+                            $item['sgst_amount'], $item['cgst_amount'], $item['igst_amount'],
+                            $item['roll_number'], $item['color'],
+                            $item['design_name'], $item['design_count'], $sellerRollId, $item['hsn_code']]
+                    );
+                } else {
+                    Database::execute(
+                        "INSERT INTO production_purchase_items
+                            (purchase_id, item_type, item_name, quantity, unit, weight_kg, unit_price, total_price,
+                             gst_type, tax_input_type, sgst_value, cgst_value, igst_value,
+                             sgst_amount, cgst_amount, igst_amount,
+                             roll_number, color, design_name, design_count, seller_roll_id)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        [$purchaseId, $item['type'], $item['item_name'], $item['quantity'], $item['unit'], $item['weight'],
+                            $item['unit_price'], $item['line_total'], $item['gst_type'], $item['tax_mode'],
+                            $item['sgst_value'], $item['cgst_value'], $item['igst_value'],
+                            $item['sgst_amount'], $item['cgst_amount'], $item['igst_amount'],
+                            $item['roll_number'], $item['color'],
+                            $item['design_name'], $item['design_count'], $sellerRollId]
+                    );
+                }
             }
 
             Database::commit();

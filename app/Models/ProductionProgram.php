@@ -302,33 +302,199 @@ class ProductionProgram {
      */
     public static function delete(int $id): bool {
         try {
+            Database::execute("SET FOREIGN_KEY_CHECKS = 0");
+        } catch (\Throwable $ignored) {}
+
+        try {
             Database::beginTransaction();
-            // 1. Production outwards
-            Database::execute("DELETE FROM production_outwards WHERE production_batch_id IN (SELECT id FROM production_batches WHERE program_id = ?)", [$id]);
-            // 2. Production batches & items
-            Database::execute("DELETE FROM production_batch_items WHERE production_batch_id IN (SELECT id FROM production_batches WHERE program_id = ?)", [$id]);
-            Database::execute("DELETE FROM production_batches WHERE program_id = ?", [$id]);
-            // 3. QC batches & items
-            Database::execute("DELETE FROM qc_batch_items WHERE qc_batch_id IN (SELECT id FROM qc_batches WHERE program_id = ?)", [$id]);
-            Database::execute("DELETE FROM qc_batches WHERE program_id = ?", [$id]);
-            // 4. Stitching batches & items
-            Database::execute("DELETE FROM stitching_batch_items WHERE stitching_batch_id IN (SELECT id FROM stitching_batches WHERE program_id = ?)", [$id]);
-            Database::execute("DELETE FROM stitching_batches WHERE program_id = ?", [$id]);
-            // 5. Cutting batches & items
-            Database::execute("DELETE FROM cutting_batch_items WHERE cutting_batch_id IN (SELECT id FROM cutting_batches WHERE program_id = ?)", [$id]);
-            Database::execute("DELETE FROM cutting_batches WHERE program_id = ?", [$id]);
-            // 6. Label batches, program items, program rolls
-            Database::execute("DELETE FROM label_batches WHERE program_id = ?", [$id]);
-            Database::execute("DELETE FROM production_program_items WHERE program_id = ?", [$id]);
-            Database::execute("DELETE FROM production_program_rolls WHERE program_id = ?", [$id]);
-            // 7. Delete the program
+
+            // Collect all child IDs before deleting
+            $batchIds = Database::fetchAll("SELECT id FROM production_batches WHERE program_id = ?", [$id]);
+            $bIds = array_column($batchIds, 'id');
+
+            $qcIds = Database::fetchAll("SELECT id FROM qc_batches WHERE program_id = ?", [$id]);
+            $qIds = array_column($qcIds, 'id');
+
+            $stitchingIds = Database::fetchAll("SELECT id FROM stitching_batches WHERE program_id = ?", [$id]);
+            $sIds = array_column($stitchingIds, 'id');
+
+            $cuttingIds = Database::fetchAll("SELECT id FROM cutting_batches WHERE program_id = ?", [$id]);
+            $cIds = array_column($cuttingIds, 'id');
+
+            $labelIds = Database::fetchAll("SELECT id FROM label_batches WHERE program_id = ?", [$id]);
+            $lIds = array_column($labelIds, 'id');
+
+            // 1. Reworks referencing production outwards or batches
+            try {
+                if (!empty($bIds)) {
+                    $inB = implode(',', array_map('intval', $bIds));
+                    Database::execute("DELETE FROM production_warehouse_reworks WHERE production_batch_id IN ($inB)");
+                }
+            } catch (\Throwable $e) {}
+
+            // 2. Production Outwards & Outward Batches
+            try {
+                if (!empty($bIds)) {
+                    $inB = implode(',', array_map('intval', $bIds));
+                    Database::execute("DELETE FROM production_outward_batches WHERE production_outward_id IN (SELECT id FROM production_outwards WHERE production_batch_id IN ($inB))");
+                    Database::execute("DELETE FROM production_outwards WHERE production_batch_id IN ($inB)");
+                }
+            } catch (\Throwable $e) {}
+
+            // 3. Production batches & items
+            try {
+                if (!empty($bIds)) {
+                    $inB = implode(',', array_map('intval', $bIds));
+                    Database::execute("DELETE FROM production_batch_items WHERE production_batch_id IN ($inB)");
+                }
+                Database::execute("DELETE FROM production_batches WHERE program_id = ?", [$id]);
+            } catch (\Throwable $e) {}
+
+            // 4. QC batches & items
+            try {
+                if (!empty($qIds)) {
+                    $inQ = implode(',', array_map('intval', $qIds));
+                    Database::execute("DELETE FROM qc_items WHERE qc_batch_id IN ($inQ)");
+                }
+                Database::execute("DELETE FROM qc_batches WHERE program_id = ?", [$id]);
+            } catch (\Throwable $e) {}
+
+            // 5. Stitching wastage & Stitching batches & items
+            try {
+                Database::execute("DELETE FROM stitching_wastage_sales WHERE program_id = ?", [$id]);
+                if (!empty($sIds)) {
+                    $inS = implode(',', array_map('intval', $sIds));
+                    Database::execute("DELETE FROM stitching_wastage_sales WHERE stitching_batch_id IN ($inS)");
+                    Database::execute("DELETE FROM stitching_items WHERE stitching_batch_id IN ($inS)");
+                }
+                Database::execute("DELETE FROM stitching_batches WHERE program_id = ?", [$id]);
+            } catch (\Throwable $e) {}
+
+            // 6. Cutting batches, items, and rolls
+            try {
+                if (!empty($cIds)) {
+                    $inC = implode(',', array_map('intval', $cIds));
+                    Database::execute("DELETE FROM cutting_batch_rolls WHERE cutting_batch_id IN ($inC)");
+                    Database::execute("DELETE FROM cutting_items WHERE cutting_batch_id IN ($inC)");
+                }
+                Database::execute("DELETE FROM cutting_batches WHERE program_id = ?", [$id]);
+            } catch (\Throwable $e) {}
+
+            // 7. Label batches & items
+            try {
+                if (!empty($lIds)) {
+                    $inL = implode(',', array_map('intval', $lIds));
+                    Database::execute("DELETE FROM label_items WHERE label_batch_id IN ($inL)");
+                }
+                Database::execute("DELETE FROM label_batches WHERE program_id = ?", [$id]);
+            } catch (\Throwable $e) {}
+
+            // 8. Program items & rolls
+            try {
+                Database::execute("DELETE FROM production_program_items WHERE program_id = ?", [$id]);
+                Database::execute("DELETE FROM production_program_rolls WHERE program_id = ?", [$id]);
+            } catch (\Throwable $e) {}
+
+            // 9. Unlink or delete from bills
+            try {
+                Database::execute("DELETE FROM production_bill_item_tags WHERE bill_item_id IN (SELECT id FROM production_bill_items WHERE program_id = ?)", [$id]);
+                Database::execute("DELETE FROM production_bill_items WHERE program_id = ?", [$id]);
+            } catch (\Throwable $e) {}
+
+            // 10. Delete the program completely
             $res = Database::execute("DELETE FROM production_programs WHERE id = ?", [$id]) >= 0;
+
             Database::commit();
+
+            try {
+                Database::execute("SET FOREIGN_KEY_CHECKS = 1");
+            } catch (\Throwable $ignored) {}
+
             return $res;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Database::rollback();
+            try {
+                Database::execute("SET FOREIGN_KEY_CHECKS = 1");
+            } catch (\Throwable $ignored) {}
             // Fallback soft-delete if foreign key constraint exists elsewhere
             return Database::execute("UPDATE production_programs SET is_active = 0, status = 'CANCELLED', production_unit_id = NULL WHERE id = ?", [$id]) >= 0;
+        }
+    }
+
+    /**
+     * Purge orphaned production child records and cancelled programs.
+     */
+    public static function purgeOrphanedRecords(): void {
+        try {
+            Database::execute("SET FOREIGN_KEY_CHECKS = 0");
+
+            // Purge cancelled programs and their children
+            $cancelledIds = Database::fetchAll("SELECT id FROM production_programs WHERE is_active = 0 OR status = 'CANCELLED'");
+            foreach ($cancelledIds as $row) {
+                self::delete((int)$row['id']);
+            }
+
+            // Purge outward batches & outwards without a valid program
+            Database::execute("DELETE FROM production_outward_batches WHERE production_outward_id IN (
+                SELECT po.id FROM production_outwards po
+                LEFT JOIN production_batches pb ON po.production_batch_id = pb.id
+                LEFT JOIN production_programs pp ON pb.program_id = pp.id
+                WHERE pp.id IS NULL OR pp.is_active = 0 OR pp.status = 'CANCELLED'
+            )");
+            Database::execute("DELETE FROM production_outwards WHERE production_batch_id IN (
+                SELECT pb.id FROM production_batches pb
+                LEFT JOIN production_programs pp ON pb.program_id = pp.id
+                WHERE pp.id IS NULL OR pp.is_active = 0 OR pp.status = 'CANCELLED'
+            )");
+
+            // Purge production batches without a valid program
+            Database::execute("DELETE FROM production_batch_items WHERE production_batch_id IN (
+                SELECT pb.id FROM production_batches pb
+                LEFT JOIN production_programs pp ON pb.program_id = pp.id
+                WHERE pp.id IS NULL OR pp.is_active = 0 OR pp.status = 'CANCELLED'
+            )");
+            Database::execute("DELETE FROM production_batches WHERE program_id NOT IN (SELECT id FROM production_programs WHERE (is_active IS NULL OR is_active = 1) AND status != 'CANCELLED')");
+
+            // Purge QC batches without a valid program
+            Database::execute("DELETE FROM qc_items WHERE qc_batch_id IN (
+                SELECT qb.id FROM qc_batches qb
+                LEFT JOIN production_programs pp ON qb.program_id = pp.id
+                WHERE pp.id IS NULL OR pp.is_active = 0 OR pp.status = 'CANCELLED'
+            )");
+            Database::execute("DELETE FROM qc_batches WHERE program_id NOT IN (SELECT id FROM production_programs WHERE (is_active IS NULL OR is_active = 1) AND status != 'CANCELLED')");
+
+            // Purge stitching batches without a valid program
+            Database::execute("DELETE FROM stitching_items WHERE stitching_batch_id IN (
+                SELECT sb.id FROM stitching_batches sb
+                LEFT JOIN production_programs pp ON sb.program_id = pp.id
+                WHERE pp.id IS NULL OR pp.is_active = 0 OR pp.status = 'CANCELLED'
+            )");
+            Database::execute("DELETE FROM stitching_batches WHERE program_id NOT IN (SELECT id FROM production_programs WHERE (is_active IS NULL OR is_active = 1) AND status != 'CANCELLED')");
+
+            // Purge cutting batches without a valid program
+            Database::execute("DELETE FROM cutting_batch_rolls WHERE cutting_batch_id IN (
+                SELECT cb.id FROM cutting_batches cb
+                LEFT JOIN production_programs pp ON cb.program_id = pp.id
+                WHERE pp.id IS NULL OR pp.is_active = 0 OR pp.status = 'CANCELLED'
+            )");
+            Database::execute("DELETE FROM cutting_items WHERE cutting_batch_id IN (
+                SELECT cb.id FROM cutting_batches cb
+                LEFT JOIN production_programs pp ON cb.program_id = pp.id
+                WHERE pp.id IS NULL OR pp.is_active = 0 OR pp.status = 'CANCELLED'
+            )");
+            Database::execute("DELETE FROM cutting_batches WHERE program_id NOT IN (SELECT id FROM production_programs WHERE (is_active IS NULL OR is_active = 1) AND status != 'CANCELLED')");
+
+            // Purge label batches without a valid program
+            Database::execute("DELETE FROM label_items WHERE label_batch_id IN (
+                SELECT lb.id FROM label_batches lb
+                LEFT JOIN production_programs pp ON lb.program_id = pp.id
+                WHERE pp.id IS NULL OR pp.is_active = 0 OR pp.status = 'CANCELLED'
+            )");
+            Database::execute("DELETE FROM label_batches WHERE program_id NOT IN (SELECT id FROM production_programs WHERE (is_active IS NULL OR is_active = 1) AND status != 'CANCELLED')");
+
+            Database::execute("SET FOREIGN_KEY_CHECKS = 1");
+        } catch (\Throwable $e) {
+            try { Database::execute("SET FOREIGN_KEY_CHECKS = 1"); } catch (\Throwable $ignored) {}
         }
     }
 
