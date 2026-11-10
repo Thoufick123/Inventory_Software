@@ -775,12 +775,14 @@ class ProductionController {
              ORDER BY ppi.id",
             [(int)$purchase['id']]
         );
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         Response::view('production.purchases.edit', [
             'pageTitle' => 'Edit Purchase ' . $purchase['purchase_number'],
             'activeModule' => 'production',
             'activeMenu' => 'prod-purchases',
             'purchase' => $purchase,
             'items' => $items,
+            'hsnCodes' => $hsnCodes,
             'breadcrumb' => [
                 ['label' => 'Production', 'url' => url('production/dashboard')],
                 ['label' => 'Purchases', 'url' => url('production/purchases')],
@@ -812,7 +814,19 @@ class ProductionController {
             return;
         }
 
-        $submittedItems = $_POST['items'] ?? [];
+        $submittedItems = [];
+        if (!empty($_POST['items_payload']) && is_string($_POST['items_payload'])) {
+            $decoded = json_decode($_POST['items_payload'], true);
+            if (is_array($decoded)) {
+                $submittedItems = $decoded;
+            }
+        }
+        if (empty($submittedItems)) {
+            $submittedItems = $_POST['items'] ?? [];
+            if (is_string($submittedItems)) {
+                $submittedItems = json_decode($submittedItems, true) ?: [];
+            }
+        }
         if (!is_array($submittedItems)) {
             Session::flash('error', 'Invalid purchase items submitted.');
             Response::back();
@@ -1082,7 +1096,7 @@ class ProductionController {
                 Database::rollback();
             }
             error_log('Production purchase could not be updated: ' . $e->getMessage());
-            Session::flash('error', 'Purchase could not be updated. Please review the entries and try again.');
+            Session::flash('error', 'Purchase could not be updated: ' . $e->getMessage());
             Response::back();
         }
     }
@@ -1151,11 +1165,13 @@ class ProductionController {
              WHERE seller_type = 'MATERIAL_SUPPLIER' AND (is_active = 1 OR is_active IS NULL)
              ORDER BY company, name"
         );
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         Response::view('production.purchases.create', [
             'pageTitle' => 'Record Production Purchase',
             'activeModule' => 'production',
             'activeMenu' => 'prod-purchases',
             'sellers' => $sellers,
+            'hsnCodes' => $hsnCodes,
             'breadcrumb' => [
                 ['label' => 'Production', 'url' => url('production/dashboard')],
                 ['label' => 'Purchases', 'url' => url('production/purchases')],
@@ -1191,7 +1207,19 @@ class ProductionController {
             return;
         }
 
-        $submittedItems = $_POST['items'] ?? [];
+        $submittedItems = [];
+        if (!empty($_POST['items_payload']) && is_string($_POST['items_payload'])) {
+            $decoded = json_decode($_POST['items_payload'], true);
+            if (is_array($decoded)) {
+                $submittedItems = $decoded;
+            }
+        }
+        if (empty($submittedItems)) {
+            $submittedItems = $_POST['items'] ?? [];
+            if (is_string($submittedItems)) {
+                $submittedItems = json_decode($submittedItems, true) ?: [];
+            }
+        }
         if (!is_array($submittedItems)) {
             $submittedItems = [];
         }
@@ -1388,13 +1416,29 @@ class ProductionController {
                 [$purchaseNumber, $purchaseId]
             );
 
+            $currentSeqData = null;
+            $currentEndSeq = 0;
+            $prefix = '';
+
             foreach ($items as $item) {
                 $sellerRollId = null;
                 if ($item['type'] === 'FABRIC_ROLL') {
-                    $sequence = ProductionService::getNextFabricRollSequence((int)$item['quantity'], $purchaseDate);
-                    $rollQrCode = $item['quantity'] > 1
-                        ? $sequence['start_code'] . '-' . $sequence['end_code']
-                        : $sequence['start_code'];
+                    $rollQty = max(1, (int)$item['quantity']);
+                    if ($currentSeqData === null) {
+                        $currentSeqData = ProductionService::getNextFabricRollSequence($rollQty, $purchaseDate);
+                        $startSeq = (int)$currentSeqData['start_seq'];
+                        $endSeq = (int)$currentSeqData['end_seq'];
+                        $prefix = $currentSeqData['prefix'];
+                        $currentEndSeq = $endSeq;
+                    } else {
+                        $startSeq = $currentEndSeq + 1;
+                        $endSeq = $startSeq + $rollQty - 1;
+                        $currentEndSeq = $endSeq;
+                    }
+                    $startCode = sprintf('%s%02d', $prefix, $startSeq);
+                    $endCode = sprintf('%s%02d', $prefix, $endSeq);
+                    $rollQrCode = $rollQty > 1 ? ($startCode . '-' . $endCode) : $startCode;
+
                     Database::execute(
                         "INSERT INTO seller_rolls
                             (seller_id, roll_number, color, design_name, design_count, quantity, weight, price,
@@ -1402,7 +1446,7 @@ class ProductionController {
                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         [$sellerId, $item['roll_number'], $item['color'], $item['design_name'], $item['design_count'],
                             $item['quantity'], $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'],
-                            $sequence['start_seq'], $sequence['end_seq'], $sequence['start_code'], $sequence['end_code'], $rollQrCode, $item['hsn_code']]
+                            $startSeq, $endSeq, $startCode, $endCode, $rollQrCode, $item['hsn_code']]
                     );
                     $sellerRollId = (int)Database::lastInsertId();
                 }
@@ -1439,7 +1483,7 @@ class ProductionController {
                 Database::rollback();
             }
             error_log('Production purchase could not be saved: ' . $e->getMessage());
-            Session::flash('error', 'Purchase could not be saved. Please review the entries and try again.');
+            Session::flash('error', 'Purchase could not be saved: ' . $e->getMessage());
             Response::back();
         }
     }

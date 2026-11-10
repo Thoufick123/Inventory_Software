@@ -342,7 +342,22 @@
                 <div class="col-lg-1 col-md-3"><label class="form-label required">RQ *</label><input type="number" class="form-control roll-quantity" min="1" step="1" value="1" required></div>
                 <div class="col-lg-2 col-md-3"><label class="form-label required">Weight (kg) *</label><div class="input-group"><input type="number" class="form-control roll-weight" min="0.01" step="0.01" required><span class="input-group-text">kg</span></div></div>
                 <div class="col-lg-2 col-md-3"><label class="form-label required">Price (₹) *</label><div class="input-group"><span class="input-group-text">₹</span><input type="number" class="form-control roll-price" min="0.01" step="0.01" required></div></div>
-                <div class="col-lg-2 col-md-3"><label class="form-label">HSN Code</label><input class="form-control roll-hsn text-uppercase font-monospace" maxlength="50" placeholder="E.G. 5208"></div>
+                <div class="col-lg-2 col-md-3">
+                    <label class="form-label">HSN Code</label>
+                    <div class="dropdown hsn-dropdown w-100 position-relative">
+                        <input type="hidden" class="roll-hsn">
+                        <button type="button" class="form-select form-select-sm text-start d-flex justify-content-between align-items-center hsn-dropdown-btn font-monospace py-1.5 px-2" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" style="font-size: 0.82rem; height: 38px;">
+                            <span class="hsn-btn-text text-truncate">-- Select HSN --</span>
+                        </button>
+                        <div class="dropdown-menu shadow-lg p-2 hsn-dropdown-menu" style="min-width: 280px; max-width: 340px; z-index: 1055;">
+                            <div class="input-group input-group-sm mb-2">
+                                <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                                <input type="text" class="form-control border-start-0 hsn-search-input" placeholder="Search HSN code or item..." autocomplete="off">
+                            </div>
+                            <div class="overflow-auto hsn-options-list" style="max-height: 200px;"></div>
+                        </div>
+                    </div>
+                </div>
                 <div class="col-lg-2 col-md-3"><label class="form-label">GST</label><select class="form-select item-gst-type"><option value="SGST">SGST</option><option value="IGST">IGST</option><option value="CGST">CGST</option><option value="BOTH">Both (CGST and SGST)</option><option value="EXEMPTED" selected>Exempted</option></select></div>
                 <div class="col-lg-2 col-md-3 tax-mode-field d-none"><label class="form-label">Tax Input Type</label><select class="form-select item-tax-mode"><option value="PERCENT">Percentage (%)</option><option value="AMOUNT">Amount (₹)</option></select></div>
                 <div class="col-lg-2 col-md-3 tax-value-field d-none"><label class="form-label item-tax-label">Tax</label><input type="number" class="form-control item-tax-value" min="0" max="100" step="0.01" value="0"></div>
@@ -357,7 +372,22 @@
 <template id="supplyTemplate">
     <div class="row g-2 align-items-end supply-row mb-3">
         <div class="col-md-4"><label class="form-label">Item Name / Description *</label><input class="form-control supply-name" maxlength="255" placeholder="Sewing needles, thread, buttons" required></div>
-        <div class="col-md-2"><label class="form-label">HSN Code</label><input class="form-control supply-hsn text-uppercase font-monospace" maxlength="50" placeholder="E.G. 9606"></div>
+        <div class="col-md-2">
+            <label class="form-label">HSN Code</label>
+            <div class="dropdown hsn-dropdown w-100 position-relative">
+                <input type="hidden" class="supply-hsn">
+                <button type="button" class="form-select form-select-sm text-start d-flex justify-content-between align-items-center hsn-dropdown-btn font-monospace py-1.5 px-2" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" style="font-size: 0.82rem; height: 38px;">
+                    <span class="hsn-btn-text text-truncate">-- Select HSN --</span>
+                </button>
+                <div class="dropdown-menu shadow-lg p-2 hsn-dropdown-menu" style="min-width: 280px; max-width: 340px; z-index: 1055;">
+                    <div class="input-group input-group-sm mb-2">
+                        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" class="form-control border-start-0 hsn-search-input" placeholder="Search HSN code or item..." autocomplete="off">
+                    </div>
+                    <div class="overflow-auto hsn-options-list" style="max-height: 200px;"></div>
+                </div>
+            </div>
+        </div>
         <div class="col-md-2"><label class="form-label">Quantity *</label><input type="number" class="form-control supply-quantity" min="0.001" step="0.001" value="1" required></div>
         <div class="col-md-2"><label class="form-label">Unit *</label><select class="form-select supply-unit"><option value="PCS">Pieces</option><option value="KG">Kilograms</option><option value="METRE">Metres</option><option value="LITRE">Litres</option><option value="BOX">Boxes</option><option value="PACK">Packs</option><option value="PAIR">Pairs</option><option value="SET">Sets</option><option value="BUNDLE">Bundles</option><option value="OTHER">Other</option></select></div>
         <div class="col-md-2"><label class="form-label">Unit Price (₹) *</label><input type="number" class="form-control supply-price" min="0" step="0.01" value="0" required></div>
@@ -384,6 +414,115 @@
     let supplyIndex = 0;
     let nextSequence = 1;
     let sequencePrefix = 'FB<?= date('my') ?>';
+    window.hsnCodesList = <?= json_encode($hsnCodes ?? []) ?>;
+
+    function initHsnDropdown(container, hiddenSelector) {
+        const dropdownEl = container.querySelector('.hsn-dropdown');
+        if (!dropdownEl) return;
+        const hiddenInput = dropdownEl.querySelector(hiddenSelector);
+        const btn = dropdownEl.querySelector('.hsn-dropdown-btn');
+        const btnText = dropdownEl.querySelector('.hsn-btn-text');
+        const searchInput = dropdownEl.querySelector('.hsn-search-input');
+        const listContainer = dropdownEl.querySelector('.hsn-options-list');
+
+        function updateBtnDisplay(code, desc) {
+            if (code) {
+                btnText.innerHTML = `<span class="fw-bold text-primary">${safe(code)}</span> ${desc ? `<span class="text-muted small">(${safe(desc).slice(0, 16)}${desc.length > 16 ? '...' : ''})</span>` : ''}`;
+            } else {
+                btnText.textContent = '-- Select HSN --';
+            }
+        }
+
+        if (hiddenInput && hiddenInput.value) {
+            const found = (window.hsnCodesList || []).find(h => String(h.hsn_code).toUpperCase() === hiddenInput.value.toUpperCase());
+            updateBtnDisplay(hiddenInput.value, found ? found.description : '');
+        }
+
+        function renderOptions(filter = '') {
+            const q = filter.trim().toLowerCase();
+            let html = `
+                <button type="button" class="dropdown-item py-1.5 px-2 small border-bottom hsn-opt-item text-muted" data-code="" data-desc="">
+                    <em>-- Clear / No HSN --</em>
+                </button>
+            `;
+            let matchCount = 0;
+            const currentVal = (hiddenInput ? hiddenInput.value : '').trim();
+
+            (window.hsnCodesList || []).forEach(h => {
+                const code = String(h.hsn_code || '').trim();
+                const desc = String(h.description || '').trim();
+                const gst = h.gst_rate ? Number(h.gst_rate) : null;
+                const searchStr = (code + ' ' + desc).toLowerCase();
+                if (q === '' || searchStr.includes(q)) {
+                    matchCount++;
+                    const isSelected = currentVal && currentVal.toUpperCase() === code.toUpperCase();
+                    html += `
+                        <button type="button" class="dropdown-item py-1.5 px-2 small border-bottom hsn-opt-item ${isSelected ? 'active' : ''}" 
+                                data-code="${safe(code)}" data-desc="${safe(desc)}" data-gst="${gst || 0}">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="font-monospace fw-bold text-primary">${safe(code)}</span>
+                                ${gst !== null ? `<span class="badge bg-light text-secondary border fs-8">${gst}% GST</span>` : ''}
+                            </div>
+                            <div class="text-truncate small text-muted" style="max-width: 250px;">${safe(desc)}</div>
+                        </button>
+                    `;
+                }
+            });
+
+            if (q !== '' && !matchCount) {
+                html += `
+                    <div class="text-muted p-2 text-center small">No matching standard HSN found.</div>
+                    <button type="button" class="dropdown-item py-1.5 px-2 small text-primary fw-semibold hsn-opt-item border-top" data-code="${safe(q.toUpperCase())}" data-desc="Custom HSN">
+                        <i class="bi bi-plus-circle me-1"></i>Use "${safe(q.toUpperCase())}"
+                    </button>
+                `;
+            }
+
+            listContainer.innerHTML = html;
+
+            listContainer.querySelectorAll('.hsn-opt-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const code = item.dataset.code || '';
+                    const desc = item.dataset.desc || '';
+                    if (hiddenInput) {
+                        hiddenInput.value = code;
+                    }
+                    updateBtnDisplay(code, desc);
+                    const bsDropdown = bootstrap.Dropdown.getInstance(btn);
+                    if (bsDropdown) bsDropdown.hide();
+                    if (hiddenInput) {
+                        hiddenInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+            });
+        }
+
+        renderOptions();
+
+        dropdownEl.addEventListener('shown.bs.dropdown', () => {
+            if (searchInput) {
+                searchInput.value = '';
+                renderOptions('');
+                searchInput.focus();
+            }
+        });
+
+        if (searchInput) {
+            searchInput.addEventListener('input', () => {
+                renderOptions(searchInput.value);
+            });
+            searchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const first = listContainer.querySelector('.hsn-opt-item:not(.text-muted)');
+                    if (first) first.click();
+                }
+            });
+        }
+    }
     const money = value => '₹' + (Number(value) || 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
     const safe = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     function calculateItemTax(item, base) {
@@ -581,18 +720,20 @@
             '.roll-number': 'roll_number', '.roll-color': 'color', '.roll-design': 'design_name',
             '.roll-design-count': 'design_count', '.roll-quantity': 'quantity', '.roll-weight': 'weight_kg',
             '.roll-price': 'unit_price', '.roll-hsn': 'hsn_code', '.item-gst-type': 'gst_type', '.item-tax-mode': 'tax_mode',
-            '.item-tax-value': 'tax_value', '.item-cgst-value': 'cgst_tax_value', '.roll-photo': null
+            '.item-tax-value': 'tax_value', '.item-cgst-value': 'cgst_tax_value'
         };
         Object.entries(names).forEach(([selector, field]) => {
             const input = card.querySelector(selector);
-            if (field) input.name = `items[${index}][${field}]`;
-            else input.name = `roll_photo_${index}`;
+            if (input && field) input.name = `items[${index}][${field}]`;
         });
         const type = document.createElement('input');
         type.type = 'hidden';
         type.name = `items[${index}][item_type]`;
         type.value = 'FABRIC_ROLL';
         card.appendChild(type);
+
+        initHsnDropdown(card, '.roll-hsn');
+
         card.querySelector('.remove-roll').addEventListener('click', () => {
             card.remove();
             Array.from(rollsContainer.children).forEach((item, i) => item.querySelector('.roll-title').textContent = 'ROLL #' + (i + 1));
@@ -610,14 +751,21 @@
         card.querySelector('.roll-photo').addEventListener('change', event => {
             const file = event.target.files[0];
             const preview = card.querySelector('.roll-preview');
-            if (!file) { preview.classList.add('d-none'); updateSummary(); return; }
-            if (file.size > 5 * 1024 * 1024) {
-                alert('Roll photo must not exceed 5 MB.');
-                event.target.value = '';
+            if (!file) {
+                event.target.removeAttribute('name');
                 preview.classList.add('d-none');
                 updateSummary();
                 return;
             }
+            if (file.size > 5 * 1024 * 1024) {
+                alert('Roll photo must not exceed 5 MB.');
+                event.target.value = '';
+                event.target.removeAttribute('name');
+                preview.classList.add('d-none');
+                updateSummary();
+                return;
+            }
+            event.target.name = `roll_photo_${index}`;
             const reader = new FileReader();
             reader.onload = () => { card.querySelector('.roll-preview img').src = reader.result; preview.classList.remove('d-none'); updateSummary(); };
             reader.readAsDataURL(file);
@@ -640,6 +788,8 @@
         row.querySelector('.item-cgst-value').name = `items[${index + 1000}][cgst_tax_value]`;
         const type = document.createElement('input');
         type.type = 'hidden'; type.name = `items[${index + 1000}][item_type]`; type.value = 'GENERAL_SUPPLY'; row.appendChild(type);
+
+        initHsnDropdown(row, '.supply-hsn');
         row.querySelector('.supply-unit').addEventListener('change', event => {
             const custom = event.target.value === 'OTHER';
             const unitContainer = row.querySelector('.custom-unit');
@@ -819,7 +969,66 @@
         if (hasRoll && !document.getElementById('fabricDescription').value.trim()) {
             event.preventDefault();
             document.getElementById('fabricDescription').focus();
+            return;
         }
+
+        // Pack items into items_payload JSON to completely avoid PHP max_input_vars limit!
+        const itemsPayload = [];
+        rollsContainer.querySelectorAll('.roll-card').forEach((card, idx) => {
+            const photoInput = card.querySelector('.roll-photo');
+            let formIdx = String(idx);
+            if (photoInput && photoInput.files && photoInput.files.length > 0) {
+                photoInput.name = `roll_photo_${idx}`;
+                formIdx = String(idx);
+            } else if (photoInput) {
+                photoInput.removeAttribute('name');
+            }
+
+            itemsPayload.push({
+                item_type: 'FABRIC_ROLL',
+                roll_number: card.querySelector('.roll-number')?.value?.trim() || ('ROLL #' + (idx + 1)),
+                color: card.querySelector('.roll-color')?.value?.trim() || '',
+                design_name: card.querySelector('.roll-design')?.value?.trim() || '',
+                design_count: Number(card.querySelector('.roll-design-count')?.value) || 1,
+                quantity: Number(card.querySelector('.roll-quantity')?.value) || 1,
+                weight_kg: Number(card.querySelector('.roll-weight')?.value) || 0,
+                unit_price: Number(card.querySelector('.roll-price')?.value) || 0,
+                hsn_code: card.querySelector('.roll-hsn')?.value?.trim() || '',
+                gst_type: card.querySelector('.item-gst-type')?.value || 'EXEMPTED',
+                tax_mode: card.querySelector('.item-tax-mode')?.value || 'PERCENT',
+                tax_value: card.querySelector('.item-tax-value')?.value || '0',
+                cgst_tax_value: card.querySelector('.item-cgst-value')?.value || '0',
+                form_index: formIdx
+            });
+        });
+
+        suppliesContainer.querySelectorAll('.supply-row').forEach((row, idx) => {
+            const unitSelect = row.querySelector('.supply-unit');
+            const unit = unitSelect ? unitSelect.value : 'PCS';
+            const customUnit = row.querySelector('.custom-unit-name')?.value?.trim() || '';
+            itemsPayload.push({
+                item_type: 'GENERAL_SUPPLY',
+                item_name: row.querySelector('.supply-name')?.value?.trim() || '',
+                hsn_code: row.querySelector('.supply-hsn')?.value?.trim() || '',
+                quantity: Number(row.querySelector('.supply-quantity')?.value) || 1,
+                unit: unit === 'OTHER' ? customUnit : unit,
+                unit_price: Number(row.querySelector('.supply-price')?.value) || 0,
+                gst_type: row.querySelector('.item-gst-type')?.value || 'EXEMPTED',
+                tax_mode: row.querySelector('.item-tax-mode')?.value || 'PERCENT',
+                tax_value: row.querySelector('.item-tax-value')?.value || '0',
+                cgst_tax_value: row.querySelector('.item-cgst-value')?.value || '0'
+            });
+        });
+
+        let payloadInput = document.getElementById('itemsPayloadInput');
+        if (!payloadInput) {
+            payloadInput = document.createElement('input');
+            payloadInput.type = 'hidden';
+            payloadInput.name = 'items_payload';
+            payloadInput.id = 'itemsPayloadInput';
+            form.appendChild(payloadInput);
+        }
+        payloadInput.value = JSON.stringify(itemsPayload);
     });
     addRoll();
 })();
