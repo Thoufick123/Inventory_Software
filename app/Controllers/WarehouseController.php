@@ -13439,7 +13439,30 @@ class WarehouseController {
                         WHERE sb.variant_id = pv.id
                           AND sb.stock_state = 'AVAILABLE'
                           AND sb.location_type = 'WAREHOUSE'
-                    ), 0) as current_stock_qty
+                    ), 0) as current_stock_qty,
+                    COALESCE((
+                        SELECT COUNT(*)
+                        FROM warehouse_qr_codes wqc
+                        WHERE wqc.variant_id = pv.id
+                    ), 0) AS qr_count,
+                    COALESCE((
+                        SELECT COUNT(*)
+                        FROM warehouse_qr_codes wqc_in
+                        WHERE wqc_in.variant_id = pv.id AND wqc_in.inwarded_at IS NOT NULL
+                    ), 0) AS inward_qr_count,
+                    COALESCE((
+                        SELECT COUNT(*)
+                        FROM purchase_items pi_sub
+                        JOIN purchase_orders po_sub ON po_sub.id = pi_sub.purchase_order_id
+                        WHERE pi_sub.variant_id = pv.id AND po_sub.status = 'RECEIVED'
+                    ), 0) AS po_received_count,
+                    COALESCE((
+                        SELECT COUNT(*)
+                        FROM stock_transactions st
+                        WHERE st.variant_id = pv.id
+                          AND st.location_type = 'WAREHOUSE'
+                          AND st.transaction_type LIKE '%INWARD%'
+                    ), 0) AS st_inward_count
              FROM purchase_items pi
              JOIN purchase_orders po ON pi.purchase_order_id = po.id
              JOIN product_variants pv ON pi.variant_id = pv.id
@@ -13453,6 +13476,16 @@ class WarehouseController {
              ORDER BY total_bought_qty DESC",
             [$id, $id]
         );
+
+        foreach ($purchasedProducts as &$pp) {
+            $hasQr = (int)($pp['qr_count'] ?? 0) > 0;
+            $hasInward = ((int)($pp['inward_qr_count'] ?? 0) > 0)
+                || ((int)($pp['po_received_count'] ?? 0) > 0)
+                || ((int)($pp['st_inward_count'] ?? 0) > 0)
+                || ((float)($pp['current_stock_qty'] ?? 0) > 0 && $hasQr);
+            $pp['can_edit_stock'] = ($hasQr && $hasInward);
+        }
+        unset($pp);
 
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
@@ -14145,7 +14178,8 @@ class WarehouseController {
                     Database::execute("UPDATE product_variants SET " . implode(', ', $vUpdates) . " WHERE id = ?", $vParams);
                 }
 
-                // 3. Stock adjustment if provided
+                // 3. Stock adjustment validation:
+                // If product has NOT generated QR and has NOT been inwarded, stock cannot be manually edited!
                 if ($availableStock !== null) {
                     $whId = function_exists('currentWarehouseId') && currentWarehouseId() ? currentWarehouseId() : 1;
                     $currBalanceRow = Database::fetchOne(
@@ -14153,7 +14187,32 @@ class WarehouseController {
                         [$variantId, $whId]
                     );
                     $currentQty = (float)($currBalanceRow['quantity'] ?? 0);
-                    if ($availableStock != $currentQty) {
+
+                    // Check if QR generated and inward exists
+                    $qrCount = (int)(Database::fetchOne("SELECT COUNT(*) as c FROM warehouse_qr_codes WHERE variant_id = ?", [$variantId])['c'] ?? 0);
+                    $inwardCount = (int)(Database::fetchOne(
+                        "SELECT (
+                            (SELECT COUNT(*) FROM warehouse_qr_codes WHERE variant_id = ? AND inwarded_at IS NOT NULL) +
+                            (SELECT COUNT(*) FROM purchase_items pi JOIN purchase_orders po ON po.id = pi.purchase_order_id WHERE pi.variant_id = ? AND po.status = 'RECEIVED') +
+                            (SELECT COUNT(*) FROM stock_transactions st WHERE st.variant_id = ? AND st.location_type = 'WAREHOUSE' AND st.transaction_type LIKE '%INWARD%')
+                         ) as c",
+                        [$variantId, $variantId, $variantId]
+                    )['c'] ?? 0);
+
+                    $hasQr = ($qrCount > 0);
+                    $hasInward = ($inwardCount > 0 || ($currentQty > 0 && $hasQr));
+                    $canEditStock = ($hasQr && $hasInward);
+
+                    if (!$canEditStock && $availableStock != $currentQty) {
+                        Database::rollBack();
+                        Response::json([
+                            'success' => false,
+                            'message' => 'Stock cannot be manually edited for this product because QR codes have not been generated and the product has not been inwarded. Please generate QR codes and inward the products via Inward GRN.'
+                        ], 422);
+                        return;
+                    }
+
+                    if ($canEditStock && $availableStock != $currentQty) {
                         Database::execute(
                             "INSERT INTO stock_balances (variant_id, location_type, location_id, stock_state, quantity, last_updated, created_at)
                              VALUES (?, 'WAREHOUSE', ?, 'AVAILABLE', ?, NOW(), NOW())
@@ -15896,7 +15955,30 @@ class WarehouseController {
                         WHERE sb.variant_id = pv.id
                           AND sb.stock_state = 'AVAILABLE'
                           AND sb.location_type = 'WAREHOUSE'
-                    ), 0) AS available_stock
+                    ), 0) AS available_stock,
+                    COALESCE((
+                        SELECT COUNT(*)
+                        FROM warehouse_qr_codes wqc
+                        WHERE wqc.variant_id = pv.id
+                    ), 0) AS qr_count,
+                    COALESCE((
+                        SELECT COUNT(*)
+                        FROM warehouse_qr_codes wqc_in
+                        WHERE wqc_in.variant_id = pv.id AND wqc_in.inwarded_at IS NOT NULL
+                    ), 0) AS inward_qr_count,
+                    COALESCE((
+                        SELECT COUNT(*)
+                        FROM purchase_items pi
+                        JOIN purchase_orders po ON po.id = pi.purchase_order_id
+                        WHERE pi.variant_id = pv.id AND po.status = 'RECEIVED'
+                    ), 0) AS po_received_count,
+                    COALESCE((
+                        SELECT COUNT(*)
+                        FROM stock_transactions st
+                        WHERE st.variant_id = pv.id
+                          AND st.location_type = 'WAREHOUSE'
+                          AND st.transaction_type LIKE '%INWARD%'
+                    ), 0) AS st_inward_count
              FROM products p
              LEFT JOIN product_variants pv ON pv.product_id = p.id AND pv.is_active = 1
              LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
@@ -15908,6 +15990,17 @@ class WarehouseController {
              ORDER BY p.name ASC, pv.sku ASC",
             [$id]
         );
+
+        foreach ($existingSupplierProducts as &$esp) {
+            $hasQr = (int)($esp['qr_count'] ?? 0) > 0;
+            $hasInward = ((int)($esp['inward_qr_count'] ?? 0) > 0)
+                || ((int)($esp['po_received_count'] ?? 0) > 0)
+                || ((int)($esp['st_inward_count'] ?? 0) > 0)
+                || ((float)($esp['available_stock'] ?? 0) > 0 && $hasQr);
+            // Validation: only allow stock edit if product has generated QR and has been inwarded
+            $esp['can_edit_stock'] = ($hasQr && $hasInward);
+        }
+        unset($esp);
 
         // Fetch categories with full sub and sub-sub hierarchy
         $categories = Database::fetchAll("SELECT * FROM warehouse_categories WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");

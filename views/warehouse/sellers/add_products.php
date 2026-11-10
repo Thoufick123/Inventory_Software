@@ -166,6 +166,7 @@
                                 'selling_price'  => (float)($product['selling_price'] ?? 0),
                                 'purchase_price' => (float)($product['purchase_price'] ?? 0),
                                 'available_stock'=> (float)($product['available_stock'] ?? 0),
+                                'can_edit_stock' => !empty($product['can_edit_stock']),
                                 'row_id'         => $rowUid,
                             ];
                         ?>
@@ -1985,7 +1986,30 @@ function openEditSupplierProductModal(prod) {
     document.getElementById('editSpMrp').value = prod.mrp !== undefined ? parseFloat(prod.mrp) : 0;
     document.getElementById('editSpSellingPrice').value = prod.selling_price !== undefined ? parseFloat(prod.selling_price) : 0;
     document.getElementById('editSpPurchasePrice').value = prod.purchase_price !== undefined ? parseFloat(prod.purchase_price) : 0;
-    document.getElementById('editSpStock').value = prod.available_stock !== undefined ? parseInt(prod.available_stock) : 0;
+
+    const stockInput = document.getElementById('editSpStock');
+    const stockLockBadge = document.getElementById('editSpStockLockBadge');
+    const stockLockNotice = document.getElementById('editSpStockLockNotice');
+    const canEditStock = Boolean(prod.can_edit_stock);
+
+    stockInput.value = prod.available_stock !== undefined ? parseInt(prod.available_stock) : 0;
+    if (!canEditStock) {
+        stockInput.readOnly = true;
+        stockInput.classList.add('bg-light', 'text-muted');
+        stockInput.classList.remove('text-primary');
+        stockInput.style.cursor = 'not-allowed';
+        stockInput.title = 'Stock is locked: QR codes not generated and product not inwarded.';
+        if (stockLockBadge) stockLockBadge.classList.remove('d-none');
+        if (stockLockNotice) stockLockNotice.classList.remove('d-none');
+    } else {
+        stockInput.readOnly = false;
+        stockInput.classList.remove('bg-light', 'text-muted');
+        stockInput.classList.add('text-primary');
+        stockInput.style.cursor = 'text';
+        stockInput.title = 'Live available warehouse stock';
+        if (stockLockBadge) stockLockBadge.classList.add('d-none');
+        if (stockLockNotice) stockLockNotice.classList.add('d-none');
+    }
 
     const modalEl = document.getElementById('modalEditSupplierProduct');
     if (modalEl) {
@@ -2137,11 +2161,19 @@ function submitEditSupplierProduct(e) {
                                     </div>
                                 </div>
                                 <div class="col-md-3 col-6">
-                                    <label class="form-label small fw-bold text-dark mb-1">Available Stock (Pcs)</label>
+                                    <label class="form-label small fw-bold text-dark mb-1 d-flex align-items-center justify-content-between">
+                                        <span>Available Stock (Pcs)</span>
+                                        <span id="editSpStockLockBadge" class="badge bg-danger-subtle text-danger border border-danger-subtle small d-none" style="font-size: 0.65rem;">
+                                            <i class="bi bi-lock-fill"></i> Locked
+                                        </span>
+                                    </label>
                                     <div class="input-group input-group-sm">
                                         <input type="number" id="editSpStock" name="available_stock" class="form-control form-control-sm text-center fw-bold text-primary" step="1" min="0">
                                         <span class="input-group-text">pcs</span>
                                     </div>
+                                    <small id="editSpStockLockNotice" class="text-danger small mt-1 d-none" style="font-size: 0.72rem; line-height: 1.25;">
+                                        <i class="bi bi-exclamation-triangle-fill me-1"></i>Cannot edit: QR not generated &amp; not inwarded. Stock must be inwarded via Inward GRN.
+                                    </small>
                                 </div>
                             </div>
                         </div>
