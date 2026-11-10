@@ -4612,12 +4612,6 @@ class ProductionController {
         $categories = Database::fetchAll(
             "SELECT c.* FROM categories c
              WHERE c.is_active = 1
-               AND EXISTS (
-                   SELECT 1 FROM products p
-                   WHERE p.category_id = c.id
-                     AND p.is_active = 1
-                     AND (p.source_type IN ('OWN_PRODUCTION', 'MANUFACTURED', 'IN_HOUSE') OR p.source_type IS NULL)
-               )
              ORDER BY c.sort_order ASC, c.name ASC"
         );
         $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 ORDER BY full_name ASC");
@@ -4877,12 +4871,6 @@ class ProductionController {
         $categories = Database::fetchAll(
             "SELECT c.* FROM categories c
              WHERE c.is_active = 1
-               AND EXISTS (
-                   SELECT 1 FROM products p
-                   WHERE p.category_id = c.id
-                     AND p.is_active = 1
-                     AND (p.source_type IN ('OWN_PRODUCTION', 'MANUFACTURED', 'IN_HOUSE') OR p.source_type IS NULL)
-               )
              ORDER BY c.sort_order ASC, c.name ASC"
         );
         $subcategories = $program['category_id'] ? Database::fetchAll("SELECT * FROM subcategories WHERE category_id = ? AND is_active = 1 ORDER BY sort_order ASC, name ASC", [$program['category_id']]) : [];

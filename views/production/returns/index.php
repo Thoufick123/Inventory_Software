@@ -91,7 +91,7 @@
                 <div class="col-lg-4 col-md-6">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
-                        <input type="text" name="search" class="form-control form-control-sm border-start-0" placeholder="Search Return #, Bill #, Customer..." value="<?= e($search) ?>">
+                        <input type="text" name="search" id="returnsSearchInput" class="form-control form-control-sm border-start-0" placeholder="Search Return #, Bill #, Customer..." value="<?= e($search) ?>" oninput="filterReturnsLive(this.value)">
                     </div>
                 </div>
                 <div class="col-lg-2 col-md-3">
@@ -139,7 +139,7 @@
                 </div>
             <?php else: ?>
                 <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0">
+                    <table class="table table-hover align-middle mb-0" id="returnsTable">
                         <thead class="table-light small text-uppercase">
                             <tr>
                                 <th>Return #</th>
@@ -155,9 +155,9 @@
                                 <th class="text-end">Actions</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="returnsTableBody">
                             <?php foreach ($returns as $r): ?>
-                                <tr>
+                                <tr class="return-row">
                                     <td>
                                         <a href="<?= url('production/returns/view/' . $r['id']) ?>" class="fw-bold font-monospace text-danger text-decoration-none">
                                             <?= e($r['return_number']) ?>
@@ -216,3 +216,14 @@
         </div>
     </div>
 </div>
+
+<script>
+function filterReturnsLive(query) {
+    const q = (query || '').toLowerCase().trim();
+    const rows = document.querySelectorAll('#returnsTableBody .return-row');
+    rows.forEach(r => {
+        const text = (r.textContent || '').toLowerCase();
+        r.style.display = (!q || text.includes(q)) ? '' : 'none';
+    });
+}
+</script>

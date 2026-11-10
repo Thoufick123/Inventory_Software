@@ -107,7 +107,7 @@
                 <div class="col-lg-4 col-md-6">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
-                        <input type="text" name="search" class="form-control form-control-sm border-start-0" placeholder="Search Requisition #, Warehouse, Notes..." value="<?= e($search) ?>">
+                        <input type="text" name="search" id="stockRequestsSearchInput" class="form-control form-control-sm border-start-0" placeholder="Search Requisition #, Warehouse, Notes..." value="<?= e($search) ?>" oninput="filterStockRequestsLive(this.value)">
                     </div>
                 </div>
                 <div class="col-lg-3 col-md-3">
@@ -161,7 +161,7 @@
                 </div>
             <?php else: ?>
                 <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0">
+                    <table class="table table-hover align-middle mb-0" id="stockRequestsTable">
                         <thead class="table-light small text-uppercase">
                             <tr>
                                 <th>Request #</th>
@@ -176,9 +176,9 @@
                                 <th class="text-end">Actions</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="stockRequestsTableBody">
                             <?php foreach ($requests as $r): ?>
-                                <tr>
+                                <tr class="stock-request-row">
                                     <td>
                                         <a href="<?= url('production/stock-requests/view/' . $r['id']) ?>" class="fw-bold font-monospace text-primary text-decoration-none">
                                             <?= e($r['request_number']) ?>
@@ -241,3 +241,14 @@
         </div>
     </div>
 </div>
+
+<script>
+function filterStockRequestsLive(query) {
+    const q = (query || '').toLowerCase().trim();
+    const rows = document.querySelectorAll('#stockRequestsTableBody .stock-request-row');
+    rows.forEach(r => {
+        const text = (r.textContent || '').toLowerCase();
+        r.style.display = (!q || text.includes(q)) ? '' : 'none';
+    });
+}
+</script>

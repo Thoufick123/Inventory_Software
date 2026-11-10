@@ -57,8 +57,81 @@ document.addEventListener('DOMContentLoaded', function() {
         setTimeout(() => {
             const bsAlert = bootstrap.Alert.getOrCreateInstance(alert);
             bsAlert.close();
-        }, 5000);
+        }, 8000);
     });
+
+    // ============================================
+    // UNIVERSAL REAL-TIME LIVE SEARCH ON TYPING
+    // (Filters table immediately without clicking Filter button)
+    // ============================================
+    function initGlobalLiveTableSearch() {
+        const searchSelectors = [
+            'input[name="search"]',
+            'input[type="search"]',
+            '[id$="SearchInput"]',
+            '#supplierSearch',
+            '.table-search-input'
+        ];
+
+        document.querySelectorAll(searchSelectors.join(', ')).forEach(input => {
+            if (input.dataset.liveFilterBound) return;
+            input.dataset.liveFilterBound = 'true';
+
+            // Find closest container that has a table
+            const container = input.closest('.tab-pane, .card, .container-fluid, .page-content, main') || document;
+            const table = container.querySelector('table') || document.querySelector('table');
+            if (!table) return;
+
+            const tbody = table.querySelector('tbody');
+            if (!tbody) return;
+
+            const executeLiveFilter = function() {
+                const query = input.value.toLowerCase().trim();
+                const rows = tbody.querySelectorAll('tr:not(.no-filter):not(.live-no-match-row)');
+                let visibleCount = 0;
+                let dataRowCount = 0;
+
+                rows.forEach(row => {
+                    // Skip initial static empty state if present
+                    if (row.cells && row.cells.length === 1 && row.cells[0].getAttribute('colspan')) {
+                        return;
+                    }
+                    dataRowCount++;
+                    const rowSearchData = row.getAttribute('data-search') || '';
+                    const rowText = (rowSearchData + ' ' + (row.textContent || '')).toLowerCase();
+                    const match = (!query || rowText.includes(query));
+
+                    row.style.display = match ? '' : 'none';
+                    if (match) visibleCount++;
+                });
+
+                let noMatchRow = tbody.querySelector('.live-no-match-row');
+                if (dataRowCount > 0 && visibleCount === 0 && query !== '') {
+                    if (!noMatchRow) {
+                        noMatchRow = document.createElement('tr');
+                        noMatchRow.className = 'live-no-match-row';
+                        const colCount = table.querySelectorAll('thead th').length || 8;
+                        noMatchRow.innerHTML = `<td colspan="${colCount}" class="text-center py-5 text-muted">
+                            <i class="bi bi-search fs-2 d-block mb-2 text-secondary opacity-75"></i>
+                            <h6 class="fw-bold text-secondary mb-1">No matching records found</h6>
+                            <small class="text-muted">No entries match your search query "<strong></strong>". Clear the search or try another keyword.</small>
+                        </td>`;
+                        tbody.appendChild(noMatchRow);
+                    }
+                    noMatchRow.style.display = '';
+                    const strong = noMatchRow.querySelector('strong');
+                    if (strong) strong.textContent = query;
+                } else if (noMatchRow) {
+                    noMatchRow.style.display = 'none';
+                }
+            };
+
+            input.addEventListener('input', executeLiveFilter);
+            input.addEventListener('search', executeLiveFilter);
+        });
+    }
+
+    initGlobalLiveTableSearch();
 
     // ============================================
     // CONFIRM DIALOGS

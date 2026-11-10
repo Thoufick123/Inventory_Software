@@ -87,8 +87,14 @@
 </div>
 
 <div class="card border-0 shadow-sm">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h6 class="fw-bold text-dark mb-0"><i class="bi bi-receipt-cutoff text-primary me-2"></i>Production Invoices &amp; Bills</h6>
+        <div class="d-flex align-items-center gap-2">
+            <input type="text" id="billingSearchInput" class="form-control form-control-sm" placeholder="🔍 Search bill #, buyer, amount..." style="width: 250px;" oninput="filterBillingLive(this.value)">
+        </div>
+    </div>
     <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
+        <table class="table table-hover align-middle mb-0" id="billingTable">
             <thead class="table-light">
                 <tr>
                     <th>Bill No.</th>
@@ -100,12 +106,12 @@
                     <th class="text-end">Actions</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="billingTableBody">
                 <?php if (empty($bills)): ?>
                     <tr><td colspan="8" class="text-center text-muted py-5">No Production Bills have been created.</td></tr>
                 <?php else: ?>
                     <?php foreach ($bills as $bill): ?>
-                        <tr>
+                        <tr class="billing-row">
                             <td class="fw-semibold"><?= htmlspecialchars($bill['bill_number']) ?></td>
                             <td><?= htmlspecialchars(date('d M Y', strtotime($bill['bill_date']))) ?></td>
                             <td>
@@ -144,3 +150,14 @@
         </table>
     </div>
 </div>
+
+<script>
+function filterBillingLive(query) {
+    const q = (query || '').toLowerCase().trim();
+    const rows = document.querySelectorAll('#billingTableBody .billing-row');
+    rows.forEach(r => {
+        const text = (r.textContent || '').toLowerCase();
+        r.style.display = (!q || text.includes(q)) ? '' : 'none';
+    });
+}
+</script>

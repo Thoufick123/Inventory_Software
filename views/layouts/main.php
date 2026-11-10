@@ -578,14 +578,27 @@ if (!empty($authUser['shop_name'])) {
 
             <!-- Page Content -->
             <div class="page-content">
-                <!-- Flash Messages -->
+                <!-- Flash Messages (Modern Alert Box UI) -->
                 <?php foreach (['success', 'error', 'warning', 'info'] as $type): ?>
                     <?php $messages = Session::getFlash($type); ?>
                     <?php foreach ($messages as $message): ?>
-                        <div class="alert alert-<?= $type === 'error' ? 'danger' : $type ?> alert-dismissible fade show flash-alert" role="alert">
-                            <i class="bi bi-<?= $type === 'success' ? 'check-circle' : ($type === 'error' ? 'exclamation-circle' : ($type === 'warning' ? 'exclamation-triangle' : 'info-circle')) ?> me-2"></i>
-                            <?= e($message) ?>
-                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        <?php
+                            $alertConfig = match($type) {
+                                'success' => ['icon' => 'check-circle-fill', 'class' => 'flash-alert-success', 'title' => 'Success Notification'],
+                                'error'   => ['icon' => 'exclamation-triangle-fill', 'class' => 'flash-alert-danger', 'title' => 'System Warning / Action Blocked'],
+                                'warning' => ['icon' => 'exclamation-circle-fill', 'class' => 'flash-alert-warning', 'title' => 'Attention Required'],
+                                default   => ['icon' => 'info-circle-fill', 'class' => 'flash-alert-info', 'title' => 'System Information'],
+                            };
+                        ?>
+                        <div class="alert <?= $alertConfig['class'] ?> alert-dismissible fade show flash-alert modern-alert-box shadow-sm" role="alert">
+                            <div class="alert-icon-wrap me-3">
+                                <i class="bi bi-<?= $alertConfig['icon'] ?>"></i>
+                            </div>
+                            <div class="alert-content-wrap flex-grow-1">
+                                <div class="alert-title fw-bold text-uppercase"><?= $alertConfig['title'] ?></div>
+                                <div class="alert-message"><?= e($message) ?></div>
+                            </div>
+                            <button type="button" class="btn-close ms-2" data-bs-dismiss="alert" aria-label="Close"></button>
                         </div>
                     <?php endforeach; ?>
                 <?php endforeach; ?>

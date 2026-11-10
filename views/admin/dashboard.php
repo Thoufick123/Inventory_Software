@@ -274,12 +274,10 @@
                                                     onclick="editUnit(<?= htmlspecialchars(json_encode($unit), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
-                                            <form method="POST" action="<?= url('admin/production-units/delete/' . $unit['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to delete production unit \'<?= addslashes(e($unit['name'])) ?>\'? This action cannot be undone.');">
-                                                <?= csrf_field() ?>
-                                                <button type="submit" class="btn btn-outline-danger" title="Delete Production Unit">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </form>
+                                            <button type="button" class="btn btn-outline-danger" title="Delete Production Unit"
+                                                    onclick="confirmDeleteFacility('unit', <?= (int)$unit['id'] ?>, '<?= addslashes(e($unit['name'])) ?>', '<?= url('admin/production-units/delete/' . $unit['id']) ?>')">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
                                         </div>
                                     </td>
                                 </tr>
@@ -345,12 +343,10 @@
                                                     onclick="editWarehouse(<?= htmlspecialchars(json_encode($wh), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
-                                            <form method="POST" action="<?= url('admin/warehouses/delete/' . $wh['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to delete warehouse \'<?= addslashes(e($wh['name'])) ?>\'? This action cannot be undone.');">
-                                                <?= csrf_field() ?>
-                                                <button type="submit" class="btn btn-outline-danger" title="Delete Warehouse">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </form>
+                                            <button type="button" class="btn btn-outline-danger" title="Delete Warehouse"
+                                                    onclick="confirmDeleteFacility('warehouse', <?= (int)$wh['id'] ?>, '<?= addslashes(e($wh['name'])) ?>', '<?= url('admin/warehouses/delete/' . $wh['id']) ?>')">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
                                         </div>
                                     </td>
                                 </tr>
@@ -416,12 +412,10 @@
                                                     onclick="editShop(<?= htmlspecialchars(json_encode($shop), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
-                                            <form method="POST" action="<?= url('admin/shops/delete/' . $shop['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to delete retail shop \'<?= addslashes(e($shop['name'])) ?>\'? This action cannot be undone.');">
-                                                <?= csrf_field() ?>
-                                                <button type="submit" class="btn btn-outline-danger" title="Delete Shop">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </form>
+                                            <button type="button" class="btn btn-outline-danger" title="Delete Shop"
+                                                    onclick="confirmDeleteFacility('shop', <?= (int)$shop['id'] ?>, '<?= addslashes(e($shop['name'])) ?>', '<?= url('admin/shops/delete/' . $shop['id']) ?>')">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
                                         </div>
                                     </td>
                                 </tr>
@@ -483,12 +477,10 @@
                                             <button type="button" class="btn btn-outline-primary" title="Edit Channel" onclick="editChannel(<?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
-                                            <form method="POST" action="<?= url('admin/channels/delete/' . $chan['id']) ?>" class="d-inline" onsubmit="return confirm('Delete WhatsApp channel?');">
-                                                <?= csrf_field() ?>
-                                                <button type="submit" class="btn btn-outline-danger" title="Delete Channel">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </form>
+                                            <button type="button" class="btn btn-outline-danger" title="Delete Channel"
+                                                    onclick="confirmDeleteFacility('whatsapp', <?= (int)$chan['id'] ?>, '<?= addslashes(e($chan['name'])) ?>', '<?= url('admin/channels/delete/' . $chan['id']) ?>')">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
                                         </div>
                                     </td>
                                 </tr>
@@ -545,12 +537,10 @@
                                             <button type="button" class="btn btn-outline-primary" title="Edit Channel" onclick="editChannel(<?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
-                                            <form method="POST" action="<?= url('admin/channels/delete/' . $chan['id']) ?>" class="d-inline" onsubmit="return confirm('Delete Website channel?');">
-                                                <?= csrf_field() ?>
-                                                <button type="submit" class="btn btn-outline-danger" title="Delete Channel">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </form>
+                                            <button type="button" class="btn btn-outline-danger" title="Delete Channel"
+                                                    onclick="confirmDeleteFacility('website', <?= (int)$chan['id'] ?>, '<?= addslashes(e($chan['name'])) ?>', '<?= url('admin/channels/delete/' . $chan['id']) ?>')">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
                                         </div>
                                     </td>
                                 </tr>
@@ -1355,4 +1345,76 @@ function viewFacilityDetails(type, data) {
     const modal = new bootstrap.Modal(document.getElementById('modalFacilityDetails'));
     modal.show();
 }
+
+function confirmDeleteFacility(type, id, name, actionUrl) {
+    const modalEl = document.getElementById('modalConfirmDeleteFacility');
+    if (!modalEl) return;
+
+    const form = document.getElementById('deleteFacilityForm');
+    const title = document.getElementById('deleteFacilityModalTitle');
+    const desc = document.getElementById('deleteFacilityModalDesc');
+    const notice = document.getElementById('deleteFacilityAuditNotice');
+
+    form.action = actionUrl;
+
+    if (type === 'unit') {
+        title.textContent = 'Delete Production Unit';
+        desc.innerHTML = `Are you sure you want to delete <strong class="text-danger">${name}</strong>? All operational assignments will be unlinked from active infrastructure.`;
+        notice.innerHTML = 'Units with active programs or cutting batches cannot be deleted. Any deletion will create an audit entry in the <strong>Live Staff Activity & System Change Logs</strong>.';
+    } else if (type === 'warehouse') {
+        title.textContent = 'Delete Central Warehouse';
+        desc.innerHTML = `Are you sure you want to delete warehouse <strong class="text-danger">${name}</strong>?`;
+        notice.innerHTML = 'Warehouses with on-hand inventory stock cannot be deleted. Deletion will be logged in System Audit Trail.';
+    } else if (type === 'shop') {
+        title.textContent = 'Delete Retail Store';
+        desc.innerHTML = `Are you sure you want to delete retail outlet <strong class="text-danger">${name}</strong>?`;
+        notice.innerHTML = 'Retail outlets with historical transactions will be archived in the System Audit Trail.';
+    } else {
+        title.textContent = 'Delete Sales Channel';
+        desc.innerHTML = `Are you sure you want to delete channel <strong class="text-danger">${name}</strong>?`;
+        notice.innerHTML = 'Action will be logged in Live Staff Activity & System Change Logs.';
+    }
+
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+}
 </script>
+
+<!-- Modal: Modern Confirmation for Deleting Production Units & Facilities -->
+<div class="modal fade" id="modalConfirmDeleteFacility" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width: 460px;">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-body p-4 text-center">
+                <div class="mb-3 d-inline-flex align-items-center justify-content-center rounded-circle bg-danger-subtle text-danger" style="width: 68px; height: 68px;">
+                    <i class="bi bi-exclamation-triangle-fill fs-2"></i>
+                </div>
+                <h5 class="fw-bold text-dark mb-2" id="deleteFacilityModalTitle">Delete Production Unit</h5>
+                <p class="text-secondary small mb-3" id="deleteFacilityModalDesc">
+                    Are you sure you want to delete this facility? This action cannot be undone.
+                </p>
+
+                <div class="alert alert-warning border-0 bg-warning-subtle text-start p-3 rounded-3 small mb-4">
+                    <div class="d-flex align-items-start gap-2">
+                        <i class="bi bi-shield-exclamation text-warning fs-5 flex-shrink-0 mt-n1"></i>
+                        <div>
+                            <strong class="text-dark">System Audit Trail Notice:</strong>
+                            <div class="text-secondary mt-1" id="deleteFacilityAuditNotice">
+                                Deleting this facility will be permanently recorded in the Live Staff Activity &amp; System Change Logs.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <form method="POST" id="deleteFacilityForm" action="">
+                    <?= csrf_field() ?>
+                    <div class="d-flex gap-2 justify-content-center">
+                        <button type="button" class="btn btn-light px-4 fw-semibold border" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-danger px-4 fw-semibold shadow-sm d-flex align-items-center gap-1">
+                            <i class="bi bi-trash me-1"></i> Yes, Delete Facility
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

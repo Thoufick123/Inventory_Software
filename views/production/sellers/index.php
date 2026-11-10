@@ -14,7 +14,7 @@
         <form method="GET" action="<?= url('production/sellers') ?>" class="row g-3 align-items-end">
             <div class="col-lg-5 col-md-6">
                 <label class="form-label" for="supplierSearch">Search supplier details</label>
-                <input type="search" class="form-control" id="supplierSearch" name="search" value="<?= e($search) ?>" placeholder="Name, company, phone, address or GSTIN">
+                <input type="search" class="form-control" id="supplierSearch" name="search" value="<?= e($search) ?>" placeholder="Name, company, phone, address or GSTIN" oninput="filterSuppliersLive(this.value)">
             </div>
             <div class="col-lg-3 col-md-3">
                 <label class="form-label" for="supplierCity">City</label>
@@ -58,7 +58,7 @@
                         <?php endif; ?>
                     </td></tr>
                 <?php else: foreach ($sellers as $seller): ?>
-                    <tr>
+                    <tr class="seller-row" data-search="<?= strtolower(e($seller['name'] . ' ' . ($seller['company'] ?? '') . ' ' . ($seller['phone'] ?? '') . ' ' . ($seller['email'] ?? '') . ' ' . ($seller['city'] ?? '') . ' ' . ($seller['state'] ?? '') . ' ' . ($seller['gst_number'] ?? ''))) ?>">
                         <td class="fw-semibold"><?= e($seller['name']) ?></td>
                         <td><?= e($seller['company'] ?: '—') ?></td>
                         <td>
@@ -90,3 +90,14 @@
         </table>
     </div>
 </div>
+
+<script>
+function filterSuppliersLive(query) {
+    const q = query.toLowerCase().trim();
+    const rows = document.querySelectorAll('tbody .seller-row');
+    rows.forEach(r => {
+        const text = r.getAttribute('data-search') || (r.textContent || '').toLowerCase();
+        r.style.display = (!q || text.includes(q)) ? '' : 'none';
+    });
+}
+</script>

@@ -1035,17 +1035,20 @@ class AdminController {
 
         $unitId = (int)$id;
         try {
+            $unit = ProductionUnit::find($unitId);
+            $unitName = $unit['name'] ?? "ID #{$unitId}";
+
             // Check if programs are linked
             $progCount = (int)(Database::fetchOne("SELECT COUNT(*) as cnt FROM production_programs WHERE production_unit_id = ?", [$unitId])['cnt'] ?? 0);
             if ($progCount > 0) {
-                Response::redirect(url('admin/dashboard?tab=production-units'), 'error', "Cannot delete unit: {$progCount} production program(s) are assigned to it. You can deactivate it instead.");
+                Response::redirect(url('admin/dashboard?tab=production-units'), 'error', "Cannot delete production unit \"{$unitName}\": {$progCount} active production program(s) are assigned to it. Reassign or complete programs before deleting.");
             }
 
             ProductionUnit::delete($unitId);
-            AuditService::log('production_units', 'delete', 'production_units', $unitId);
-            Response::redirect(url('admin/dashboard?tab=production-units'), 'success', 'Production Unit deleted successfully.');
+            AuditService::log('production_units', 'delete', 'production_units', $unitId, "Deleted Production Facility: {$unitName}");
+            Response::redirect(url('admin/dashboard?tab=production-units'), 'success', "Production Unit \"{$unitName}\" deleted successfully. Action permanently recorded in Live Staff Activity & System Change Logs.");
         } catch (Exception $e) {
-            Response::redirect(url('admin/dashboard?tab=production-units'), 'error', 'Error deleting unit: ' . $e->getMessage());
+            Response::redirect(url('admin/dashboard?tab=production-units'), 'error', 'Error deleting production unit: ' . $e->getMessage());
         }
     }
 

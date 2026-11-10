@@ -26,12 +26,10 @@
                            class="form-control fw-semibold" 
                            placeholder="Search by style code, product name, or category..." 
                            value="<?= e($search ?? '') ?>"
-                           oninput="liveFilterCatalog()">
-                    <?php if (!empty($search)): ?>
-                        <a href="<?= url('production/catalog') ?>" class="btn btn-outline-secondary" title="Clear Search">
-                            <i class="bi bi-x-lg"></i>
-                        </a>
-                    <?php endif; ?>
+                           oninput="handleCatalogSearchInput(this.value)">
+                    <button class="btn btn-outline-secondary" type="button" id="btnClearSearchInput" onclick="clearCatalogSearch()" title="Clear Search" style="<?= empty($search) ? 'display:none;' : '' ?>">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
                 </div>
             </div>
 
@@ -66,11 +64,9 @@
                 <button type="submit" class="btn btn-primary flex-grow-1" title="Filter Records">
                     <i class="bi bi-filter me-1"></i> Filter
                 </button>
-                <?php if (!empty($search) || !empty($categoryId) || !empty($subcategoryId)): ?>
-                    <a href="<?= url('production/catalog') ?>" class="btn btn-outline-danger" title="Reset All Filters">
-                        <i class="bi bi-x-circle"></i>
-                    </a>
-                <?php endif; ?>
+                <button type="button" class="btn btn-outline-secondary" id="btnResetCatalogFilters" onclick="resetAllCatalogFilters()" title="Reset All Filters">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                </button>
             </div>
         </form>
     </div>
@@ -98,15 +94,13 @@
                     <th>Category Hierarchy</th>
                     <th>HSN &amp; GST</th>
                     <th class="text-center">Variants</th>
-                    <th class="text-end">Prod. Cost</th>
-                    <th class="text-end">Selling Price</th>
                     <th class="text-center">Status</th>
                     <th class="text-center" style="width: 130px;">Actions</th>
                 </tr>
             </thead>
             <tbody id="catalogTableBody">
                 <tr id="emptyCatalogLiveStateTable" style="display: none;">
-                    <td colspan="10" class="text-center py-5 text-muted">
+                    <td colspan="8" class="text-center py-5 text-muted">
                         <i class="bi bi-search fs-2 opacity-50 mb-2 d-block"></i>
                         <h6 class="fw-bold">No Matching Product Styles Found</h6>
                         <p class="small mb-0">Try adjusting your search keywords or choosing another category filter.</p>
@@ -114,7 +108,7 @@
                 </tr>
                 <?php if (empty($products)): ?>
                     <tr id="noProductsServerStateTable">
-                        <td colspan="10" class="text-center py-5 text-muted">
+                        <td colspan="8" class="text-center py-5 text-muted">
                             <i class="bi bi-journal-plus fs-2 text-primary opacity-75 mb-2 d-block"></i>
                             <h6 class="fw-bold text-dark">No In-House Production Styles Found</h6>
                             <p class="small mb-2">Start by adding your manufactured garment styles.</p>
@@ -175,12 +169,6 @@
                             </td>
                             <td class="text-center">
                                 <span class="badge bg-light text-dark border fw-bold"><?= $p['variant_count'] ?> active</span>
-                            </td>
-                            <td class="text-end fw-semibold text-primary">
-                                <?= (float)($p['min_prod_cost'] ?? 0) > 0 ? formatCurrency((float)$p['min_prod_cost']) : '—' ?>
-                            </td>
-                            <td class="text-end fw-bold text-success">
-                                <?= (float)($p['min_selling_price'] ?? 0) > 0 ? formatCurrency((float)$p['min_selling_price']) : '—' ?>
                             </td>
                             <td class="text-center">
                                 <span class="badge bg-success-subtle text-success border">In-House</span>
@@ -246,6 +234,43 @@
 
 <script>
 let catalogPagination = null;
+
+function handleCatalogSearchInput(val) {
+    const clearBtn = document.getElementById('btnClearSearchInput');
+    if (clearBtn) {
+        clearBtn.style.display = val.trim() ? '' : 'none';
+    }
+    liveFilterCatalog();
+}
+
+function clearCatalogSearch() {
+    const searchInput = document.getElementById('catalogSearchInput');
+    if (searchInput) {
+        searchInput.value = '';
+    }
+    const clearBtn = document.getElementById('btnClearSearchInput');
+    if (clearBtn) {
+        clearBtn.style.display = 'none';
+    }
+    liveFilterCatalog();
+}
+
+function resetAllCatalogFilters() {
+    const searchInput = document.getElementById('catalogSearchInput');
+    if (searchInput) searchInput.value = '';
+
+    const catSelect = document.getElementById('filterCategoryId');
+    if (catSelect) catSelect.value = '';
+
+    const subcatSelect = document.getElementById('filterSubcategoryId');
+    if (subcatSelect) subcatSelect.value = '';
+
+    const clearBtn = document.getElementById('btnClearSearchInput');
+    if (clearBtn) clearBtn.style.display = 'none';
+
+    handleCategoryFilterChange();
+    liveFilterCatalog();
+}
 
 function handleCategoryFilterChange() {
     const catSelect = document.getElementById('filterCategoryId');

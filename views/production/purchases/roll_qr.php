@@ -156,7 +156,7 @@
             padding-top: 4px;
             margin-top: 6px;
             display: flex;
-            justify-content: space-between;
+            justify-content: flex-end;
             align-items: center;
             font-size: 8px;
             color: #64748b;
@@ -176,7 +176,7 @@
                 padding: 0 !important;
                 margin: 0 !important;
             }
-            .action-bar, .single-print-btn, .no-print {
+            .action-bar, .single-print-btn, .roll-select-box, .no-print, .label-footer, .unselected-roll, .d-print-none {
                 display: none !important;
             }
             .roll-qr-container {
@@ -215,15 +215,16 @@
                 </div>
             </div>
 
-            <div class="d-flex align-items-center gap-2">
+            <div class="d-flex align-items-center gap-3">
                 <a href="<?= url('production/purchases') ?>" class="btn btn-outline-secondary btn-sm">
                     <i class="bi bi-arrow-left me-1"></i> Back to Purchases
                 </a>
-                <a href="<?= url('production/purchases/view/' . $purchase['id']) ?>" class="btn btn-outline-primary btn-sm">
-                    <i class="bi bi-eye me-1"></i> View Order
-                </a>
-                <button type="button" class="btn btn-dark btn-sm fw-bold px-3 shadow-sm" onclick="window.print()">
-                    <i class="bi bi-printer me-1 text-warning"></i> Print All QR Labels (<?= count($stickers) ?>)
+                <div class="form-check form-switch d-inline-flex align-items-center gap-2 mb-0 bg-light border px-2 py-1 rounded">
+                    <input class="form-check-input ms-0" type="checkbox" id="selectAllRolls" checked onchange="toggleSelectAllRolls(this.checked)" style="cursor: pointer;">
+                    <label class="form-check-label small fw-bold text-dark cursor-pointer mb-0" for="selectAllRolls">Select All (<span id="selectedCount"><?= count($stickers) ?></span>/<?= count($stickers) ?>)</label>
+                </div>
+                <button type="button" class="btn btn-dark btn-sm fw-bold px-3 shadow-sm" id="printSelectedBtn" onclick="printSelectedLabels()">
+                    <i class="bi bi-printer me-1 text-warning"></i> Print Selected QR Labels (<span id="btnSelectedCount"><?= count($stickers) ?></span>)
                 </button>
             </div>
         </div>
@@ -246,15 +247,18 @@
             <span class="text-muted small fw-semibold">
                 <i class="bi bi-layers me-1 text-primary"></i> Displaying <strong><?= count($stickers) ?></strong> thermal fabric roll label stickers (50x30mm standard):
             </span>
-            <span class="badge bg-secondary-subtle text-secondary border">Scan with Handheld or Mobile Barcode Scanner</span>
+            <span class="badge bg-secondary-subtle text-secondary border">Check rolls to print only selected labels</span>
         </div>
 
         <div class="stickers-wrapper" id="stickersContainer">
             <?php foreach ($stickers as $stk): ?>
                 <div class="roll-label-card" id="card-<?= $stk['index'] ?>">
                     <div class="label-header">
-                        <div class="company-tag" title="<?= htmlspecialchars($stk['supplier_name']) ?>">
-                            <?= htmlspecialchars($stk['supplier_name']) ?>
+                        <div class="d-flex align-items-center gap-1">
+                            <input type="checkbox" class="form-check-input roll-select-box no-print" id="check-roll-<?= $stk['index'] ?>" data-index="<?= $stk['index'] ?>" checked onchange="updateSelectedCount()" title="Check to print this roll label" style="margin-top: 0; cursor: pointer;">
+                            <div class="company-tag" title="<?= htmlspecialchars($stk['supplier_name']) ?>">
+                                <?= htmlspecialchars($stk['supplier_name']) ?>
+                            </div>
                         </div>
                         <div class="po-tag"><?= htmlspecialchars($stk['po_number']) ?></div>
                     </div>
@@ -288,9 +292,8 @@
                         </div>
                     </div>
 
-                    <div class="label-footer">
-                        <span>GRM MFG · <?= $stk['purchase_date'] ?></span>
-                        <button type="button" class="btn btn-outline-dark btn-xs single-print-btn no-print" onclick="printSingleLabel(<?= $stk['index'] ?>)" title="Print only this label">
+                    <div class="label-footer no-print">
+                        <button type="button" class="btn btn-outline-dark btn-xs single-print-btn" onclick="printSingleLabel(<?= $stk['index'] ?>)" title="Print only this label">
                             <i class="bi bi-printer"></i> Print
                         </button>
                     </div>
@@ -330,7 +333,51 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     });
+
+    updateSelectedCount();
 });
+
+function toggleSelectAllRolls(checked) {
+    document.querySelectorAll('.roll-select-box').forEach(cb => {
+        cb.checked = checked;
+    });
+    updateSelectedCount();
+}
+
+function updateSelectedCount() {
+    const boxes = document.querySelectorAll('.roll-select-box');
+    let count = 0;
+    boxes.forEach(cb => {
+        const card = document.getElementById('card-' + cb.dataset.index);
+        if (cb.checked) {
+            count++;
+            if (card) card.classList.remove('d-print-none', 'unselected-roll');
+        } else {
+            if (card) card.classList.add('d-print-none', 'unselected-roll');
+        }
+    });
+    const countEl = document.getElementById('selectedCount');
+    const btnCountEl = document.getElementById('btnSelectedCount');
+    const selectAll = document.getElementById('selectAllRolls');
+    if (countEl) countEl.textContent = count;
+    if (btnCountEl) btnCountEl.textContent = count;
+    if (selectAll) selectAll.checked = (count === boxes.length && boxes.length > 0);
+
+    const printBtn = document.getElementById('printSelectedBtn');
+    if (printBtn) {
+        printBtn.disabled = (count === 0);
+    }
+}
+
+function printSelectedLabels() {
+    const checked = document.querySelectorAll('.roll-select-box:checked');
+    if (checked.length === 0) {
+        alert('Please select at least 1 roll sticker to print.');
+        return;
+    }
+    updateSelectedCount();
+    window.print();
+}
 
 function printSingleLabel(index) {
     const card = document.getElementById('card-' + index);
@@ -342,7 +389,11 @@ function printSingleLabel(index) {
         return;
     }
 
-    const cardHtml = card.outerHTML;
+    // Clone card and strip non-print elements
+    const clone = card.cloneNode(true);
+    clone.querySelectorAll('.no-print, .single-print-btn, .roll-select-box, .label-footer').forEach(el => el.remove());
+    const cardHtml = clone.outerHTML;
+
     printWin.document.open();
     printWin.document.write(`
         <!DOCTYPE html>
@@ -353,14 +404,13 @@ function printSingleLabel(index) {
             <style>
                 body { margin: 0; padding: 10px; font-family: sans-serif; }
                 .roll-label-card { width: 270px; border: 1.5px solid #000; padding: 8px 10px; border-radius: 6px; }
-                .single-print-btn, .no-print { display: none !important; }
+                .single-print-btn, .roll-select-box, .no-print, .label-footer { display: none !important; }
                 .company-tag { font-size: 8.5px; font-weight: 800; text-transform: uppercase; }
                 .po-tag { font-size: 8px; font-family: monospace; font-weight: bold; }
                 .qr-box { width: 72px; height: 72px; }
                 .qr-box img, .qr-box canvas { width: 100% !important; height: 100% !important; }
                 .roll-badge-num { font-size: 11px; font-weight: 900; font-family: monospace; }
                 .label-meta { font-size: 9px; line-height: 1.3; }
-                .label-footer { font-size: 8px; border-top: 1px dashed #999; margin-top: 4px; padding-top: 2px; }
             </style>
         </head>
         <body onload="window.print(); setTimeout(() => window.close(), 500);">

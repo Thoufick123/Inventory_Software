@@ -269,10 +269,6 @@ $existingColorIds = array_filter(array_unique(array_column($variants ?? [], 'col
                             </div>
                         </div>
                     </div>
-                                <small class="text-muted" style="font-size:0.75rem;">Standard 5% / 12% GST</small>
-                            </div>
-                        </div>
-                    </div>
                     </div>
                 </div>
             </div>
@@ -297,8 +293,8 @@ $existingColorIds = array_filter(array_unique(array_column($variants ?? [], 'col
                                 <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalAddSize">
                                     <i class="bi bi-plus-circle me-1"></i> Add Size
                                 </button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSelectAllSizes">Select All</button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnClearSizes">Clear</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSelectAllSizes" onclick="selectAllSizes()">Select All</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnClearSizes" onclick="clearAllSizes()">Clear</button>
                             </div>
                         </div>
                         <div class="p-2 border rounded bg-light d-flex flex-wrap gap-2 align-items-center" id="sizeSelectorContainer" style="min-height: 48px;">
@@ -614,6 +610,26 @@ $existingColorIds = array_filter(array_unique(array_column($variants ?? [], 'col
 </div>
 
 <script>
+function selectAllSizes() {
+    const cbs = document.querySelectorAll('.size-checkbox');
+    cbs.forEach(cb => {
+        cb.checked = true;
+        const lbl = cb.closest('.size-check-btn') || cb.parentElement;
+        if (lbl) lbl.classList.add('active');
+        cb.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+}
+
+function clearAllSizes() {
+    const cbs = document.querySelectorAll('.size-checkbox');
+    cbs.forEach(cb => {
+        cb.checked = false;
+        const lbl = cb.closest('.size-check-btn') || cb.parentElement;
+        if (lbl) lbl.classList.remove('active');
+        cb.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+}
+
 const currentEditingProductId = <?= (int)($product['id'] ?? 0) ?>;
 let isQrCodeDuplicate = false;
 let qrDuplicateDetails = null;

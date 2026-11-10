@@ -1514,10 +1514,11 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 
-// Table Pagination System
+// Table Pagination System with Live Search
 let currentPage = 1;
 let pageSize = 10;
 const tableRows = Array.from(document.querySelectorAll('#expensesTable tbody tr.expense-row'));
+let filteredRows = [...tableRows];
 
 function initExpensesTablePagination() {
     const sizeSelect = document.getElementById('expensesPageSizeSelect');
@@ -1528,12 +1529,63 @@ function initExpensesTablePagination() {
             renderExpensesTablePage();
         });
     }
+
+    const searchInput = document.getElementById('expensesSearchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            filterExpensesLive(this.value);
+        });
+    }
+
+    renderExpensesTablePage();
+}
+
+function filterExpensesLive(query) {
+    const q = (query || '').toLowerCase().trim();
+    if (!q) {
+        filteredRows = [...tableRows];
+    } else {
+        filteredRows = tableRows.filter(row => {
+            const text = (row.textContent || '').toLowerCase();
+            return text.includes(q);
+        });
+    }
+    currentPage = 1;
     renderExpensesTablePage();
 }
 
 function renderExpensesTablePage() {
-    const totalRows = tableRows.length;
-    if (totalRows === 0) return;
+    tableRows.forEach(row => {
+        row.style.display = 'none';
+    });
+
+    const totalRows = filteredRows.length;
+    const infoSpan = document.getElementById('expensesPageInfo');
+    const nav = document.getElementById('expensesPaginationNav');
+    const tbody = document.querySelector('#expensesTable tbody');
+
+    let noMatchRow = document.getElementById('expensesNoMatchRow');
+
+    if (totalRows === 0) {
+        if (tableRows.length > 0) {
+            if (!noMatchRow && tbody) {
+                noMatchRow = document.createElement('tr');
+                noMatchRow.id = 'expensesNoMatchRow';
+                noMatchRow.innerHTML = `<td colspan="9" class="text-center py-5 text-muted">
+                    <i class="bi bi-search fs-2 d-block mb-2 text-secondary opacity-75"></i>
+                    <h6 class="fw-bold text-secondary mb-1">No matching expenses found</h6>
+                    <small class="text-muted">No records match your search criteria. Try a different term.</small>
+                </td>`;
+                tbody.appendChild(noMatchRow);
+            }
+            if (noMatchRow) noMatchRow.style.display = '';
+        }
+        if (infoSpan) infoSpan.textContent = `Showing 0 expenses`;
+        if (nav) nav.innerHTML = '';
+        return;
+    }
+
+    if (noMatchRow) noMatchRow.style.display = 'none';
 
     const totalPages = Math.ceil(totalRows / pageSize);
     if (currentPage > totalPages) currentPage = totalPages;
@@ -1542,16 +1594,16 @@ function renderExpensesTablePage() {
     const startIndex = (currentPage - 1) * pageSize;
     const endIndex = Math.min(startIndex + pageSize, totalRows);
 
-    tableRows.forEach((row, idx) => {
-        row.style.display = (idx >= startIndex && idx < endIndex) ? '' : 'none';
-    });
+    for (let i = startIndex; i < endIndex; i++) {
+        if (filteredRows[i]) {
+            filteredRows[i].style.display = '';
+        }
+    }
 
-    const infoSpan = document.getElementById('expensesPageInfo');
     if (infoSpan) {
         infoSpan.textContent = `Showing ${startIndex + 1} to ${endIndex} of ${totalRows} expenses`;
     }
 
-    const nav = document.getElementById('expensesPaginationNav');
     if (nav) {
         nav.innerHTML = '';
         
