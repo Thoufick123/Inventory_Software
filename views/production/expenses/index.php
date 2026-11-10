@@ -352,7 +352,7 @@
                                     <td class="text-center">
                                         <div class="btn-group btn-group-sm">
                                             <?php if (hasPermission('production_expenses', 'view')): ?>
-                                            <button type="button" class="btn btn-outline-info" title="View Expense Details" onclick='openExpenseReceipt(<?= (int)$e['id'] ?>)'>
+                                            <button type="button" class="btn btn-outline-info" title="View Expense Details" onclick='openExpenseNormalView(<?= (int)$e['id'] ?>)'>
                                                 <i class="bi bi-eye"></i>
                                             </button>
                                             <?php endif; ?>
@@ -416,233 +416,150 @@
 </div>
 
 <!-- ========================================================================= -->
-<!-- 1. RECORD EXPENSE MODAL (Comprehensive Production Expense Form)           -->
+<!-- 1. RECORD EXPENSE MODAL (Production Unit Operational Expense Form)        -->
 <!-- ========================================================================= -->
-<div class="modal fade" id="recordExpenseModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content shadow-lg border-0 rounded-4 overflow-hidden">
-            <div class="modal-header bg-primary text-white py-3 px-4">
-                <h5 class="modal-title fw-bold fs-6">
-                    <i class="bi bi-plus-circle me-2"></i>Record Production Expense
+<div class="modal fade" id="recordExpenseModal" tabindex="-1" aria-labelledby="recordExpenseModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-primary text-white py-3">
+                <h5 class="modal-title fw-bold" id="recordExpenseModalLabel">
+                    <i class="bi bi-plus-circle me-2"></i>Record Production Unit Operational Expense
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form method="POST" action="<?= url('production/expenses/store') ?>" id="recordExpenseForm" enctype="multipart/form-data">
                 <?= CSRF::field() ?>
                 <div class="modal-body p-4">
-                    <!-- SECTION 1: VOUCHER CONTEXT (Production Unit, Date & Category) -->
-                    <div class="row g-2 mb-3 p-3 bg-white rounded-3 border">
-                        <div class="col-md-4 col-sm-6">
-                            <label class="form-label small fw-bold text-dark required mb-1">Production Unit</label>
-                            <select name="production_unit" id="newProductionUnit" class="form-select form-select-sm fw-bold">
+                    <div class="row g-3">
+                        <!-- Production Unit -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Production Unit Location <span class="text-danger">*</span></label>
+                            <select name="production_unit" class="form-select" required>
                                 <?php foreach ($productionUnitOptions as $uVal => $uLbl): ?>
-                                    <option value="<?= e($uVal) ?>" <?= $uVal === 'PRODUCTION_1' ? 'selected' : '' ?>><?= e($uLbl) ?></option>
+                                    <option value="<?= e($uVal) ?>" <?= $uVal === 'PRODUCTION_1' ? 'selected' : '' ?>>
+                                        <?= e($uLbl) ?>
+                                    </option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-md-4 col-sm-6">
-                            <label class="form-label small fw-bold text-dark required mb-1">Expense Date</label>
-                            <input type="date" name="expense_date" id="newExpenseDate" class="form-control form-control-sm fw-bold" value="<?= date('Y-m-d') ?>">
-                        </div>
-                        <div class="col-md-4 col-sm-12">
-                            <div class="d-flex justify-content-between align-items-center mb-1">
-                                <label class="form-label small fw-bold text-dark required mb-0">Expense Category</label>
-                                <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none fw-bold text-primary" style="font-size: 11px;" onclick="openQuickAddCategoryModal()">
-                                    <i class="bi bi-plus-circle me-1"></i>+ New Category
-                                </button>
-                            </div>
-                            <select name="category" id="newCategory" class="form-select form-select-sm fw-bold" onchange="onCategorySelectChange(this)">
+
+                        <!-- Expense Category -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Expense Category <span class="text-danger">*</span></label>
+                            <input type="text" name="category" class="form-control" list="prodCategoryList" placeholder="e.g. Logistics & Freight Shipping, Machine Maintenance..." required>
+                            <datalist id="prodCategoryList">
                                 <?php foreach ($expenseCategoryOptions as $catVal => $catLbl): ?>
-                                    <option value="<?= e($catVal) ?>" <?= $catVal === 'SEWING_MATERIALS' ? 'selected' : '' ?>><?= e($catLbl) ?></option>
-                                <?php endforeach; ?>
-                                <option value="__ADD_NEW_CATEGORY__" class="fw-bold text-primary bg-light">+ Add New Category...</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- SECTION 2: ENTRY SECTION FOR ADDING EXPENSE ITEMS -->
-                    <div class="p-3 bg-light rounded-3 border mb-3">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="small fw-bold text-uppercase text-secondary">
-                                <i class="bi bi-plus-square text-primary me-1"></i> Add Expense Item(s)
-                            </span>
-                            <span class="small text-muted">Add 1 or more items to this voucher</span>
-                        </div>
-
-                        <!-- Item Name Input (Clean, without + button or drawer) -->
-                        <div class="mb-2">
-                            <label class="form-label small fw-bold text-dark required mb-1">Item / Expense Type</label>
-                            <input type="text" 
-                                   id="newItemName" 
-                                   class="form-control form-control-sm fw-bold" 
-                                   list="expenseTypesList" 
-                                   placeholder="e.g. White Sewing Thread Cones, Machine Servicing, Overlock Needles..." 
-                                   autocomplete="off" 
-                                   oninput="onExpenseTypeSelect(this.value)">
-                            <datalist id="expenseTypesList">
-                                <?php foreach ($expenseItems ?? [] as $item): ?>
-                                    <option value="<?= htmlspecialchars($item['name']) ?>" data-rate="<?= (float)($item['default_rate'] ?? 0) ?>" data-unit="<?= htmlspecialchars($item['unit_type'] ?? 'PCS') ?>">
+                                    <option value="<?= e($catLbl) ?>"><?= e($catLbl) ?></option>
                                 <?php endforeach; ?>
                             </datalist>
                         </div>
 
-                        <!-- Row: Quantity, Unit, Rate, and Reason -->
-                        <div class="row g-2 mb-2">
-                            <div class="col-sm-3 col-6">
-                                <label class="form-label small fw-bold text-dark required mb-1">Quantity</label>
-                                <input type="number" 
-                                       step="any" 
-                                       min="0.01" 
-                                       id="newQuantity" 
-                                       class="form-control form-control-sm fw-bold text-center" 
-                                       value="1" 
-                                       oninput="calculateNewExpenseTotal()">
-                            </div>
+                        <!-- Particulars / Line Item -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Particulars / Item Description <span class="text-danger">*</span></label>
+                            <input type="text" name="item_name" class="form-control" placeholder="e.g. Staff Tea & Snacks / Carton Packaging / Sewing Needles" required>
+                        </div>
 
-                            <div class="col-sm-3 col-6">
-                                <div class="d-flex justify-content-between align-items-center mb-1">
-                                    <label class="form-label small fw-bold text-dark mb-0">Unit</label>
-                                    <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none fw-bold text-primary" style="font-size: 11px;" onclick="openQuickAddUnitModal()">
-                                        <i class="bi bi-plus-circle me-1"></i>+ New Unit
-                                    </button>
-                                </div>
-                                <select id="newUnitType" class="form-select form-select-sm fw-semibold" onchange="onUnitSelectChange(this)">
-                                    <?php foreach ($unitsList as $u): ?>
-                                        <option value="<?= e($u['abbreviation']) ?>" <?= $u['abbreviation'] === 'PCS' ? 'selected' : '' ?>>
-                                            <?= e($u['abbreviation']) ?><?= (!empty($u['name']) && strtoupper($u['name']) !== strtoupper($u['abbreviation'])) ? ' (' . e($u['name']) . ')' : '' ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                    <option value="__ADD_NEW_UNIT__" class="fw-bold text-primary bg-light">+ Add New Unit...</option>
-                                </select>
-                            </div>
-
-                            <div class="col-sm-3 col-6">
-                                <label class="form-label small fw-bold text-dark required mb-1">Price (₹)</label>
-                                <div class="input-group input-group-sm">
-                                    <span class="input-group-text bg-white fw-bold text-muted small">₹</span>
-                                    <input type="number" 
-                                           step="any" 
-                                           min="0" 
-                                           id="newUnitCost" 
-                                           class="form-control form-control-sm fw-bold text-primary" 
-                                           placeholder="0.00" 
-                                           oninput="calculateNewExpenseTotal()">
-                                </div>
-                            </div>
-
-                            <div class="col-sm-3 col-6">
-                                <label class="form-label small fw-bold text-dark mb-1">Reason / Purpose</label>
-                                <input type="text" 
-                                       id="newReason" 
-                                       class="form-control form-control-sm" 
-                                       placeholder="e.g. Urgent trims, Routine service">
+                        <!-- Amount -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Amount (INR ₹) <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <span class="input-group-text">₹</span>
+                                <input type="number" step="0.01" min="0.01" name="amount" class="form-control fw-bold font-monospace" placeholder="0.00" required>
                             </div>
                         </div>
 
-                        <!-- Subtotal Preview & Action Buttons -->
-                        <div class="d-flex justify-content-between align-items-center pt-2 border-top">
-                            <div class="d-flex align-items-baseline gap-2">
-                                <span class="small text-muted fw-bold">ITEM SUBTOTAL:</span>
-                                <span class="fw-bold text-primary fs-6 font-monospace" id="newItemSubtotal">₹ 0.00</span>
-                            </div>
-                            <div class="d-flex gap-2">
-                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="cancelExpenseEntry()">
-                                    Clear
-                                </button>
-                                <button type="button" class="btn btn-primary btn-sm fw-bold px-3 shadow-sm" onclick="addExpenseItemToList()">
-                                    <i class="bi bi-plus-lg me-1"></i> Add to Expense List
-                                </button>
-                            </div>
+                        <!-- Paid To / Vendor -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Paid To / Vendor Name <span class="text-danger">*</span></label>
+                            <input type="text" name="paid_to" class="form-control" placeholder="e.g. Sri Balaji Packaging / Tea Stall / Vendor" required>
                         </div>
-                    </div>
 
-                    <!-- SECTION 3: STAGED EXPENSE ITEMS LIST -->
-                    <div id="stagedExpensesContainer" class="card border rounded-3 mb-3 overflow-hidden shadow-xs d-none">
-                        <div class="card-header bg-white py-2 px-3 d-flex justify-content-between align-items-center border-bottom">
-                            <span class="small fw-bold text-dark text-uppercase">
-                                <i class="bi bi-list-check text-primary me-1"></i> Added Items in Voucher (<span id="stagedItemCount">0</span>)
-                            </span>
-                            <span class="small fw-bold text-primary font-monospace" id="stagedGrandTotalHeader">₹ 0.00</span>
-                        </div>
-                        <div class="table-responsive" style="max-height: 200px;">
-                            <table class="table table-sm table-hover align-middle mb-0">
-                                <thead class="table-light small">
-                                    <tr>
-                                        <th style="width: 35px;" class="text-center">#</th>
-                                        <th>Expense Item</th>
-                                        <th class="text-center">Qty &amp; Unit</th>
-                                        <th class="text-end">Rate</th>
-                                        <th class="text-end">Amount (₹)</th>
-                                        <th>Reason / Remarks</th>
-                                        <th style="width: 45px;" class="text-center">Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="stagedExpensesTbody">
-                                </tbody>
-                            </table>
-                        </div>
-                        <div class="card-footer bg-light py-2 px-3 d-flex justify-content-between align-items-center border-top">
-                            <span class="fw-bold text-muted small text-uppercase">Total Voucher Amount:</span>
-                            <div class="d-flex align-items-center">
-                                <span class="fs-4 fw-bolder text-primary font-monospace" id="stagedGrandTotal">₹ 0.00</span>
-                                <input type="hidden" name="total_cost" id="newTotalCost" value="0.00">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- SECTION 4: PAYMENT & VENDOR DOCUMENTATION -->
-                    <div class="row g-2 mb-2 p-3 bg-white rounded-3 border">
-                        <div class="col-md-4 col-sm-6">
-                            <label class="form-label small fw-bold text-dark mb-1">Paid To / Vendor</label>
-                            <input type="text" name="vendor_name" id="newVendorName" class="form-control form-control-sm" placeholder="e.g. Local Hardware, Singer Service, Sri Murugan">
-                        </div>
-                        <div class="col-md-4 col-sm-6">
-                            <label class="form-label small fw-bold text-dark mb-1">Payment Method</label>
-                            <select name="payment_method" id="newPaymentMethod" class="form-select form-select-sm">
-                                <option value="CASH" selected>Cash</option>
-                                <option value="UPI">UPI / GPay / PhonePe</option>
-                                <option value="BANK_TRANSFER">Bank Transfer / NEFT</option>
-                                <option value="CREDIT">Credit / Due</option>
+                        <!-- Payment Method -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Payment Mode <span class="text-danger">*</span></label>
+                            <select name="payment_method" class="form-select" required>
+                                <option value="CASH">Cash (Petty Cash)</option>
+                                <option value="UPI">UPI (GPay / PhonePe)</option>
+                                <option value="BANK_TRANSFER">Bank Transfer (NEFT/RTGS)</option>
+                                <option value="CARD">Debit / Credit Card</option>
+                                <option value="CHEQUE">Cheque</option>
                             </select>
                         </div>
-                        <div class="col-md-4 col-sm-6">
-                            <label class="form-label small fw-bold text-dark mb-1">Payment Status</label>
-                            <select name="payment_status" id="newPaymentStatus" class="form-select form-select-sm">
-                                <option value="PAID" selected>Paid / Settled</option>
-                                <option value="PENDING">Pending Payment</option>
-                                <option value="PARTIAL">Partially Paid</option>
+
+                        <!-- Payment Status -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Payment Status</label>
+                            <select name="payment_status" class="form-select">
+                                <option value="PAID">PAID (Disbursed)</option>
+                                <option value="PENDING">PENDING (Payable)</option>
+                                <option value="PARTIAL">PARTIAL</option>
                             </select>
                         </div>
-                        <div class="col-md-4 col-sm-6">
-                            <label class="form-label small fw-bold text-dark mb-1">Bill / Invoice Number</label>
-                            <input type="text" name="invoice_number" id="newInvoiceNumber" class="form-control form-control-sm" placeholder="e.g. INV-10492 / Slip #">
+
+                        <!-- Expense Date -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Expense Date</label>
+                            <input type="date" name="expense_date" class="form-control" value="<?= date('Y-m-d') ?>">
                         </div>
-                        <div class="col-md-8 col-sm-12">
-                            <label class="form-label small fw-bold text-dark mb-1">
-                                <i class="bi bi-image text-primary me-1"></i>Receipt / Bill Proof Image (Optional)
-                            </label>
-                            <input type="file" 
-                                   name="photo" 
-                                   id="newPhoto" 
-                                   class="form-control form-control-sm" 
-                                   accept="image/*,.pdf" 
-                                   onchange="previewExpenseImage(this, 'newPhotoPreview')">
-                            <div id="newPhotoPreview" class="mt-2 text-center d-none p-2 bg-light rounded border">
-                                <img src="" class="img-thumbnail rounded shadow-sm border" style="max-height: 100px;" alt="Selected receipt">
-                                <div class="small text-muted mt-1" id="newPhotoFilename"></div>
-                            </div>
+
+                        <div class="col-12">
+                            <details>
+                                <summary class="small fw-semibold text-primary cursor-pointer">Additional details (optional)</summary>
+                                <div class="row g-3 mt-1">
+                                    <div class="col-md-6">
+                                        <label class="form-label small fw-bold text-dark">Vendor Phone</label>
+                                        <input type="text" name="vendor_phone" class="form-control" placeholder="e.g. 9840123456">
+                                    </div>
+                                    <div class="col-12">
+                                        <div class="p-3 bg-light rounded-3 border">
+                                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                                <h6 class="fw-bold text-primary mb-0 small text-uppercase">
+                                                    <i class="bi bi-truck me-1"></i>Logistics &amp; Transport Details
+                                                </h6>
+                                                <span class="text-muted" style="font-size: 11px;">Skip for general expenses</span>
+                                            </div>
+                                            <div class="row g-2">
+                                                <div class="col-md-4">
+                                                    <label class="form-label small text-muted mb-1">Transporter Name</label>
+                                                    <input type="text" name="transporter_name" class="form-control form-control-sm" placeholder="e.g. VRL Logistics">
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <label class="form-label small text-muted mb-1">Vehicle #</label>
+                                                    <input type="text" name="vehicle_number" class="form-control form-control-sm" placeholder="e.g. TN-01-AB-1234">
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <label class="form-label small text-muted mb-1">Bill / LR #</label>
+                                                    <input type="text" name="invoice_number" class="form-control form-control-sm" placeholder="e.g. INV-9876">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label small fw-bold text-dark d-flex align-items-center justify-content-between">
+                                            <span><i class="bi bi-paperclip me-1"></i>Attach Bill / Receipt / Invoice Copy</span>
+                                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 0.7rem;"><i class="bi bi-cloud-arrow-up me-1"></i>Cloudinary CDN</span>
+                                        </label>
+                                        <input type="file" name="receipt_file" class="form-control" accept="image/*,.pdf">
+                                        <div class="form-text small text-muted" style="font-size: 11px;"><i class="bi bi-cloud-check text-success me-1"></i>JPG, PNG, WEBP or PDF.</div>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label small text-muted">Internal Remarks / Notes</label>
+                                        <textarea name="notes" class="form-control" rows="2" placeholder="Additional details, approval remarks, or bill descriptions..."></textarea>
+                                    </div>
+                                </div>
+                            </details>
                         </div>
                     </div>
                 </div>
-
-                <div class="modal-footer bg-light py-2 px-4 border-top">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary px-4 fw-bold shadow-sm" id="btnSubmitExpenses">
-                        <i class="bi bi-check-circle me-1"></i> Save Expenses
-                    </button>
+                <div class="modal-footer bg-light py-2.5">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary btn-sm fw-semibold"><i class="bi bi-check-circle me-1"></i>Save &amp; Generate Voucher</button>
                 </div>
             </form>
         </div>
+    </div>
+</div>
     </div>
 </div>
 
@@ -799,6 +716,192 @@
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- 2.5 NORMAL PRODUCTION EXPENSE VIEW MODAL                                  -->
+<!-- ========================================================================= -->
+<div class="modal fade" id="viewExpenseDetailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-3">
+            <div class="modal-header bg-white border-bottom py-3 px-4 d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="p-2 bg-primary-subtle text-primary rounded-circle">
+                        <i class="bi bi-wallet2 fs-5"></i>
+                    </div>
+                    <div>
+                        <h5 class="modal-title fw-bold text-dark mb-0 d-flex align-items-center gap-2">
+                            <span>Production Expense Details</span>
+                            <span class="badge bg-light text-primary border font-monospace fs-6" id="normExpNo">EXP-2026-0001</span>
+                        </h5>
+                        <small class="text-muted">Read-only operational expense record</small>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4 bg-light bg-opacity-50">
+                <!-- 1. Top KPI Summary Cards -->
+                <div class="row g-3 mb-4">
+                    <div class="col-sm-4">
+                        <div class="card border-0 shadow-sm rounded-3 bg-white h-100">
+                            <div class="card-body p-3">
+                                <span class="text-muted small fw-semibold text-uppercase d-block" style="font-size: 11px;">Total Spend</span>
+                                <h4 class="fw-bold text-primary mb-0 mt-1" id="normExpTotalSpend">₹0.00</h4>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-4">
+                        <div class="card border-0 shadow-sm rounded-3 bg-white h-100">
+                            <div class="card-body p-3">
+                                <span class="text-muted small fw-semibold text-uppercase d-block" style="font-size: 11px;">Amount Paid</span>
+                                <h4 class="fw-bold text-success mb-0 mt-1" id="normExpAmountPaid">₹0.00</h4>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-4">
+                        <div class="card border-0 shadow-sm rounded-3 bg-white h-100">
+                            <div class="card-body p-3">
+                                <span class="text-muted small fw-semibold text-uppercase d-block" style="font-size: 11px;">Balance Due</span>
+                                <h4 class="fw-bold text-danger mb-0 mt-1" id="normExpBalanceDue">₹0.00</h4>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Record Details Card -->
+                <div class="card border-0 shadow-sm rounded-3 mb-4 bg-white">
+                    <div class="card-header bg-white py-3 border-bottom">
+                        <h6 class="fw-bold text-dark mb-0">
+                            <i class="bi bi-info-circle text-primary me-2"></i>Record Details
+                        </h6>
+                    </div>
+                    <div class="card-body p-4">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Expense Number</div>
+                                <div class="fw-bold text-dark font-monospace" id="normExpNumber">—</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Expense Date</div>
+                                <div class="fw-bold text-dark" id="normExpDate">—</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Payment Status</div>
+                                <div id="normExpStatusBadge">—</div>
+                            </div>
+
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Production Unit</div>
+                                <div class="text-dark fw-semibold" id="normExpUnit">—</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Category</div>
+                                <div class="text-dark fw-semibold" id="normExpCategory">—</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Payment Mode</div>
+                                <div class="text-dark font-monospace" id="normExpMethod">—</div>
+                            </div>
+
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Paid To / Vendor</div>
+                                <div class="text-dark fw-semibold" id="normExpVendor">—</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Vendor Phone</div>
+                                <div class="text-dark" id="normExpPhone">—</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Invoice / Reference #</div>
+                                <div class="text-dark font-monospace" id="normExpInvoice">—</div>
+                            </div>
+
+                            <div class="col-md-4" id="normExpProgramCol">
+                                <div class="text-muted small fw-semibold">Linked Program</div>
+                                <div class="text-dark fw-semibold" id="normExpProgram">—</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Recorded By</div>
+                                <div class="text-dark" id="normExpCreatedBy">—</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Created At</div>
+                                <div class="text-dark" id="normExpCreatedAt">—</div>
+                            </div>
+                        </div>
+
+                        <!-- Logistics details if available -->
+                        <div id="normExpLogisticsRow" class="mt-3 pt-3 border-top d-none">
+                            <div class="text-muted small fw-semibold mb-1"><i class="bi bi-truck me-1"></i>Logistics &amp; Transport Details</div>
+                            <div class="small text-dark" id="normExpLogisticsText">—</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Expense Items Breakdown Table -->
+                <div class="card border-0 shadow-sm rounded-3 mb-4 bg-white">
+                    <div class="card-header bg-white py-3 border-bottom">
+                        <h6 class="fw-bold text-dark mb-0">
+                            <i class="bi bi-list-check text-primary me-2"></i>Expense Items &amp; Spend Breakdown
+                        </h6>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light small text-uppercase">
+                                <tr>
+                                    <th style="width: 50px;">#</th>
+                                    <th>Item Description</th>
+                                    <th class="text-end">Quantity</th>
+                                    <th class="text-end">Unit Rate</th>
+                                    <th class="text-end">Total Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody id="normExpItemsTbody">
+                                <!-- Populated dynamically -->
+                            </tbody>
+                            <tfoot class="table-light fw-bold">
+                                <tr>
+                                    <td colspan="4" class="text-end">Total Expense Amount:</td>
+                                    <td class="text-end text-primary" id="normExpFooterTotal">₹0.00</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 4. Remarks & Document Attachment -->
+                <div class="card border-0 shadow-sm rounded-3 bg-white">
+                    <div class="card-header bg-white py-3 border-bottom">
+                        <h6 class="fw-bold text-dark mb-0">
+                            <i class="bi bi-chat-left-text text-primary me-2"></i>Remarks &amp; Bill Attachment
+                        </h6>
+                    </div>
+                    <div class="card-body p-3">
+                        <div class="mb-3">
+                            <div class="text-muted small fw-semibold">Notes / Remarks</div>
+                            <div class="text-dark small mt-1" id="normExpNotes">No additional remarks.</div>
+                        </div>
+                        <div id="normExpAttachRow" class="d-none">
+                            <div class="text-muted small fw-semibold mb-1">Attached Bill / Receipt Copy</div>
+                            <a href="#" target="_blank" id="normExpAttachLink" class="btn btn-outline-primary btn-sm">
+                                <i class="bi bi-file-earmark-arrow-down me-1"></i> View Attached Receipt
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-white border-top py-3 px-4 d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                <div class="d-flex gap-2">
+                    <?php if (hasPermission('production_expenses', 'print')): ?>
+                    <button type="button" class="btn btn-outline-dark" id="normExpBtnPrintVoucher" onclick="openPrintableVoucherFromNormalView()">
+                        <i class="bi bi-printer me-1"></i> Print Voucher
+                    </button>
+                    <?php endif; ?>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -1119,13 +1222,33 @@ function cancelExpenseEntry() {
 }
 
 document.getElementById('recordExpenseForm')?.addEventListener('submit', function(event) {
+    const directItemNameInput = this.querySelector('[name="item_name"]');
+    const directAmountInput = this.querySelector('[name="amount"]');
+    if (directItemNameInput && directAmountInput) {
+        const itemVal = directItemNameInput.value.trim();
+        const amtVal = parseFloat(directAmountInput.value);
+        if (!itemVal) {
+            event.preventDefault();
+            alert('Please enter Particulars / Item Description.');
+            directItemNameInput.focus();
+            return;
+        }
+        if (isNaN(amtVal) || amtVal <= 0) {
+            event.preventDefault();
+            alert('Please enter a valid expense amount greater than zero.');
+            directAmountInput.focus();
+            return;
+        }
+        // Direct single-expense form is valid; allow submit!
+        return;
+    }
+
     const itemName = document.getElementById('newItemName')?.value.trim();
-    if (itemName) {
-        // Auto-add active inputs before submitting so single or final item is captured
+    if (itemName && typeof addExpenseItemToList === 'function') {
         addExpenseItemToList();
     }
 
-    if (stagedExpenseItems.length === 0) {
+    if (typeof stagedExpenseItems !== 'undefined' && stagedExpenseItems.length === 0) {
         event.preventDefault();
         alert('Please enter and add at least one expense item.');
         document.getElementById('newItemName')?.focus();
@@ -1223,6 +1346,118 @@ function openEditExpenseModal(data) {
 
     const modal = new bootstrap.Modal(document.getElementById('editExpenseModal'));
     modal.show();
+}
+
+let currentExpenseIdForPrint = null;
+
+function openExpenseNormalView(id) {
+    currentExpenseIdForPrint = id;
+    fetch('<?= url('production/expenses/receipt') ?>/' + id)
+        .then(res => res.json())
+        .then(res => {
+            if (res.success && res.expense) {
+                const e = res.expense;
+                const totalCost = parseFloat(e.total_cost || 0);
+                const paidAmount = parseFloat(e.paid_amount || 0);
+                const dueAmount = Math.max(0, totalCost - paidAmount);
+
+                document.getElementById('normExpNo').textContent = e.expense_number || ('#' + id);
+                document.getElementById('normExpNumber').textContent = e.expense_number || ('#' + id);
+                document.getElementById('normExpTotalSpend').textContent = '₹' + totalCost.toFixed(2);
+                document.getElementById('normExpAmountPaid').textContent = '₹' + paidAmount.toFixed(2);
+                document.getElementById('normExpBalanceDue').textContent = '₹' + dueAmount.toFixed(2);
+
+                document.getElementById('normExpDate').textContent = e.expense_date || '—';
+
+                // Payment Status badge
+                let statusBadgeClass = 'bg-secondary';
+                if (e.payment_status === 'PAID') statusBadgeClass = 'bg-success';
+                else if (e.payment_status === 'PARTIAL') statusBadgeClass = 'bg-warning text-dark';
+                else if (e.payment_status === 'PENDING') statusBadgeClass = 'bg-danger';
+                document.getElementById('normExpStatusBadge').innerHTML = `<span class="badge ${statusBadgeClass} px-2 py-1">${e.payment_status || 'PAID'}</span>`;
+
+                const unitLabels = {
+                    'PRODUCTION_1': 'Production Unit 1 (PU-01)',
+                    'PRODUCTION_2': 'Production Unit 2 (PU-02)',
+                    'BOTH_UNITS': 'Both Units / Common',
+                    'GENERAL': 'General Facility'
+                };
+                document.getElementById('normExpUnit').textContent = unitLabels[e.production_unit] || e.production_unit || '—';
+                document.getElementById('normExpCategory').textContent = (e.category || '').replace(/_/g, ' ') || 'General';
+                document.getElementById('normExpMethod').textContent = e.payment_method || 'CASH';
+
+                document.getElementById('normExpVendor').textContent = e.vendor_name || 'Direct';
+                document.getElementById('normExpPhone').textContent = e.vendor_phone || (e.vendor_company ? ('Company: ' + e.vendor_company) : '—');
+                document.getElementById('normExpInvoice').textContent = e.invoice_number || (e.payment_reference ? e.payment_reference : '—');
+
+                if (e.program_number) {
+                    document.getElementById('normExpProgramCol').classList.remove('d-none');
+                    document.getElementById('normExpProgram').textContent = e.program_number + (e.program_name ? ' (' + e.program_name + ')' : '');
+                } else {
+                    document.getElementById('normExpProgramCol').classList.add('d-none');
+                }
+
+                document.getElementById('normExpCreatedBy').textContent = e.created_by_name || 'System Administrator';
+                document.getElementById('normExpCreatedAt').textContent = e.created_at || '—';
+
+                // Logistics row if payment reference has transport info
+                const ref = (e.payment_reference || '').trim();
+                const logRow = document.getElementById('normExpLogisticsRow');
+                const logText = document.getElementById('normExpLogisticsText');
+                if (ref && (ref.toLowerCase().includes('transporter') || ref.toLowerCase().includes('lr') || ref.toLowerCase().includes('vehicle'))) {
+                    logText.textContent = ref;
+                    logRow.classList.remove('d-none');
+                } else {
+                    logRow.classList.add('d-none');
+                }
+
+                // Table items
+                const tbody = document.getElementById('normExpItemsTbody');
+                tbody.innerHTML = `
+                    <tr>
+                        <td class="text-muted fw-bold">1</td>
+                        <td>
+                            <strong class="text-dark">${e.item_name || 'Operational Expense'}</strong>
+                            ${e.item_type ? '<span class="badge bg-light text-secondary border ms-2">' + e.item_type + '</span>' : ''}
+                        </td>
+                        <td class="text-end fw-semibold">${parseFloat(e.quantity || 1).toFixed(2)} ${e.unit_type || 'PCS'}</td>
+                        <td class="text-end">₹${parseFloat(e.unit_cost || 0).toFixed(2)}</td>
+                        <td class="text-end fw-bold text-dark">₹${totalCost.toFixed(2)}</td>
+                    </tr>
+                `;
+                document.getElementById('normExpFooterTotal').textContent = '₹' + totalCost.toFixed(2);
+
+                // Notes / remarks
+                document.getElementById('normExpNotes').textContent = e.notes ? e.notes : 'No additional remarks recorded.';
+
+                // Bill attachment
+                const attachRow = document.getElementById('normExpAttachRow');
+                const attachLink = document.getElementById('normExpAttachLink');
+                if (e.photo_url) {
+                    attachLink.href = e.photo_url;
+                    attachRow.classList.remove('d-none');
+                } else {
+                    attachRow.classList.add('d-none');
+                }
+
+                const modal = new bootstrap.Modal(document.getElementById('viewExpenseDetailsModal'));
+                modal.show();
+            } else {
+                alert('Could not load expense details.');
+            }
+        })
+        .catch(err => {
+            console.error('Error loading expense details:', err);
+            alert('Error loading expense details.');
+        });
+}
+
+function openPrintableVoucherFromNormalView() {
+    if (currentExpenseIdForPrint) {
+        const normModal = bootstrap.Modal.getInstance(document.getElementById('viewExpenseDetailsModal'));
+        if (normModal) normModal.hide();
+        openExpenseReceipt(currentExpenseIdForPrint);
+    }
 }
 
 function openExpenseReceipt(id) {
@@ -1597,10 +1832,11 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 
-// Table Pagination System
+// Table Pagination System with Live Search
 let currentPage = 1;
 let pageSize = 10;
 const tableRows = Array.from(document.querySelectorAll('#expensesTable tbody tr.expense-row'));
+let filteredRows = [...tableRows];
 
 function initExpensesTablePagination() {
     const sizeSelect = document.getElementById('expensesPageSizeSelect');
@@ -1611,12 +1847,63 @@ function initExpensesTablePagination() {
             renderExpensesTablePage();
         });
     }
+
+    const searchInput = document.getElementById('expensesSearchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            filterExpensesLive(this.value);
+        });
+    }
+
+    renderExpensesTablePage();
+}
+
+function filterExpensesLive(query) {
+    const q = (query || '').toLowerCase().trim();
+    if (!q) {
+        filteredRows = [...tableRows];
+    } else {
+        filteredRows = tableRows.filter(row => {
+            const text = (row.textContent || '').toLowerCase();
+            return text.includes(q);
+        });
+    }
+    currentPage = 1;
     renderExpensesTablePage();
 }
 
 function renderExpensesTablePage() {
-    const totalRows = tableRows.length;
-    if (totalRows === 0) return;
+    tableRows.forEach(row => {
+        row.style.display = 'none';
+    });
+
+    const totalRows = filteredRows.length;
+    const infoSpan = document.getElementById('expensesPageInfo');
+    const nav = document.getElementById('expensesPaginationNav');
+    const tbody = document.querySelector('#expensesTable tbody');
+
+    let noMatchRow = document.getElementById('expensesNoMatchRow');
+
+    if (totalRows === 0) {
+        if (tableRows.length > 0) {
+            if (!noMatchRow && tbody) {
+                noMatchRow = document.createElement('tr');
+                noMatchRow.id = 'expensesNoMatchRow';
+                noMatchRow.innerHTML = `<td colspan="9" class="text-center py-5 text-muted">
+                    <i class="bi bi-search fs-2 d-block mb-2 text-secondary opacity-75"></i>
+                    <h6 class="fw-bold text-secondary mb-1">No matching expenses found</h6>
+                    <small class="text-muted">No records match your search criteria. Try a different term.</small>
+                </td>`;
+                tbody.appendChild(noMatchRow);
+            }
+            if (noMatchRow) noMatchRow.style.display = '';
+        }
+        if (infoSpan) infoSpan.textContent = `Showing 0 expenses`;
+        if (nav) nav.innerHTML = '';
+        return;
+    }
+
+    if (noMatchRow) noMatchRow.style.display = 'none';
 
     const totalPages = Math.ceil(totalRows / pageSize);
     if (currentPage > totalPages) currentPage = totalPages;
@@ -1625,16 +1912,16 @@ function renderExpensesTablePage() {
     const startIndex = (currentPage - 1) * pageSize;
     const endIndex = Math.min(startIndex + pageSize, totalRows);
 
-    tableRows.forEach((row, idx) => {
-        row.style.display = (idx >= startIndex && idx < endIndex) ? '' : 'none';
-    });
+    for (let i = startIndex; i < endIndex; i++) {
+        if (filteredRows[i]) {
+            filteredRows[i].style.display = '';
+        }
+    }
 
-    const infoSpan = document.getElementById('expensesPageInfo');
     if (infoSpan) {
         infoSpan.textContent = `Showing ${startIndex + 1} to ${endIndex} of ${totalRows} expenses`;
     }
 
-    const nav = document.getElementById('expensesPaginationNav');
     if (nav) {
         nav.innerHTML = '';
         

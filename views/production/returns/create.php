@@ -66,18 +66,30 @@
         <input type="hidden" name="bill_id" id="hiddenBillId" value="">
 
         <div class="card border-0 shadow-sm rounded-3 mb-4">
-            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
-                <h6 class="fw-bold text-dark mb-0">
-                    <i class="bi bi-check2-square text-danger me-2"></i>Step 2: Select Items &amp; Tags for Return
-                </h6>
-                <span class="text-muted small">Check the box for each piece being returned</span>
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h6 class="fw-bold text-dark mb-0">
+                        <i class="bi bi-check2-square text-danger me-2"></i>Step 2: Select Items &amp; Tags for Return
+                    </h6>
+                    <span class="text-muted small">Check the box for each specific garment piece being returned</span>
+                </div>
+                <div>
+                    <span class="badge bg-secondary px-3 py-2 fs-6" id="returnSelectedBadge">0 pieces selected (₹0.00)</span>
+                </div>
             </div>
             <div class="card-body p-0">
+                <div id="fullyReturnedNotice" class="d-none m-3 alert alert-warning border-warning d-flex align-items-center mb-0">
+                    <i class="bi bi-exclamation-triangle-fill fs-4 me-3 text-warning"></i>
+                    <div>
+                        <strong>All items on this bill have already been returned!</strong>
+                        <div class="small">A credit note has already been processed for all pieces on this bill. No further returns can be created.</div>
+                    </div>
+                </div>
                 <div class="table-responsive">
                     <table class="table align-middle mb-0" id="returnItemsTable">
                         <thead class="table-light small text-uppercase">
                             <tr>
-                                <th style="width: 40px;" class="text-center">Select</th>
+                                <th style="width: 50px;" class="text-center">Select</th>
                                 <th>Product Style / Details</th>
                                 <th>HSN</th>
                                 <th class="text-center">Scanned Tag Code</th>
@@ -184,19 +196,33 @@ function lookupBill() {
             const tbody = document.getElementById('returnItemsTbody');
             tbody.innerHTML = '';
 
+            const fullyReturnedNotice = document.getElementById('fullyReturnedNotice');
+            const btnSubmit = document.getElementById('btnSubmitReturn');
+
+            if (data.is_fully_returned) {
+                fullyReturnedNotice.classList.remove('d-none');
+                btnSubmit.disabled = true;
+                btnSubmit.dataset.blocked = "1";
+            } else {
+                fullyReturnedNotice.classList.add('d-none');
+                btnSubmit.disabled = false;
+                delete btnSubmit.dataset.blocked;
+            }
+
             let hasItems = false;
             data.items.forEach(item => {
                 const tags = item.tags || [];
                 if (tags.length > 0) {
-                    tags.forEach((tagObj, idx) => {
+                    tags.forEach((tagObj) => {
                         hasItems = true;
                         const tr = document.createElement('tr');
-                        const isReturned = tagObj.is_returned;
+                        const isReturned = !!tagObj.is_returned;
                         tr.innerHTML = `
                             <td class="text-center">
-                                ${isReturned ? '<span class="badge bg-secondary">Returned</span>' : `
-                                <input type="checkbox" name="items[${item.id}][selected]" value="1" class="form-check-input return-checkbox" onchange="calcReturnTotals()">
-                                <input type="hidden" name="items[${item.id}][tags][]" value="${tagObj.tag_code}">
+                                ${isReturned ? '<span class="badge bg-secondary-subtle text-secondary border px-2 py-1"><i class="bi bi-check2"></i> Returned</span>' : `
+                                    <input type="checkbox" name="selected_tags[]" value="${tagObj.tag_code}" class="form-check-input return-checkbox" id="chk_tag_${tagObj.tag_code}" onchange="calcReturnTotals()" data-price="${item.unit_price}">
+                                    <input type="hidden" name="tags[${tagObj.tag_code}][bill_item_id]" value="${item.id}">
+                                    <input type="hidden" name="tags[${tagObj.tag_code}][tag_code]" value="${tagObj.tag_code}">
                                 `}
                             </td>
                             <td>
@@ -204,17 +230,17 @@ function lookupBill() {
                                 <div class="small text-muted">${item.sku || ''} ${item.size_name ? '· Size: ' + item.size_name : ''} ${item.color_name ? '· Color: ' + item.color_name : ''}</div>
                             </td>
                             <td><span class="badge bg-light text-dark border font-monospace">${item.hsn_code || '6109'}</span></td>
-                            <td class="text-center"><span class="font-monospace badge bg-dark text-white">${tagObj.tag_code}</span></td>
+                            <td class="text-center"><span class="font-monospace badge bg-dark text-white px-2 py-1">${tagObj.tag_code}</span></td>
                             <td class="text-end fw-semibold">₹${parseFloat(item.unit_price).toFixed(2)}</td>
                             <td class="text-center">
-                                <select name="items[${item.id}][condition]" class="form-select form-select-sm" style="width: 140px; margin: 0 auto;">
+                                <select name="tags[${tagObj.tag_code}][condition]" class="form-select form-select-sm" style="width: 140px; margin: 0 auto;" ${isReturned ? 'disabled' : ''}>
                                     <option value="GOOD">Good (Resellable)</option>
                                     <option value="MINOR_DEFECT">Minor Defect</option>
                                     <option value="DAMAGED">Damaged / Scrap</option>
                                 </select>
                             </td>
                             <td>
-                                <input type="text" name="items[${item.id}][reason]" class="form-control form-control-sm" placeholder="e.g. Size mismatch" value="Customer request">
+                                <input type="text" name="tags[${tagObj.tag_code}][reason]" class="form-control form-control-sm" placeholder="e.g. Size mismatch" value="Customer request" ${isReturned ? 'disabled' : ''}>
                             </td>
                         `;
                         tbody.appendChild(tr);
@@ -222,28 +248,37 @@ function lookupBill() {
                 } else {
                     hasItems = true;
                     const tr = document.createElement('tr');
+                    const remQty = parseInt(item.remaining_qty ?? item.quantity);
+                    const isFullyReturned = remQty <= 0;
                     tr.innerHTML = `
                         <td class="text-center">
-                            <input type="checkbox" name="items[${item.id}][selected]" value="1" class="form-check-input return-checkbox" onchange="calcReturnTotals()">
+                            ${isFullyReturned ? '<span class="badge bg-secondary-subtle text-secondary border px-2 py-1"><i class="bi bi-check2"></i> Returned</span>' : `
+                                <input type="checkbox" name="selected_items[]" value="${item.id}" class="form-check-input return-checkbox" id="chk_item_${item.id}" onchange="calcReturnTotals()" data-price="${item.unit_price}">
+                            `}
                         </td>
                         <td>
                             <strong class="text-dark">${item.product_name}</strong>
-                            <div class="small text-muted">${item.sku || ''}</div>
+                            <div class="small text-muted">${item.sku || ''} ${item.size_name ? '· Size: ' + item.size_name : ''} ${item.color_name ? '· Color: ' + item.color_name : ''}</div>
                         </td>
                         <td><span class="badge bg-light text-dark border font-monospace">${item.hsn_code || '6109'}</span></td>
                         <td class="text-center">
-                            <input type="number" min="1" max="${item.quantity}" name="items[${item.id}][qty]" value="1" class="form-control form-control-sm" style="width:80px; margin:0 auto;">
+                            ${isFullyReturned ? '<span class="text-muted small">0 / ' + item.quantity + ' pcs</span>' : `
+                                <div class="input-group input-group-sm" style="width: 110px; margin: 0 auto;">
+                                    <input type="number" min="1" max="${remQty}" name="items[${item.id}][qty]" id="qty_item_${item.id}" value="1" class="form-control text-center" onchange="calcReturnTotals()">
+                                    <span class="input-group-text small text-muted">/ ${remQty}</span>
+                                </div>
+                            `}
                         </td>
                         <td class="text-end fw-semibold">₹${parseFloat(item.unit_price).toFixed(2)}</td>
                         <td class="text-center">
-                            <select name="items[${item.id}][condition]" class="form-select form-select-sm" style="width: 140px; margin: 0 auto;">
+                            <select name="items[${item.id}][condition]" class="form-select form-select-sm" style="width: 140px; margin: 0 auto;" ${isFullyReturned ? 'disabled' : ''}>
                                 <option value="GOOD">Good (Resellable)</option>
                                 <option value="MINOR_DEFECT">Minor Defect</option>
                                 <option value="DAMAGED">Damaged / Scrap</option>
                             </select>
                         </td>
                         <td>
-                            <input type="text" name="items[${item.id}][reason]" class="form-control form-control-sm" placeholder="Reason" value="Customer return">
+                            <input type="text" name="items[${item.id}][reason]" class="form-control form-control-sm" placeholder="Reason" value="Customer return" ${isFullyReturned ? 'disabled' : ''}>
                         </td>
                     `;
                     tbody.appendChild(tr);
@@ -253,9 +288,11 @@ function lookupBill() {
             if (hasItems) {
                 document.getElementById('returnForm').classList.remove('d-none');
             } else {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No returnable items found in this bill.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No items found on this bill.</td></tr>';
                 document.getElementById('returnForm').classList.remove('d-none');
             }
+
+            calcReturnTotals();
         })
         .catch(err => {
             statusEl.innerHTML = '<span class="text-danger">Error: ' + err.message + '</span>';
@@ -263,6 +300,56 @@ function lookupBill() {
 }
 
 function calcReturnTotals() {
-    // Dynamic feedback if needed
+    let totalPcs = 0;
+    let totalAmount = 0.0;
+
+    document.querySelectorAll('input[name="selected_tags[]"]:checked').forEach(cb => {
+        totalPcs += 1;
+        totalAmount += parseFloat(cb.dataset.price || 0);
+    });
+
+    document.querySelectorAll('input[name="selected_items[]"]:checked').forEach(cb => {
+        const itemId = cb.value;
+        const qtyInput = document.getElementById('qty_item_' + itemId);
+        const qty = qtyInput ? parseInt(qtyInput.value || 1) : 1;
+        totalPcs += qty;
+        totalAmount += qty * parseFloat(cb.dataset.price || 0);
+    });
+
+    const badge = document.getElementById('returnSelectedBadge');
+    if (badge) {
+        badge.textContent = `${totalPcs} piece(s) selected (₹${totalAmount.toFixed(2)})`;
+        badge.className = totalPcs > 0 ? 'badge bg-success px-3 py-2 fs-6' : 'badge bg-secondary px-3 py-2 fs-6';
+    }
+
+    const btnSubmit = document.getElementById('btnSubmitReturn');
+    if (btnSubmit && !btnSubmit.dataset.blocked) {
+        btnSubmit.disabled = (totalPcs === 0);
+    }
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    const returnForm = document.getElementById('returnForm');
+    if (returnForm) {
+        returnForm.addEventListener('submit', function(e) {
+            const checkedTags = document.querySelectorAll('input[name="selected_tags[]"]:checked');
+            const checkedItems = document.querySelectorAll('input[name="selected_items[]"]:checked');
+            if (checkedTags.length === 0 && checkedItems.length === 0) {
+                e.preventDefault();
+                alert('Please select at least one garment piece to return.');
+                return false;
+            }
+        });
+    }
+
+    const billSearchInput = document.getElementById('billSearchInput');
+    if (billSearchInput) {
+        billSearchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                lookupBill();
+            }
+        });
+    }
+});
 </script>

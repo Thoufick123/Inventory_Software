@@ -342,7 +342,7 @@ class ProductionController {
         $status = $_GET['status'] ?? '';
         $city = trim($_GET['city'] ?? '');
 
-        $sql = "SELECT s.* FROM sellers s WHERE s.seller_type = 'MATERIAL_SUPPLIER'";
+        $sql = "SELECT s.* FROM sellers s WHERE s.seller_type = 'MATERIAL_SUPPLIER' AND (s.is_active = 1 OR s.is_active IS NULL)";
         $params = [];
 
         if ($search !== '') {
@@ -360,7 +360,7 @@ class ProductionController {
         $sql .= " ORDER BY s.created_at DESC";
         $sellers = Database::fetchAll($sql, $params);
 
-        $cities = Database::fetchAll("SELECT DISTINCT city FROM sellers WHERE seller_type = 'MATERIAL_SUPPLIER' AND city IS NOT NULL AND TRIM(city) != '' ORDER BY city ASC");
+        $cities = Database::fetchAll("SELECT DISTINCT city FROM sellers WHERE seller_type = 'MATERIAL_SUPPLIER' AND (is_active = 1 OR is_active IS NULL) AND city IS NOT NULL AND TRIM(city) != '' ORDER BY city ASC");
 
         Response::view('production.sellers.index', [
             'pageTitle'      => 'Production Suppliers',
@@ -461,47 +461,15 @@ class ProductionController {
             return;
         }
 
-        $purchaseCount = Database::fetchOne(
+        $purchaseCount = (int)(Database::fetchOne(
             "SELECT COUNT(*) AS purchase_count FROM production_purchases WHERE seller_id = ?",
             [(int)$id]
-        );
-        if ((int)($purchaseCount['purchase_count'] ?? 0) > 0) {
-            Session::flash('error', 'This supplier has purchase history and cannot be deleted. Deactivate the supplier to prevent future purchases.');
-            Response::redirect(url('production/sellers'));
-            return;
-        }
+        )['purchase_count'] ?? 0);
 
-        // Check if any fabric rolls from this supplier are used in active production programs or cutting batches
-        $usedPrograms = Database::fetchAll(
-            "SELECT DISTINCT pp.program_number, pp.name as program_name
-             FROM production_program_rolls ppr
-             JOIN production_programs pp ON ppr.production_program_id = pp.id
-             WHERE ppr.seller_id = ? AND (pp.is_active = 1 OR pp.is_active IS NULL) AND pp.status != 'CANCELLED'",
+        $poCount = (int)(Database::fetchOne(
+            "SELECT COUNT(*) AS po_count FROM purchase_orders WHERE seller_id = ?",
             [(int)$id]
-        );
-
-        if (empty($usedPrograms)) {
-            $usedPrograms = Database::fetchAll(
-                "SELECT pp.program_number, pp.name as program_name
-                 FROM production_programs pp
-                 WHERE (pp.seller_id = ? OR pp.seller_roll_id IN (SELECT id FROM seller_rolls WHERE seller_id = ?))
-                   AND (pp.is_active = 1 OR pp.is_active IS NULL) AND pp.status != 'CANCELLED'",
-                [(int)$id, (int)$id]
-            );
-        }
-
-        if (!empty($usedPrograms)) {
-            $progNames = array_map(fn($p) => $p['program_number'] . (!empty($p['program_name']) ? " ({$p['program_name']})" : ''), $usedPrograms);
-            Session::flash('error', "Cannot delete Supplier '{$seller['name']}' because fabric rolls from this lot are assigned to active Production Programs: " . implode(', ', array_slice($progNames, 0, 3)) . ". Please unassign or cancel these programs first.");
-            Response::redirect(url('production/sellers'));
-            return;
-        }
-
-        // Delete all associated seller rolls
-        Database::execute("DELETE FROM seller_rolls WHERE seller_id = ?", [(int)$id]);
-
-        // Delete the seller record
-        Database::execute("DELETE FROM sellers WHERE id = ?", [(int)$id]);
+        )['po_count'] ?? 0);
 
         $delSnapshot = [
             'Supplier Name'  => $seller['name'] ?? '',
@@ -514,9 +482,22 @@ class ProductionController {
             'Total Price'    => '₹' . number_format((float)($seller['roll_price'] ?? 0), 2),
         ];
 
+        if ($purchaseCount > 0 || $poCount > 0) {
+            // Soft delete supplier to preserve purchase / financial integrity and foreign keys
+            Database::execute("UPDATE sellers SET is_active = 0, updated_at = NOW() WHERE id = ?", [(int)$id]);
+        } else {
+            // No purchase history - hard delete if possible, fallback to soft delete
+            try {
+                Database::execute("DELETE FROM seller_rolls WHERE seller_id = ?", [(int)$id]);
+                Database::execute("DELETE FROM sellers WHERE id = ?", [(int)$id]);
+            } catch (Throwable $e) {
+                Database::execute("UPDATE sellers SET is_active = 0, updated_at = NOW() WHERE id = ?", [(int)$id]);
+            }
+        }
+
         AuditService::log('production', 'DELETE', 'sellers', (int)$id, $delSnapshot, null);
 
-        Session::flash('success', "Material Supplier '{$seller['name']}' and associated fabric rolls deleted successfully.");
+        Session::flash('success', "Supplier '{$seller['name']}' deleted successfully.");
         Response::redirect(url('production/sellers'));
     }
 
@@ -621,7 +602,7 @@ class ProductionController {
         $items = Database::fetchAll(
             "SELECT item_type, item_name, quantity, unit, weight_kg, unit_price, total_price,
                     tax_input_type, gst_type, sgst_value, cgst_value, igst_value,
-                    sgst_amount, cgst_amount, igst_amount, roll_number, color, design_name
+                    sgst_amount, cgst_amount, igst_amount, roll_number, color, design_name, hsn_code
              FROM production_purchase_items
              WHERE purchase_id = ?
              ORDER BY id",
@@ -879,6 +860,7 @@ class ProductionController {
                 $photoUrl = null;
             }
 
+            $hsnCode = trim((string)($submitted['hsn_code'] ?? $oldItem['hsn_code'] ?? ''));
             $sgstAmount = in_array($gstType, ['SGST', 'BOTH'], true) ? $calculateTaxAmount($baseAmount, $taxMode, $taxValue) : 0.0;
             $cgstAmount = $gstType === 'CGST'
                 ? $calculateTaxAmount($baseAmount, $taxMode, $taxValue)
@@ -889,6 +871,7 @@ class ProductionController {
                 'quantity' => $quantity, 'unit' => $unit, 'unit_price' => $unitPrice,
                 'base_amount' => $baseAmount, 'weight' => $weight, 'roll_number' => $rollNumber,
                 'color' => $color, 'design_name' => $design, 'design_count' => $designCount,
+                'hsn_code' => $hsnCode !== '' ? mb_strtoupper($hsnCode) : null,
                 'gst_type' => $gstType, 'tax_mode' => $taxMode, 'tax_value' => $taxValue,
                 'cgst_tax_value' => $cgstTaxValue, 'sgst_amount' => $sgstAmount,
                 'cgst_amount' => $cgstAmount, 'igst_amount' => $igstAmount,
@@ -957,22 +940,22 @@ class ProductionController {
                          SET item_name = ?, quantity = ?, unit = ?, weight_kg = ?, unit_price = ?, total_price = ?,
                              gst_type = ?, tax_input_type = ?, sgst_value = ?, cgst_value = ?, igst_value = ?,
                              sgst_amount = ?, cgst_amount = ?, igst_amount = ?, roll_number = ?, color = ?,
-                             design_name = ?, design_count = ?
+                             design_name = ?, design_count = ?, hsn_code = ?
                          WHERE id = ? AND purchase_id = ?",
                         [$item['item_name'], $item['quantity'], $item['unit'], $item['weight'], $item['unit_price'], $item['total'],
                             $item['gst_type'], $item['tax_mode'], in_array($item['gst_type'], ['SGST', 'BOTH'], true) ? $item['tax_value'] : 0,
                             $item['gst_type'] === 'CGST' ? $item['tax_value'] : $item['cgst_tax_value'],
                             $item['gst_type'] === 'IGST' ? $item['tax_value'] : 0,
                             $item['sgst_amount'], $item['cgst_amount'], $item['igst_amount'], $item['roll_number'], $item['color'],
-                            $item['design_name'], $item['design_count'], $item['id'], $purchaseId]
+                            $item['design_name'], $item['design_count'], $item['hsn_code'], $item['id'], $purchaseId]
                     );
                     if ($item['type'] === 'FABRIC_ROLL' && $item['seller_roll_id'] > 0) {
                         Database::execute(
                             "UPDATE seller_rolls SET roll_number = ?, color = ?, design_name = ?, design_count = ?,
-                                     quantity = ?, weight = ?, price = ?, material_type = ?, photo_url = ?
+                                     quantity = ?, weight = ?, price = ?, material_type = ?, photo_url = ?, hsn_code = ?
                              WHERE id = ?",
                             [$item['roll_number'], $item['color'], $item['design_name'], $item['design_count'],
-                                $item['quantity'], $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'], $item['seller_roll_id']]
+                                $item['quantity'], $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'], $item['hsn_code'], $item['seller_roll_id']]
                         );
                     }
                     continue;
@@ -981,14 +964,14 @@ class ProductionController {
                     "INSERT INTO production_purchase_items
                         (purchase_id, item_type, item_name, quantity, unit, unit_price, total_price,
                          gst_type, tax_input_type, sgst_value, cgst_value, igst_value,
-                         sgst_amount, cgst_amount, igst_amount)
-                     VALUES (?, 'GENERAL_SUPPLY', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         sgst_amount, cgst_amount, igst_amount, hsn_code)
+                     VALUES (?, 'GENERAL_SUPPLY', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     [$purchaseId, $item['item_name'], $item['quantity'], $item['unit'], $item['unit_price'], $item['total'],
                         $item['gst_type'], $item['tax_mode'],
                         in_array($item['gst_type'], ['SGST', 'BOTH'], true) ? $item['tax_value'] : 0,
                         $item['gst_type'] === 'CGST' ? $item['tax_value'] : $item['cgst_tax_value'],
                         $item['gst_type'] === 'IGST' ? $item['tax_value'] : 0,
-                        $item['sgst_amount'], $item['cgst_amount'], $item['igst_amount']]
+                        $item['sgst_amount'], $item['cgst_amount'], $item['igst_amount'], $item['hsn_code']]
                 );
             }
             $this->refreshSupplierRollTotals((int)$purchase['seller_id']);
@@ -1077,7 +1060,7 @@ class ProductionController {
         $sellers = Database::fetchAll(
             "SELECT id, name, company, phone, email, gst_number, city, state, address
              FROM sellers
-             WHERE seller_type = 'MATERIAL_SUPPLIER'
+             WHERE seller_type = 'MATERIAL_SUPPLIER' AND (is_active = 1 OR is_active IS NULL)
              ORDER BY company, name"
         );
         Response::view('production.purchases.create', [
@@ -1164,6 +1147,7 @@ class ProductionController {
 
             if ($type === 'FABRIC_ROLL') {
                 $rollNumber = mb_strtoupper(trim((string)($submitted['roll_number'] ?? '')));
+                $hsnCode = trim((string)($submitted['hsn_code'] ?? ''));
                 $color = mb_strtoupper(trim((string)($submitted['color'] ?? '')));
                 $design = mb_strtoupper(trim((string)($submitted['design_name'] ?? '')));
                 $designCount = (int)($submitted['design_count'] ?? 0);
@@ -1190,6 +1174,7 @@ class ProductionController {
                 $items[] = [
                     'type' => $type, 'item_name' => $fabricDescription, 'quantity' => $quantity,
                     'unit' => 'PCS', 'weight' => $weight, 'unit_price' => $unitPrice,
+                    'hsn_code' => $hsnCode !== '' ? mb_strtoupper($hsnCode) : null,
                     'gst_type' => $gstType, 'tax_mode' => $taxMode, 'tax_value' => $taxValue,
                     'cgst_tax_value' => $cgstTaxValue,
                     'tax_amount' => $taxAmount,
@@ -1208,6 +1193,7 @@ class ProductionController {
             }
 
             $itemName = trim((string)($submitted['item_name'] ?? ''));
+            $hsnCode = trim((string)($submitted['hsn_code'] ?? ''));
             $unit = strtoupper(trim((string)($submitted['unit'] ?? '')));
             if ($unit === 'OTHER') {
                 $unit = strtoupper(trim((string)($submitted['custom_unit'] ?? '')));
@@ -1229,6 +1215,7 @@ class ProductionController {
             $items[] = [
                 'type' => $type, 'item_name' => mb_strtoupper($itemName), 'quantity' => $quantity,
                 'unit' => $unit, 'weight' => null, 'unit_price' => $unitPrice,
+                'hsn_code' => $hsnCode !== '' ? mb_strtoupper($hsnCode) : null,
                 'gst_type' => $gstType, 'tax_mode' => $taxMode, 'tax_value' => $taxValue,
                 'cgst_tax_value' => $cgstTaxValue,
                 'tax_amount' => $taxAmount,
@@ -1323,11 +1310,11 @@ class ProductionController {
                     Database::execute(
                         "INSERT INTO seller_rolls
                             (seller_id, roll_number, color, design_name, design_count, quantity, weight, price,
-                             material_type, photo_url, start_seq, end_seq, start_code, end_code, qr_code)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                             material_type, photo_url, start_seq, end_seq, start_code, end_code, qr_code, hsn_code)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         [$sellerId, $item['roll_number'], $item['color'], $item['design_name'], $item['design_count'],
                             $item['quantity'], $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'],
-                            $sequence['start_seq'], $sequence['end_seq'], $sequence['start_code'], $sequence['end_code'], $rollQrCode]
+                            $sequence['start_seq'], $sequence['end_seq'], $sequence['start_code'], $sequence['end_code'], $rollQrCode, $item['hsn_code']]
                     );
                     $sellerRollId = (int)Database::lastInsertId();
                 }
@@ -1337,14 +1324,14 @@ class ProductionController {
                         (purchase_id, item_type, item_name, quantity, unit, weight_kg, unit_price, total_price,
                          gst_type, tax_input_type, sgst_value, cgst_value, igst_value,
                          sgst_amount, cgst_amount, igst_amount,
-                         roll_number, color, design_name, design_count, seller_roll_id)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         roll_number, color, design_name, design_count, seller_roll_id, hsn_code)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     [$purchaseId, $item['type'], $item['item_name'], $item['quantity'], $item['unit'], $item['weight'],
                         $item['unit_price'], $item['line_total'], $item['gst_type'], $item['tax_mode'],
                         $item['sgst_value'], $item['cgst_value'], $item['igst_value'],
                         $item['sgst_amount'], $item['cgst_amount'], $item['igst_amount'],
                         $item['roll_number'], $item['color'],
-                        $item['design_name'], $item['design_count'], $sellerRollId]
+                        $item['design_name'], $item['design_count'], $sellerRollId, $item['hsn_code']]
                 );
             }
 
@@ -4612,12 +4599,6 @@ class ProductionController {
         $categories = Database::fetchAll(
             "SELECT c.* FROM categories c
              WHERE c.is_active = 1
-               AND EXISTS (
-                   SELECT 1 FROM products p
-                   WHERE p.category_id = c.id
-                     AND p.is_active = 1
-                     AND (p.source_type IN ('OWN_PRODUCTION', 'MANUFACTURED', 'IN_HOUSE') OR p.source_type IS NULL)
-               )
              ORDER BY c.sort_order ASC, c.name ASC"
         );
         $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 ORDER BY full_name ASC");
@@ -4629,12 +4610,21 @@ class ProductionController {
         $count = Database::fetchOne("SELECT COUNT(*) as c FROM production_programs")['c'] ?? 0;
         $suggestedProgramNumber = 'PRG-' . date('Ymd') . '-' . str_pad((string)($count + 1), 4, '0', STR_PAD_LEFT);
 
+        $allSubcategories = Database::fetchAll(
+            "SELECT id, category_id, name, slug FROM subcategories WHERE is_active = 1 ORDER BY sort_order ASC, name ASC"
+        );
+        $allSubSubcategories = Database::fetchAll(
+            "SELECT id, subcategory_id, name, slug FROM sub_subcategories WHERE is_active = 1 ORDER BY name ASC"
+        );
+
         Response::view('production.programs.create', [
             'pageTitle'              => 'Create Production Program',
             'activeModule'           => 'production',
             'activeMenu'             => 'programs',
             'units'                  => $units,
             'categories'             => $categories,
+            'allSubcategories'       => $allSubcategories,
+            'allSubSubcategories'    => $allSubSubcategories,
             'rolls'                  => $rolls,
             'users'                  => $users,
             'scopedUnitId'           => $scopedUnitId,
@@ -4859,7 +4849,7 @@ class ProductionController {
 
             AuditService::log('production', 'create', 'production_programs', $programId, null, ['name' => $name, 'program_number' => $programNumber, 'roll_count' => count($validRolls)]);
             Session::flash('success', "Production Program '{$name}' created with " . count($validRolls) . " fabric roll(s).");
-            Response::redirect(url('production/programs/view/' . $programId));
+            Response::redirect(url('production/programs'));
         } catch (Exception $e) {
             Session::flash('error', 'Error creating program: ' . $e->getMessage());
             Response::back();
@@ -4877,12 +4867,6 @@ class ProductionController {
         $categories = Database::fetchAll(
             "SELECT c.* FROM categories c
              WHERE c.is_active = 1
-               AND EXISTS (
-                   SELECT 1 FROM products p
-                   WHERE p.category_id = c.id
-                     AND p.is_active = 1
-                     AND (p.source_type IN ('OWN_PRODUCTION', 'MANUFACTURED', 'IN_HOUSE') OR p.source_type IS NULL)
-               )
              ORDER BY c.sort_order ASC, c.name ASC"
         );
         $subcategories = $program['category_id'] ? Database::fetchAll("SELECT * FROM subcategories WHERE category_id = ? AND is_active = 1 ORDER BY sort_order ASC, name ASC", [$program['category_id']]) : [];
@@ -4930,19 +4914,28 @@ class ProductionController {
         );
         $programRolls = ProductionProgram::getRolls((int)$id);
 
+        $allSubcategories = Database::fetchAll(
+            "SELECT id, category_id, name, slug FROM subcategories WHERE is_active = 1 ORDER BY sort_order ASC, name ASC"
+        );
+        $allSubSubcategories = Database::fetchAll(
+            "SELECT id, subcategory_id, name, slug FROM sub_subcategories WHERE is_active = 1 ORDER BY name ASC"
+        );
+
         Response::view('production.programs.edit', [
-            'pageTitle'        => 'Edit Program — ' . ($program['name'] ?: $program['program_number']),
-            'activeModule'     => 'production',
-            'activeMenu'       => 'programs',
-            'program'          => $program,
-            'programRolls'     => $programRolls,
-            'units'            => $units,
-            'categories'       => $categories,
-            'subcategories'    => $subcategories,
-            'subSubcategories' => $subSubcategories,
-            'rolls'            => $rolls,
-            'users'            => $users,
-            'scopedUnitId'     => $scopedUnitId,
+            'pageTitle'           => 'Edit Program — ' . ($program['name'] ?: $program['program_number']),
+            'activeModule'        => 'production',
+            'activeMenu'          => 'programs',
+            'program'             => $program,
+            'programRolls'        => $programRolls,
+            'units'               => $units,
+            'categories'          => $categories,
+            'subcategories'       => $subcategories,
+            'subSubcategories'    => $subSubcategories,
+            'allSubcategories'    => $allSubcategories,
+            'allSubSubcategories' => $allSubSubcategories,
+            'rolls'               => $rolls,
+            'users'               => $users,
+            'scopedUnitId'        => $scopedUnitId,
             'breadcrumb'       => [
                 ['label' => 'Production', 'url' => url('production/dashboard')],
                 ['label' => 'Programs', 'url' => url('production/programs')],
@@ -8141,12 +8134,18 @@ class ProductionController {
              ORDER BY pb.created_at DESC"
         );
 
+        $warehouses = Database::fetchAll("SELECT * FROM warehouses WHERE is_active = 1 ORDER BY name ASC");
+        if (empty($warehouses)) {
+            $warehouses = Database::fetchAll("SELECT * FROM warehouses ORDER BY name ASC");
+        }
+
         Response::view('production.outward.index', [
             'pageTitle'       => 'Production Outward & Dispatch',
             'activeModule'    => 'production',
             'activeMenu'      => 'outward',
             'outwards'        => $outwards,
             'approvedBatches' => $approvedBatches,
+            'warehouses'      => $warehouses,
             'search'          => $search,
             'scopedUnitId'    => $scopedUnitId,
             'breadcrumb'      => [
@@ -8264,6 +8263,55 @@ class ProductionController {
         ]);
     }
 
+    public function updateBatch(string $id): void {
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::back();
+            return;
+        }
+
+        $batchId = (int)$id;
+        $batch = ProductionBatch::find($batchId);
+        if (!$batch) {
+            Session::flash('error', 'Production batch not found.');
+            Response::back();
+            return;
+        }
+
+        $warehouseId = !empty($_POST['destination_warehouse_id']) ? (int)$_POST['destination_warehouse_id'] : (int)$batch['destination_warehouse_id'];
+        $boxCount = isset($_POST['box_count']) ? (int)$_POST['box_count'] : (int)($batch['box_count'] ?? 0);
+        $status = !empty($_POST['status']) ? trim($_POST['status']) : ($batch['status'] ?? 'PREPARING');
+        $notes = trim($_POST['notes'] ?? '');
+
+        $updateData = [
+            'destination_warehouse_id' => $warehouseId,
+            'box_count'                => max(1, $boxCount),
+            'status'                   => $status,
+            'notes'                    => $notes,
+        ];
+
+        if (!empty($_POST['item_qty']) && is_array($_POST['item_qty'])) {
+            $newTotal = 0;
+            foreach ($_POST['item_qty'] as $itemId => $qty) {
+                $qty = max(0, (int)$qty);
+                Database::execute("UPDATE production_batch_items SET quantity = ? WHERE id = ? AND production_batch_id = ?", [$qty, (int)$itemId, $batchId]);
+                $newTotal += $qty;
+            }
+            if ($newTotal > 0) {
+                $updateData['total_qty'] = $newTotal;
+                $updateData['quantity'] = $newTotal;
+            }
+        }
+
+        ProductionBatch::update($batchId, $updateData);
+
+        // Keep outward in sync if destination warehouse changed
+        Database::execute("UPDATE production_outwards SET warehouse_id = ?, total_boxes = ? WHERE production_batch_id = ?", [$warehouseId, max(1, $boxCount), $batchId]);
+
+        Session::flash('success', 'Production Batch ' . ($batch['batch_number'] ?? ('#' . $batchId)) . ' updated successfully.');
+        Response::redirect(url('production/batches'));
+    }
+
     public function outwardDetailsAjax(string $id): void {
         $outwardId = (int)$id;
         $outward = ProductionOutward::find($outwardId);
@@ -8312,6 +8360,55 @@ class ProductionController {
             'is_multi_batch' => count($batches) > 1,
             'total_batches'  => count($batches),
         ]);
+    }
+
+    public function updateOutward(string $id): void {
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::back();
+            return;
+        }
+
+        $outwardId = (int)$id;
+        $outward = ProductionOutward::find($outwardId);
+        if (!$outward) {
+            Session::flash('error', 'Outward record not found.');
+            Response::back();
+            return;
+        }
+
+        $warehouseId = !empty($_POST['warehouse_id']) ? (int)$_POST['warehouse_id'] : (int)($outward['warehouse_id'] ?? 0);
+        $vehicleNumber = trim($_POST['vehicle_number'] ?? '');
+        $driverName = trim($_POST['driver_name'] ?? '');
+        $driverContact = trim($_POST['driver_contact'] ?? '');
+        $transporterName = trim($_POST['transporter_name'] ?? '');
+        $lrNumber = trim($_POST['lr_number'] ?? '');
+        $totalBoxes = isset($_POST['total_boxes']) ? (int)$_POST['total_boxes'] : (int)($outward['total_boxes'] ?? 0);
+        $notes = trim($_POST['notes'] ?? '');
+        $dispatchDate = !empty($_POST['dispatch_date']) ? date('Y-m-d H:i:s', strtotime($_POST['dispatch_date'])) : ($outward['dispatch_date'] ?? date('Y-m-d H:i:s'));
+
+        $updateData = [
+            'vehicle_number'   => $vehicleNumber ?: null,
+            'driver_name'      => $driverName ?: null,
+            'driver_contact'   => $driverContact ?: null,
+            'transporter_name' => $transporterName ?: null,
+            'lr_number'        => $lrNumber ?: null,
+            'total_boxes'      => max(1, $totalBoxes),
+            'notes'            => $notes ?: null,
+            'dispatch_date'    => $dispatchDate,
+        ];
+
+        if ($warehouseId > 0) {
+            $updateData['warehouse_id'] = $warehouseId;
+            if (!empty($outward['production_batch_id'])) {
+                Database::execute("UPDATE production_batches SET destination_warehouse_id = ? WHERE id = ?", [$warehouseId, (int)$outward['production_batch_id']]);
+            }
+        }
+
+        ProductionOutward::update($outwardId, $updateData);
+
+        Session::flash('success', 'Outward Dispatch ' . ($outward['outward_number'] ?? ('#' . $outwardId)) . ' updated successfully.');
+        Response::redirect(url('production/outward'));
     }
 
     // =========================================================================
@@ -9274,6 +9371,7 @@ class ProductionController {
             }
 
             $result = QCBatch::recalculateTotals($batchId);
+            $this->syncQCToStitching($batchId);
 
             Session::flash('success', 'QC inspection results saved successfully. Status: ' . $result['status']);
             Response::redirect(url('production/qc'));
@@ -9337,6 +9435,7 @@ class ProductionController {
             }
 
             $result = QCBatch::recalculateTotals($batchId);
+            $this->syncQCToStitching($batchId);
 
             Response::json([
                 'success' => true,
@@ -9345,6 +9444,74 @@ class ProductionController {
             ]);
         } catch (Exception $e) {
             Response::json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Synchronize QC inspection defect counts (rejected_qty, rework_qty)
+     * back to stitching_batches and stitching_items.
+     */
+    private function syncQCToStitching(int $qcBatchId): void {
+        $qcBatch = Database::fetchOne(
+            "SELECT qb.*, COALESCE(qb.stitching_batch_id, lb.stitching_batch_id) as actual_stitching_id 
+             FROM qc_batches qb
+             LEFT JOIN label_batches lb ON qb.label_batch_id = lb.id
+             WHERE qb.id = ?",
+            [$qcBatchId]
+        );
+        if (!$qcBatch || empty($qcBatch['actual_stitching_id'])) {
+            return;
+        }
+        $stitchingBatchId = (int)$qcBatch['actual_stitching_id'];
+
+        // Sum total rejected and rework for this stitching batch
+        $totals = Database::fetchOne(
+            "SELECT COALESCE(SUM(qb.rejected_qty), 0) as total_rejected,
+                    COALESCE(SUM(qb.rework_qty), 0) as total_rework
+             FROM qc_batches qb
+             LEFT JOIN label_batches lb ON qb.label_batch_id = lb.id
+             WHERE COALESCE(qb.stitching_batch_id, lb.stitching_batch_id) = ?",
+            [$stitchingBatchId]
+        );
+
+        if ($totals) {
+            Database::execute(
+                "UPDATE stitching_batches 
+                 SET rejected_qty = ?, rework_qty = ?
+                 WHERE id = ?",
+                [(int)$totals['total_rejected'], (int)$totals['total_rework'], $stitchingBatchId]
+            );
+        }
+
+        // Sync item-level rejected and rework
+        $qcItems = Database::fetchAll(
+            "SELECT qi.variant_id, qi.size_name, qi.color_name,
+                    SUM(qi.rejected_qty) as item_rejected,
+                    SUM(qi.rework_qty) as item_rework
+             FROM qc_items qi
+             JOIN qc_batches qb ON qi.qc_batch_id = qb.id
+             LEFT JOIN label_batches lb ON qb.label_batch_id = lb.id
+             WHERE COALESCE(qb.stitching_batch_id, lb.stitching_batch_id) = ?
+             GROUP BY qi.variant_id, qi.size_name, qi.color_name",
+            [$stitchingBatchId]
+        );
+
+        foreach ($qcItems as $qci) {
+            if (!empty($qci['variant_id'])) {
+                Database::execute(
+                    "UPDATE stitching_items 
+                     SET rejected_qty = ?, rework_qty = ?
+                     WHERE stitching_batch_id = ? AND variant_id = ?",
+                    [(int)$qci['item_rejected'], (int)$qci['item_rework'], $stitchingBatchId, (int)$qci['variant_id']]
+                );
+            } else {
+                Database::execute(
+                    "UPDATE stitching_items 
+                     SET rejected_qty = ?, rework_qty = ?
+                     WHERE stitching_batch_id = ? AND LOWER(TRIM(COALESCE(size_name, ''))) = LOWER(TRIM(?)) AND LOWER(TRIM(COALESCE(color_name, ''))) = LOWER(TRIM(?))",
+                    [(int)$qci['item_rejected'], (int)$qci['item_rework'], $stitchingBatchId, (string)$qci['size_name'], (string)$qci['color_name']]
+                );
+            }
         }
     }
 
@@ -11409,59 +11576,92 @@ class ProductionController {
             return;
         }
 
-        $itemNames = $_POST['item_name'] ?? [];
-        $quantities = $_POST['quantity'] ?? [];
-        $unitTypes = $_POST['unit_type'] ?? [];
-        $unitCosts = $_POST['unit_cost'] ?? [];
-        $notesList = $_POST['notes'] ?? [];
-
-        if (!is_array($itemNames)) {
-            $itemNames = (string)$itemNames !== '' ? [$itemNames] : [];
-            $quantities = is_array($quantities) ? $quantities : [$quantities];
-            $unitTypes = is_array($unitTypes) ? $unitTypes : [$unitTypes];
-            $unitCosts = is_array($unitCosts) ? $unitCosts : [$unitCosts];
-            $notesList = is_array($notesList) ? $notesList : [$notesList];
-        }
-
-        if (empty($itemNames) || !is_array($quantities) || !is_array($unitCosts)) {
-            Session::flash('error', 'Please enter at least one valid expense item.');
-            Response::back();
-            return;
-        }
-
-        $defaultUnitType = strtoupper(trim($_POST['default_unit_type'] ?? 'PCS')) ?: 'PCS';
-
         $expenseLines = [];
-        foreach ($itemNames as $index => $submittedName) {
-            $itemName = trim((string)$submittedName);
-            $quantityValue = $quantities[$index] ?? null;
-            $unitCostValue = $unitCosts[$index] ?? null;
-            $lineUnitType = !empty($unitTypes[$index]) ? strtoupper(trim((string)$unitTypes[$index])) : $defaultUnitType;
-            if ($lineUnitType === '') $lineUnitType = 'PCS';
-            $noteText = trim((string)($notesList[$index] ?? ''));
-            if ($itemName === '' || !is_numeric($quantityValue) || !is_finite((float)$quantityValue)
-                || !is_numeric($unitCostValue) || !is_finite((float)$unitCostValue)) {
-                Session::flash('error', 'Each expense item must have a type, quantity, and valid price.');
+
+        // Support direct single-voucher form submission (matching Warehouse flow)
+        if (isset($_POST['amount']) && !is_array($_POST['amount'])) {
+            $amount = (float)$_POST['amount'];
+            if ($amount <= 0) {
+                Session::flash('error', 'Expense amount must be greater than zero.');
+                Response::back();
+                return;
+            }
+            $singleItem = trim($_POST['item_name'] ?? '');
+            if ($singleItem === '') {
+                Session::flash('error', 'Particulars / Item Description is required.');
+                Response::back();
+                return;
+            }
+            $notes = trim($_POST['notes'] ?? '');
+            $logisticsInfo = [];
+            if (!empty($_POST['transporter_name'])) $logisticsInfo[] = 'Transporter: ' . trim($_POST['transporter_name']);
+            if (!empty($_POST['vehicle_number'])) $logisticsInfo[] = 'Vehicle: ' . trim($_POST['vehicle_number']);
+            if ($logisticsInfo) {
+                $notes = ($notes ? $notes . ' | ' : '') . implode(' | ', $logisticsInfo);
+            }
+
+            $expenseLines = [[
+                'item_name' => $singleItem,
+                'quantity' => 1,
+                'unit_type' => 'PCS',
+                'unit_cost' => $amount,
+                'total_cost' => $amount,
+                'notes' => $notes,
+            ]];
+        } else {
+            $itemNames = $_POST['item_name'] ?? [];
+            $quantities = $_POST['quantity'] ?? [];
+            $unitTypes = $_POST['unit_type'] ?? [];
+            $unitCosts = $_POST['unit_cost'] ?? [];
+            $notesList = $_POST['notes'] ?? [];
+
+            if (!is_array($itemNames)) {
+                $itemNames = (string)$itemNames !== '' ? [$itemNames] : [];
+                $quantities = is_array($quantities) ? $quantities : [$quantities];
+                $unitTypes = is_array($unitTypes) ? $unitTypes : [$unitTypes];
+                $unitCosts = is_array($unitCosts) ? $unitCosts : [$unitCosts];
+                $notesList = is_array($notesList) ? $notesList : [$notesList];
+            }
+
+            if (empty($itemNames) || !is_array($quantities) || !is_array($unitCosts)) {
+                Session::flash('error', 'Please enter at least one valid expense item.');
                 Response::back();
                 return;
             }
 
-            $quantity = (float)$quantityValue;
-            $unitCost = (float)$unitCostValue;
-            if ($quantity <= 0 || $unitCost < 0) {
-                Session::flash('error', 'Expense quantities must be greater than zero and prices cannot be negative.');
-                Response::back();
-                return;
-            }
+            $defaultUnitType = strtoupper(trim($_POST['default_unit_type'] ?? 'PCS')) ?: 'PCS';
 
-            $expenseLines[] = [
-                'item_name' => $itemName,
-                'quantity' => $quantity,
-                'unit_type' => $lineUnitType,
-                'unit_cost' => $unitCost,
-                'total_cost' => round($quantity * $unitCost, 2),
-                'notes' => $noteText,
-            ];
+            foreach ($itemNames as $index => $submittedName) {
+                $itemName = trim((string)$submittedName);
+                $quantityValue = $quantities[$index] ?? null;
+                $unitCostValue = $unitCosts[$index] ?? null;
+                $lineUnitType = !empty($unitTypes[$index]) ? strtoupper(trim((string)$unitTypes[$index])) : $defaultUnitType;
+                if ($lineUnitType === '') $lineUnitType = 'PCS';
+                $noteText = trim((string)($notesList[$index] ?? ''));
+                if ($itemName === '' || !is_numeric($quantityValue) || !is_finite((float)$quantityValue)
+                    || !is_numeric($unitCostValue) || !is_finite((float)$unitCostValue)) {
+                    Session::flash('error', 'Each expense item must have a type, quantity, and valid price.');
+                    Response::back();
+                    return;
+                }
+
+                $quantity = (float)$quantityValue;
+                $unitCost = (float)$unitCostValue;
+                if ($quantity <= 0 || $unitCost < 0) {
+                    Session::flash('error', 'Expense quantities must be greater than zero and prices cannot be negative.');
+                    Response::back();
+                    return;
+                }
+
+                $expenseLines[] = [
+                    'item_name' => $itemName,
+                    'quantity' => $quantity,
+                    'unit_type' => $lineUnitType,
+                    'unit_cost' => $unitCost,
+                    'total_cost' => round($quantity * $unitCost, 2),
+                    'notes' => $noteText,
+                ];
+            }
         }
 
         if (!$expenseLines) {
@@ -11476,7 +11676,7 @@ class ProductionController {
         $category = trim($_POST['category'] ?? 'SEWING_MATERIALS');
         if ($category === '') $category = 'SEWING_MATERIALS';
 
-        $vendorName = trim($_POST['vendor_name'] ?? '');
+        $vendorName = trim($_POST['paid_to'] ?? $_POST['vendor_name'] ?? '');
         if ($vendorName === '') $vendorName = 'Direct / Floor Expense';
 
         $paymentStatus = trim($_POST['payment_status'] ?? 'PAID');
@@ -11494,16 +11694,18 @@ class ProductionController {
         }
 
         // Generate sequential expense number e.g. EXP-2026-0001
-        $userId = (int)(Session::get('user_id') ?? 1);
+        $user = Session::get('user');
+        $userId = (int)($user['id'] ?? Session::get('user_id') ?? 1);
 
         // Handle photo / receipt / bill image upload
         $photoUrl = null;
-        if (!empty($_FILES['photo']['name']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
+        $fileKey = !empty($_FILES['receipt_file']['name']) ? 'receipt_file' : (!empty($_FILES['photo']['name']) ? 'photo' : null);
+        if ($fileKey && $_FILES[$fileKey]['error'] === UPLOAD_ERR_OK) {
             $allowedExts = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
-            $ext = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
+            $ext = strtolower(pathinfo($_FILES[$fileKey]['name'], PATHINFO_EXTENSION));
             if (in_array($ext, $allowedExts, true)) {
                 if (class_exists('CloudinaryService')) {
-                    $photoUrl = CloudinaryService::upload($_FILES['photo'], 'grm_inventory/production/expenses', 'auto');
+                    $photoUrl = CloudinaryService::upload($_FILES[$fileKey], 'grm_inventory/production/expenses', 'auto');
                 }
                 if (!$photoUrl) {
                     $uploadDir = BASE_PATH . '/public/uploads/production_expenses/';
@@ -11511,7 +11713,7 @@ class ProductionController {
                         @mkdir($uploadDir, 0777, true);
                     }
                     $filename = 'exp_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-                    if (move_uploaded_file($_FILES['photo']['tmp_name'], $uploadDir . $filename)) {
+                    if (move_uploaded_file($_FILES[$fileKey]['tmp_name'], $uploadDir . $filename)) {
                         $photoUrl = 'uploads/production_expenses/' . $filename;
                     }
                 }
@@ -11522,12 +11724,16 @@ class ProductionController {
             if (!Database::beginTransaction()) {
                 throw new \RuntimeException('Could not start expense transaction.');
             }
-            $count = Database::fetchOne("SELECT COUNT(*) as cnt FROM production_expenses");
-            $nextSeq = (int)($count['cnt'] ?? 0) + 1;
+            $count = Database::fetchOne("SELECT MAX(id) as max_id, COUNT(*) as cnt FROM production_expenses");
+            $nextSeq = max((int)($count['max_id'] ?? 0), (int)($count['cnt'] ?? 0)) + 1;
             $expenseNumbers = [];
 
             foreach ($expenseLines as $line) {
                 $expenseNumber = 'EXP-' . date('Y') . '-' . sprintf("%04d", $nextSeq++);
+                while (Database::fetchOne("SELECT id FROM production_expenses WHERE expense_number = ?", [$expenseNumber])) {
+                    $nextSeq++;
+                    $expenseNumber = 'EXP-' . date('Y') . '-' . sprintf("%04d", $nextSeq);
+                }
                 $lineTotal = (float)$line['total_cost'];
                 $paidAmt = ($paymentStatus === 'PAID') ? $lineTotal : 0.00;
 
@@ -11535,8 +11741,8 @@ class ProductionController {
                     "INSERT INTO production_expenses
                         (expense_number, production_unit, category, item_name,
                          quantity, unit_type, unit_cost, total_cost, paid_amount, payment_status,
-                         payment_method, vendor_name, invoice_number, expense_date, photo_url, notes, created_by, created_at, updated_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
+                         payment_method, vendor_name, vendor_phone, invoice_number, expense_date, photo_url, notes, created_by, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
                     [
                         $expenseNumber,
                         $productionUnit,
@@ -11550,6 +11756,7 @@ class ProductionController {
                         $paymentStatus,
                         $paymentMethod,
                         $vendorName,
+                        !empty($_POST['vendor_phone']) ? trim($_POST['vendor_phone']) : null,
                         $invoiceNumber ?: null,
                         $expenseDate,
                         $photoUrl,
@@ -11728,6 +11935,80 @@ class ProductionController {
             Session::flash('error', 'Error deleting expense record: ' . $e->getMessage());
             Response::back();
         }
+    }
+
+    public function viewExpense(string $id): void {
+        $expenseId = (int)$id;
+        $expense = Database::fetchOne(
+            "SELECT pe.*,
+                    pp.program_number,
+                    pp.name as program_name,
+                    u.full_name as created_by_name
+             FROM production_expenses pe
+             LEFT JOIN production_programs pp ON pe.program_id = pp.id
+             LEFT JOIN users u ON pe.created_by = u.id
+             WHERE pe.id = ?",
+            [$expenseId]
+        );
+
+        if (!$expense) {
+            Session::flash('error', 'Expense record not found.');
+            Response::redirect(url('production/expenses'));
+            return;
+        }
+
+        $unitLabels = [
+            'PRODUCTION_1' => 'Production Unit 1 (PU-01)',
+            'PRODUCTION_2' => 'Production Unit 2 (PU-02)',
+            'BOTH_UNITS'   => 'Both Units / Common',
+            'GENERAL'      => 'General Facility',
+        ];
+
+        $items = [
+            [
+                'item_name'   => $expense['item_name'],
+                'category'    => ucwords(str_replace('_', ' ', strtolower((string)$expense['category']))),
+                'quantity'    => number_format((float)$expense['quantity'], 2) . ' ' . ($expense['unit_type'] ?: 'PCS'),
+                'unit_cost'   => '₹' . number_format((float)$expense['unit_cost'], 2),
+                'total_cost'  => '₹' . number_format((float)$expense['total_cost'], 2),
+            ]
+        ];
+
+        $fields = [
+            'Expense Number'   => $expense['expense_number'],
+            'Expense Date'     => date('d M Y', strtotime($expense['expense_date'])),
+            'Production Unit'  => $unitLabels[$expense['production_unit']] ?? ($expense['production_unit'] ?: '—'),
+            'Category'         => ucwords(str_replace('_', ' ', strtolower((string)$expense['category']))),
+            'Vendor / Payee'   => $expense['vendor_name'] ?: 'Direct',
+            'Vendor Phone'     => $expense['vendor_phone'] ?: '—',
+            'Invoice / Ref #'  => $expense['invoice_number'] ?: ($expense['payment_reference'] ?: '—'),
+            'Payment Status'   => $expense['payment_status'],
+            'Payment Method'   => $expense['payment_method'],
+            'Total Cost'       => '₹' . number_format((float)$expense['total_cost'], 2),
+            'Amount Paid'      => '₹' . number_format((float)$expense['paid_amount'], 2),
+            'Balance Due'      => '₹' . number_format(max(0, (float)$expense['total_cost'] - (float)$expense['paid_amount']), 2),
+            'Program'          => !empty($expense['program_number']) ? ($expense['program_number'] . (!empty($expense['program_name']) ? ' (' . $expense['program_name'] . ')' : '')) : '—',
+            'Created By'       => $expense['created_by_name'] ?: '—',
+            'Created At'       => $expense['created_at'] ?: '—',
+            'Notes / Remarks'  => $expense['notes'] ?: 'No remarks',
+        ];
+
+        $this->renderProductionRecord(
+            'Expense ' . $expense['expense_number'],
+            'prod-expenses',
+            'Expenses',
+            url('production/expenses'),
+            $fields,
+            $items,
+            [
+                'Item Description' => 'item_name',
+                'Category'         => 'category',
+                'Quantity & Unit'  => 'quantity',
+                'Unit Cost'        => 'unit_cost',
+                'Total Cost'       => 'total_cost',
+            ],
+            'Expense Items & Cost Breakdown'
+        );
     }
 
     public function expenseReceipt(string $id): void {
@@ -11976,6 +12257,38 @@ class ProductionController {
         }
 
         $items = CuttingBatch::getItems((int)$id);
+        $cuttingWastageVal = (!empty($batch['wastage_weight']) && (float)$batch['wastage_weight'] > 0)
+            ? (number_format((float)$batch['wastage_weight'], 2) . ' kg')
+            : ((!empty($batch['wastage_qty']) && (float)$batch['wastage_qty'] > 0)
+                ? (number_format((float)$batch['wastage_qty'], 2) . ' pcs')
+                : '0.00 kg');
+
+        $totalCut = array_sum(array_column($items, 'cut_qty')) ?: (int)($batch['cut_qty'] ?? 0);
+        $batchWastageWeight = (float)($batch['wastage_weight'] ?? 0);
+        $batchWastageQty = (int)($batch['wastage_qty'] ?? 0);
+
+        foreach ($items as &$it) {
+            $itemCut = (int)($it['cut_qty'] ?? 0);
+            $itemWastageQty = (int)($it['wastage_qty'] ?? 0);
+
+            if ($batchWastageWeight > 0) {
+                if (count($items) === 1) {
+                    $itemWWeight = $batchWastageWeight;
+                } elseif ($totalCut > 0) {
+                    $itemWWeight = round(($itemCut / $totalCut) * $batchWastageWeight, 2);
+                } else {
+                    $itemWWeight = round($batchWastageWeight / count($items), 2);
+                }
+                $it['display_wastage'] = number_format($itemWWeight, 2) . ' kg';
+            } elseif ($itemWastageQty > 0 || $batchWastageQty > 0) {
+                $qty = $itemWastageQty > 0 ? $itemWastageQty : (count($items) === 1 ? $batchWastageQty : round(($itemCut / max(1, $totalCut)) * $batchWastageQty));
+                $it['display_wastage'] = number_format($qty) . ' pcs';
+            } else {
+                $it['display_wastage'] = '0.00 kg';
+            }
+        }
+        unset($it);
+
         $this->renderProductionRecord(
             'Cutting Batch ' . ($batch['batch_number'] ?? ('#' . $batch['id'])),
             'cutting',
@@ -11991,32 +12304,57 @@ class ProductionController {
                 'Status'          => $batch['status'] ?? '—',
                 'Planned Quantity'=> number_format((int)($batch['planned_qty'] ?? 0)),
                 'Cut Quantity'    => number_format((int)($batch['cut_qty'] ?? 0)),
-                'Rejected Quantity'=> number_format((int)($batch['rejected_qty'] ?? 0)),
-                'Wastage Quantity' => number_format((float)($batch['wastage_qty'] ?? 0), 2),
+                'Cutting Wastage' => $cuttingWastageVal,
                 'Created At'      => $batch['created_at'] ?? '—',
             ],
             $items,
             [
-                'Catalog'   => 'catalog_hierarchy',
-                'Size'      => 'size_name',
-                'Color'     => 'color_name',
-                'Planned'   => 'planned_qty',
-                'Cut'       => 'cut_qty',
-                'Rejected'  => 'rejected_qty',
-                'Wastage'   => 'wastage_qty',
+                'Catalog'         => 'catalog_hierarchy',
+                'Size'            => 'size_name',
+                'Color'           => 'color_name',
+                'Planned'         => 'planned_qty',
+                'Cut'             => 'cut_qty',
+                'Cutting Wastage' => 'display_wastage',
             ],
             'Cut Items'
         );
     }
 
     public function viewStitchingBatch(string $id): void {
-        $batch = StitchingBatch::find((int)$id);
+        $stitchingId = (int)$id;
+
+        // Auto-sync QC inspection defect counts to this stitching batch if QC was saved/updated
+        $linkedQc = Database::fetchOne(
+            "SELECT qb.id 
+             FROM qc_batches qb 
+             LEFT JOIN label_batches lb ON qb.label_batch_id = lb.id 
+             WHERE COALESCE(qb.stitching_batch_id, lb.stitching_batch_id) = ? 
+             ORDER BY qb.id DESC LIMIT 1",
+            [$stitchingId]
+        );
+        if ($linkedQc) {
+            $this->syncQCToStitching((int)$linkedQc['id']);
+        }
+
+        $batch = StitchingBatch::find($stitchingId);
         if (!$batch) {
             Response::error(404, 'Stitching batch not found.');
             return;
         }
 
-        $items = StitchingBatch::getItems((int)$id);
+        $items = StitchingBatch::getItems($stitchingId);
+
+        // Fetch any logged stitching wastage
+        $stitchingWastage = Database::fetchOne(
+            "SELECT COALESCE(SUM(quantity), 0) as total_wastage_qty, MAX(unit_type) as unit_type 
+             FROM stitching_wastage_sales 
+             WHERE stitching_batch_id = ?",
+            [$stitchingId]
+        );
+        $stitchingWastageText = ($stitchingWastage && (float)$stitchingWastage['total_wastage_qty'] > 0)
+            ? (number_format((float)$stitchingWastage['total_wastage_qty'], 2) . ' ' . ($stitchingWastage['unit_type'] ?: 'kg'))
+            : '0.00 kg';
+
         $this->renderProductionRecord(
             'Stitching Batch ' . ($batch['batch_number'] ?? ('#' . $batch['id'])),
             'stitching',
@@ -12034,6 +12372,7 @@ class ProductionController {
                 'Stitched Quantity'=> number_format((int)($batch['stitched_qty'] ?? 0)),
                 'Rejected Quantity'=> number_format((int)($batch['rejected_qty'] ?? 0)),
                 'Rework Quantity'  => number_format((int)($batch['rework_qty'] ?? 0)),
+                'Stitching Wastage'=> $stitchingWastageText,
                 'Total Weight'     => number_format((float)($batch['total_weight'] ?? 0), 2) . ' kg',
                 'Created At'       => $batch['created_at'] ?? '—',
             ],

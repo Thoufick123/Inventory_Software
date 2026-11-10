@@ -902,7 +902,7 @@ if (!function_exists('renderCategoryTypeBadge')) {
                             <div class="border rounded p-2 text-center bg-light h-100 d-flex flex-column justify-content-between">
                                 <span class="badge bg-secondary-subtle text-secondary small mb-1">#<?= $idx + 1 ?></span>
                                 <div class="font-monospace fw-bold text-dark fs-7 mb-1"><?= e($p['tag_code']) ?></div>
-                                <button type="button" class="btn btn-xs btn-outline-primary py-0 px-2 mt-1" onclick='printSinglePieceLabel(<?= json_encode($p) ?>)'>
+                                <button type="button" class="btn btn-xs btn-outline-primary py-0 px-2 mt-1" data-piece="<?= htmlspecialchars(json_encode($p, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>" onclick="printSinglePieceLabelFromEl(this)">
                                     <i class="bi bi-printer me-1"></i> Print
                                 </button>
                             </div>
@@ -1863,6 +1863,15 @@ function renderWhPagination() {
 
 // Single Piece QR Sticker Modal
 let singlePieceQrInstance = null;
+function printSinglePieceLabelFromEl(btn) {
+    if (!btn) return;
+    try {
+        const item = JSON.parse(btn.getAttribute('data-piece'));
+        printSinglePieceLabel(item);
+    } catch (err) {
+        console.error('Error parsing piece data:', err);
+    }
+}
 function printSinglePieceLabel(item) {
     if (!item) return;
     document.getElementById('lblPieceSku').innerText = item.sku || 'SKU';

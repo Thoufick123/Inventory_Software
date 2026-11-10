@@ -76,16 +76,21 @@ $totalInwardQty = (int)array_sum(array_map(fn($r) => max(1, (int)($r['quantity']
     <!-- 1. TAB: PURCHASE HISTORY (Clean List Style) -->
     <div class="tab-pane fade show active" id="tab-history" role="tabpanel" aria-labelledby="tab-history-link">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h6 class="mb-0 fw-bold text-dark">
-                <i class="bi bi-receipt me-1 text-primary"></i> Purchase Orders &amp; Supplier Invoices
-            </h6>
-            <div class="small text-muted">
-                Showing all recorded procurement orders in compact list format
+            <div>
+                <h6 class="mb-0 fw-bold text-dark">
+                    <i class="bi bi-receipt me-1 text-primary"></i> Purchase Orders &amp; Supplier Invoices
+                </h6>
+                <div class="small text-muted">
+                    Showing all recorded procurement orders in compact list format
+                </div>
+            </div>
+            <div class="d-flex gap-2 align-items-center">
+                <input type="text" id="purchasesSearchInput" class="form-control form-control-sm" placeholder="🔍 Search PO #, supplier, invoice..." style="width: 260px;" oninput="filterPurchasesTable(this.value)">
             </div>
         </div>
 
         <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
+            <table class="table table-hover align-middle mb-0" id="purchasesTable">
                 <thead class="table-light">
                     <tr class="small text-uppercase text-secondary">
                         <th style="width: 45px;" class="text-center">#</th>
@@ -98,7 +103,7 @@ $totalInwardQty = (int)array_sum(array_map(fn($r) => max(1, (int)($r['quantity']
                         <th class="text-center" style="width: 170px;">Actions</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="purchasesTableBody">
                 <?php if (empty($purchases)): ?>
                     <tr><td colspan="8" class="text-center text-muted py-5">No purchases recorded yet.</td></tr>
                 <?php else: foreach ($purchases as $idx => $purchase): 
@@ -109,7 +114,7 @@ $totalInwardQty = (int)array_sum(array_map(fn($r) => max(1, (int)($r['quantity']
                     $supplyCount = count($supplyItems);
                     $totalWeight = array_sum(array_column($rollItems, 'weight_kg'));
                 ?>
-                    <tr>
+                    <tr class="purchase-row" data-search="<?= strtolower(e($purchase['purchase_number'] . ' ' . ($purchase['company'] ?? '') . ' ' . ($purchase['seller_name'] ?? '') . ' ' . ($purchase['invoice_number'] ?? ''))) ?>">
                         <td class="text-center text-muted small fw-semibold"><?= $idx + 1 ?></td>
                         <td>
                             <strong class="font-monospace text-primary"><?= e($purchase['purchase_number']) ?></strong>
@@ -176,7 +181,7 @@ $totalInwardQty = (int)array_sum(array_map(fn($r) => max(1, (int)($r['quantity']
                                     <a class="btn btn-sm btn-outline-primary py-1 px-2" href="<?= url('production/purchases/print/' . $purchase['id']) ?>" target="_blank" rel="noopener" title="Print PO Invoice">
                                         <i class="bi bi-printer"></i>
                                     </a>
-                                    <a class="btn btn-sm btn-dark py-1 px-2 fw-semibold" href="<?= url('production/purchases/roll-qr/' . $purchase['id']) ?>" target="_blank" rel="noopener" title="Roll QR Labels">
+                                    <a class="btn btn-sm btn-dark py-1 px-2 fw-semibold" href="<?= url('production/purchases/roll-qr/' . $purchase['id']) ?>" target="_blank" rel="noopener" title="Print Roll QR Labels (Select &amp; Print)">
                                         <i class="bi bi-qr-code text-warning"></i>
                                     </a>
                                 <?php endif; ?>
@@ -311,6 +316,15 @@ $totalInwardQty = (int)array_sum(array_map(fn($r) => max(1, (int)($r['quantity']
 </div>
 
 <script>
+function filterPurchasesTable(query) {
+    const q = query.toLowerCase().trim();
+    const rows = document.querySelectorAll('#purchasesTableBody .purchase-row');
+    rows.forEach(r => {
+        const text = (r.getAttribute('data-search') || '') + ' ' + (r.textContent || '').toLowerCase();
+        r.style.display = (!q || text.includes(q)) ? '' : 'none';
+    });
+}
+
 function filterRollsTable(query) {
     const q = query.toLowerCase().trim();
     const rows = document.querySelectorAll('#fabricRollsTableBody .roll-row');

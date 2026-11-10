@@ -36,7 +36,7 @@ $seller = static fn(string $key): string => htmlspecialchars((string)($sellerCom
     </div>
     <div class="section">
         <table>
-            <thead><tr><th>Item / QR</th><th>HSN</th><th>Qty</th><th class="right">MRP</th><th class="right">Discount</th><th class="right">Taxable value</th><th>GST details</th><th class="right">Tax</th><th class="right">Total</th></tr></thead>
+            <thead><tr><th>Item / QR</th><th>HSN</th><th>Qty</th><th class="right">MRP</th><th class="right">Discount</th><th class="right">Selling</th><th>GST details</th><th class="right">Tax</th><th class="right">Total</th></tr></thead>
             <tbody>
                 <?php foreach ($billItems as $item): ?>
                     <tr><td><strong><?= htmlspecialchars($item['product_name']) ?></strong><div class="tags"><?= htmlspecialchars(trim(($item['sku'] ?? '') . ' ' . ($item['size_name'] ?? '') . ' ' . ($item['color_name'] ?? ''))) ?><br><?= htmlspecialchars(implode(', ', $item['tags'])) ?></div></td><td><?= htmlspecialchars($item['hsn_code'] ?? '6109') ?></td><td><?= (int)$item['quantity'] ?></td><td class="right">₹<?= number_format((float)$item['mrp'] * (int)$item['quantity'], 2) ?></td><td class="right">₹<?= number_format((float)$item['discount_amount'], 2) ?></td><td class="right">₹<?= number_format((float)$item['taxable_amount'], 2) ?></td><td><?= htmlspecialchars($item['gst_type'] ?? 'BOTH') ?> · <?= ($item['tax_input_type'] ?? 'PERCENT') === 'PERCENT' ? 'Percentage' : 'Fixed' ?><br>
@@ -53,7 +53,7 @@ $seller = static fn(string $key): string => htmlspecialchars((string)($sellerCom
     <div class="section"><table class="summary">
         <tr><td>Gross / MRP</td><td class="right">₹<?= number_format((float)$bill['gross_amount'], 2) ?></td></tr>
         <tr><td>Discount</td><td class="right">₹<?= number_format((float)$bill['discount_amount'], 2) ?></td></tr>
-        <tr><td>Taxable subtotal</td><td class="right">₹<?= number_format((float)$bill['subtotal'], 2) ?></td></tr>
+        <tr><td>Selling</td><td class="right">₹<?= number_format((float)$bill['subtotal'], 2) ?></td></tr>
         <?php if ((float)$bill['cgst_amount'] > 0): ?><tr><td>CGST</td><td class="right">₹<?= number_format((float)$bill['cgst_amount'], 2) ?></td></tr><?php endif; ?>
         <?php if ((float)$bill['sgst_amount'] > 0): ?><tr><td>SGST</td><td class="right">₹<?= number_format((float)$bill['sgst_amount'], 2) ?></td></tr><?php endif; ?>
         <?php if ((float)$bill['igst_amount'] > 0): ?><tr><td>IGST</td><td class="right">₹<?= number_format((float)$bill['igst_amount'], 2) ?></td></tr><?php endif; ?>

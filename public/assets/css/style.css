@@ -544,18 +544,102 @@ body {
 }
 
 /* ============================================================
-   FLASH MESSAGES
+   FLASH MESSAGES & MODERN ALERT BOX UI
    ============================================================ */
 
-.flash-alert {
-    border-radius: 10px;
-    font-size: 0.875rem;
-    border: none;
-    animation: slideDown 0.3s ease-out;
+.modern-alert-box {
+    border-radius: 12px !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    padding: 14px 20px !important;
+    margin-bottom: 1.25rem !important;
+    display: flex !important;
+    align-items: center !important;
+    backdrop-filter: blur(8px) !important;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.06), 0 8px 10px -6px rgba(0, 0, 0, 0.03) !important;
+    animation: slideDownFade 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
-@keyframes slideDown {
-    from { opacity: 0; transform: translateY(-10px); }
+.modern-alert-box .alert-icon-wrap {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    flex-shrink: 0;
+}
+
+.modern-alert-box .alert-title {
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
+    margin-bottom: 2px;
+}
+
+.modern-alert-box .alert-message {
+    font-size: 0.88rem;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.flash-alert-danger {
+    background: #fef2f2 !important;
+    border-color: #fecaca !important;
+    border-left: 5px solid #dc2626 !important;
+    color: #991b1b !important;
+}
+.flash-alert-danger .alert-icon-wrap {
+    background: #fee2e2;
+    color: #dc2626;
+}
+.flash-alert-danger .alert-title {
+    color: #b91c1c;
+}
+
+.flash-alert-success {
+    background: #f0fdf4 !important;
+    border-color: #bbf7d0 !important;
+    border-left: 5px solid #16a34a !important;
+    color: #166534 !important;
+}
+.flash-alert-success .alert-icon-wrap {
+    background: #dcfce7;
+    color: #16a34a;
+}
+.flash-alert-success .alert-title {
+    color: #15803d;
+}
+
+.flash-alert-warning {
+    background: #fffbeb !important;
+    border-color: #fde68a !important;
+    border-left: 5px solid #d97706 !important;
+    color: #92400e !important;
+}
+.flash-alert-warning .alert-icon-wrap {
+    background: #fef3c7;
+    color: #d97706;
+}
+.flash-alert-warning .alert-title {
+    color: #b45309;
+}
+
+.flash-alert-info {
+    background: #f0f9ff !important;
+    border-color: #bae6fd !important;
+    border-left: 5px solid #0284c7 !important;
+    color: #075985 !important;
+}
+.flash-alert-info .alert-icon-wrap {
+    background: #e0f2fe;
+    color: #0284c7;
+}
+.flash-alert-info .alert-title {
+    color: #0369a1;
+}
+
+@keyframes slideDownFade {
+    from { opacity: 0; transform: translateY(-12px); }
     to { opacity: 1; transform: translateY(0); }
 }
 

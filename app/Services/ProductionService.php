@@ -1204,54 +1204,96 @@ class ProductionService {
         $unitClauseProg = $unitId ? " AND production_unit_id = $unitId" : "";
         $unitClausePP = $unitId ? " AND pp.production_unit_id = $unitId" : "";
 
-        // Active Programs
+        // 1. Programs: Total & Finished
         $activePrograms = Database::fetchOne(
-            "SELECT COUNT(*) as count, COALESCE(SUM(planned_quantity), 0) as total_planned, COALESCE(SUM(completed_quantity), 0) as total_completed
+            "SELECT
+                COUNT(*) as count,
+                SUM(CASE WHEN status = 'COMPLETED' OR (planned_quantity > 0 AND completed_quantity >= planned_quantity) THEN 1 ELSE 0 END) as finished_count,
+                COALESCE(SUM(planned_quantity), 0) as total_planned,
+                COALESCE(SUM(completed_quantity), 0) as total_completed
              FROM production_programs
-             WHERE status IN ('APPROVED', 'SCHEDULED', 'IN_PROGRESS')
-               AND (is_active IS NULL OR is_active = 1)
-               AND (COALESCE(planned_quantity, 0) <= 0 OR COALESCE(completed_quantity, 0) < COALESCE(planned_quantity, 0))$unitClauseProg"
+             WHERE 1=1$unitClauseProg"
         );
 
-        // Pending Cutting
+        // 2. Cutting Batches: Total & Finished
         $pendingCutting = Database::fetchOne(
-            "SELECT COUNT(*) as count, COALESCE(SUM(cb.planned_qty), 0) as total_qty
+            "SELECT
+                COUNT(*) as count,
+                SUM(CASE 
+                    WHEN cb.status IN ('COMPLETED', 'FINISHED', 'DONE') THEN 1
+                    WHEN cb.cut_qty > 0 AND (cb.planned_qty <= 0 OR cb.cut_qty >= cb.planned_qty) THEN 1
+                    WHEN EXISTS (SELECT 1 FROM stitching_batches sb WHERE sb.cutting_batch_id = cb.id) THEN 1
+                    ELSE 0 
+                END) as finished_count,
+                COALESCE(SUM(cb.planned_qty), 0) as total_planned,
+                COALESCE(SUM(CASE WHEN cb.cut_qty > 0 THEN cb.cut_qty ELSE COALESCE(cb.planned_qty, 0) END), 0) as total_completed
              FROM cutting_batches cb
              LEFT JOIN production_programs pp ON cb.program_id = pp.id
-             WHERE cb.status IN ('PENDING', 'IN_PROGRESS')$unitClausePP"
+             WHERE 1=1$unitClausePP"
         );
 
-        // Pending Stitching
+        // 3. Stitching Batches: Total & Finished
         $pendingStitching = Database::fetchOne(
-            "SELECT COUNT(*) as count, COALESCE(SUM(sb.received_qty), 0) as total_qty
+            "SELECT
+                COUNT(*) as count,
+                SUM(CASE 
+                    WHEN sb.status IN ('COMPLETED', 'FINISHED', 'DONE') THEN 1
+                    WHEN COALESCE(sb.total_stitched_qty, sb.stitched_qty, 0) > 0 AND (COALESCE(sb.total_cut_qty, sb.received_qty, 0) <= 0 OR COALESCE(sb.total_stitched_qty, sb.stitched_qty, 0) >= COALESCE(sb.total_cut_qty, sb.received_qty, 0)) THEN 1
+                    WHEN EXISTS (SELECT 1 FROM qc_batches qb WHERE qb.stitching_batch_id = sb.id) THEN 1
+                    ELSE 0 
+                END) as finished_count,
+                COALESCE(SUM(COALESCE(sb.total_cut_qty, sb.received_qty, 0)), 0) as total_planned,
+                COALESCE(SUM(COALESCE(sb.total_stitched_qty, sb.stitched_qty, 0)), 0) as total_completed
              FROM stitching_batches sb
              LEFT JOIN production_programs pp ON sb.program_id = pp.id
-             WHERE sb.status IN ('PENDING', 'IN_PROGRESS')$unitClausePP"
+             WHERE 1=1$unitClausePP"
         );
 
-        // Pending QC
+        // 4. QC Batches: Total & Finished (Passed / Audited)
         $pendingQC = Database::fetchOne(
-            "SELECT COUNT(*) as count, COALESCE(SUM(qb.total_qty), 0) as total_qty
+            "SELECT
+                COUNT(*) as count,
+                SUM(CASE 
+                    WHEN qb.status IN ('COMPLETED', 'PASSED') THEN 1
+                    WHEN (COALESCE(qb.passed_qty, 0) + COALESCE(qb.rejected_qty, 0) + COALESCE(qb.rework_qty, 0)) > 0 AND (COALESCE(qb.total_qty, 0) <= 0 OR (COALESCE(qb.passed_qty, 0) + COALESCE(qb.rejected_qty, 0) + COALESCE(qb.rework_qty, 0)) >= qb.total_qty) THEN 1
+                    WHEN qb.status IN ('REWORK', 'PARTIAL') AND (COALESCE(qb.passed_qty, 0) + COALESCE(qb.rejected_qty, 0) + COALESCE(qb.rework_qty, 0)) > 0 THEN 1
+                    WHEN EXISTS (SELECT 1 FROM production_batches pb WHERE pb.qc_batch_id = qb.id) THEN 1
+                    ELSE 0 
+                END) as finished_count,
+                COALESCE(SUM(qb.total_qty), 0) as total_planned,
+                COALESCE(SUM(CASE 
+                    WHEN (COALESCE(qb.passed_qty, 0) + COALESCE(qb.rejected_qty, 0) + COALESCE(qb.rework_qty, 0)) > 0 
+                    THEN (COALESCE(qb.passed_qty, 0) + COALESCE(qb.rejected_qty, 0) + COALESCE(qb.rework_qty, 0)) 
+                    ELSE COALESCE(qb.passed_qty, 0) 
+                END), 0) as total_completed
              FROM qc_batches qb
              LEFT JOIN production_programs pp ON qb.program_id = pp.id
-             WHERE qb.status IN ('PENDING', 'PARTIAL', 'REWORK')$unitClausePP"
+             WHERE 1=1$unitClausePP"
         );
 
-        // Ready for Dispatch
+        // 5. Packed / Ready Dispatch Batches: Total & Finished
         $readyDispatch = Database::fetchOne(
-            "SELECT COUNT(*) as count, COALESCE(SUM(pb.total_qty), 0) as total_qty
+            "SELECT
+                COUNT(*) as count,
+                SUM(CASE WHEN pb.status IN ('DISPATCHED', 'RECEIVED', 'COMPLETED', 'APPROVED') OR pb.box_count > 0 THEN 1 ELSE 0 END) as finished_count,
+                COALESCE(SUM(pb.total_qty), 0) as total_planned,
+                COALESCE(SUM(pb.total_qty), 0) as total_completed
              FROM production_batches pb
              LEFT JOIN production_programs pp ON pb.program_id = pp.id
-             WHERE pb.status = 'APPROVED'$unitClausePP"
+             WHERE 1=1$unitClausePP"
         );
 
-        // This month outward
+        // 6. Outward Dispatches: Total & Finished (Dispatched or Delivered to WH)
         $monthOutward = Database::fetchOne(
-            "SELECT COUNT(po.id) as count, COALESCE(SUM(pb.total_qty), 0) as total_qty
+            "SELECT
+                COUNT(po.id) as count,
+                SUM(CASE WHEN po.status IN ('DISPATCHED', 'RECEIVED', 'DELIVERED', 'COMPLETED') THEN 1 ELSE 0 END) as finished_count,
+                COALESCE(SUM(COALESCE(po.total_quantity, po.quantity, pb.total_qty, 0)), 0) as total_planned,
+                COALESCE(SUM(CASE WHEN po.status IN ('DISPATCHED', 'RECEIVED', 'DELIVERED', 'COMPLETED') THEN COALESCE(po.total_quantity, po.quantity, pb.total_qty, 0) ELSE 0 END), 0) as total_completed
              FROM production_outwards po
              JOIN production_batches pb ON po.production_batch_id = pb.id
              LEFT JOIN production_programs pp ON pb.program_id = pp.id
-             WHERE MONTH(po.created_at) = MONTH(CURRENT_DATE()) AND YEAR(po.created_at) = YEAR(CURRENT_DATE())$unitClausePP"
+             WHERE 1=1$unitClausePP"
         );
 
         // Active programs not yet completed against their planned quantity

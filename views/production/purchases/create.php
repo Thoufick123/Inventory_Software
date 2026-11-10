@@ -144,9 +144,9 @@
                 <div class="table-responsive">
                     <table class="table table-hover table-bordered align-middle mb-0" style="font-size:13px">
                         <thead class="table-light small text-uppercase">
-                            <tr><th class="text-center">#</th><th>Photo</th><th>Roll Code</th><th>Color / Shade</th><th>Design / Pattern</th><th class="text-center">Designs</th><th class="text-end">Total RQ</th><th class="text-end">Weight</th><th class="text-end">Price</th><th>GST Type</th><th class="text-end">Tax</th><th class="text-end bg-success-subtle text-success">Total Value</th><th class="text-center">Status</th></tr>
+                            <tr><th class="text-center">#</th><th>Photo</th><th>Roll Code</th><th>HSN</th><th>Color / Shade</th><th>Design / Pattern</th><th class="text-center">Designs</th><th class="text-end">Total RQ</th><th class="text-end">Weight</th><th class="text-end">Price</th><th>GST Type</th><th class="text-end">Tax</th><th class="text-end bg-success-subtle text-success">Total Value</th><th class="text-center">Status</th></tr>
                         </thead>
-                        <tbody id="rollDetailsTableBody"><tr><td colspan="13" class="text-center text-muted py-4">Add fabric rolls to see their inventory details.</td></tr></tbody>
+                        <tbody id="rollDetailsTableBody"><tr><td colspan="14" class="text-center text-muted py-4">Add fabric rolls to see their inventory details.</td></tr></tbody>
                         <tfoot id="rollDetailsTableFoot" class="table-light fw-bold"></tfoot>
                     </table>
                 </div>
@@ -179,10 +179,10 @@
                 <div class="table-responsive">
                     <table class="table table-hover table-bordered align-middle mb-0" style="font-size:13px">
                         <thead class="table-light small text-uppercase">
-                            <tr><th class="text-center">#</th><th>Item Name / Description</th><th class="text-end">Quantity</th><th>Unit</th><th class="text-end">Unit Price</th><th class="text-end">Base Value</th><th>GST Type</th><th class="text-end">Tax</th><th class="text-end bg-success-subtle text-success">Total Value</th></tr>
+                            <tr><th class="text-center">#</th><th>Item Name / Description</th><th>HSN</th><th class="text-end">Quantity</th><th>Unit</th><th class="text-end">Unit Price</th><th class="text-end">Base Value</th><th>GST Type</th><th class="text-end">Tax</th><th class="text-end bg-success-subtle text-success">Total Value</th></tr>
                         </thead>
                         <tbody id="supplyDetailsTableBody">
-                            <tr><td colspan="9" class="text-center text-muted py-4">Add garment supplies to see their purchase details.</td></tr>
+                            <tr><td colspan="10" class="text-center text-muted py-4">Add garment supplies to see their purchase details.</td></tr>
                         </tbody>
                         <tfoot id="supplyDetailsTableFoot" class="table-light fw-bold"></tfoot>
                     </table>
@@ -342,10 +342,11 @@
                 <div class="col-lg-1 col-md-3"><label class="form-label required">RQ *</label><input type="number" class="form-control roll-quantity" min="1" step="1" value="1" required></div>
                 <div class="col-lg-2 col-md-3"><label class="form-label required">Weight (kg) *</label><div class="input-group"><input type="number" class="form-control roll-weight" min="0.01" step="0.01" required><span class="input-group-text">kg</span></div></div>
                 <div class="col-lg-2 col-md-3"><label class="form-label required">Price (₹) *</label><div class="input-group"><span class="input-group-text">₹</span><input type="number" class="form-control roll-price" min="0.01" step="0.01" required></div></div>
-                <div class="col-lg-3 col-md-4"><label class="form-label">GST</label><select class="form-select item-gst-type"><option value="SGST">SGST</option><option value="IGST">IGST</option><option value="CGST">CGST</option><option value="BOTH">Both (CGST and SGST)</option><option value="EXEMPTED" selected>Exempted</option></select></div>
-                <div class="col-lg-3 col-md-4 tax-mode-field d-none"><label class="form-label">Tax Input Type</label><select class="form-select item-tax-mode"><option value="PERCENT">Percentage (%)</option><option value="AMOUNT">Amount (₹)</option></select></div>
-                <div class="col-lg-3 col-md-4 tax-value-field d-none"><label class="form-label item-tax-label">Tax</label><input type="number" class="form-control item-tax-value" min="0" max="100" step="0.01" value="0"></div>
-                <div class="col-lg-3 col-md-4 tax-cgst-field d-none"><label class="form-label item-cgst-label">CGST</label><input type="number" class="form-control item-cgst-value" min="0" max="100" step="0.01" value="0"></div>
+                <div class="col-lg-2 col-md-3"><label class="form-label">HSN Code</label><input class="form-control roll-hsn text-uppercase font-monospace" maxlength="50" placeholder="E.G. 5208"></div>
+                <div class="col-lg-2 col-md-3"><label class="form-label">GST</label><select class="form-select item-gst-type"><option value="SGST">SGST</option><option value="IGST">IGST</option><option value="CGST">CGST</option><option value="BOTH">Both (CGST and SGST)</option><option value="EXEMPTED" selected>Exempted</option></select></div>
+                <div class="col-lg-2 col-md-3 tax-mode-field d-none"><label class="form-label">Tax Input Type</label><select class="form-select item-tax-mode"><option value="PERCENT">Percentage (%)</option><option value="AMOUNT">Amount (₹)</option></select></div>
+                <div class="col-lg-2 col-md-3 tax-value-field d-none"><label class="form-label item-tax-label">Tax</label><input type="number" class="form-control item-tax-value" min="0" max="100" step="0.01" value="0"></div>
+                <div class="col-lg-2 col-md-3 tax-cgst-field d-none"><label class="form-label item-cgst-label">CGST</label><input type="number" class="form-control item-cgst-value" min="0" max="100" step="0.01" value="0"></div>
                 <div class="col-md-6"><label class="form-label">Roll Sample Photo <small class="text-muted">(Optional — JPG, PNG, WEBP)</small></label><input type="file" class="form-control roll-photo" accept=".jpg,.jpeg,.png,.webp"></div>
                 <div class="col-md-6 roll-preview d-none"><img class="img-thumbnail" style="height:54px" alt="Roll photo preview"></div>
             </div>
@@ -355,7 +356,8 @@
 
 <template id="supplyTemplate">
     <div class="row g-2 align-items-end supply-row mb-3">
-        <div class="col-md-5"><label class="form-label">Item Name / Description *</label><input class="form-control supply-name" maxlength="255" placeholder="Sewing needles, thread, buttons" required></div>
+        <div class="col-md-4"><label class="form-label">Item Name / Description *</label><input class="form-control supply-name" maxlength="255" placeholder="Sewing needles, thread, buttons" required></div>
+        <div class="col-md-2"><label class="form-label">HSN Code</label><input class="form-control supply-hsn text-uppercase font-monospace" maxlength="50" placeholder="E.G. 9606"></div>
         <div class="col-md-2"><label class="form-label">Quantity *</label><input type="number" class="form-control supply-quantity" min="0.001" step="0.001" value="1" required></div>
         <div class="col-md-2"><label class="form-label">Unit *</label><select class="form-select supply-unit"><option value="PCS">Pieces</option><option value="KG">Kilograms</option><option value="METRE">Metres</option><option value="LITRE">Litres</option><option value="BOX">Boxes</option><option value="PACK">Packs</option><option value="PAIR">Pairs</option><option value="SET">Sets</option><option value="BUNDLE">Bundles</option><option value="OTHER">Other</option></select></div>
         <div class="col-md-2"><label class="form-label">Unit Price (₹) *</label><input type="number" class="form-control supply-price" min="0" step="0.01" value="0" required></div>
@@ -476,6 +478,7 @@
             } else {
                 body.innerHTML = cards.map((card, index) => {
                     const rollNum = card.querySelector('.roll-number')?.value || ('ROLL #' + (index + 1));
+                    const hsn = card.querySelector('.roll-hsn')?.value?.trim() || '—';
                     const color = card.querySelector('.roll-color')?.value || '—';
                     const design = card.querySelector('.roll-design')?.value || '—';
                     const designCount = Number(card.querySelector('.roll-design-count')?.value) || 1;
@@ -496,6 +499,7 @@
                         <td class="text-center fw-bold">${index + 1}</td>
                         <td class="text-center">${photoHtml}</td>
                         <td><strong>${safe(rollNum)}</strong><small class="d-block font-monospace text-primary">${safe(codeStart)}${codeStart !== codeEnd ? '–' + safe(codeEnd) : ''}</small></td>
+                        <td><span class="badge bg-light text-dark border font-monospace">${safe(hsn)}</span></td>
                         <td><span class="badge bg-light text-dark border">${safe(color)}</span></td>
                         <td>${safe(design)}</td>
                         <td class="text-center">${designCount}</td>
@@ -528,12 +532,13 @@
         const tableFoot = document.getElementById('supplyDetailsTableFoot');
         document.getElementById('supplyTableCountBadge').textContent = supplyRows.length + (supplyRows.length === 1 ? ' Item' : ' Items');
         if (!supplyRows.length) {
-            tableBody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Add garment supplies to see their purchase details.</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">Add garment supplies to see their purchase details.</td></tr>';
             tableFoot.innerHTML = '';
         } else {
             tableBody.innerHTML = supplyRows.map((row, index) => {
                 const quantity = Number(row.querySelector('.supply-quantity').value) || 0;
                 const unitPrice = Number(row.querySelector('.supply-price').value) || 0;
+                const hsn = row.querySelector('.supply-hsn')?.value?.trim() || '—';
                 const base = quantity * unitPrice;
                 const tax = calculateItemTax(row, base);
                 const total = base + tax.amount;
@@ -541,9 +546,9 @@
                 supplyTotals.tax += tax.amount;
                 supplyTotals.total += total;
                 const taxLabel = tax.type === 'BOTH' ? 'SGST + CGST' : tax.type;
-                return `<tr><td class="text-center">${index + 1}</td><td>${safe(row.querySelector('.supply-name').value.trim() || '—')}</td><td class="text-end">${quantity.toLocaleString('en-IN', {maximumFractionDigits:3})}</td><td>${safe(row.querySelector('.supply-unit').selectedOptions[0].textContent)}</td><td class="text-end">${money(unitPrice)}</td><td class="text-end">${money(base)}</td><td>${taxLabel}</td><td class="text-end">${money(tax.amount)}</td><td class="text-end fw-bold text-success">${money(total)}</td></tr>`;
+                return `<tr><td class="text-center">${index + 1}</td><td>${safe(row.querySelector('.supply-name').value.trim() || '—')}</td><td><span class="badge bg-light text-dark border font-monospace">${safe(hsn)}</span></td><td class="text-end">${quantity.toLocaleString('en-IN', {maximumFractionDigits:3})}</td><td>${safe(row.querySelector('.supply-unit').selectedOptions[0].textContent)}</td><td class="text-end">${money(unitPrice)}</td><td class="text-end">${money(base)}</td><td>${taxLabel}</td><td class="text-end">${money(tax.amount)}</td><td class="text-end fw-bold text-success">${money(total)}</td></tr>`;
             }).join('');
-            tableFoot.innerHTML = `<tr><td colspan="5" class="text-end">Totals</td><td class="text-end">${money(supplyTotals.base)}</td><td></td><td class="text-end">${money(supplyTotals.tax)}</td><td class="text-end text-success">${money(supplyTotals.total)}</td></tr>`;
+            tableFoot.innerHTML = `<tr><td colspan="6" class="text-end">Totals</td><td class="text-end">${money(supplyTotals.base)}</td><td></td><td class="text-end">${money(supplyTotals.tax)}</td><td class="text-end text-success">${money(supplyTotals.total)}</td></tr>`;
         }
         const subtotal = rollTotals.base + supplyTotals.base;
         const totalTax = rollTotals.tax + supplyTotals.tax;
@@ -575,7 +580,7 @@
         const names = {
             '.roll-number': 'roll_number', '.roll-color': 'color', '.roll-design': 'design_name',
             '.roll-design-count': 'design_count', '.roll-quantity': 'quantity', '.roll-weight': 'weight_kg',
-            '.roll-price': 'unit_price', '.item-gst-type': 'gst_type', '.item-tax-mode': 'tax_mode',
+            '.roll-price': 'unit_price', '.roll-hsn': 'hsn_code', '.item-gst-type': 'gst_type', '.item-tax-mode': 'tax_mode',
             '.item-tax-value': 'tax_value', '.item-cgst-value': 'cgst_tax_value', '.roll-photo': null
         };
         Object.entries(names).forEach(([selector, field]) => {
@@ -625,6 +630,7 @@
         const index = supplyIndex++;
         const row = supplyTemplate.content.firstElementChild.cloneNode(true);
         row.querySelector('.supply-name').name = `items[${index + 1000}][item_name]`;
+        row.querySelector('.supply-hsn').name = `items[${index + 1000}][hsn_code]`;
         row.querySelector('.supply-quantity').name = `items[${index + 1000}][quantity]`;
         row.querySelector('.supply-unit').name = `items[${index + 1000}][unit]`;
         row.querySelector('.supply-price').name = `items[${index + 1000}][unit_price]`;

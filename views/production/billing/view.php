@@ -36,7 +36,7 @@
 <div class="card border-0 shadow-sm mb-3">
     <div class="table-responsive">
         <table class="table align-middle mb-0">
-            <thead class="table-light"><tr><th>Item / QR codes</th><th>HSN</th><th class="text-center">Qty</th><th class="text-end">MRP</th><th class="text-end">Discount</th><th class="text-end">Taxable</th><th>GST details</th><th class="text-end">Tax</th><th class="text-end">Total</th></tr></thead>
+            <thead class="table-light"><tr><th>Item / QR codes</th><th>HSN</th><th class="text-center">Qty</th><th class="text-end">MRP</th><th class="text-end">Discount</th><th class="text-end">Selling</th><th>GST details</th><th class="text-end">Tax</th><th class="text-end">Total</th></tr></thead>
             <tbody>
                 <?php foreach ($billItems as $item): ?>
                     <tr>
@@ -73,7 +73,7 @@
         <div class="card border-0 shadow-sm"><div class="card-body">
             <div class="d-flex justify-content-between py-1"><span>Gross / MRP</span><strong>₹<?= number_format((float)$bill['gross_amount'], 2) ?></strong></div>
             <div class="d-flex justify-content-between py-1"><span>Discount</span><strong>₹<?= number_format((float)$bill['discount_amount'], 2) ?></strong></div>
-            <div class="d-flex justify-content-between py-1"><span>Taxable subtotal</span><strong>₹<?= number_format((float)$bill['subtotal'], 2) ?></strong></div>
+            <div class="d-flex justify-content-between py-1"><span>Selling</span><strong>₹<?= number_format((float)$bill['subtotal'], 2) ?></strong></div>
             <?php if ((float)$bill['cgst_amount'] > 0): ?>
                 <div class="d-flex justify-content-between py-1"><span>CGST</span><strong>₹<?= number_format((float)$bill['cgst_amount'], 2) ?></strong></div>
             <?php endif; ?>

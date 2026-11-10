@@ -307,7 +307,7 @@
                                     <!-- Actions -->
                                     <td class="text-center">
                                         <div class="btn-group btn-group-sm">
-                                            <button type="button" class="btn btn-outline-info" title="View stitching wastage sale details" onclick="openStitchingWastageReceipt(<?= (int)$s['id'] ?>)">
+                                            <button type="button" class="btn btn-outline-info" title="View stitching wastage sale details" onclick="openStitchingWastageDetails(<?= (int)$s['id'] ?>)">
                                                 <i class="bi bi-eye"></i>
                                             </button>
                                             <!-- Print Receipt Button -->
@@ -745,7 +745,158 @@
 </div>
 
 <!-- ========================================================================= -->
-<!-- 3. PRINTABLE STITCHING RECEIPT VOUCHER MODAL                              -->
+<!-- 3. MODERN STITCHING WASTAGE SALE DETAILS VIEW MODAL                       -->
+<!-- ========================================================================= -->
+<div class="modal fade" id="stitchingWastageDetailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0">
+            <div class="modal-header bg-white border-bottom py-3">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="rounded-circle bg-primary-subtle text-primary p-2 d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                        <i class="bi bi-eye fs-5"></i>
+                    </div>
+                    <div>
+                        <h5 class="modal-title fw-bold text-dark mb-0">Stitching Wastage Sale Details</h5>
+                        <div class="d-flex align-items-center gap-2 mt-1">
+                            <span class="badge bg-primary-subtle text-primary border" id="viewStwSaleNo">STW-2026-0001</span>
+                            <span class="badge" id="viewStwStatusBadge">PAID</span>
+                        </div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4 bg-light-subtle">
+                <!-- Summary Metrics Ribbon -->
+                <div class="row g-3 mb-4">
+                    <div class="col-6 col-md-3">
+                        <div class="card border-0 shadow-sm p-3 h-100 bg-white">
+                            <span class="text-muted small fw-semibold">Quantity Sold</span>
+                            <h4 class="fw-bold text-dark mt-1 mb-0" id="viewStwQty">0.00 KG</h4>
+                            <span class="small text-muted" id="viewStwType">Thread Waste</span>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="card border-0 shadow-sm p-3 h-100 bg-white">
+                            <span class="text-muted small fw-semibold">Rate / Unit</span>
+                            <h4 class="fw-bold text-primary mt-1 mb-0" id="viewStwRate">₹0.00</h4>
+                            <span class="small text-muted">Per Unit Price</span>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="card border-0 shadow-sm p-3 h-100 bg-white">
+                            <span class="text-muted small fw-semibold">Total Amount</span>
+                            <h4 class="fw-bold text-success mt-1 mb-0" id="viewStwTotal">₹0.00</h4>
+                            <span class="small text-muted">Invoice Value</span>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="card border-0 shadow-sm p-3 h-100 bg-white">
+                            <span class="text-muted small fw-semibold">Balance Due</span>
+                            <h4 class="fw-bold text-danger mt-1 mb-0" id="viewStwDue">₹0.00</h4>
+                            <span class="small text-muted" id="viewStwPaidSub">Paid: ₹0.00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2-Column Detail Cards -->
+                <div class="row g-3 mb-3">
+                    <!-- Left: Production & Batch Context -->
+                    <div class="col-md-6">
+                        <div class="card border-0 shadow-sm h-100 bg-white">
+                            <div class="card-header bg-white py-2.5 border-bottom">
+                                <h6 class="card-title mb-0 fw-bold text-dark">
+                                    <i class="bi bi-gear-wide-connected text-warning me-2"></i>Production &amp; Batch Origin
+                                </h6>
+                            </div>
+                            <div class="card-body p-3">
+                                <div class="mb-2.5">
+                                    <div class="text-muted small fw-semibold">Stitching Batch</div>
+                                    <div class="fw-bold text-dark" id="viewStwBatch">—</div>
+                                </div>
+                                <div class="mb-2.5">
+                                    <div class="text-muted small fw-semibold">Production Program</div>
+                                    <div class="text-dark" id="viewStwProgram">—</div>
+                                </div>
+                                <div class="mb-2.5">
+                                    <div class="text-muted small fw-semibold">Sale Date</div>
+                                    <div class="text-dark" id="viewStwDate">—</div>
+                                </div>
+                                <div>
+                                    <div class="text-muted small fw-semibold">Recorded By / Operator</div>
+                                    <div class="text-dark" id="viewStwCreator">—</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Buyer & Settlement Details -->
+                    <div class="col-md-6">
+                        <div class="card border-0 shadow-sm h-100 bg-white">
+                            <div class="card-header bg-white py-2.5 border-bottom">
+                                <h6 class="card-title mb-0 fw-bold text-dark">
+                                    <i class="bi bi-person-badge text-primary me-2"></i>Buyer &amp; Payment Settlement
+                                </h6>
+                            </div>
+                            <div class="card-body p-3">
+                                <div class="mb-2.5">
+                                    <div class="text-muted small fw-semibold">Buyer Name</div>
+                                    <div class="fw-bold text-dark" id="viewStwBuyer">—</div>
+                                </div>
+                                <div class="mb-2.5" id="viewStwCompanyRow">
+                                    <div class="text-muted small fw-semibold">Company / Business</div>
+                                    <div class="text-dark" id="viewStwCompany">—</div>
+                                </div>
+                                <div class="mb-2.5" id="viewStwPhoneRow">
+                                    <div class="text-muted small fw-semibold">Contact Phone</div>
+                                    <div class="text-dark" id="viewStwPhone">—</div>
+                                </div>
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <div class="text-muted small fw-semibold">Payment Mode</div>
+                                        <div class="text-dark fw-semibold" id="viewStwMethod">CASH</div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="text-muted small fw-semibold">Invoice / Ref #</div>
+                                        <div class="text-dark" id="viewStwRef">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Notes & Attachment Card -->
+                <div class="card border-0 shadow-sm bg-white" id="viewStwExtraCard">
+                    <div class="card-body p-3">
+                        <div id="viewStwNotesRow" class="mb-2">
+                            <div class="text-muted small fw-semibold">Remarks / Notes</div>
+                            <div class="text-dark bg-light p-2.5 rounded border small" id="viewStwNotes">—</div>
+                        </div>
+                        <div id="viewStwBillRow">
+                            <div class="text-muted small fw-semibold">Bill / Delivery Proof Attachment</div>
+                            <div class="mt-1" id="viewStwBillAttachment">
+                                <a href="#" target="_blank" class="btn btn-sm btn-outline-primary" id="viewStwBillLink">
+                                    <i class="bi bi-file-earmark-arrow-down me-1"></i>View Uploaded Document
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-white border-top py-2.5 d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-dark" id="btnSwitchToPrintReceipt" onclick="openPrintFromDetails()">
+                        <i class="bi bi-printer me-1"></i> Print Receipt Voucher
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- 4. PRINTABLE STITCHING RECEIPT VOUCHER MODAL                              -->
 <!-- ========================================================================= -->
 <div class="modal fade" id="stitchingWastageReceiptModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -1047,6 +1198,106 @@ function openEditStitchingWastageModal(data) {
 
     const modal = new bootstrap.Modal(document.getElementById('editStitchingWastageModal'));
     modal.show();
+}
+
+let currentViewSaleId = null;
+
+function openStitchingWastageDetails(id) {
+    currentViewSaleId = id;
+    fetch('<?= url('production/stitching-wastage/receipt') ?>/' + id)
+        .then(res => res.json())
+        .then(res => {
+            if (res.success && res.sale) {
+                const s = res.sale;
+                document.getElementById('viewStwSaleNo').textContent = s.sale_number || ('#' + s.id);
+
+                // Status badge styling
+                const statusBadge = document.getElementById('viewStwStatusBadge');
+                statusBadge.textContent = s.payment_status || 'PENDING';
+                if (s.payment_status === 'PAID') {
+                    statusBadge.className = 'badge bg-success';
+                } else if (s.payment_status === 'PARTIAL') {
+                    statusBadge.className = 'badge bg-warning text-dark';
+                } else if (s.payment_status === 'CANCELLED') {
+                    statusBadge.className = 'badge bg-danger';
+                } else {
+                    statusBadge.className = 'badge bg-secondary';
+                }
+
+                // Summary metric cards
+                const unit = s.unit_type || 'KG';
+                document.getElementById('viewStwQty').textContent = parseFloat(s.quantity || 0).toFixed(2) + ' ' + unit;
+                document.getElementById('viewStwType').textContent = (s.waste_type || 'SCRAP').replace(/_/g, ' ');
+                document.getElementById('viewStwRate').textContent = '₹' + parseFloat(s.rate_per_unit || 0).toFixed(2) + ' / ' + unit;
+                document.getElementById('viewStwTotal').textContent = '₹' + parseFloat(s.total_amount || 0).toFixed(2);
+
+                const total = parseFloat(s.total_amount || 0);
+                const paid = parseFloat(s.paid_amount || 0);
+                const due = Math.max(0, total - paid);
+                document.getElementById('viewStwDue').textContent = '₹' + due.toFixed(2);
+                document.getElementById('viewStwPaidSub').textContent = 'Paid: ₹' + paid.toFixed(2);
+
+                // Origin & Context
+                document.getElementById('viewStwBatch').textContent = s.stitching_batch_number ? (s.stitching_batch_number + (s.stitching_batch_name ? ' (' + s.stitching_batch_name + ')' : '')) : 'Direct / Unlinked';
+                document.getElementById('viewStwProgram').textContent = s.program_number ? (s.program_number + (s.program_name ? ' (' + s.program_name + ')' : '')) : '—';
+                document.getElementById('viewStwDate').textContent = s.sale_date || s.created_at || '—';
+                document.getElementById('viewStwCreator').textContent = s.created_by_name || 'System Staff';
+
+                // Buyer & Settlement
+                document.getElementById('viewStwBuyer').textContent = s.buyer_name || '—';
+
+                if (s.buyer_company) {
+                    document.getElementById('viewStwCompanyRow').classList.remove('d-none');
+                    document.getElementById('viewStwCompany').textContent = s.buyer_company;
+                } else {
+                    document.getElementById('viewStwCompanyRow').classList.add('d-none');
+                }
+
+                if (s.buyer_phone) {
+                    document.getElementById('viewStwPhoneRow').classList.remove('d-none');
+                    document.getElementById('viewStwPhone').textContent = s.buyer_phone;
+                } else {
+                    document.getElementById('viewStwPhoneRow').classList.add('d-none');
+                }
+
+                document.getElementById('viewStwMethod').textContent = (s.payment_method || 'CASH').replace(/_/g, ' ');
+                document.getElementById('viewStwRef').textContent = s.payment_reference || s.invoice_number || '—';
+
+                // Notes
+                if (s.notes && s.notes.trim()) {
+                    document.getElementById('viewStwNotesRow').classList.remove('d-none');
+                    document.getElementById('viewStwNotes').textContent = s.notes;
+                } else {
+                    document.getElementById('viewStwNotesRow').classList.add('d-none');
+                }
+
+                // Bill proof attachment
+                if (s.photo_url) {
+                    document.getElementById('viewStwBillRow').classList.remove('d-none');
+                    document.getElementById('viewStwBillLink').href = '<?= url('') ?>/' + s.photo_url;
+                } else {
+                    document.getElementById('viewStwBillRow').classList.add('d-none');
+                }
+
+                const modal = new bootstrap.Modal(document.getElementById('stitchingWastageDetailsModal'));
+                modal.show();
+            }
+        })
+        .catch(err => {
+            console.error('Error fetching stitching details:', err);
+            alert('Failed to load sale details.');
+        });
+}
+
+function openPrintFromDetails() {
+    const detailsModalEl = document.getElementById('stitchingWastageDetailsModal');
+    if (detailsModalEl) {
+        const modalInstance = bootstrap.Modal.getInstance(detailsModalEl);
+        if (modalInstance) modalInstance.hide();
+    }
+    if (currentViewSaleId) {
+        openStitchingWastageReceipt(currentViewSaleId);
+    }
 }
 
 function openStitchingWastageReceipt(id) {
