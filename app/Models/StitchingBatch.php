@@ -16,7 +16,10 @@ class StitchingBatch {
                     pp.program_number, pp.target_date, pp.name as program_name,
                     p.name as product_name, p.code as product_code,
                     cat.name as category_name, subcat.name as subcategory_name, subsubcat.name as sub_subcategory_name,
-                    u.full_name as worker_name
+                    u.full_name as worker_name,
+                    GREATEST(COALESCE(sb.rejected_qty, 0), COALESCE(qc.qc_rejected_qty, 0)) as rejected_qty,
+                    GREATEST(COALESCE(sb.rework_qty, 0), COALESCE(qc.qc_rework_qty, 0)) as rework_qty,
+                    qc.qc_status as qc_status
              FROM stitching_batches sb
              LEFT JOIN cutting_batches cb ON sb.cutting_batch_id = cb.id
              LEFT JOIN production_programs pp ON sb.program_id = pp.id
@@ -25,6 +28,16 @@ class StitchingBatch {
              LEFT JOIN subcategories subcat ON sb.subcategory_id = subcat.id
              LEFT JOIN sub_subcategories subsubcat ON sb.sub_subcategory_id = subsubcat.id
              LEFT JOIN users u ON sb.worker_id = u.id
+             LEFT JOIN (
+                 SELECT COALESCE(qb.stitching_batch_id, lb.stitching_batch_id) as actual_stitching_id,
+                        SUM(qb.rejected_qty) as qc_rejected_qty,
+                        SUM(qb.rework_qty) as qc_rework_qty,
+                        MAX(qb.status) as qc_status
+                 FROM qc_batches qb
+                 LEFT JOIN label_batches lb ON qb.label_batch_id = lb.id
+                 WHERE COALESCE(qb.stitching_batch_id, lb.stitching_batch_id) IS NOT NULL
+                 GROUP BY COALESCE(qb.stitching_batch_id, lb.stitching_batch_id)
+             ) qc ON qc.actual_stitching_id = sb.id
              WHERE sb.id = ?",
             [$id]
         );
@@ -39,7 +52,10 @@ class StitchingBatch {
                        pp.program_number, pp.name as program_name,
                        p.name as product_name, p.code as product_code,
                        cat.name as category_name, subcat.name as subcategory_name, subsubcat.name as sub_subcategory_name,
-                       u.full_name as worker_name
+                       u.full_name as worker_name,
+                       GREATEST(COALESCE(sb.rejected_qty, 0), COALESCE(qc.qc_rejected_qty, 0)) as rejected_qty,
+                       GREATEST(COALESCE(sb.rework_qty, 0), COALESCE(qc.qc_rework_qty, 0)) as rework_qty,
+                       qc.qc_status as qc_status
                 FROM stitching_batches sb
                 LEFT JOIN cutting_batches cb ON sb.cutting_batch_id = cb.id
                 LEFT JOIN production_programs pp ON sb.program_id = pp.id
@@ -48,6 +64,16 @@ class StitchingBatch {
                 LEFT JOIN subcategories subcat ON (sb.subcategory_id = subcat.id OR pp.subcategory_id = subcat.id)
                 LEFT JOIN sub_subcategories subsubcat ON (sb.sub_subcategory_id = subsubcat.id OR pp.sub_subcategory_id = subsubcat.id)
                 LEFT JOIN users u ON sb.worker_id = u.id
+                LEFT JOIN (
+                    SELECT COALESCE(qb.stitching_batch_id, lb.stitching_batch_id) as actual_stitching_id,
+                           SUM(qb.rejected_qty) as qc_rejected_qty,
+                           SUM(qb.rework_qty) as qc_rework_qty,
+                           MAX(qb.status) as qc_status
+                    FROM qc_batches qb
+                    LEFT JOIN label_batches lb ON qb.label_batch_id = lb.id
+                    WHERE COALESCE(qb.stitching_batch_id, lb.stitching_batch_id) IS NOT NULL
+                    GROUP BY COALESCE(qb.stitching_batch_id, lb.stitching_batch_id)
+                ) qc ON qc.actual_stitching_id = sb.id
                 WHERE 1=1";
         $params = [];
 
@@ -230,7 +256,9 @@ class StitchingBatch {
                     c.hex_code as color_hex,
                     COALESCE(cat.name, '') as category_name,
                     COALESCE(sc.name, '') as subcategory_name,
-                    COALESCE(ssc.name, '') as sub_subcategory_name
+                    COALESCE(ssc.name, '') as sub_subcategory_name,
+                    GREATEST(COALESCE(si.rejected_qty, 0), COALESCE(qci.qc_rejected_qty, 0)) as rejected_qty,
+                    GREATEST(COALESCE(si.rework_qty, 0), COALESCE(qci.qc_rework_qty, 0)) as rework_qty
              FROM stitching_items si
              LEFT JOIN product_variants pv ON si.variant_id = pv.id
              LEFT JOIN products p ON pv.product_id = p.id
@@ -239,9 +267,27 @@ class StitchingBatch {
              LEFT JOIN sub_subcategories ssc ON (si.sub_subcategory_id = ssc.id OR (si.sub_subcategory_id IS NULL AND p.sub_subcategory_id = ssc.id))
              LEFT JOIN sizes s ON pv.size_id = s.id
              LEFT JOIN colors c ON pv.color_id = c.id
+             LEFT JOIN (
+                 SELECT qi.variant_id, 
+                        LOWER(TRIM(COALESCE(qi.size_name, ''))) as match_size,
+                        LOWER(TRIM(COALESCE(qi.color_name, ''))) as match_color,
+                        COALESCE(qb.stitching_batch_id, lb.stitching_batch_id) as match_stitching_id,
+                        SUM(qi.rejected_qty) as qc_rejected_qty,
+                        SUM(qi.rework_qty) as qc_rework_qty
+                 FROM qc_items qi
+                 JOIN qc_batches qb ON qi.qc_batch_id = qb.id
+                 LEFT JOIN label_batches lb ON qb.label_batch_id = lb.id
+                 WHERE COALESCE(qb.stitching_batch_id, lb.stitching_batch_id) = ?
+                 GROUP BY qi.variant_id, LOWER(TRIM(COALESCE(qi.size_name, ''))), LOWER(TRIM(COALESCE(qi.color_name, ''))), COALESCE(qb.stitching_batch_id, lb.stitching_batch_id)
+             ) qci ON (
+                 qci.match_stitching_id = si.stitching_batch_id AND (
+                     (si.variant_id IS NOT NULL AND si.variant_id > 0 AND qci.variant_id = si.variant_id)
+                     OR (LOWER(TRIM(COALESCE(si.size_name, ''))) = qci.match_size AND LOWER(TRIM(COALESCE(si.color_name, ''))) = qci.match_color)
+                 )
+             )
              WHERE si.stitching_batch_id = ?
              ORDER BY si.id ASC",
-            [$batchId]
+            [$batchId, $batchId]
         );
     }
 

@@ -9280,6 +9280,7 @@ class ProductionController {
             }
 
             $result = QCBatch::recalculateTotals($batchId);
+            $this->syncQCToStitching($batchId);
 
             Session::flash('success', 'QC inspection results saved successfully. Status: ' . $result['status']);
             Response::redirect(url('production/qc'));
@@ -9343,6 +9344,7 @@ class ProductionController {
             }
 
             $result = QCBatch::recalculateTotals($batchId);
+            $this->syncQCToStitching($batchId);
 
             Response::json([
                 'success' => true,
@@ -9351,6 +9353,74 @@ class ProductionController {
             ]);
         } catch (Exception $e) {
             Response::json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Synchronize QC inspection defect counts (rejected_qty, rework_qty)
+     * back to stitching_batches and stitching_items.
+     */
+    private function syncQCToStitching(int $qcBatchId): void {
+        $qcBatch = Database::fetchOne(
+            "SELECT qb.*, COALESCE(qb.stitching_batch_id, lb.stitching_batch_id) as actual_stitching_id 
+             FROM qc_batches qb
+             LEFT JOIN label_batches lb ON qb.label_batch_id = lb.id
+             WHERE qb.id = ?",
+            [$qcBatchId]
+        );
+        if (!$qcBatch || empty($qcBatch['actual_stitching_id'])) {
+            return;
+        }
+        $stitchingBatchId = (int)$qcBatch['actual_stitching_id'];
+
+        // Sum total rejected and rework for this stitching batch
+        $totals = Database::fetchOne(
+            "SELECT COALESCE(SUM(qb.rejected_qty), 0) as total_rejected,
+                    COALESCE(SUM(qb.rework_qty), 0) as total_rework
+             FROM qc_batches qb
+             LEFT JOIN label_batches lb ON qb.label_batch_id = lb.id
+             WHERE COALESCE(qb.stitching_batch_id, lb.stitching_batch_id) = ?",
+            [$stitchingBatchId]
+        );
+
+        if ($totals) {
+            Database::execute(
+                "UPDATE stitching_batches 
+                 SET rejected_qty = ?, rework_qty = ?
+                 WHERE id = ?",
+                [(int)$totals['total_rejected'], (int)$totals['total_rework'], $stitchingBatchId]
+            );
+        }
+
+        // Sync item-level rejected and rework
+        $qcItems = Database::fetchAll(
+            "SELECT qi.variant_id, qi.size_name, qi.color_name,
+                    SUM(qi.rejected_qty) as item_rejected,
+                    SUM(qi.rework_qty) as item_rework
+             FROM qc_items qi
+             JOIN qc_batches qb ON qi.qc_batch_id = qb.id
+             LEFT JOIN label_batches lb ON qb.label_batch_id = lb.id
+             WHERE COALESCE(qb.stitching_batch_id, lb.stitching_batch_id) = ?
+             GROUP BY qi.variant_id, qi.size_name, qi.color_name",
+            [$stitchingBatchId]
+        );
+
+        foreach ($qcItems as $qci) {
+            if (!empty($qci['variant_id'])) {
+                Database::execute(
+                    "UPDATE stitching_items 
+                     SET rejected_qty = ?, rework_qty = ?
+                     WHERE stitching_batch_id = ? AND variant_id = ?",
+                    [(int)$qci['item_rejected'], (int)$qci['item_rework'], $stitchingBatchId, (int)$qci['variant_id']]
+                );
+            } else {
+                Database::execute(
+                    "UPDATE stitching_items 
+                     SET rejected_qty = ?, rework_qty = ?
+                     WHERE stitching_batch_id = ? AND LOWER(TRIM(COALESCE(size_name, ''))) = LOWER(TRIM(?)) AND LOWER(TRIM(COALESCE(color_name, ''))) = LOWER(TRIM(?))",
+                    [(int)$qci['item_rejected'], (int)$qci['item_rework'], $stitchingBatchId, (string)$qci['size_name'], (string)$qci['color_name']]
+                );
+            }
         }
     }
 
@@ -12017,6 +12087,12 @@ class ProductionController {
         }
 
         $items = CuttingBatch::getItems((int)$id);
+        $cuttingWastageVal = (!empty($batch['wastage_weight']) && (float)$batch['wastage_weight'] > 0)
+            ? (number_format((float)$batch['wastage_weight'], 2) . ' kg')
+            : ((!empty($batch['wastage_qty']) && (float)$batch['wastage_qty'] > 0)
+                ? (number_format((float)$batch['wastage_qty'], 2) . ' pcs')
+                : '0.00');
+
         $this->renderProductionRecord(
             'Cutting Batch ' . ($batch['batch_number'] ?? ('#' . $batch['id'])),
             'cutting',
@@ -12032,7 +12108,7 @@ class ProductionController {
                 'Status'          => $batch['status'] ?? '—',
                 'Planned Quantity'=> number_format((int)($batch['planned_qty'] ?? 0)),
                 'Cut Quantity'    => number_format((int)($batch['cut_qty'] ?? 0)),
-                'Cutting Wastage' => number_format((float)($batch['wastage_qty'] ?? 0), 2),
+                'Cutting Wastage' => $cuttingWastageVal,
                 'Created At'      => $batch['created_at'] ?? '—',
             ],
             $items,
@@ -12049,13 +12125,40 @@ class ProductionController {
     }
 
     public function viewStitchingBatch(string $id): void {
-        $batch = StitchingBatch::find((int)$id);
+        $stitchingId = (int)$id;
+
+        // Auto-sync QC inspection defect counts to this stitching batch if QC was saved/updated
+        $linkedQc = Database::fetchOne(
+            "SELECT qb.id 
+             FROM qc_batches qb 
+             LEFT JOIN label_batches lb ON qb.label_batch_id = lb.id 
+             WHERE COALESCE(qb.stitching_batch_id, lb.stitching_batch_id) = ? 
+             ORDER BY qb.id DESC LIMIT 1",
+            [$stitchingId]
+        );
+        if ($linkedQc) {
+            $this->syncQCToStitching((int)$linkedQc['id']);
+        }
+
+        $batch = StitchingBatch::find($stitchingId);
         if (!$batch) {
             Response::error(404, 'Stitching batch not found.');
             return;
         }
 
-        $items = StitchingBatch::getItems((int)$id);
+        $items = StitchingBatch::getItems($stitchingId);
+
+        // Fetch any logged stitching wastage
+        $stitchingWastage = Database::fetchOne(
+            "SELECT COALESCE(SUM(quantity), 0) as total_wastage_qty, MAX(unit_type) as unit_type 
+             FROM stitching_wastage_sales 
+             WHERE stitching_batch_id = ?",
+            [$stitchingId]
+        );
+        $stitchingWastageText = ($stitchingWastage && (float)$stitchingWastage['total_wastage_qty'] > 0)
+            ? (number_format((float)$stitchingWastage['total_wastage_qty'], 2) . ' ' . ($stitchingWastage['unit_type'] ?: 'kg'))
+            : '0.00 kg';
+
         $this->renderProductionRecord(
             'Stitching Batch ' . ($batch['batch_number'] ?? ('#' . $batch['id'])),
             'stitching',
@@ -12073,6 +12176,7 @@ class ProductionController {
                 'Stitched Quantity'=> number_format((int)($batch['stitched_qty'] ?? 0)),
                 'Rejected Quantity'=> number_format((int)($batch['rejected_qty'] ?? 0)),
                 'Rework Quantity'  => number_format((int)($batch['rework_qty'] ?? 0)),
+                'Stitching Wastage'=> $stitchingWastageText,
                 'Total Weight'     => number_format((float)($batch['total_weight'] ?? 0), 2) . ' kg',
                 'Created At'       => $batch['created_at'] ?? '—',
             ],

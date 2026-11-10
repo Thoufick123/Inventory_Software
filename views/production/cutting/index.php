@@ -236,11 +236,8 @@
                                 <td>
                                     <div class="fw-bold text-success fs-6"><?= number_format((int)$b['cut_qty']) ?> <small class="text-muted">pcs</small></div>
                                     <div class="small text-muted">
-                                        <?php if ((int)$b['rejected_qty'] > 0): ?>
-                                             <span class="text-danger"><i class="bi bi-x-circle me-1"></i><?= number_format((int)$b['rejected_qty']) ?> rej</span>
-                                        <?php endif; ?>
-                                        <?php if ((int)$b['wastage_qty'] > 0): ?>
-                                            <span class="text-warning ms-1"><i class="bi bi-trash3 me-1"></i><?= number_format((int)$b['wastage_qty']) ?> scrap</span>
+                                        <?php if ((int)($b['wastage_qty'] ?? 0) > 0): ?>
+                                            <span class="text-warning"><i class="bi bi-trash3 me-1"></i><?= number_format((int)$b['wastage_qty']) ?> cutting wastage</span>
                                         <?php endif; ?>
                                     </div>
                                 </td>
