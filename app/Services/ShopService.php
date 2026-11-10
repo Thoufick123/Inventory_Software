@@ -3979,16 +3979,22 @@ class ShopService {
                 // Series and complementary products represent multiple pieces and may use a quantity.
                 $variantType = Database::fetchOne(
                     "SELECT COALESCE(wc.category_type, 'NORMAL') as category_type,
-                            COALESCE(pv.is_complementary, 0) as is_complementary,
+                            COALESCE(pv.is_complementary, p.is_complementary, 0) as is_complementary,
                             pv.qr_type, pv.pack_quantity, pv.sku, pv.qr_code, p.code as product_code
                      FROM product_variants pv
                      JOIN products p ON pv.product_id = p.id
-                     LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
-                     WHERE pv.id = ? LIMIT 1",
+                    LEFT JOIN warehouse_sub_subcategories wssc ON p.warehouse_sub_subcategory_id = wssc.id
+                    LEFT JOIN warehouse_subcategories wssc_parent ON wssc.subcategory_id = wssc_parent.id
+                    LEFT JOIN warehouse_subcategories wsc ON COALESCE(p.warehouse_subcategory_id, wssc.subcategory_id) = wsc.id
+                    LEFT JOIN warehouse_categories wc ON COALESCE(p.warehouse_category_id, wsc.category_id, wssc_parent.category_id) = wc.id
+                    WHERE pv.id = ? LIMIT 1",
                     [$variantId]
                 );
                 $variantCategory = strtoupper(trim((string)($variantType['category_type'] ?? 'NORMAL')));
-                $allowsMultiple = $variantCategory === 'SERIES'
+                if (!$variantType) {
+                    throw new InvalidArgumentException("Product variant #{$variantId} was not found.");
+                }
+                $allowsMultiple = in_array($variantCategory, ['SERIES', 'COMPLEMENTARY'], true)
                     || !empty($variantType['is_complementary'])
                     || strtoupper((string)($variantType['qr_type'] ?? '')) === 'SERIES_BATCH'
                     || (int)($variantType['pack_quantity'] ?? 1) > 1;
@@ -4013,7 +4019,7 @@ class ShopService {
                     static fn($tag): string => strtoupper(trim((string)$tag, " \t\n\r\0\x0B\"'")),
                     $pieceTags
                 ), static fn(string $tag): bool => $tag !== '')));
-                if (count($pieceTags) > $qty) {
+                if (count($pieceTags) > $qty || array_filter($pieceTags, static fn(string $tag): bool => strlen($tag) > 255)) {
                     throw new InvalidArgumentException("Scanned piece QR tags do not match the selected return quantity.");
                 }
 
@@ -4021,11 +4027,16 @@ class ShopService {
                 $eligibleStatuses = $stockState === 'DAMAGED' ? ['DAMAGED'] : ['IN STOCK', 'AVAILABLE'];
                 $eligibleTags = [];
                 foreach (($inventoryItem['individual_pieces'] ?? []) as $piece) {
-                    if (in_array(strtoupper((string)($piece['status'] ?? '')), $eligibleStatuses, true)) {
-                        $tag = strtoupper(trim((string)($piece['tag_code'] ?? '')));
-                        if ($tag !== '') {
-                            $eligibleTags[$tag] = true;
-                        }
+                    $pieceStatus = strtoupper((string)($piece['status'] ?? ''));
+                    $isAvailableAggregatePoolTag = $allowsMultiple
+                        && $stockState === 'AVAILABLE'
+                        && in_array($pieceStatus, ['IN STOCK', 'AVAILABLE', 'DAMAGED'], true);
+                    if (!in_array($pieceStatus, $eligibleStatuses, true) && !$isAvailableAggregatePoolTag) {
+                        continue;
+                    }
+                    $tag = strtoupper(trim((string)($piece['tag_code'] ?? '')));
+                    if ($tag !== '') {
+                        $eligibleTags[$tag] = true;
                     }
                 }
                 $aggregateTags = array_fill_keys(array_map('strtoupper', array_filter([

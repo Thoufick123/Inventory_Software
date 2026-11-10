@@ -13,6 +13,8 @@ require_once BASE_PATH . '/app/Models/Warehouse.php';
 require_once BASE_PATH . '/app/Models/Shop.php';
 require_once BASE_PATH . '/app/Models/ShopDamage.php';
 require_once BASE_PATH . '/app/Models/ShopStockAdjustment.php';
+require_once BASE_PATH . '/app/Services/ShopReportDownloadService.php';
+require_once BASE_PATH . '/app/Services/WhatsappReportExportService.php';
 
 class ShopController {
 
@@ -123,6 +125,62 @@ class ShopController {
         }
 
         \App\Services\ShopReportService::streamCsv($periodLabel, $startDate, $endDate, $data, $shop);
+    }
+
+    public function downloadShopReport(string $module): void {
+        $permissions = [
+            'dashboard' => 'shop',
+            'inventory' => 'shop_stock',
+            'adjustments' => 'shop_stock',
+            'inward' => 'shop_inward',
+            'sales' => 'sales',
+            'returns' => 'shop_returns',
+            'exchanges' => 'shop_returns',
+            'returned-products' => 'shop_returns',
+            'return-to-warehouse' => 'return_to_warehouse',
+            'customers' => 'customers',
+            'damage' => 'shop_damage',
+            'cash' => 'shop_cash',
+        ];
+        if (!isset($permissions[$module])) {
+            Response::error(404, 'The requested Shop report was not found.');
+            return;
+        }
+        if (!hasPermission($permissions[$module], 'view')) {
+            Response::error(403, 'You do not have permission to export this Shop report.');
+            return;
+        }
+
+        $format = strtolower(trim((string)($_GET['format'] ?? 'csv')));
+        $scope = strtolower(trim((string)($_GET['scope'] ?? 'filtered')));
+        if (!in_array($format, ['csv', 'pdf'], true) || !in_array($scope, ['filtered', 'all'], true)) {
+            Response::error(400, 'Select a valid Shop report format and scope.');
+            return;
+        }
+
+        $requestedShopId = isset($_GET['shop_id']) ? (int)$_GET['shop_id'] : null;
+        if ($requestedShopId !== null && $requestedShopId <= 0) {
+            $requestedShopId = null;
+        }
+        $shop = $this->resolveInventoryShop($requestedShopId);
+        if (!$shop) {
+            Response::error(403, 'You do not have access to the selected shop report.');
+            return;
+        }
+
+        $filters = $scope === 'filtered' ? $_GET : [];
+        if ($scope === 'all') {
+            $filters['all_records'] = true;
+        }
+        $rows = ShopReportDownloadService::buildRows($module, (int)$shop['id'], $filters);
+        $title = 'Shop ' . ucwords(str_replace('-', ' ', $module)) . ' Report';
+        $title .= $scope === 'all' ? ' — All Records' : ' — Current Filters';
+        $filename = 'shop_' . $module . '_' . ($scope === 'all' ? 'all_records' : 'filtered') . '_' . date('Ymd_His');
+
+        if ($format === 'pdf') {
+            WhatsappReportExportService::downloadPdf($title, $rows, $filename, 'Shop Report', true);
+        }
+        WhatsappReportExportService::downloadCsv($title, $rows, $filename, true);
     }
 
     /**
@@ -3368,7 +3426,7 @@ class ShopController {
                     p.category_code, p.subcategory_code, p.sub_subcategory_code, p.material, p.hsn_code, p.description,
                     c.id as category_id, c.name as category_name,
                     COALESCE(wc.category_type, 'NORMAL') as category_type,
-                    COALESCE(pv.is_complementary, 0) as is_complementary,
+                    COALESCE(pv.is_complementary, p.is_complementary, 0) as is_complementary,
                     pv.qr_type, pv.pack_quantity,
                     sc.id as subcategory_id, sc.name as subcategory_name,
                     ssc.id as sub_subcategory_id, ssc.name as sub_subcategory_name,
@@ -3378,7 +3436,10 @@ class ShopController {
              JOIN product_variants pv ON sb.variant_id = pv.id
              JOIN products p ON pv.product_id = p.id
              LEFT JOIN categories c ON p.category_id = c.id
-             LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+             LEFT JOIN warehouse_sub_subcategories wssc ON p.warehouse_sub_subcategory_id = wssc.id
+             LEFT JOIN warehouse_subcategories wssc_parent ON wssc.subcategory_id = wssc_parent.id
+             LEFT JOIN warehouse_subcategories wsc ON COALESCE(p.warehouse_subcategory_id, wssc.subcategory_id) = wsc.id
+             LEFT JOIN warehouse_categories wc ON COALESCE(p.warehouse_category_id, wsc.category_id, wssc_parent.category_id) = wc.id
              LEFT JOIN subcategories sc ON p.subcategory_id = sc.id
              LEFT JOIN sub_subcategories ssc ON p.sub_subcategory_id = ssc.id
              LEFT JOIN sizes sz ON pv.size_id = sz.id
