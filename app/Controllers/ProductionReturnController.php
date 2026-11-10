@@ -99,44 +99,115 @@ class ProductionReturnController
             return;
         }
 
+        $billId = (int)$bill['id'];
+
         $billItems = Database::fetchAll(
             "SELECT * FROM production_bill_items WHERE bill_id = ? ORDER BY id",
-            [(int)$bill['id']]
+            [$billId]
         );
 
-        $tags = Database::fetchAll(
-            "SELECT * FROM production_bill_item_tags WHERE bill_id = ? ORDER BY id",
-            [(int)$bill['id']]
+        // Fetch piece tags belonging to this bill from production_bill_item_tags
+        // UNION with any tags that were previously returned for this bill in production_return_items
+        $tagRows = Database::fetchAll(
+            "SELECT bill_item_id, tag_code, 0 as is_returned
+             FROM production_bill_item_tags
+             WHERE bill_id = ?
+             UNION
+             SELECT pri.bill_item_id, pri.tag_code, 1 as is_returned
+             FROM production_return_items pri
+             JOIN production_returns pr ON pr.id = pri.return_id
+             WHERE pr.bill_id = ? AND pri.tag_code IS NOT NULL AND pri.tag_code <> ''",
+            [$billId, $billId]
         );
 
-        // Already returned tags
+        // Already returned tags for this bill
         $returnedTagRows = Database::fetchAll(
             "SELECT pri.tag_code 
              FROM production_return_items pri 
              JOIN production_returns pr ON pr.id = pri.return_id 
-             WHERE pr.bill_id = ?",
-            [(int)$bill['id']]
+             WHERE pr.bill_id = ? AND pr.status <> 'CANCELLED'",
+            [$billId]
         );
         $alreadyReturnedTags = array_fill_keys(array_map('strtoupper', array_column($returnedTagRows, 'tag_code')), true);
 
+        // Already returned quantity per bill_item_id
+        $returnedQtyRows = Database::fetchAll(
+            "SELECT pri.bill_item_id, SUM(pri.quantity) as total_returned_qty
+             FROM production_return_items pri
+             JOIN production_returns pr ON pr.id = pri.return_id
+             WHERE pr.bill_id = ? AND pr.status <> 'CANCELLED'
+             GROUP BY pri.bill_item_id",
+            [$billId]
+        );
+        $returnedQtyByItem = [];
+        foreach ($returnedQtyRows as $rqr) {
+            $returnedQtyByItem[(int)$rqr['bill_item_id']] = (int)$rqr['total_returned_qty'];
+        }
+
+        // Group tags by item ID, avoiding duplicates
+        $seenTags = [];
         $tagsByItem = [];
-        foreach ($tags as $t) {
+        foreach ($tagRows as $t) {
             $tagCode = strtoupper(trim((string)$t['tag_code']));
+            if (empty($tagCode) || isset($seenTags[$tagCode])) {
+                continue;
+            }
+            $seenTags[$tagCode] = true;
+            $isReturned = isset($alreadyReturnedTags[$tagCode]) || !empty($t['is_returned']);
             $tagsByItem[(int)$t['bill_item_id']][] = [
-                'tag_code'   => $t['tag_code'],
-                'is_returned' => isset($alreadyReturnedTags[$tagCode]),
+                'tag_code'    => $t['tag_code'],
+                'is_returned' => $isReturned,
             ];
         }
 
+        $totalBillPieces = 0;
+        $totalReturnedPieces = 0;
+        $hasReturnablePieces = false;
+
         foreach ($billItems as &$bi) {
-            $bi['tags'] = $tagsByItem[(int)$bi['id']] ?? [];
+            $itemId = (int)$bi['id'];
+            $biTags = $tagsByItem[$itemId] ?? [];
+            $bi['tags'] = $biTags;
+            $qty = (int)$bi['quantity'];
+            $totalBillPieces += $qty;
+
+            $alreadyReturnedCount = $returnedQtyByItem[$itemId] ?? 0;
+            $bi['returned_qty'] = $alreadyReturnedCount;
+            $bi['remaining_qty'] = max(0, $qty - $alreadyReturnedCount);
+            $totalReturnedPieces += min($qty, $alreadyReturnedCount);
+
+            if (!empty($biTags)) {
+                foreach ($biTags as $t) {
+                    if (empty($t['is_returned'])) {
+                        $hasReturnablePieces = true;
+                        break;
+                    }
+                }
+            } else {
+                if ($bi['remaining_qty'] > 0) {
+                    $hasReturnablePieces = true;
+                }
+            }
         }
         unset($bi);
 
+        // Fetch previous credit notes for this bill
+        $prevReturns = Database::fetchAll(
+            "SELECT id, return_number, return_type, total_returned_qty, net_amount, status, created_at
+             FROM production_returns
+             WHERE bill_id = ? AND status <> 'CANCELLED'
+             ORDER BY id DESC",
+            [$billId]
+        );
+
         Response::json([
-            'success' => true,
-            'bill'    => $bill,
-            'items'   => $billItems,
+            'success'            => true,
+            'bill'               => $bill,
+            'items'              => $billItems,
+            'is_fully_returned'  => !$hasReturnablePieces,
+            'total_bill_pieces'  => $totalBillPieces,
+            'total_returned'     => $totalReturnedPieces,
+            'previous_returns'   => $prevReturns,
         ]);
     }
 
@@ -155,11 +226,40 @@ class ProductionReturnController
         $refundMode = strtoupper(trim((string)($_POST['refund_mode'] ?? 'STORE_CREDIT')));
         $notes = trim((string)($_POST['notes'] ?? ''));
 
-        $selectedItems = $_POST['items'] ?? [];
-        if (empty($selectedItems) || !is_array($selectedItems)) {
-            Session::setFlash('error', 'Select at least one piece to return.');
+        // Selected tags and selected non-tagged items
+        $selectedTags = $_POST['selected_tags'] ?? [];
+        $selectedItemIds = $_POST['selected_items'] ?? [];
+        $tagsData = $_POST['tags'] ?? [];
+        $itemsData = $_POST['items'] ?? [];
+
+        if (empty($selectedTags) && empty($selectedItemIds)) {
+            Session::setFlash('error', 'Please select at least one garment piece to return.');
             Response::redirect(url('production/returns/create'));
             return;
+        }
+
+        // Fetch existing returned tags for this bill to prevent duplicates
+        $returnedTagRows = Database::fetchAll(
+            "SELECT pri.tag_code 
+             FROM production_return_items pri 
+             JOIN production_returns pr ON pr.id = pri.return_id 
+             WHERE pr.bill_id = ? AND pr.status <> 'CANCELLED'",
+            [$billId]
+        );
+        $alreadyReturnedTags = array_fill_keys(array_map('strtoupper', array_column($returnedTagRows, 'tag_code')), true);
+
+        // Fetch returned quantities for non-tagged items
+        $returnedQtyRows = Database::fetchAll(
+            "SELECT pri.bill_item_id, SUM(pri.quantity) as total_returned_qty
+             FROM production_return_items pri 
+             JOIN production_returns pr ON pr.id = pri.return_id 
+             WHERE pr.bill_id = ? AND pr.status <> 'CANCELLED'
+             GROUP BY pri.bill_item_id",
+            [$billId]
+        );
+        $returnedQtyByItem = [];
+        foreach ($returnedQtyRows as $rqr) {
+            $returnedQtyByItem[(int)$rqr['bill_item_id']] = (int)$rqr['total_returned_qty'];
         }
 
         Database::beginTransaction();
@@ -171,59 +271,121 @@ class ProductionReturnController
             $itemsToInsert = [];
             $tagsToRestock = [];
 
-            foreach ($selectedItems as $billItemId => $itemData) {
-                if (empty($itemData['selected'])) {
-                    continue;
-                }
+            // 1. Process strictly selected piece tags
+            if (!empty($selectedTags) && is_array($selectedTags)) {
+                foreach ($selectedTags as $tagCodeRaw) {
+                    $tagCode = trim((string)$tagCodeRaw);
+                    if ($tagCode === '') {
+                        continue;
+                    }
 
-                $bi = Database::fetchOne("SELECT * FROM production_bill_items WHERE id = ? AND bill_id = ?", [(int)$billItemId, $billId]);
-                if (!$bi) {
-                    continue;
-                }
+                    $upperTag = strtoupper($tagCode);
+                    if (isset($alreadyReturnedTags[$upperTag])) {
+                        Database::rollBack();
+                        Session::setFlash('error', "Piece tag '{$tagCode}' has already been returned for this bill.");
+                        Response::redirect(url('production/returns/create'));
+                        return;
+                    }
 
-                $tags = !empty($itemData['tags']) && is_array($itemData['tags']) ? array_filter($itemData['tags']) : [];
-                $qty = count($tags) > 0 ? count($tags) : max(1, (int)($itemData['qty'] ?? 1));
-                $reason = trim((string)($itemData['reason'] ?? 'Customer Return'));
-                $condition = strtoupper(trim((string)($itemData['condition'] ?? 'GOOD')));
-                $itemAction = ($condition === 'GOOD' && $disposition === 'RESTOCK_INVENTORY') ? 'RESTOCKED' : (($condition === 'DAMAGED') ? 'SCRAPPED' : 'SENT_TO_REWORK');
+                    $tagInfo = $tagsData[$tagCode] ?? [];
+                    $billItemId = (int)($tagInfo['bill_item_id'] ?? 0);
 
-                $unitPrice = (float)$bi['unit_price'];
-                $gstPct = (float)$bi['gst_percentage'];
-                $itemTaxable = round($unitPrice * $qty, 2);
-                $itemTax = round($itemTaxable * ($gstPct / 100), 2);
-                $itemTotal = round($itemTaxable + $itemTax, 2);
-
-                $totalQty += $qty;
-                $subtotal += $itemTaxable;
-                $gstReversal += $itemTax;
-                $netAmount += $itemTotal;
-
-                if (!empty($tags)) {
-                    foreach ($tags as $tagCode) {
-                        $itemsToInsert[] = [
-                            'bill_item_id'   => (int)$bi['id'],
-                            'qc_item_id'     => (int)$bi['qc_item_id'],
-                            'variant_id'     => (int)($bi['variant_id'] ?? 0) ?: null,
-                            'product_name'   => $bi['product_name'],
-                            'sku'            => $bi['sku'],
-                            'hsn_code'       => $bi['hsn_code'] ?? '6109',
-                            'tag_code'       => $tagCode,
-                            'quantity'       => 1,
-                            'unit_price'     => $unitPrice,
-                            'gst_percentage' => $gstPct,
-                            'taxable_amount' => $unitPrice,
-                            'tax_amount'     => round($unitPrice * ($gstPct / 100), 2),
-                            'total_amount'   => round($unitPrice * (1 + $gstPct / 100), 2),
-                            'reason'         => $reason,
-                            'item_condition' => $condition,
-                            'action_taken'   => $itemAction,
-                        ];
-
-                        if ($itemAction === 'RESTOCKED') {
-                            $tagsToRestock[] = $tagCode;
+                    // If bill_item_id wasn't in post, lookup from production_bill_item_tags
+                    if ($billItemId <= 0) {
+                        $pbitRow = Database::fetchOne("SELECT bill_item_id FROM production_bill_item_tags WHERE bill_id = ? AND tag_code = ?", [$billId, $tagCode]);
+                        if ($pbitRow) {
+                            $billItemId = (int)$pbitRow['bill_item_id'];
                         }
                     }
-                } else {
+
+                    $bi = Database::fetchOne("SELECT * FROM production_bill_items WHERE id = ? AND bill_id = ?", [$billItemId, $billId]);
+                    if (!$bi) {
+                        Database::rollBack();
+                        Session::setFlash('error', "Item for tag '{$tagCode}' not found on this bill.");
+                        Response::redirect(url('production/returns/create'));
+                        return;
+                    }
+
+                    $reason = trim((string)($tagInfo['reason'] ?? 'Customer Return'));
+                    $condition = strtoupper(trim((string)($tagInfo['condition'] ?? 'GOOD')));
+                    $itemAction = ($condition === 'GOOD' && $disposition === 'RESTOCK_INVENTORY') ? 'RESTOCKED' : (($condition === 'DAMAGED') ? 'SCRAPPED' : 'SENT_TO_REWORK');
+
+                    $unitPrice = (float)$bi['unit_price'];
+                    $gstPct = (float)$bi['gst_percentage'];
+                    $itemTaxable = round($unitPrice, 2);
+                    $itemTax = round($itemTaxable * ($gstPct / 100), 2);
+                    $itemTotal = round($itemTaxable + $itemTax, 2);
+
+                    $totalQty += 1;
+                    $subtotal += $itemTaxable;
+                    $gstReversal += $itemTax;
+                    $netAmount += $itemTotal;
+
+                    $itemsToInsert[] = [
+                        'bill_item_id'   => (int)$bi['id'],
+                        'qc_item_id'     => (int)$bi['qc_item_id'],
+                        'variant_id'     => (int)($bi['variant_id'] ?? 0) ?: null,
+                        'product_name'   => $bi['product_name'],
+                        'sku'            => $bi['sku'],
+                        'hsn_code'       => $bi['hsn_code'] ?? '6109',
+                        'tag_code'       => $tagCode,
+                        'quantity'       => 1,
+                        'unit_price'     => $unitPrice,
+                        'gst_percentage' => $gstPct,
+                        'taxable_amount' => $itemTaxable,
+                        'tax_amount'     => $itemTax,
+                        'total_amount'   => $itemTotal,
+                        'reason'         => $reason,
+                        'item_condition' => $condition,
+                        'action_taken'   => $itemAction,
+                    ];
+
+                    if ($itemAction === 'RESTOCKED') {
+                        $tagsToRestock[] = $tagCode;
+                    }
+                }
+            }
+
+            // 2. Process non-tagged items
+            if (!empty($selectedItemIds) && is_array($selectedItemIds)) {
+                foreach ($selectedItemIds as $billItemIdRaw) {
+                    $billItemId = (int)$billItemIdRaw;
+                    if ($billItemId <= 0) {
+                        continue;
+                    }
+
+                    $bi = Database::fetchOne("SELECT * FROM production_bill_items WHERE id = ? AND bill_id = ?", [$billItemId, $billId]);
+                    if (!$bi) {
+                        continue;
+                    }
+
+                    $itemInfo = $itemsData[$billItemId] ?? [];
+                    $alreadyReturned = $returnedQtyByItem[$billItemId] ?? 0;
+                    $remainingQty = max(0, (int)$bi['quantity'] - $alreadyReturned);
+
+                    $requestedQty = max(1, (int)($itemInfo['qty'] ?? 1));
+                    if ($requestedQty > $remainingQty) {
+                        Database::rollBack();
+                        Session::setFlash('error', "Return quantity ({$requestedQty}) exceeds remaining returnable quantity ({$remainingQty}) for item '{$bi['product_name']}'.");
+                        Response::redirect(url('production/returns/create'));
+                        return;
+                    }
+
+                    $reason = trim((string)($itemInfo['reason'] ?? 'Customer Return'));
+                    $condition = strtoupper(trim((string)($itemInfo['condition'] ?? 'GOOD')));
+                    $itemAction = ($condition === 'GOOD' && $disposition === 'RESTOCK_INVENTORY') ? 'RESTOCKED' : (($condition === 'DAMAGED') ? 'SCRAPPED' : 'SENT_TO_REWORK');
+
+                    $unitPrice = (float)$bi['unit_price'];
+                    $gstPct = (float)$bi['gst_percentage'];
+                    $itemTaxable = round($unitPrice * $requestedQty, 2);
+                    $itemTax = round($itemTaxable * ($gstPct / 100), 2);
+                    $itemTotal = round($itemTaxable + $itemTax, 2);
+
+                    $totalQty += $requestedQty;
+                    $subtotal += $itemTaxable;
+                    $gstReversal += $itemTax;
+                    $netAmount += $itemTotal;
+
                     $itemsToInsert[] = [
                         'bill_item_id'   => (int)$bi['id'],
                         'qc_item_id'     => (int)$bi['qc_item_id'],
@@ -232,7 +394,7 @@ class ProductionReturnController
                         'sku'            => $bi['sku'],
                         'hsn_code'       => $bi['hsn_code'] ?? '6109',
                         'tag_code'       => null,
-                        'quantity'       => $qty,
+                        'quantity'       => $requestedQty,
                         'unit_price'     => $unitPrice,
                         'gst_percentage' => $gstPct,
                         'taxable_amount' => $itemTaxable,

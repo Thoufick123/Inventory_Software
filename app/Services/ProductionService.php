@@ -1219,9 +1219,14 @@ class ProductionService {
         $pendingCutting = Database::fetchOne(
             "SELECT
                 COUNT(*) as count,
-                SUM(CASE WHEN cb.status = 'COMPLETED' THEN 1 ELSE 0 END) as finished_count,
+                SUM(CASE 
+                    WHEN cb.status IN ('COMPLETED', 'FINISHED', 'DONE') THEN 1
+                    WHEN cb.cut_qty > 0 AND (cb.planned_qty <= 0 OR cb.cut_qty >= cb.planned_qty) THEN 1
+                    WHEN EXISTS (SELECT 1 FROM stitching_batches sb WHERE sb.cutting_batch_id = cb.id) THEN 1
+                    ELSE 0 
+                END) as finished_count,
                 COALESCE(SUM(cb.planned_qty), 0) as total_planned,
-                COALESCE(SUM(CASE WHEN cb.status = 'COMPLETED' THEN COALESCE(cb.cut_qty, cb.planned_qty, 0) ELSE COALESCE(cb.cut_qty, 0) END), 0) as total_completed
+                COALESCE(SUM(CASE WHEN cb.cut_qty > 0 THEN cb.cut_qty ELSE COALESCE(cb.planned_qty, 0) END), 0) as total_completed
              FROM cutting_batches cb
              LEFT JOIN production_programs pp ON cb.program_id = pp.id
              WHERE 1=1$unitClausePP"
@@ -1231,7 +1236,12 @@ class ProductionService {
         $pendingStitching = Database::fetchOne(
             "SELECT
                 COUNT(*) as count,
-                SUM(CASE WHEN sb.status = 'COMPLETED' THEN 1 ELSE 0 END) as finished_count,
+                SUM(CASE 
+                    WHEN sb.status IN ('COMPLETED', 'FINISHED', 'DONE') THEN 1
+                    WHEN COALESCE(sb.total_stitched_qty, sb.stitched_qty, 0) > 0 AND (COALESCE(sb.total_cut_qty, sb.received_qty, 0) <= 0 OR COALESCE(sb.total_stitched_qty, sb.stitched_qty, 0) >= COALESCE(sb.total_cut_qty, sb.received_qty, 0)) THEN 1
+                    WHEN EXISTS (SELECT 1 FROM qc_batches qb WHERE qb.stitching_batch_id = sb.id) THEN 1
+                    ELSE 0 
+                END) as finished_count,
                 COALESCE(SUM(COALESCE(sb.total_cut_qty, sb.received_qty, 0)), 0) as total_planned,
                 COALESCE(SUM(COALESCE(sb.total_stitched_qty, sb.stitched_qty, 0)), 0) as total_completed
              FROM stitching_batches sb
@@ -1239,13 +1249,23 @@ class ProductionService {
              WHERE 1=1$unitClausePP"
         );
 
-        // 4. QC Batches: Total & Finished (Passed)
+        // 4. QC Batches: Total & Finished (Passed / Audited)
         $pendingQC = Database::fetchOne(
             "SELECT
                 COUNT(*) as count,
-                SUM(CASE WHEN qb.status IN ('COMPLETED', 'PASSED') THEN 1 ELSE 0 END) as finished_count,
+                SUM(CASE 
+                    WHEN qb.status IN ('COMPLETED', 'PASSED') THEN 1
+                    WHEN (COALESCE(qb.passed_qty, 0) + COALESCE(qb.rejected_qty, 0) + COALESCE(qb.rework_qty, 0)) > 0 AND (COALESCE(qb.total_qty, 0) <= 0 OR (COALESCE(qb.passed_qty, 0) + COALESCE(qb.rejected_qty, 0) + COALESCE(qb.rework_qty, 0)) >= qb.total_qty) THEN 1
+                    WHEN qb.status IN ('REWORK', 'PARTIAL') AND (COALESCE(qb.passed_qty, 0) + COALESCE(qb.rejected_qty, 0) + COALESCE(qb.rework_qty, 0)) > 0 THEN 1
+                    WHEN EXISTS (SELECT 1 FROM production_batches pb WHERE pb.qc_batch_id = qb.id) THEN 1
+                    ELSE 0 
+                END) as finished_count,
                 COALESCE(SUM(qb.total_qty), 0) as total_planned,
-                COALESCE(SUM(qb.passed_qty), 0) as total_completed
+                COALESCE(SUM(CASE 
+                    WHEN (COALESCE(qb.passed_qty, 0) + COALESCE(qb.rejected_qty, 0) + COALESCE(qb.rework_qty, 0)) > 0 
+                    THEN (COALESCE(qb.passed_qty, 0) + COALESCE(qb.rejected_qty, 0) + COALESCE(qb.rework_qty, 0)) 
+                    ELSE COALESCE(qb.passed_qty, 0) 
+                END), 0) as total_completed
              FROM qc_batches qb
              LEFT JOIN production_programs pp ON qb.program_id = pp.id
              WHERE 1=1$unitClausePP"
@@ -1255,21 +1275,21 @@ class ProductionService {
         $readyDispatch = Database::fetchOne(
             "SELECT
                 COUNT(*) as count,
-                SUM(CASE WHEN pb.status IN ('DISPATCHED', 'RECEIVED') THEN 1 ELSE 0 END) as finished_count,
+                SUM(CASE WHEN pb.status IN ('DISPATCHED', 'RECEIVED', 'COMPLETED', 'APPROVED') OR pb.box_count > 0 THEN 1 ELSE 0 END) as finished_count,
                 COALESCE(SUM(pb.total_qty), 0) as total_planned,
-                COALESCE(SUM(CASE WHEN pb.status IN ('DISPATCHED', 'RECEIVED') THEN pb.total_qty ELSE 0 END), 0) as total_completed
+                COALESCE(SUM(pb.total_qty), 0) as total_completed
              FROM production_batches pb
              LEFT JOIN production_programs pp ON pb.program_id = pp.id
              WHERE 1=1$unitClausePP"
         );
 
-        // 6. Outward Dispatches: Total & Finished (Delivered to WH)
+        // 6. Outward Dispatches: Total & Finished (Dispatched or Delivered to WH)
         $monthOutward = Database::fetchOne(
             "SELECT
                 COUNT(po.id) as count,
-                SUM(CASE WHEN po.status IN ('RECEIVED', 'DELIVERED') THEN 1 ELSE 0 END) as finished_count,
+                SUM(CASE WHEN po.status IN ('DISPATCHED', 'RECEIVED', 'DELIVERED', 'COMPLETED') THEN 1 ELSE 0 END) as finished_count,
                 COALESCE(SUM(COALESCE(po.total_quantity, po.quantity, pb.total_qty, 0)), 0) as total_planned,
-                COALESCE(SUM(CASE WHEN po.status IN ('RECEIVED', 'DELIVERED') THEN COALESCE(po.total_quantity, po.quantity, pb.total_qty, 0) ELSE 0 END), 0) as total_completed
+                COALESCE(SUM(CASE WHEN po.status IN ('DISPATCHED', 'RECEIVED', 'DELIVERED', 'COMPLETED') THEN COALESCE(po.total_quantity, po.quantity, pb.total_qty, 0) ELSE 0 END), 0) as total_completed
              FROM production_outwards po
              JOIN production_batches pb ON po.production_batch_id = pb.id
              LEFT JOIN production_programs pp ON pb.program_id = pp.id
