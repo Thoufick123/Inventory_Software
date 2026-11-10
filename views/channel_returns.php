@@ -465,22 +465,24 @@ $canProcessReturns = !$isWebsiteReturns || hasPermission('website_returns', 'cre
                                     <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill font-monospace px-2.5 py-1" style="font-size:11px;">
                                         <i class="bi bi-box-arrow-in-left me-1"></i>STEP 2A: RETURNING (OLD) ITEMS
                                     </span>
-                                    <span class="badge text-bg-light border fw-semibold" id="waItemCountBadge" style="font-size:11px;">0 Line Item(s) Selected</span>
+                                    <span class="badge text-bg-light border fw-semibold" id="waItemCountBadge" style="font-size:11px;">0 Line Item(s)</span>
                                 </div>
-                                <div class="d-flex align-items-center gap-2">
-                                    <div class="input-group input-group-sm" style="max-width: 320px;">
-                                        <span class="input-group-text bg-light text-danger border-end-0"><i class="bi bi-upc-scan"></i></span>
-                                        <input type="text" id="scanReturnItemInput" class="form-control form-control-sm font-monospace border-start-0" placeholder="Scan Old Piece Tag/SKU..." onkeydown="if(event.key === 'Enter') { event.preventDefault(); scanReturningPiece(this.value); }">
-                                        <button class="btn btn-sm btn-danger fw-bold px-2.5" type="button" onclick="scanReturningPiece(document.getElementById('scanReturnItemInput').value)">Scan</button>
+                                <?php if (!$isWebsiteReturns): ?>
+                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                    <div class="input-group input-group-sm" style="max-width: 360px;">
+                                        <span class="input-group-text bg-light text-danger"><i class="bi bi-upc-scan"></i></span>
+                                        <input type="text" id="waReturnScanInput" class="form-control font-monospace" placeholder="Scan billed piece tag or SKU..." autocomplete="off">
+                                        <button class="btn btn-danger fw-bold" type="button" id="waReturnScanButton">Scan Return</button>
                                     </div>
+                                    <span id="waReturnScanMessage" class="small text-muted" role="status">Scan a product from the current billed invoice.</span>
                                 </div>
+                                <?php endif; ?>
                             </div>
                             <div class="table-responsive">
                                 <table class="table table-hover align-middle mb-0" id="returnItemsTable" style="font-size:13px;">
                                     <thead style="background:#f8f9fa; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:#6c757d; font-weight:700;">
                                         <tr>
-                                            <th class="ps-3 text-center" style="width:50px;">SELECT</th>
-                                            <th style="min-width:250px;">OLD PRODUCT ITEM &amp; SCANNED PIECES</th>
+                                            <th style="min-width:250px;">OLD PRODUCT ITEM &amp; PIECE TAGS</th>
                                             <th class="text-center" style="width:60px;">SOLD</th>
                                             <th class="text-center" style="width:90px;">RETURN QTY</th>
                                             <th style="width:140px;">CONDITION</th>
@@ -708,6 +710,17 @@ let differentExchangeItems = [];
 let loadedOrderItemsMap = {};
 let currentSwapValues = {};
 let currentSwapTags = {};
+const getReturnItemIds = () => Object.keys(loadedOrderItemsMap).filter(itemId =>
+    (parseInt(document.getElementById('qty_' + itemId)?.value || 0, 10) || 0) > 0
+);
+const updateReturnItemCount = () => {
+    const itemIds = getReturnItemIds();
+    const units = itemIds.reduce((total, itemId) =>
+        total + (parseInt(document.getElementById('qty_' + itemId)?.value || 0, 10) || 0), 0
+    );
+    const badge = document.getElementById('waItemCountBadge');
+    if (badge) badge.textContent = `${itemIds.length} Line Item(s) · ${units} pcs`;
+};
 
 window.enableAddCatalogBtn = function() {
     const sel = document.getElementById('catalogVariantSelect');
@@ -852,14 +865,13 @@ window.renderSameExchangeTable = function() {
     if (!tbody) return;
     tbody.innerHTML = '';
 
-    const checkboxes = document.querySelectorAll('.item-select-cb:checked');
-    if (checkboxes.length === 0) {
-        tbody.innerHTML = '<tr><td class="text-center py-3 text-muted small"><i class="bi bi-qr-code-scan fs-4 d-block mb-1 text-secondary opacity-50"></i>Select a returning item above to scan its replacement product.</td></tr>';
+    const itemIds = getReturnItemIds();
+    if (itemIds.length === 0) {
+        tbody.innerHTML = '<tr><td class="text-center py-3 text-muted small"><i class="bi bi-qr-code-scan fs-4 d-block mb-1 text-secondary opacity-50"></i><?= $isWebsiteReturns ? 'Returning items will appear here after order lookup.' : 'Scan a billed item above to add it to the return.' ?></td></tr>';
         return;
     }
 
-    checkboxes.forEach(cb => {
-        const itemId = cb.getAttribute('data-item-id');
+    itemIds.forEach(itemId => {
         const item = loadedOrderItemsMap[itemId];
         if (!item) return;
 
@@ -925,11 +937,10 @@ window.recalculateSettlementSummary = function() {
     let returnPaid = 0.0;
     let chooseAmount = 0.0;
 
-    const checkboxes = document.querySelectorAll('.item-select-cb:checked');
-    checkboxes.forEach(cb => {
-        const itemId = cb.getAttribute('data-item-id');
+    const itemIds = getReturnItemIds();
+    itemIds.forEach(itemId => {
         const qty = parseInt(document.getElementById('qty_' + itemId)?.value || 1) || 1;
-        const unitPrice = parseFloat(cb.getAttribute('data-unit-price') || document.getElementById('price_' + itemId)?.value || 0) || 0;
+        const unitPrice = parseFloat(document.getElementById('price_' + itemId)?.value || 0) || 0;
         const lineCredit = unitPrice * qty;
         returnPaid += lineCredit;
 
@@ -944,10 +955,9 @@ window.recalculateSettlementSummary = function() {
     if (mode === 'RETURN') {
         chooseAmount = 0.0;
     } else if (mode === 'EXCHANGE_SAME') {
-        checkboxes.forEach(cb => {
-            const itemId = cb.getAttribute('data-item-id');
+        itemIds.forEach(itemId => {
             const qty = parseInt(document.getElementById('qty_' + itemId)?.value || 1) || 1;
-            const unitPrice = parseFloat(cb.getAttribute('data-unit-price') || document.getElementById('price_' + itemId)?.value || 0) || 0;
+            const unitPrice = parseFloat(document.getElementById('price_' + itemId)?.value || 0) || 0;
             const swapSelect = document.getElementById('swap_' + itemId);
             if (swapSelect && swapSelect.value) {
                 const swapPrice = parseFloat(swapSelect.dataset.price || unitPrice);
@@ -1012,6 +1022,95 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Scanned piece tags per item: { itemId -> Set of tags }
     const rowPieceTagsMap = {};
+    const scannedReturnTagsMap = {};
+    const scannedReturnTags = new Set();
+    const returnScanInput = document.getElementById('waReturnScanInput');
+    const returnScanButton = document.getElementById('waReturnScanButton');
+    const returnScanMessage = document.getElementById('waReturnScanMessage');
+
+    function setReturnScanMessage(text, isError = false) {
+        if (!returnScanMessage) return;
+        returnScanMessage.textContent = text;
+        returnScanMessage.className = isError ? 'small text-danger fw-semibold' : 'small text-success fw-semibold';
+    }
+
+    function scanBilledReturnItem() {
+        if (!returnScanInput) return;
+        const code = returnScanInput.value.trim();
+        if (!code) return;
+
+        const normalizedCode = code.toUpperCase();
+        let tagMatch = null;
+        const skuMatches = [];
+        for (const [itemId, item] of Object.entries(loadedOrderItemsMap)) {
+            const billedTags = rowPieceTagsMap[itemId] || new Set();
+            const matchedTag = [...billedTags].find(tag => tag.toUpperCase() === normalizedCode);
+            if (matchedTag) {
+                tagMatch = {itemId, item, tag: matchedTag};
+                break;
+            }
+            if ([item.sku, item.qr_code].some(value => String(value || '').trim().toUpperCase() === normalizedCode)) {
+                skuMatches.push({itemId, item});
+            }
+        }
+
+        const availableSkuMatches = skuMatches.filter(({itemId, item}) => {
+            const currentQty = parseInt(document.getElementById('qty_' + itemId)?.value || 0, 10) || 0;
+            const maxQty = parseInt(item.returnable_quantity ?? item.quantity ?? 0, 10) || 0;
+            return currentQty < maxQty;
+        });
+        const match = tagMatch || availableSkuMatches[0] || null;
+        if (!match) {
+            setReturnScanMessage('Rejected: this product is not on the current invoice.', true);
+            returnScanInput.select();
+            return;
+        }
+        if (tagMatch && scannedReturnTags.has(tagMatch.tag.toUpperCase())) {
+            setReturnScanMessage(`Rejected: piece ${tagMatch.tag} was already scanned for return.`, true);
+            returnScanInput.select();
+            return;
+        }
+
+        const itemId = match.itemId;
+        const quantityInput = document.getElementById('qty_' + itemId);
+        const currentQty = parseInt(quantityInput?.value || 0, 10) || 0;
+        const maxQty = parseInt(match.item.returnable_quantity ?? match.item.quantity ?? 0, 10) || 0;
+        if (!quantityInput || currentQty >= maxQty) {
+            setReturnScanMessage(`Rejected: all returnable units for ${match.item.sku || 'this item'} are already selected.`, true);
+            returnScanInput.select();
+            return;
+        }
+
+        quantityInput.value = currentQty + 1;
+        if (tagMatch) {
+            scannedReturnTags.add(tagMatch.tag.toUpperCase());
+            if (!scannedReturnTagsMap[itemId]) scannedReturnTagsMap[itemId] = new Set();
+            scannedReturnTagsMap[itemId].add(tagMatch.tag);
+            renderWaTagBadges(itemId);
+        }
+        returnScanInput.value = '';
+        const row = document.getElementById('returnRow_' + itemId);
+        if (row) {
+            row.classList.add('table-success');
+            setTimeout(() => row.classList.remove('table-success'), 1200);
+        }
+        setReturnScanMessage(`Accepted: ${match.item.sku || match.item.product_name} added to return (${quantityInput.value}/${maxQty}).`);
+        updateRowLineCredit(itemId);
+        renderSameExchangeTable();
+        recalculateSettlementSummary();
+        updateReturnItemCount();
+        returnScanInput.focus();
+    }
+
+    if (returnScanButton && returnScanInput) {
+        returnScanButton.addEventListener('click', scanBilledReturnItem);
+        returnScanInput.addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                scanBilledReturnItem();
+            }
+        });
+    }
 
     btnSearch.addEventListener('click', performLookup);
     searchInput.addEventListener('keypress', function(e) {
@@ -1088,6 +1187,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 loadedOrderItemsMap = {};
                 currentSwapValues = {};
                 currentSwapTags = {};
+                Object.keys(rowPieceTagsMap).forEach(itemId => delete rowPieceTagsMap[itemId]);
+                Object.keys(scannedReturnTagsMap).forEach(itemId => delete scannedReturnTagsMap[itemId]);
+                scannedReturnTags.clear();
+                if (returnScanMessage) {
+                    returnScanMessage.textContent = 'Scan a product from the current billed invoice.';
+                    returnScanMessage.className = 'small text-muted';
+                }
 
                 let validItemCount = 0;
                 items.forEach(item => {
@@ -1096,6 +1202,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     validItemCount++;
                     loadedOrderItemsMap[item.id] = item;
                     rowPieceTagsMap[item.id] = new Set();
+                    scannedReturnTagsMap[item.id] = new Set();
 
                     // Pre-populate any billed piece tags attached to this sale item
                     if (item.scanned_qr_codes) {
@@ -1114,22 +1221,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     const row = document.createElement('tr');
                     row.id = `returnRow_${item.id}`;
                     row.innerHTML = `
-                        <td class="text-center ps-3">
-                            <input type="checkbox" class="form-check-input item-select-cb" data-item-id="${item.id}" data-unit-price="${item.unit_price}" checked onchange="toggleItemInputs(this, ${item.id})">
+                        <td>
                             <input type="hidden" name="items[${item.id}][variant_id]" id="var_${item.id}" value="${item.variant_id}">
                             <input type="hidden" name="items[${item.id}][unit_price]" id="price_${item.id}" value="${item.unit_price}">
-                        </td>
-                        <td>
                             <div class="fw-bold text-dark" style="font-size:13px; line-height:1.3;">${item.product_name}</div>
                             <div class="small text-muted mb-1" style="font-size:11px;">
                                 SKU: <strong class="text-dark font-monospace">${item.sku || '-'}</strong> | Size: <span class="badge bg-light text-dark border" style="font-size:10px;">${item.size_name || '-'}</span> | Color: <span class="badge bg-light text-dark border" style="font-size:10px;">${item.color_name || '-'}</span>
-                            </div>
-                            <div class="d-flex align-items-center gap-1 mt-1">
-                                <div class="input-group input-group-sm" style="max-width:170px;">
-                                    <span class="input-group-text bg-light text-muted py-0 px-1" style="font-size:10px;"><i class="bi bi-qr-code"></i></span>
-                                    <input type="text" id="waTagInput_${item.id}" class="form-control form-control-sm font-monospace py-0 px-1" placeholder="Scan piece tag..." style="font-size:11px; height:24px;" onkeydown="if(event.key==='Enter'){event.preventDefault(); addWaPieceTag(${item.id}, this.value); this.value='';}">
-                                    <button type="button" id="waTagBtn_${item.id}" class="btn btn-sm btn-outline-danger py-0 px-2" style="height:24px; font-size:11px;" onclick="const inp=document.getElementById('waTagInput_${item.id}'); addWaPieceTag(${item.id}, inp.value); inp.value='';">+</button>
-                                </div>
                             </div>
                             <div class="scanned-tags-display d-flex flex-wrap gap-1 mt-1" id="waTagsDisplay_${item.id}"></div>
                         </td>
@@ -1137,7 +1234,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             ${item.quantity}
                         </td>
                         <td class="text-center">
-                            <input type="number" name="items[${item.id}][qty]" id="qty_${item.id}" class="form-control form-control-sm text-center font-monospace fw-bold" min="1" max="${retQty}" value="1" oninput="updateRowLineCredit(${item.id}); renderSameExchangeTable(); recalculateSettlementSummary();" onchange="updateRowLineCredit(${item.id}); renderSameExchangeTable(); recalculateSettlementSummary();" style="max-width:75px; margin:0 auto;">
+                            <input type="number" name="items[${item.id}][qty]" id="qty_${item.id}" class="form-control form-control-sm text-center font-monospace fw-bold" min="<?= $isWebsiteReturns ? '1' : '0' ?>" max="${retQty}" value="<?= $isWebsiteReturns ? '1' : '0' ?>" oninput="updateRowLineCredit(${item.id}); renderSameExchangeTable(); recalculateSettlementSummary(); updateReturnItemCount();" onchange="updateRowLineCredit(${item.id}); renderSameExchangeTable(); recalculateSettlementSummary(); updateReturnItemCount();" style="max-width:75px; margin:0 auto;">
                         </td>
                         <td>
                             <select name="items[${item.id}][condition]" id="cond_${item.id}" class="form-select form-select-sm" style="min-width:130px;">
@@ -1157,12 +1254,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
 
                 if (tbody.children.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">All items in this order have already been returned.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">All items in this order have already been returned.</td></tr>';
                 }
 
                 const badge = document.getElementById('waItemCountBadge');
                 if (badge) {
-                    badge.textContent = `${validItemCount} Line Item(s) Selected`;
+                    badge.textContent = `0 of ${validItemCount} Line Item(s) · 0 pcs`;
                 }
 
                 resultsContainer.style.display = 'block';
@@ -1185,94 +1282,6 @@ document.addEventListener('DOMContentLoaded', function() {
         if (creditCell) creditCell.textContent = '₹' + lineTotal.toFixed(2);
     };
 
-    window.scanReturningPiece = function(rawTag) {
-        const tag = (rawTag || '').trim();
-        if (!tag) return;
-
-        let matchedItemId = null;
-        const checkboxes = document.querySelectorAll('.item-select-cb');
-        
-        checkboxes.forEach(cb => {
-            const itemId = cb.getAttribute('data-item-id');
-            const row = document.getElementById('returnRow_' + itemId);
-            const rowText = row ? row.textContent : '';
-            const tags = rowPieceTagsMap[itemId] || new Set();
-            
-            if (rowText.toLowerCase().includes(tag.toLowerCase()) || [...tags].some(t => t.toLowerCase() === tag.toLowerCase())) {
-                matchedItemId = itemId;
-            }
-        });
-
-        if (matchedItemId) {
-            const cb = document.querySelector(`.item-select-cb[data-item-id="${matchedItemId}"]`);
-            if (cb && !cb.checked) {
-                cb.checked = true;
-                toggleItemInputs(cb, matchedItemId);
-            }
-            addWaPieceTag(matchedItemId, tag);
-            const scanInput = document.getElementById('scanReturnItemInput');
-            if (scanInput) scanInput.value = '';
-            
-            const row = document.getElementById('returnRow_' + matchedItemId);
-            if (row) {
-                row.classList.add('table-danger');
-                setTimeout(() => row.classList.remove('table-danger'), 1500);
-            }
-            recalculateSettlementSummary();
-        } else {
-            // Live piece lookup if not matched in plain text
-            fetch('<?= url($returnApiPath) ?>?q=' + encodeURIComponent(tag))
-                .then(r => r.json())
-                .then(res => {
-                    const variant = (res && (res.variant || res.data || res.product));
-                    if (res && res.success && variant) {
-                        const vId = String(variant.variant_id || variant.id);
-                        for (let k in loadedOrderItemsMap) {
-                            if (String(loadedOrderItemsMap[k].variant_id) === vId) {
-                                matchedItemId = k;
-                                break;
-                            }
-                        }
-                    }
-                    if (matchedItemId) {
-                        const cb = document.querySelector(`.item-select-cb[data-item-id="${matchedItemId}"]`);
-                        if (cb && !cb.checked) {
-                            cb.checked = true;
-                            toggleItemInputs(cb, matchedItemId);
-                        }
-                        addWaPieceTag(matchedItemId, tag);
-                        const scanInput = document.getElementById('scanReturnItemInput');
-                        if (scanInput) scanInput.value = '';
-                        const row = document.getElementById('returnRow_' + matchedItemId);
-                        if (row) {
-                            row.classList.add('table-danger');
-                            setTimeout(() => row.classList.remove('table-danger'), 1500);
-                        }
-                        recalculateSettlementSummary();
-                    } else if (checkboxes.length === 1) {
-                        matchedItemId = checkboxes[0].getAttribute('data-item-id');
-                        addWaPieceTag(matchedItemId, tag);
-                        const scanInput = document.getElementById('scanReturnItemInput');
-                        if (scanInput) scanInput.value = '';
-                        recalculateSettlementSummary();
-                    } else {
-                        alert(`No line item found matching scanned piece "${tag}".`);
-                    }
-                })
-                .catch(() => {
-                    if (checkboxes.length === 1) {
-                        matchedItemId = checkboxes[0].getAttribute('data-item-id');
-                        addWaPieceTag(matchedItemId, tag);
-                        const scanInput = document.getElementById('scanReturnItemInput');
-                        if (scanInput) scanInput.value = '';
-                        recalculateSettlementSummary();
-                    } else {
-                        alert(`No line item found matching scanned piece "${tag}".`);
-                    }
-                });
-        }
-    };
-
     window.scanSameProductSwap = function(itemId, rawCode, inputEl) {
         const code = (rawCode || '').trim();
         if (!code) return;
@@ -1280,13 +1289,21 @@ document.addEventListener('DOMContentLoaded', function() {
         const swapSelect = document.getElementById('swap_' + itemId);
         if (!swapSelect) return;
 
-        fetch('<?= url($returnApiPath) ?>?q=' + encodeURIComponent(rawCode) + '<?= $isWebsiteReturns ? '&available_only=1' : '' ?>')
+        fetch('<?= url($returnApiPath) ?>?q=' + encodeURIComponent(rawCode) + '<?= $isWebsiteReturns ? '&available_only=1' : '&whatsapp_replacement=1' ?>')
             .then(r => r.json())
             .then(res => {
                 const variant = res && (res.variant || res.data || res.product);
                 if (!res.success || !variant) { alert(res.message || `Product matching "${rawCode}" not found.`); return; }
                 const quantity = parseInt(document.getElementById('qty_' + itemId)?.value || 1, 10) || 1;
                 const available = Number(variant.stock || 0);
+                if (!<?= $isWebsiteReturns ? 'true' : 'false' ?> && !variant.aggregate_stock && variant.piece_available !== true) {
+                    alert(res.message || 'Normal WhatsApp replacements must be scanned by an exact piece tag that is currently available in WhatsApp stock.');
+                    return;
+                }
+                if (!<?= $isWebsiteReturns ? 'true' : 'false' ?> && !variant.aggregate_stock && quantity !== 1) {
+                    alert('Normal WhatsApp products must be exchanged one scanned piece at a time.');
+                    return;
+                }
                 if (available < quantity) {
                     alert(`This replacement has only ${available} available in <?= e($returnChannelLabel) ?> stock; ${quantity} requested.`);
                     return;
@@ -1296,6 +1313,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     return;
                 }
 
+                const replacementTag = String(res.tag_code || rawCode).trim();
+                if (!variant.aggregate_stock && Object.entries(currentSwapTags).some(([otherItemId, tag]) =>
+                    String(otherItemId) !== String(itemId) && String(tag).toUpperCase() === replacementTag.toUpperCase()
+                )) {
+                    alert(`Piece ${replacementTag} is already assigned to another replacement item.`);
+                    return;
+                }
                 swapSelect.value = String(variant.variant_id || variant.id);
                 swapSelect.dataset.price = variant.selling_price || variant.price || swapSelect.dataset.price;
                 const detail = document.getElementById('swapProductDetails_' + itemId);
@@ -1307,7 +1331,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     detail.style.display = 'block';
                 }
                 if (inputEl) inputEl.value = '';
-                addSwapReplacementPieceTag(itemId, res.tag_code || rawCode);
+                addSwapReplacementPieceTag(itemId, replacementTag);
                 updateSameSwapRow(itemId);
                 recalculateSettlementSummary();
             })
@@ -1329,72 +1353,35 @@ document.addEventListener('DOMContentLoaded', function() {
         if (display) display.innerHTML = '';
     };
 
-    window.addWaPieceTag = function(itemId, raw) {
-        const tag = (raw || '').trim();
-        if (!tag) return;
-        if (!rowPieceTagsMap[itemId]) rowPieceTagsMap[itemId] = new Set();
-        rowPieceTagsMap[itemId].add(tag);
-        renderWaTagBadges(itemId);
-    };
-
-    window.removeWaPieceTag = function(itemId, tag) {
-        if (rowPieceTagsMap[itemId]) rowPieceTagsMap[itemId].delete(tag);
-        renderWaTagBadges(itemId);
-    };
-
     function renderWaTagBadges(itemId) {
         const display = document.getElementById('waTagsDisplay_' + itemId);
         if (!display) return;
         const tags = rowPieceTagsMap[itemId] ? [...rowPieceTagsMap[itemId]] : [];
         if (tags.length === 0) { display.innerHTML = ''; return; }
-        display.innerHTML = tags.map(t =>
-            `<span class="badge" style="background:#1e293b; color:#fbbf24; font-family:monospace; font-size:10px; cursor:pointer;" title="Click to remove"
-                   onclick="removeWaPieceTag(${itemId}, '${t.replace(/'/g, "\\'")}')"
-             ><i class="bi bi-qr-code me-1"></i>${t} <i class="bi bi-x ms-1"></i></span>`
-        ).join('');
+        display.replaceChildren(...tags.map(tag => {
+            const badge = document.createElement('span');
+            badge.className = 'badge';
+            const isSelectedForReturn = scannedReturnTagsMap[itemId]?.has(tag) ?? false;
+            badge.style.cssText = isSelectedForReturn
+                ? 'background:#198754; color:#fff; font-family:monospace; font-size:10px;'
+                : 'background:#1e293b; color:#fbbf24; font-family:monospace; font-size:10px;';
+            badge.textContent = `${isSelectedForReturn ? '✓' : '▦'} ${tag}`;
+            badge.title = isSelectedForReturn ? 'Scanned for return' : 'Billed piece tag';
+            return badge;
+        }));
     }
-
-    window.toggleItemInputs = function(cb, itemId) {
-        const isChecked = cb.checked;
-        const qtyEl = document.getElementById('qty_' + itemId);
-        const condEl = document.getElementById('cond_' + itemId);
-        const varEl = document.getElementById('var_' + itemId);
-        const priceEl = document.getElementById('price_' + itemId);
-
-        if (qtyEl) qtyEl.disabled = !isChecked;
-        if (condEl) condEl.disabled = !isChecked;
-        if (varEl) varEl.disabled = !isChecked;
-        if (priceEl) priceEl.disabled = !isChecked;
-
-        const tagInput = document.getElementById('waTagInput_' + itemId);
-        const tagBtn = document.getElementById('waTagBtn_' + itemId);
-        if (tagInput) tagInput.disabled = !isChecked;
-        if (tagBtn) tagBtn.disabled = !isChecked;
-
-        const checkedCount = document.querySelectorAll('.item-select-cb:checked').length;
-        const totalCount = document.querySelectorAll('.item-select-cb').length;
-        const badge = document.getElementById('waItemCountBadge');
-        if (badge) {
-            badge.textContent = `${checkedCount} of ${totalCount} Item(s) Selected`;
-        }
-
-        renderSameExchangeTable();
-        recalculateSettlementSummary();
-    };
 
     // Attach piece_tags & replacement swap tags payload on submit
     document.getElementById('processReturnForm').addEventListener('submit', function(e) {
-        const selectedItems = [...document.querySelectorAll('.item-select-cb:checked')];
-        if (selectedItems.length === 0) {
+        const selectedItemIds = getReturnItemIds();
+        if (selectedItemIds.length === 0) {
             e.preventDefault();
-            alert('Select at least one invoice item to return.');
+            alert('Scan or enter a return quantity for at least one billed invoice item.');
             return;
         }
-        const selectedItemIds = new Set(selectedItems.map(cb => cb.getAttribute('data-item-id')));
 
         if (document.getElementById('formReturnTypeInput')?.value === 'EXCHANGE_SAME') {
-            const missingReplacement = selectedItems.find(cb => {
-                const itemId = cb.getAttribute('data-item-id');
+            const missingReplacement = selectedItemIds.find(itemId => {
                 return !document.getElementById('swap_' + itemId)?.value || !currentSwapTags[itemId];
             });
             if (missingReplacement) {
@@ -1404,9 +1391,20 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
+        const quantityExceedsTags = selectedItemIds.find(itemId => {
+            const tags = scannedReturnTagsMap[itemId] ? scannedReturnTagsMap[itemId].size : 0;
+            const qty = parseInt(document.getElementById('qty_' + itemId)?.value || 0, 10) || 0;
+            return tags > qty;
+        });
+        if (quantityExceedsTags) {
+            e.preventDefault();
+            alert('Return quantity cannot be lower than the number of scanned billed piece tags.');
+            return;
+        }
+
         Object.keys(rowPieceTagsMap).forEach(itemId => {
-            if (!selectedItemIds.has(itemId)) return;
-            const tags = [...rowPieceTagsMap[itemId]];
+            if (!selectedItemIds.includes(itemId)) return;
+            const tags = scannedReturnTagsMap[itemId] ? [...scannedReturnTagsMap[itemId]] : [];
             if (tags.length > 0) {
                 tags.forEach(t => {
                     const hidden = document.createElement('input');
@@ -1420,7 +1418,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Attach swap piece tags
         Object.keys(currentSwapTags).forEach(itemId => {
-            if (!selectedItemIds.has(itemId)) return;
+            if (!selectedItemIds.includes(itemId)) return;
             const swapTag = currentSwapTags[itemId];
             if (swapTag) {
                 const hidden = document.createElement('input');

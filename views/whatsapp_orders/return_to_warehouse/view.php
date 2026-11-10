@@ -448,7 +448,9 @@ if (document.readyState === 'complete') renderManifestQRCodes();
 // Run once immediately as well; this page is rendered after the QR library
 // and some layouts keep the document in a loading state longer than expected.
 setTimeout(renderManifestQRCodes, 100);
+</script>
 
+<script>
 let currentModalPieces = [];
 let currentModalReturnedQty = 0;
 let currentModalClassification = '';
@@ -647,16 +649,6 @@ function renderModalPieceCards() {
     let displayPieces = [];
     const isReturnedMode = currentPieceViewMode === 'returned' && currentModalReturnedQty > 0;
 
-    if (isReturnedMode) {
-        if (titleEl) titleEl.textContent = 'Dispatched Consignment Pieces';
-        if (subtitleEl) subtitleEl.textContent = `Showing the ${currentModalReturnedQty} piece(s) designated in this return dispatch`;
-
-        const isDamagedType = (currentModalClassification || '').toUpperCase().includes('DAMAGED');
-        let sorted = [...currentModalPieces];
-        if (isDamagedType) {
-            sorted.sort((a, b) => {
-                const aDam = a.is_damaged || (a.status && a.status.toLowerCase() === 'damaged') ? 1 : 0;
-                const bDam = b.is_damaged || (b.status && b.status.toLowerCase() === 'damaged') ? 1 : 0;
     if (isReturnedMode) {
         if (titleEl) titleEl.textContent = 'Dispatched Consignment Pieces';
         if (subtitleEl) subtitleEl.textContent = `Showing the ${currentModalReturnedQty} piece(s) designated in this return dispatch`;

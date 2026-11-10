@@ -1920,6 +1920,31 @@ CREATE TABLE `returns` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
+-- Table structure for table `whatsapp_returned_products`
+-- --------------------------------------------------------
+DROP TABLE IF EXISTS `whatsapp_returned_products`;
+CREATE TABLE `whatsapp_returned_products` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `channel_id` int(10) unsigned NOT NULL,
+  `return_id` int(10) unsigned NOT NULL,
+  `sale_item_id` int(10) unsigned DEFAULT NULL,
+  `variant_id` int(10) unsigned NOT NULL,
+  `original_piece_tag` varchar(150) DEFAULT NULL,
+  `returned_tag` varchar(190) NOT NULL,
+  `item_condition` varchar(30) NOT NULL DEFAULT 'GOOD',
+  `printed_at` datetime DEFAULT NULL,
+  `printed_by` int(10) unsigned DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_whatsapp_returned_tag` (`returned_tag`),
+  KEY `idx_whatsapp_return_channel` (`channel_id`),
+  KEY `idx_whatsapp_return_id` (`return_id`),
+  KEY `idx_whatsapp_return_sale_item` (`sale_item_id`),
+  KEY `idx_whatsapp_return_variant` (`variant_id`),
+  KEY `idx_whatsapp_return_printed` (`printed_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
 -- Table structure for table `role_permissions`
 -- --------------------------------------------------------
 DROP TABLE IF EXISTS `role_permissions`;
@@ -2415,6 +2440,31 @@ CREATE TABLE `stock_adjustments` (
   CONSTRAINT `stock_adjustments_ibfk_2` FOREIGN KEY (`variant_id`) REFERENCES `product_variants` (`id`),
   CONSTRAINT `stock_adjustments_ibfk_3` FOREIGN KEY (`requested_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
   CONSTRAINT `stock_adjustments_ibfk_4` FOREIGN KEY (`approved_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+-- Table structure for table `whatsapp_stock_adjustments`
+-- --------------------------------------------------------
+CREATE TABLE `whatsapp_stock_adjustments` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `adjustment_number` varchar(50) NOT NULL,
+  `channel_id` int(10) unsigned NOT NULL,
+  `variant_id` int(10) unsigned NOT NULL,
+  `adjustment_type` enum('INCREASE','DECREASE') NOT NULL,
+  `quantity` decimal(10,2) NOT NULL,
+  `reason` text NOT NULL,
+  `requested_by` int(10) unsigned DEFAULT NULL,
+  `approved_by` int(10) unsigned DEFAULT NULL,
+  `status` enum('PENDING','APPROVED','REJECTED') NOT NULL DEFAULT 'PENDING',
+  `notes` text DEFAULT NULL,
+  `qr_codes` text DEFAULT NULL,
+  `created_at` datetime DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `adjustment_number` (`adjustment_number`),
+  KEY `idx_whatsapp_adjustment_channel` (`channel_id`),
+  KEY `idx_whatsapp_adjustment_variant` (`variant_id`),
+  KEY `idx_whatsapp_adjustment_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------

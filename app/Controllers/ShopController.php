@@ -1100,35 +1100,44 @@ class ShopController {
                 Response::jsonError('Scanned replacement was not found as an available product in this shop.');
                 return;
             }
-            $billedSale = $this->findShopBilledPieceTag(
-                $shopId,
-                (int)$replacement['id'],
-                (string)$replacement['matched_scan_code']
-            );
-            if ($billedSale) {
-                Response::jsonError(
-                    "This product piece was already billed"
-                    . (!empty($billedSale['invoice_number']) ? " in invoice {$billedSale['invoice_number']}" : '')
-                    . ' and cannot be scanned as a replacement.'
-                );
-                return;
-            }
-            $damageRecord = $this->findShopDamageForPieceTag(
-                $shopId,
-                (int)$replacement['id'],
-                (string)$replacement['matched_scan_code']
-            );
-            if ($damageRecord) {
-                Response::jsonError(
-                    "This piece tag is allocated to Damage Management"
-                    . (!empty($damageRecord['damage_number']) ? " ({$damageRecord['damage_number']})" : '')
-                    . ' and cannot be used as a replacement.'
-                );
-                return;
-            }
             if ((float)$replacement['available_stock'] <= 0) {
                 Response::jsonError('This replacement is not available in shop inventory.');
                 return;
+            }
+            if (!empty($replacement['aggregate_stock'])) {
+                $validCodes = array_filter([
+                    strtoupper(trim((string)($replacement['sku'] ?? ''))),
+                    strtoupper(trim((string)($replacement['qr_code'] ?? ''))),
+                ]);
+                if (!in_array(strtoupper((string)$replacement['matched_scan_code']), $validCodes, true)) {
+                    Response::jsonError('Series or complementary replacements require a valid product code and positive shop stock.');
+                    return;
+                }
+                $replacement['piece_available'] = false;
+            } else {
+                $pieceStatus = $this->isShopPieceAvailableForDamage(
+                    (int)$replacement['id'],
+                    $shopId,
+                    (string)$replacement['matched_scan_code']
+                );
+                if ($pieceStatus !== true) {
+                    Response::jsonError('This normal product piece is not currently available in shop inventory. Scan an available piece tag; sold or damaged pieces cannot be replacement items.');
+                    return;
+                }
+                $damageRecord = $this->findShopDamageForPieceTag(
+                    $shopId,
+                    (int)$replacement['id'],
+                    (string)$replacement['matched_scan_code']
+                );
+                if ($damageRecord) {
+                    Response::jsonError(
+                        "This piece tag is allocated to Damage Management"
+                        . (!empty($damageRecord['damage_number']) ? " ({$damageRecord['damage_number']})" : '')
+                        . ' and cannot be used as a replacement.'
+                    );
+                    return;
+                }
+                $replacement['piece_available'] = true;
             }
             Response::jsonSuccess('Scanned replacement identified', [
                 'variant' => $replacement,
@@ -1431,6 +1440,7 @@ class ShopController {
             $totalReplacementVal = 0.0;
             $replacementStockRequirements = [];
             $normalizedReplacements = [];
+            $usedReplacementPieceTags = [];
 
             foreach ($items as $itemKey => $item) {
                 if (!is_array($item)) {
@@ -1439,7 +1449,10 @@ class ShopController {
 
                 $saleItemId = (int)($item['sale_item_id'] ?? (is_numeric($itemKey) ? $itemKey : 0));
                 $qty = (int)($item['qty'] ?? $item['quantity'] ?? 0);
-                if ($saleItemId <= 0 || $qty <= 0) {
+                if ($qty <= 0) {
+                    continue;
+                }
+                if ($saleItemId <= 0) {
                     throw new RuntimeException('Each selected return item must have a valid invoice line and quantity.');
                 }
 
@@ -1473,7 +1486,25 @@ class ShopController {
                 if (!is_array($submittedPieceTags)) {
                     $submittedPieceTags = preg_split('/[,|]/', (string)$submittedPieceTags) ?: [];
                 }
+                $savedBilledTags = [];
+                $decodedBilledTags = json_decode((string)($saleItem['scanned_qr_codes'] ?? ''), true);
+                $rawBilledTags = is_array($decodedBilledTags)
+                    ? $decodedBilledTags
+                    : (preg_split('/[,|]/', (string)($saleItem['scanned_qr_codes'] ?? '')) ?: []);
+                foreach ($rawBilledTags as $billedTag) {
+                    if (is_array($billedTag)) {
+                        $billedTag = $billedTag['tag_code'] ?? $billedTag['qr_code'] ?? '';
+                    }
+                    $billedTag = trim((string)$billedTag, " \t\n\r\0\x0B\"'");
+                    if ($billedTag !== '') {
+                        $savedBilledTags[strtoupper($billedTag)] = true;
+                    }
+                }
                 foreach ($submittedPieceTags as $pieceTag) {
+                    $pieceTag = trim((string)$pieceTag, " \t\n\r\0\x0B\"'");
+                    if ($pieceTag === '' || !isset($savedBilledTags[strtoupper($pieceTag)])) {
+                        throw new RuntimeException("Piece tag '{$pieceTag}' is not billed on invoice line {$saleItemId}.");
+                    }
                     $damageRecord = $this->findShopDamageForPieceTag(
                         $shopId,
                         (int)$saleItem['variant_id'],
@@ -1504,22 +1535,6 @@ class ShopController {
                     if ($swapVariantId <= 0 || $replacementTag === '') {
                         throw new RuntimeException('Scan an available replacement product for every item being exchanged.');
                     }
-                    $billedSale = $this->findShopBilledPieceTag($shopId, $swapVariantId, $replacementTag);
-                    if ($billedSale) {
-                        throw new RuntimeException(
-                            "Replacement piece '{$replacementTag}' was already billed"
-                            . (!empty($billedSale['invoice_number']) ? " in invoice {$billedSale['invoice_number']}" : '')
-                            . ' and cannot be exchanged.'
-                        );
-                    }
-                    $damageRecord = $this->findShopDamageForPieceTag($shopId, $swapVariantId, $replacementTag);
-                    if ($damageRecord) {
-                        throw new RuntimeException(
-                            "Replacement piece tag '{$replacementTag}' is allocated to Damage Management"
-                            . (!empty($damageRecord['damage_number']) ? " ({$damageRecord['damage_number']})" : '')
-                            . ' and cannot be exchanged.'
-                        );
-                    }
                     $scannedReplacement = $this->findExactShopReplacement($replacementTag, $shopId);
                     if (!$scannedReplacement || (int)$scannedReplacement['id'] !== $swapVariantId) {
                         throw new RuntimeException('The replacement product must match the product scanned for this exchange.');
@@ -1531,6 +1546,35 @@ class ShopController {
                     );
                     if (!$swapVariant || (int)$swapVariant['product_id'] !== (int)$saleItem['product_id']) {
                         throw new RuntimeException('A same-product exchange must use an active size/color variant of the returned product.');
+                    }
+                    if (!empty($scannedReplacement['aggregate_stock'])) {
+                        $validCodes = array_filter([
+                            strtoupper(trim((string)($scannedReplacement['sku'] ?? ''))),
+                            strtoupper(trim((string)($scannedReplacement['qr_code'] ?? ''))),
+                        ]);
+                        if (!in_array(strtoupper($replacementTag), $validCodes, true)) {
+                            throw new RuntimeException('Series or complementary replacements require a valid product code and positive shop stock.');
+                        }
+                    } else {
+                        if ($swapQty !== 1) {
+                            throw new RuntimeException('Normal shop products must be exchanged one available scanned piece at a time.');
+                        }
+                        if ($this->isShopPieceAvailableForDamage($swapVariantId, $shopId, $replacementTag) !== true) {
+                            throw new RuntimeException("Replacement piece '{$replacementTag}' is not currently available in shop stock. Sold, damaged, or dispatched pieces cannot be selected.");
+                        }
+                        $normalizedReplacementTag = strtoupper($replacementTag);
+                        if (isset($usedReplacementPieceTags[$normalizedReplacementTag])) {
+                            throw new RuntimeException("Replacement piece '{$replacementTag}' cannot be assigned more than once.");
+                        }
+                        $usedReplacementPieceTags[$normalizedReplacementTag] = true;
+                        $damageRecord = $this->findShopDamageForPieceTag($shopId, $swapVariantId, $replacementTag);
+                        if ($damageRecord) {
+                            throw new RuntimeException(
+                                "Replacement piece tag '{$replacementTag}' is allocated to Damage Management"
+                                . (!empty($damageRecord['damage_number']) ? " ({$damageRecord['damage_number']})" : '')
+                                . ' and cannot be exchanged.'
+                            );
+                        }
                     }
                     $item['exchange_variant_id'] = $swapVariantId;
                     $item['exchange_unit_price'] = (float)$swapVariant['exchange_price'];
@@ -1544,7 +1588,7 @@ class ShopController {
             }
 
             if (empty($normalizedItems)) {
-                throw new RuntimeException('Please select at least one valid invoice item to return.');
+                throw new RuntimeException('Scan at least one billed invoice item to return or exchange.');
             }
             $items = $normalizedItems;
 
@@ -3930,7 +3974,9 @@ class ShopController {
         $loadVariant = static function (int $variantId, string $matchedCode) use ($shopId): ?array {
             $variant = Database::fetchOne(
                 "SELECT pv.id, pv.sku, pv.qr_code, pv.selling_price, pv.mrp,
-                        p.id as product_id, p.name as product_name,
+                        pv.qr_type, pv.is_complementary, pv.pack_quantity,
+                        p.id as product_id, p.name as product_name, p.is_complementary as product_is_complementary,
+                        COALESCE(wc.category_type, 'NORMAL') as category_type,
                         COALESCE(sz.name, 'Free Size') as size_name,
                         COALESCE(clr.name, 'Standard') as color_name,
                         COALESCE((
@@ -3943,6 +3989,10 @@ class ShopController {
                         ), 0) as available_stock
                  FROM product_variants pv
                  JOIN products p ON p.id = pv.product_id
+                 LEFT JOIN warehouse_sub_subcategories wssc ON wssc.id = p.warehouse_sub_subcategory_id
+                 LEFT JOIN warehouse_subcategories wssc_parent ON wssc.subcategory_id = wssc_parent.id
+                 LEFT JOIN warehouse_subcategories wsc ON COALESCE(p.warehouse_subcategory_id, wssc.subcategory_id) = wsc.id
+                 LEFT JOIN warehouse_categories wc ON wc.id = COALESCE(p.warehouse_category_id, wsc.category_id, wssc_parent.category_id)
                  LEFT JOIN sizes sz ON sz.id = pv.size_id
                  LEFT JOIN colors clr ON clr.id = pv.color_id
                  WHERE pv.id = ? AND pv.is_active = 1",
@@ -3951,6 +4001,15 @@ class ShopController {
             if (!$variant) {
                 return null;
             }
+            $variant['aggregate_stock'] = in_array(
+                strtoupper((string)($variant['category_type'] ?? 'NORMAL')),
+                ['SERIES', 'COMPLEMENTARY'],
+                true
+            )
+                || !empty($variant['is_complementary'])
+                || !empty($variant['product_is_complementary'])
+                || in_array(strtoupper((string)($variant['qr_type'] ?? '')), ['SERIES_BATCH', 'SERIES'], true)
+                || (int)($variant['pack_quantity'] ?? 1) > 1;
             $variant['matched_scan_code'] = $matchedCode;
             return $variant;
         };

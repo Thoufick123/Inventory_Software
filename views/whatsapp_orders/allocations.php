@@ -26,6 +26,14 @@ $productTabs = ['normal' => ['Normal Products', 'bi-tag'], 'series' => ['Series 
         <span class="text-muted">Real-time WhatsApp stock balances, catalog specifications, piece-by-piece quarantine, and warehouse allocations.</span>
     </div>
     <div class="d-flex gap-2 flex-wrap">
+        <a href="<?= url('warehouse/whatsapp-orders/returned-products') ?>" class="btn btn-outline-success rounded-pill px-3">
+            <i class="bi bi-arrow-return-left me-1"></i> Returned Products
+        </a>
+        <?php if ($canEditPrice): ?>
+        <a href="<?= url('warehouse/whatsapp-orders/adjustments') ?>" class="btn btn-outline-secondary rounded-pill px-3">
+            <i class="bi bi-sliders me-1"></i> Stock Adjustments
+        </a>
+        <?php endif; ?>
         <?php if ($canRequestStock): ?>
         <a href="<?= url('warehouse/whatsapp-orders/requests/create') ?>" class="btn btn-primary rounded-pill px-3 shadow-sm fw-semibold">
             <i class="bi bi-plus-lg me-1"></i> Request Warehouse Stock

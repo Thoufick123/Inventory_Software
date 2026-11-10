@@ -10,6 +10,8 @@ require_once BASE_PATH . '/app/Services/ShopService.php';
 require_once BASE_PATH . '/app/Models/ChannelDamage.php';
 require_once BASE_PATH . '/app/Models/WarehouseReturn.php';
 require_once BASE_PATH . '/app/Models/WarehouseReturnItem.php';
+require_once BASE_PATH . '/app/Models/WhatsappStockAdjustment.php';
+require_once BASE_PATH . '/app/Models/WhatsappReturnedProduct.php';
 
 class WhatsappController {
 
@@ -227,8 +229,8 @@ class WhatsappController {
         $liveAvailQty = (float)($liveStock['available_qty'] ?? 0);
         $liveAvailVal = (float)($liveStock['available_value'] ?? 0);
 
-        $availableStockQty   = $liveAvailQty > 0 ? (int)$liveAvailQty : max(0, $allocatedInventoryQty - $soldQty);
-        $availableStockValue = $liveAvailVal > 0 ? $liveAvailVal : round($availableStockQty * ($allocatedInventoryQty > 0 ? ($allocatedTotalValue / $allocatedInventoryQty) : 0), 2);
+        $availableStockQty   = $liveAvailQty;
+        $availableStockValue = $liveAvailVal;
 
         $recentSales = Database::fetchAll(
             "SELECT s.*, 
@@ -734,6 +736,7 @@ class WhatsappController {
         $isReceiveAll  = !empty($_POST['receive_all']);
         $receivedInput = $_POST['received_qty'] ?? [];
         $damagedInput  = $_POST['damaged_qty'] ?? [];
+        $pieceStatusesInput = $_POST['piece_statuses'] ?? [];
 
         // The detail screen submits one total per variant. Expand those grouped totals
         // across the original allocation rows so existing per-piece records stay intact.
@@ -789,6 +792,14 @@ class WhatsappController {
 
         Database::beginTransaction();
         try {
+            $loggedDamageTagsByVariant = [];
+            $variantItemCounts = [];
+            $completePieceStatusCounts = [];
+            $currentDamageTagsByVariant = [];
+            foreach ($items as $item) {
+                $variantId = (int)($item['variant_id'] ?? 0);
+                $variantItemCounts[$variantId] = ($variantItemCounts[$variantId] ?? 0) + 1;
+            }
             foreach ($items as $item) {
                 $itemId = $item['id'];
                 $dispQty = (int)($item['dispatched_qty'] > 0 ? $item['dispatched_qty'] : ($item['requested_qty'] ?? 1));
@@ -807,12 +818,58 @@ class WhatsappController {
                     $newDmg = isset($damagedInput[$itemId]) ? (int)$damagedInput[$itemId] : 0;
                 }
 
+                $pieceStatuses = $pieceStatusesInput[$itemId] ?? null;
+                if (is_string($pieceStatuses)) {
+                    $decodedStatuses = json_decode($pieceStatuses, true);
+                    $pieceStatuses = is_array($decodedStatuses) ? $decodedStatuses : null;
+                }
+                $validPieceStatuses = [];
+                if (is_array($pieceStatuses)) {
+                    foreach ($pieceStatuses as $pieceStatus) {
+                        if (!is_array($pieceStatus) || !in_array($pieceStatus['status'] ?? '', ['good', 'damaged', 'pending'], true)) {
+                            continue;
+                        }
+                        $tag = trim((string)($pieceStatus['tag'] ?? ''));
+                        if ($tag === '') {
+                            continue;
+                        }
+                        $validPieceStatuses[] = ['tag' => $tag, 'status' => $pieceStatus['status']];
+                    }
+                }
+
                 $newRec = max(0, min($dispQty, $newRec));
                 $newDmg = max(0, min($dispQty - $newRec, $newDmg));
+                $receivedTags = [];
+                $damagedTags = [];
+                if (!$isReceiveAll) {
+                    foreach ($validPieceStatuses as $piece) {
+                        if ($piece['status'] === 'damaged') {
+                            $damagedTags[] = $piece['tag'];
+                        }
+                    }
+                }
+                if (count($validPieceStatuses) === $dispQty) {
+                    $variantId = (int)($item['variant_id'] ?? 0);
+                    $completePieceStatusCounts[$variantId] = ($completePieceStatusCounts[$variantId] ?? 0) + 1;
+                    $currentDamageTagsByVariant[$variantId] = $currentDamageTagsByVariant[$variantId] ?? [];
+                    if ($isReceiveAll) {
+                        $newRec = $dispQty;
+                        $newDmg = 0;
+                    } else {
+                        $newRec = count(array_filter($validPieceStatuses, static fn(array $piece): bool => $piece['status'] === 'good'));
+                        $newDmg = count(array_filter($validPieceStatuses, static fn(array $piece): bool => $piece['status'] === 'damaged'));
+                    }
+                    foreach ($validPieceStatuses as $piece) {
+                        if ($piece['status'] === 'good' || $piece['status'] === 'damaged' || $isReceiveAll) {
+                            $receivedTags[] = $piece['tag'];
+                        }
+                    }
+                    $currentDamageTagsByVariant[$variantId] = array_merge($currentDamageTagsByVariant[$variantId], $damagedTags);
+                }
 
                 Database::execute(
-                    "UPDATE allocation_items SET received_qty = ?, damaged_qty = ? WHERE id = ?",
-                    [$newRec, $newDmg, $itemId]
+                    "UPDATE allocation_items SET received_qty = ?, damaged_qty = ?, received_qr_codes = ? WHERE id = ?",
+                    [$newRec, $newDmg, $receivedTags ? json_encode($receivedTags, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : ($item['received_qr_codes'] ?? null), $itemId]
                 );
 
                 $deltaRec = $newRec - $prevRec;
@@ -860,16 +917,30 @@ class WhatsappController {
                     );
 
                     // Auto-record directly into WhatsApp Channel Damage management
+                    $variantId = (int)$item['variant_id'];
+                    if (!array_key_exists($variantId, $loggedDamageTagsByVariant)) {
+                        $existingDamage = Database::fetchOne(
+                            "SELECT tag_code FROM channel_damages WHERE channel_id = ? AND allocation_id = ? AND variant_id = ? AND source_type = 'INWARD_TRANSIT' AND status = 'LOGGED' LIMIT 1",
+                            [$channelId, $id, $variantId]
+                        );
+                        $loggedDamageTagsByVariant[$variantId] = !empty($existingDamage['tag_code'])
+                            ? array_values(array_filter(array_map('trim', explode(',', (string)$existingDamage['tag_code']))))
+                            : [];
+                    }
+                    $newDamageTags = array_values(array_diff($damagedTags, $loggedDamageTagsByVariant[$variantId]));
+                    $newDamageTags = array_slice($newDamageTags, 0, $deltaDmg);
                     ChannelDamage::logInwardDamage(
                         channelId: $channelId,
-                        variantId: (int)$item['variant_id'],
+                        variantId: $variantId,
                         quantity: $deltaDmg,
                         allocationId: $id,
+                        pieceTags: $newDamageTags,
                         notes: "Damaged stock detected during WhatsApp inward receipt for Allocation #" . ($allocation['allocation_number'] ?? $id),
                         reportedBy: $userId,
                         defectType: 'INWARD_DEFECT',
                         severity: 'MODERATE'
                     );
+                    $loggedDamageTagsByVariant[$variantId] = array_values(array_unique(array_merge($loggedDamageTagsByVariant[$variantId], $newDamageTags)));
                 } elseif ($deltaDmg < 0 && !empty($item['variant_id'])) {
                     StockService::decrease(
                         variantId: (int)$item['variant_id'],
@@ -888,6 +959,17 @@ class WhatsappController {
                 $totalDispatched += $dispQty;
                 $totalRec        += $newRec;
                 $totalDmg        += $newDmg;
+            }
+
+            foreach ($completePieceStatusCounts as $variantId => $completeCount) {
+                if ($variantId <= 0 || $completeCount !== ($variantItemCounts[$variantId] ?? 0)) {
+                    continue;
+                }
+                $tags = $currentDamageTagsByVariant[$variantId] ?? [];
+                Database::execute(
+                    "UPDATE channel_damages SET tag_code = ?, updated_at = NOW() WHERE channel_id = ? AND allocation_id = ? AND variant_id = ? AND source_type = 'INWARD_TRANSIT' AND status = 'LOGGED'",
+                    [$tags ? implode(', ', $tags) : null, $channelId, $id, $variantId]
+                );
             }
 
             $newStatus = ($totalRec + $totalDmg >= $totalDispatched) ? 'COMPLETED' : 'PARTIAL_RECEIVED';
@@ -1016,6 +1098,8 @@ class WhatsappController {
             $destList[] = 'CHANNEL_' . $cid;
         }
         $destIn = implode(',', array_fill(0, count($destList), '?'));
+
+        $this->syncPrintedWhatsappReturnedStock($chanIds, Auth::id() ?? Session::userId() ?? 1);
 
         // Base query for WhatsApp Stock Items
         $stockSql = "
@@ -1294,6 +1378,288 @@ class WhatsappController {
         ]);
     }
 
+    public function whatsappStockAdjustments(): void {
+        $channelIds = $this->getWhatsappChannelIds();
+        $placeholders = implode(',', array_fill(0, count($channelIds), '?'));
+        $channels = Database::fetchAll(
+            "SELECT id, name, code FROM sales_channels WHERE id IN ($placeholders) ORDER BY name ASC",
+            $channelIds
+        );
+        Response::view('whatsapp_orders.adjustments', [
+            'pageTitle' => 'WhatsApp Stock Adjustments',
+            'activeModule' => 'whatsapp',
+            'activeMenu' => 'wh-whatsapp-allocations',
+            'breadcrumb' => [
+                ['label' => 'WhatsApp Orders', 'url' => url('warehouse/whatsapp-orders')],
+                ['label' => 'Inventory', 'url' => url('warehouse/whatsapp-orders/allocations?tab=stock')],
+                ['label' => 'Stock Adjustments'],
+            ],
+            'adjustments' => WhatsappStockAdjustment::getAll(),
+            'channels' => $channels,
+            'defaultChannelId' => (int)($this->getChannel()['id'] ?? 0),
+        ]);
+    }
+
+    public function ajaxWhatsappAdjustmentVariants(): void {
+        if (!hasPermission('whatsapp_inventory', 'adjust')) {
+            Response::json(['success' => false, 'message' => 'Access denied.'], 403);
+            return;
+        }
+
+        $channelId = (int)($_GET['channel_id'] ?? 0);
+        if (!in_array($channelId, $this->getWhatsappChannelIds(), true)) {
+            Response::json(['success' => false, 'message' => 'Select a valid WhatsApp channel.'], 400);
+            return;
+        }
+
+        $variants = Database::fetchAll(
+            "SELECT pv.id, pv.sku, p.name as product_name, s.name as size_name, c.name as color_name,
+                    SUM(sb.quantity) as available_quantity
+             FROM stock_balances sb
+             JOIN product_variants pv ON pv.id = sb.variant_id
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN sizes s ON s.id = pv.size_id
+             LEFT JOIN colors c ON c.id = pv.color_id
+             WHERE sb.location_type = 'CHANNEL'
+               AND sb.location_id = ?
+               AND sb.stock_state = 'AVAILABLE'
+               AND sb.quantity > 0
+               AND pv.is_active = 1
+             GROUP BY pv.id, pv.sku, p.name, s.name, c.name
+             HAVING SUM(sb.quantity) > 0
+             ORDER BY p.name ASC, pv.sku ASC",
+            [$channelId]
+        );
+
+        Response::json(['success' => true, 'variants' => $variants]);
+    }
+
+    public function storeWhatsappStockAdjustment(): void {
+        if (!hasPermission('whatsapp_inventory', 'adjust')) {
+            Response::redirect(url('warehouse/whatsapp-orders/adjustments'), 'error', 'Access denied.');
+            return;
+        }
+
+        try {
+            $channelId = (int)($_POST['channel_id'] ?? 0);
+            $variantId = (int)($_POST['variant_id'] ?? 0);
+            $adjustmentType = strtoupper(trim((string)($_POST['adjustment_type'] ?? '')));
+            $quantity = (int)($_POST['quantity'] ?? 0);
+            $reason = trim((string)($_POST['reason'] ?? ''));
+            $notes = trim((string)($_POST['notes'] ?? ''));
+            $rawQrCodes = $_POST['qr_codes'] ?? '[]';
+            $qrCodes = is_array($rawQrCodes) ? $rawQrCodes : json_decode((string)$rawQrCodes, true);
+
+            if (!in_array($channelId, $this->getWhatsappChannelIds(), true)) {
+                throw new InvalidArgumentException('Select a valid WhatsApp channel.');
+            }
+            if ($variantId <= 0 || !in_array($adjustmentType, ['INCREASE', 'DECREASE'], true) || $quantity <= 0 || $reason === '') {
+                throw new InvalidArgumentException('Complete all required adjustment fields with a positive quantity.');
+            }
+            if (!is_array($qrCodes)) {
+                throw new InvalidArgumentException('Scanned QR code list is invalid.');
+            }
+            if (StockService::getBalance($variantId, 'CHANNEL', $channelId, 'AVAILABLE') <= 0) {
+                throw new InvalidArgumentException('The selected variant has no available stock in this WhatsApp channel.');
+            }
+            if ($adjustmentType === 'DECREASE') {
+                $this->validateWhatsappAdjustmentQrCodes($channelId, $variantId, $qrCodes, $quantity);
+            } else {
+                $qrCodes = [];
+            }
+
+            $id = WhatsappStockAdjustment::create([
+                'adjustment_number' => 'WHA-' . date('YmdHis') . '-' . random_int(100000, 999999),
+                'channel_id' => $channelId,
+                'variant_id' => $variantId,
+                'adjustment_type' => $adjustmentType,
+                'quantity' => $quantity,
+                'reason' => $reason,
+                'requested_by' => Session::userId(),
+                'notes' => $notes,
+                'qr_codes' => $qrCodes,
+            ]);
+            AuditService::log('whatsapp', 'request_stock_adjustment', 'whatsapp_stock_adjustments', $id, null, [
+                'channel_id' => $channelId,
+                'variant_id' => $variantId,
+                'adjustment_type' => $adjustmentType,
+                'quantity' => $quantity,
+            ]);
+            Response::redirect(url('warehouse/whatsapp-orders/adjustments'), 'success', 'WhatsApp stock adjustment request submitted for approval.');
+        } catch (Exception $e) {
+            Response::redirect(url('warehouse/whatsapp-orders/adjustments'), 'error', 'Error creating adjustment: ' . $e->getMessage());
+        }
+    }
+
+    public function approveWhatsappStockAdjustment(string $id): void {
+        if (!hasPermission('whatsapp_inventory', 'adjust')) {
+            Response::redirect(url('warehouse/whatsapp-orders/adjustments'), 'error', 'Access denied.');
+            return;
+        }
+
+        $transactionStarted = false;
+        try {
+            $adjustmentId = (int)$id;
+            $adjustment = WhatsappStockAdjustment::find($adjustmentId);
+            if (!$adjustment || $adjustment['status'] !== 'PENDING') {
+                throw new RuntimeException('This adjustment is missing or has already been processed.');
+            }
+            $action = strtoupper(trim((string)($_POST['action'] ?? 'APPROVE')));
+            if (!in_array($action, ['APPROVE', 'REJECT'], true)) {
+                throw new InvalidArgumentException('Invalid adjustment action.');
+            }
+
+            Database::beginTransaction();
+            $transactionStarted = true;
+            $userId = Session::userId();
+            if (!$userId) {
+                throw new RuntimeException('Your user session is invalid. Please sign in again.');
+            }
+            if ($action === 'APPROVE') {
+                $qrCodes = json_decode((string)($adjustment['qr_codes'] ?? '[]'), true);
+                $qrCodes = is_array($qrCodes) ? $qrCodes : [];
+                if ($adjustment['adjustment_type'] === 'DECREASE') {
+                    $this->validateWhatsappAdjustmentQrCodes(
+                        (int)$adjustment['channel_id'],
+                        (int)$adjustment['variant_id'],
+                        $qrCodes,
+                        (int)$adjustment['quantity'],
+                        $adjustmentId
+                    );
+                }
+                $qrNote = $qrCodes ? ' Removed QR codes: ' . implode(', ', $qrCodes) : '';
+                StockService::adjust(
+                    variantId: (int)$adjustment['variant_id'],
+                    locationType: 'CHANNEL',
+                    locationId: (int)$adjustment['channel_id'],
+                    adjustmentType: $adjustment['adjustment_type'],
+                    quantity: (float)$adjustment['quantity'],
+                    reason: $adjustment['reason'],
+                    userId: (int)$userId,
+                    notes: 'WhatsApp Audit Ref: ' . $adjustment['adjustment_number'] . $qrNote
+                );
+                if (!WhatsappStockAdjustment::updateStatus($adjustmentId, 'APPROVED', (int)$userId)) {
+                    throw new RuntimeException('Could not mark the WhatsApp adjustment as approved.');
+                }
+                AuditService::log('whatsapp', 'approve_stock_adjustment', 'whatsapp_stock_adjustments', $adjustmentId, ['status' => 'PENDING'], ['status' => 'APPROVED']);
+            } else {
+                if (!WhatsappStockAdjustment::updateStatus($adjustmentId, 'REJECTED', (int)$userId)) {
+                    throw new RuntimeException('Could not mark the WhatsApp adjustment as rejected.');
+                }
+                AuditService::log('whatsapp', 'reject_stock_adjustment', 'whatsapp_stock_adjustments', $adjustmentId, ['status' => 'PENDING'], ['status' => 'REJECTED']);
+            }
+            Database::commit();
+            $transactionStarted = false;
+            Response::redirect(
+                url('warehouse/whatsapp-orders/adjustments'),
+                'success',
+                $action === 'APPROVE' ? 'WhatsApp stock adjustment approved and stock updated.' : 'WhatsApp stock adjustment rejected.'
+            );
+        } catch (Exception $e) {
+            if (!empty($transactionStarted)) {
+                Database::rollback();
+            }
+            Response::redirect(url('warehouse/whatsapp-orders/adjustments'), 'error', 'Adjustment failed: ' . $e->getMessage());
+        }
+    }
+
+    public function ajaxValidateWhatsappAdjustmentQr(): void {
+        if (!hasPermission('whatsapp_inventory', 'adjust')) {
+            Response::json(['success' => false, 'message' => 'Access denied.'], 403);
+            return;
+        }
+        try {
+            $channelId = (int)($_GET['channel_id'] ?? 0);
+            $variantId = (int)($_GET['variant_id'] ?? 0);
+            $tag = strtoupper(trim((string)($_GET['code'] ?? '')));
+            if ($tag === '' || $variantId <= 0) {
+                throw new InvalidArgumentException('Select a product and scan a QR code.');
+            }
+            $variant = Database::fetchOne(
+                "SELECT pv.pack_quantity, pv.qr_type, pv.is_complementary,
+                        p.is_complementary as product_is_complementary, wc.category_type
+                 FROM product_variants pv
+                 JOIN products p ON p.id = pv.product_id
+                 LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+                 WHERE pv.id = ?",
+                [$variantId]
+            );
+            if (!$variant) {
+                throw new RuntimeException('Product variant not found.');
+            }
+            $isPack = in_array(strtoupper((string)($variant['qr_type'] ?? '')), ['SERIES_BATCH', 'SERIES'], true)
+                || in_array(strtoupper((string)($variant['category_type'] ?? '')), ['SERIES', 'COMPLEMENTARY'], true)
+                || (int)($variant['pack_quantity'] ?? 0) > 1
+                || !empty($variant['is_complementary'])
+                || !empty($variant['product_is_complementary']);
+            $quantity = $isPack ? max(1, (int)($variant['pack_quantity'] ?? 1)) : 1;
+            $this->validateWhatsappAdjustmentQrCodes($channelId, $variantId, [$tag], $quantity);
+            Response::json(['success' => true, 'tag' => $tag, 'quantity' => $quantity]);
+        } catch (Exception $e) {
+            Response::json(['success' => false, 'message' => $e->getMessage()], 400);
+        }
+    }
+
+    private function validateWhatsappAdjustmentQrCodes(
+        int $channelId,
+        int $variantId,
+        array $tagCodes,
+        int $quantity,
+        int $excludeAdjustmentId = 0
+    ): void {
+        if (!in_array($channelId, $this->getWhatsappChannelIds(), true) || $variantId <= 0 || empty($tagCodes)) {
+            throw new InvalidArgumentException('Select a WhatsApp channel, product, and scan at least one QR code.');
+        }
+
+        $tags = array_values(array_unique(array_map(
+            static fn($tag): string => strtoupper(trim((string)$tag)),
+            $tagCodes
+        )));
+        foreach ($tags as $tag) {
+            if ($tag === '' || !preg_match('/^[A-Z0-9_-]+$/', $tag)) {
+                throw new InvalidArgumentException('A scanned QR code is invalid.');
+            }
+        }
+
+        $variant = Database::fetchOne(
+            "SELECT pv.pack_quantity, pv.qr_type, pv.is_complementary,
+                    p.is_complementary as product_is_complementary, wc.category_type
+             FROM product_variants pv
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+             WHERE pv.id = ?",
+            [$variantId]
+        );
+        if (!$variant) {
+            throw new RuntimeException('The selected product variant could not be found.');
+        }
+        $isPack = in_array(strtoupper((string)($variant['qr_type'] ?? '')), ['SERIES_BATCH', 'SERIES'], true)
+            || in_array(strtoupper((string)($variant['category_type'] ?? '')), ['SERIES', 'COMPLEMENTARY'], true)
+            || (int)($variant['pack_quantity'] ?? 0) > 1
+            || !empty($variant['is_complementary'])
+            || !empty($variant['product_is_complementary']);
+        $quantityPerTag = $isPack ? max(1, (int)($variant['pack_quantity'] ?? 1)) : 1;
+        if ($quantity !== count($tags) * $quantityPerTag) {
+            throw new InvalidArgumentException('Adjustment quantity does not match the scanned QR codes.');
+        }
+        $available = StockService::getBalance($variantId, 'CHANNEL', $channelId, 'AVAILABLE');
+        if ($available < $quantity) {
+            throw new RuntimeException("Insufficient available channel stock. Available: {$available} pcs; requested: {$quantity} pcs.");
+        }
+
+        $pieceTags = $this->resolveChannelPieceTags($channelId, $variantId, [$channelId], 'WHATSAPP')['available'];
+        $availableTags = array_fill_keys(array_map('strtoupper', $pieceTags), true);
+        foreach ($tags as $tag) {
+            $usage = WhatsappStockAdjustment::findQrCodeUsage($channelId, $tag, $excludeAdjustmentId);
+            if ($usage) {
+                throw new RuntimeException("QR code '{$tag}' is already in adjustment #{$usage['adjustment_number']} ({$usage['status']}).");
+            }
+            if (!isset($availableTags[$tag])) {
+                throw new RuntimeException("QR code '{$tag}' is not currently available in this WhatsApp channel for the selected variant.");
+            }
+        }
+    }
+
     /**
      * WhatsApp Product Stock Details & Full Lifecycle History
      */
@@ -1307,6 +1673,8 @@ class WhatsappController {
         }
         $destIn = implode(',', array_fill(0, count($destList), '?'));
         $variantId = (int)$id;
+
+        $this->syncPrintedWhatsappReturnedStock($chanIds, Auth::id() ?? Session::userId() ?? 1, $variantId);
 
         $sql = "
             SELECT pv.*, pv.id as variant_id,
@@ -1566,6 +1934,26 @@ class WhatsappController {
                 }
             }
         }
+        $printedCustomerReturns = [];
+        $customerReturnOriginalTags = [];
+        $printedCustomerReturnOriginalTags = [];
+        foreach (WhatsappReturnedProduct::getForVariant($variantId, $chanIds) as $returnedProduct) {
+            $originalTag = trim((string)($returnedProduct['original_piece_tag'] ?? ''));
+            if ($originalTag !== '') {
+                $customerReturnOriginalTags[strtoupper($originalTag)] = true;
+                foreach (array_keys($returnedTagsMap) as $existingTag) {
+                    if (strcasecmp((string)$existingTag, $originalTag) === 0) {
+                        unset($returnedTagsMap[$existingTag]);
+                    }
+                }
+            }
+            if (!empty($returnedProduct['printed_at'])) {
+                $printedCustomerReturns[] = $returnedProduct;
+                if ($originalTag !== '') {
+                    $printedCustomerReturnOriginalTags[strtoupper($originalTag)] = true;
+                }
+            }
+        }
 
         // Gather tags from Exchanges (both OLD restocked and NEW dispatched)
         $exchangeDispatchedTagsMap = [];
@@ -1597,6 +1985,18 @@ class WhatsappController {
                         ];
                     }
                 }
+            }
+        }
+        foreach (array_keys($returnedTagsMap) as $existingTag) {
+            if (isset($customerReturnOriginalTags[strtoupper((string)$existingTag)])) {
+                unset($returnedTagsMap[$existingTag]);
+            }
+        }
+
+        $adjustedTags = [];
+        foreach ($chanIds as $adjustmentChannelId) {
+            foreach (WhatsappStockAdjustment::getApprovedDecreaseTags((int)$adjustmentChannelId, $variantId) as $adjustedTag) {
+                $adjustedTags[strtoupper($adjustedTag)] = true;
             }
         }
 
@@ -1687,6 +2087,10 @@ class WhatsappController {
                 $pSeq = 1;
                 foreach ($savedQrs as $code) {
                     $tagCode = trim($code);
+                    if (isset($printedCustomerReturnOriginalTags[strtoupper($tagCode)])) {
+                        $pSeq++;
+                        continue;
+                    }
                     if (isset($seenTags[$tagCode])) continue;
                     $seenTags[$tagCode] = true;
 
@@ -1703,7 +2107,10 @@ class WhatsappController {
                         $statusMeta = $damagedTagsMap[$tagCode];
                     } elseif (isset($returnedTagsMap[$tagCode])) {
                         $rInfo = $returnedTagsMap[$tagCode];
-                        if (($rInfo['condition'] ?? 'GOOD') === 'GOOD') {
+                        if (!empty($rInfo['is_separately_stored'])) {
+                            $status = 'RETURNED';
+                            $statusMeta = $rInfo;
+                        } elseif (($rInfo['condition'] ?? 'GOOD') === 'GOOD') {
                             $status = 'AVAILABLE';
                             $statusMeta = array_merge($rInfo, ['is_restocked' => true, 'restock_badge' => 'Restocked from Return/Exchange']);
                         } else {
@@ -1716,6 +2123,9 @@ class WhatsappController {
                     } elseif (!$isPackType && isset($soldTagsMap[$tagCode])) {
                         $status = 'SOLD';
                         $statusMeta = $soldTagsMap[$tagCode];
+                    } elseif (isset($adjustedTags[strtoupper($tagCode)])) {
+                        $status = 'ADJUSTED';
+                        $statusMeta = ['adjustment_reason' => 'Removed by approved stock adjustment'];
                     } elseif ($pSeq > $rec && $pSeq <= ($rec + $dmg)) {
                         $status = 'DAMAGED';
                         if ($transitDmgRecord) {
@@ -1801,6 +2211,9 @@ class WhatsappController {
                     } elseif (!$isPackType && isset($soldTagsMap[$tagCode])) {
                         $status = 'SOLD';
                         $statusMeta = $soldTagsMap[$tagCode];
+                    } elseif (isset($adjustedTags[strtoupper($tagCode)])) {
+                        $status = 'ADJUSTED';
+                        $statusMeta = ['adjustment_reason' => 'Removed by approved stock adjustment'];
                     } elseif ($p > $rec && $p <= ($rec + $dmg)) {
                         $status = 'DAMAGED';
                         if ($transitDmgRecord) {
@@ -1974,6 +2387,50 @@ class WhatsappController {
                 }
             }
             unset($pt);
+        }
+
+        foreach ($printedCustomerReturns as $returnedProduct) {
+            $returnedTag = trim((string)($returnedProduct['returned_tag'] ?? ''));
+            if ($returnedTag === '') {
+                continue;
+            }
+            $alreadyPresent = false;
+            foreach ($pieceTags as $existingPiece) {
+                if (strcasecmp((string)($existingPiece['tag_code'] ?? ''), $returnedTag) === 0) {
+                    $alreadyPresent = true;
+                    break;
+                }
+            }
+            if ($alreadyPresent) {
+                continue;
+            }
+
+            $condition = strtoupper((string)($returnedProduct['item_condition'] ?? 'GOOD'));
+            $isGood = $condition === 'GOOD';
+            $pieceTags[] = [
+                'piece_no' => count($pieceTags) + 1,
+                'batch_piece_no' => count($pieceTags) + 1,
+                'tag_code' => $returnedTag,
+                'qr_payload' => $returnedTag,
+                'sku' => $item['sku'],
+                'mrp' => $fmtMrp,
+                'disc' => $fmtDisc,
+                'selling_price' => $costVal,
+                'allocation_id' => null,
+                'allocation_number' => $returnedProduct['return_number'] ?? 'WhatsApp Customer Return',
+                'warehouse_name' => 'WhatsApp Returned Products',
+                'inward_date' => $returnedProduct['printed_at'],
+                'status' => $isGood ? 'AVAILABLE' : 'DAMAGED',
+                'meta' => [
+                    'return_number' => $returnedProduct['return_number'] ?? 'WhatsApp Customer Return',
+                    'invoice_number' => $returnedProduct['invoice_number'] ?? '-',
+                    'condition' => $condition,
+                    'is_restocked' => $isGood,
+                    'restock_badge' => 'Restocked from Customer Return',
+                    'is_returned_damaged' => !$isGood,
+                    'damage_reason' => $isGood ? null : 'Returned Damaged Stock',
+                ],
+            ];
         }
 
         // Summary Calculations for this Product
@@ -2525,6 +2982,7 @@ class WhatsappController {
 
     public function processWhatsappReturn(): void {
         CSRF::verify();
+        WhatsappReturnedProduct::ensureReady();
 
         $saleId = (int)($_POST['sale_id'] ?? 0);
         $returnType = strtoupper(trim($_POST['return_type'] ?? 'RETURN'));
@@ -2568,6 +3026,7 @@ class WhatsappController {
         // QR/SKU and that replacement must exist in the WhatsApp channel stock.
         if ($returnType === 'EXCHANGE_SAME') {
             $replacementQtyByVariant = [];
+            $usedReplacementPieceTags = [];
             foreach ($items as $itm) {
                 $swapVarId = (int)($itm['exchange_variant_id'] ?? 0);
                 $swapQty = (int)($itm['qty'] ?? $itm['quantity'] ?? 0);
@@ -2577,6 +3036,60 @@ class WhatsappController {
                     Session::flash('error', 'Please scan and enter a valid replacement product QR/SKU for every exchange item.');
                     Response::redirect(url('warehouse/whatsapp-orders/returns'));
                     return;
+                }
+                $swapVariant = Database::fetchOne(
+                    "SELECT pv.sku, pv.qr_code, pv.pack_quantity, pv.qr_type, pv.is_complementary,
+                            p.is_complementary as product_is_complementary, wc.category_type
+                     FROM product_variants pv
+                     JOIN products p ON p.id = pv.product_id
+                     LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+                     WHERE pv.id = ? AND pv.is_active = 1",
+                    [$swapVarId]
+                );
+                if (!$swapVariant) {
+                    Session::flash('error', 'The selected replacement product is not an active WhatsApp variant.');
+                    Response::redirect(url('warehouse/whatsapp-orders/returns'));
+                    return;
+                }
+                $isAggregateReplacement = in_array(strtoupper((string)($swapVariant['category_type'] ?? 'NORMAL')), ['SERIES', 'COMPLEMENTARY'], true)
+                    || !empty($swapVariant['is_complementary'])
+                    || !empty($swapVariant['product_is_complementary'])
+                    || in_array(strtoupper((string)($swapVariant['qr_type'] ?? '')), ['SERIES_BATCH', 'SERIES'], true)
+                    || (int)($swapVariant['pack_quantity'] ?? 1) > 1;
+                if (!$isAggregateReplacement) {
+                    if ($swapQty !== 1) {
+                        Session::flash('error', 'Normal WhatsApp products must be exchanged one available scanned piece at a time.');
+                        Response::redirect(url('warehouse/whatsapp-orders/returns'));
+                        return;
+                    }
+                    $availableTags = $this->resolveChannelPieceTags($channelId, $swapVarId, $whatsappChannelIds, 'WHATSAPP')['available'];
+                    $normalizedAvailableTags = array_fill_keys(array_map('strtoupper', $availableTags), true);
+                    $normalizedSwapTag = strtoupper($swapTag);
+                    if (!isset($normalizedAvailableTags[$normalizedSwapTag])) {
+                        Session::flash('error', "Replacement piece '{$swapTag}' is not currently available in WhatsApp stock. Sold, damaged, adjusted, or previously dispatched pieces cannot be selected.");
+                        Response::redirect(url('warehouse/whatsapp-orders/returns'));
+                        return;
+                    }
+                    if (isset($usedReplacementPieceTags[$normalizedSwapTag])) {
+                        Session::flash('error', "Replacement piece '{$swapTag}' cannot be assigned more than once.");
+                        Response::redirect(url('warehouse/whatsapp-orders/returns'));
+                        return;
+                    }
+                    $usedReplacementPieceTags[$normalizedSwapTag] = true;
+                } else {
+                    $availableForVariant = 0.0;
+                    foreach ($whatsappChannelIds as $stockChannelId) {
+                        $availableForVariant += StockService::getBalance($swapVarId, 'CHANNEL', (int)$stockChannelId, 'AVAILABLE');
+                    }
+                    $validAggregateCodes = array_filter([
+                        strtoupper(trim((string)($swapVariant['sku'] ?? ''))),
+                        strtoupper(trim((string)($swapVariant['qr_code'] ?? ''))),
+                    ]);
+                    if ($availableForVariant <= 0 || !in_array(strtoupper($swapTag), $validAggregateCodes, true)) {
+                        Session::flash('error', 'Series or complementary replacement products require a valid product code and positive available WhatsApp stock.');
+                        Response::redirect(url('warehouse/whatsapp-orders/returns'));
+                        return;
+                    }
                 }
                 $replacementQtyByVariant[$swapVarId] = ($replacementQtyByVariant[$swapVarId] ?? 0) + $swapQty;
             }
@@ -2608,11 +3121,15 @@ class WhatsappController {
 
         // Enforce the one-time return rule on the server as well as in the UI.
         // This prevents a second return through a replayed or manually edited request.
+        $submittedReturnTags = [];
         foreach ($items as $k => $itm) {
             $saleItemId = is_numeric($k) ? (int)$k : (int)($itm['sale_item_id'] ?? 0);
             $requestedQty = (int)($itm['qty'] ?? $itm['quantity'] ?? 0);
             if ($saleItemId <= 0 || $requestedQty <= 0) continue;
-            $itemRow = Database::fetchOne("SELECT quantity FROM sale_items WHERE id = ? AND sale_id = ?", [$saleItemId, $saleId]);
+            $itemRow = Database::fetchOne(
+                "SELECT quantity, scanned_qr_codes, qr_code FROM sale_items WHERE id = ? AND sale_id = ?",
+                [$saleItemId, $saleId]
+            );
             if (!$itemRow) {
                 Session::flash('error', 'Invalid sale item selected for return.');
                 Response::redirect(url('warehouse/whatsapp-orders/returns'));
@@ -2628,6 +3145,43 @@ class WhatsappController {
                 Session::flash('error', "This item from {$invoiceLabel} has already been returned in full. Only {$remainingQty} piece(s) remain returnable.");
                 Response::redirect(url('warehouse/whatsapp-orders/returns'));
                 return;
+            }
+
+            $billedTags = [];
+            $decodedBilledTags = json_decode((string)($itemRow['scanned_qr_codes'] ?? ''), true);
+            $rawBilledTags = is_array($decodedBilledTags)
+                ? $decodedBilledTags
+                : (preg_split('/[,|]/', (string)($itemRow['scanned_qr_codes'] ?? '')) ?: []);
+            foreach ($rawBilledTags as $billedTag) {
+                if (is_array($billedTag)) {
+                    $billedTag = $billedTag['tag_code'] ?? $billedTag['qr_code'] ?? '';
+                }
+                $billedTag = strtoupper(trim((string)$billedTag, " \t\n\r\0\x0B\"'"));
+                if ($billedTag !== '') $billedTags[$billedTag] = true;
+            }
+            $saleQrCode = strtoupper(trim((string)($itemRow['qr_code'] ?? '')));
+            if ($saleQrCode !== '') $billedTags[$saleQrCode] = true;
+            $pieceTags = $itm['piece_tags'] ?? [];
+            if (!is_array($pieceTags)) {
+                $pieceTags = preg_split('/[,|]/', (string)$pieceTags) ?: [];
+            }
+            foreach ($pieceTags as $pieceTag) {
+                if (is_array($pieceTag)) {
+                    $pieceTag = $pieceTag['tag_code'] ?? $pieceTag['qr_code'] ?? '';
+                }
+                $pieceTag = trim((string)$pieceTag, " \t\n\r\0\x0B\"'");
+                $normalizedTag = strtoupper($pieceTag);
+                if ($pieceTag === '' || !isset($billedTags[$normalizedTag])) {
+                    Session::flash('error', "Piece tag '{$pieceTag}' is not billed on the selected WhatsApp invoice line.");
+                    Response::redirect(url('warehouse/whatsapp-orders/returns'));
+                    return;
+                }
+                if (isset($submittedReturnTags[$normalizedTag])) {
+                    Session::flash('error', "Piece tag '{$pieceTag}' cannot be returned more than once.");
+                    Response::redirect(url('warehouse/whatsapp-orders/returns'));
+                    return;
+                }
+                $submittedReturnTags[$normalizedTag] = true;
             }
         }
 
@@ -2678,6 +3232,7 @@ class WhatsappController {
         $dbRefundMode = in_array($refundMethod, $validRefundModes) ? $refundMethod : 'CASH';
         $refundAmount = $differenceAmount < 0 ? abs($differenceAmount) : ($returnType === 'RETURN' ? $totalReturnVal : 0.0);
         $userId = Auth::id() ?? Session::userId() ?? 1;
+        $usedReturnedSourceTags = [];
 
         $returnNumber = 'RET-WA-' . date('Ymd') . '-' . mt_rand(1000, 9999);
         Database::execute(
@@ -2727,17 +3282,83 @@ class WhatsappController {
                         $varId,
                         $qty,
                         $cond,
-                        $cond === 'GOOD' ? 'AVAILABLE' : 'DAMAGE',
+                        'REWORK',
                         $qty * $uPrice,
                         $cond,
                         $reason
                     ]
                 );
 
-                if ($cond === 'GOOD') {
-                    StockService::increase($varId, 'CHANNEL', $channelId, 'AVAILABLE', (float)$qty, 'RETURN_REINWARD', 'returns', $returnId, $userId, "WhatsApp Return Good Stock Re-Inward");
-                } else {
-                    StockService::increase($varId, 'CHANNEL', $channelId, 'DAMAGED', (float)$qty, 'RETURN_DAMAGED', 'returns', $returnId, $userId, "WhatsApp Return Damaged Stock");
+                $providedTags = $itm['piece_tags'] ?? [];
+                if (!is_array($providedTags)) {
+                    $providedTags = preg_split('/[,|]/', (string)$providedTags) ?: [];
+                }
+                $tagCandidates = [];
+                foreach ($providedTags as $providedTag) {
+                    if (is_array($providedTag)) {
+                        $providedTag = $providedTag['tag_code'] ?? $providedTag['qr_code'] ?? '';
+                    }
+                    $providedTag = trim((string)$providedTag, " \t\n\r\0\x0B\"'");
+                    if ($providedTag !== '') {
+                        $tagCandidates[] = $providedTag;
+                    }
+                }
+                $saleTagsRow = $saleItemId > 0
+                    ? Database::fetchOne("SELECT scanned_qr_codes, qr_code FROM sale_items WHERE id = ?", [$saleItemId])
+                    : null;
+                $decodedSaleTags = json_decode((string)($saleTagsRow['scanned_qr_codes'] ?? ''), true);
+                $saleTags = is_array($decodedSaleTags)
+                    ? $decodedSaleTags
+                    : (preg_split('/[,|]/', (string)($saleTagsRow['scanned_qr_codes'] ?? '')) ?: []);
+                $usedSourceTags = array_fill_keys(
+                    WhatsappReturnedProduct::getReturnedSourceTags($saleItemId),
+                    true
+                );
+                foreach ($saleTags as $saleTag) {
+                    if (is_array($saleTag)) {
+                        $saleTag = $saleTag['tag_code'] ?? $saleTag['qr_code'] ?? '';
+                    }
+                    $saleTag = trim((string)$saleTag, " \t\n\r\0\x0B\"'");
+                    if ($saleTag !== '') {
+                        $tagCandidates[] = $saleTag;
+                    }
+                }
+                $saleQrCode = trim((string)($saleTagsRow['qr_code'] ?? ''));
+                $uniqueCandidates = [];
+                foreach ($tagCandidates as $tagCandidate) {
+                    if (!isset($usedSourceTags[strtoupper($tagCandidate)]) && !isset($usedReturnedSourceTags[strtoupper($tagCandidate)])) {
+                        $uniqueCandidates[strtoupper($tagCandidate)] = $tagCandidate;
+                    }
+                }
+                if ($saleQrCode !== '' && !isset($usedSourceTags[strtoupper($saleQrCode)]) && !isset($usedReturnedSourceTags[strtoupper($saleQrCode)])) {
+                    $uniqueCandidates[strtoupper($saleQrCode)] = $saleQrCode;
+                }
+                $tagCandidates = array_values($uniqueCandidates);
+                $skuRow = Database::fetchOne("SELECT sku FROM product_variants WHERE id = ?", [$varId]);
+                for ($pieceIndex = 0; $pieceIndex < $qty; $pieceIndex++) {
+                    $originalTag = $tagCandidates[$pieceIndex] ?? '';
+                    $baseTag = $originalTag !== ''
+                        ? 'R' . $originalTag
+                        : 'R' . preg_replace('/[^A-Za-z0-9_-]/', '', (string)($skuRow['sku'] ?? 'ITEM'))
+                            . '-' . $returnNumber . '-' . ($pieceIndex + 1);
+                    $returnedTag = $baseTag;
+                    $collision = 1;
+                    while (WhatsappReturnedProduct::tagExists($returnedTag)) {
+                        $returnedTag = $baseTag . '-' . $returnId . '-' . $collision++;
+                    }
+                    WhatsappReturnedProduct::create([
+                        'channel_id' => $channelId,
+                        'return_id' => $returnId,
+                        'sale_item_id' => $saleItemId,
+                        'variant_id' => $varId,
+                        'original_piece_tag' => $originalTag,
+                        'returned_tag' => $returnedTag,
+                        'item_condition' => $cond,
+                    ]);
+                    if ($originalTag !== '') {
+                        $usedSourceTags[strtoupper($originalTag)] = true;
+                        $usedReturnedSourceTags[strtoupper($originalTag)] = true;
+                    }
                 }
             }
         }
@@ -2916,6 +3537,119 @@ class WhatsappController {
 
     public function whatsappReturnView(int $id): void {
         $this->whatsappReturnInvoice($id);
+    }
+
+    public function whatsappReturnedProducts(): void {
+        $channelIds = $this->getWhatsappChannelIds();
+        $products = WhatsappReturnedProduct::getAll($channelIds);
+        Response::view('whatsapp_orders.returned_products', [
+            'pageTitle' => 'WhatsApp Returned Products',
+            'activeModule' => 'whatsapp',
+            'activeMenu' => 'wh-whatsapp-returned-products',
+            'breadcrumb' => [
+                ['label' => 'WhatsApp Orders', 'url' => url('warehouse/whatsapp-orders')],
+                ['label' => 'Inventory', 'url' => url('warehouse/whatsapp-orders/allocations')],
+                ['label' => 'Returned Products'],
+            ],
+            'products' => $products,
+        ]);
+    }
+
+    public function whatsappReturnedProductLabel(int $id): void {
+        $product = WhatsappReturnedProduct::find($id, $this->getWhatsappChannelIds());
+        if (!$product) {
+            Session::flash('error', 'Returned product label was not found.');
+            Response::redirect(url('warehouse/whatsapp-orders/returned-products'));
+            return;
+        }
+        Response::viewOnly('whatsapp_orders.returned_product_label', [
+            'pageTitle' => 'Returned Product Label ' . $product['returned_tag'],
+            'activeModule' => 'whatsapp',
+            'activeMenu' => 'wh-whatsapp-returned-products',
+            'product' => $product,
+            'csrfToken' => CSRF::token(),
+        ]);
+    }
+
+    private function ensureWhatsappReturnedProductStock(array $product, int $userId): void {
+        $alreadyRestocked = Database::fetchOne(
+            "SELECT id FROM stock_transactions
+             WHERE reference_type = 'whatsapp_returned_products' AND reference_id = ?
+             LIMIT 1 FOR UPDATE",
+            [(int)$product['id']]
+        );
+        if ($alreadyRestocked) {
+            return;
+        }
+
+        $isGood = strtoupper((string)($product['item_condition'] ?? 'GOOD')) === 'GOOD';
+        StockService::increase(
+            (int)$product['variant_id'],
+            'CHANNEL',
+            (int)$product['channel_id'],
+            $isGood ? 'AVAILABLE' : 'DAMAGED',
+            1,
+            $isGood ? 'RETURN_REINWARD' : 'RETURN_DAMAGED',
+            'whatsapp_returned_products',
+            (int)$product['id'],
+            $userId,
+            'WhatsApp customer return reinwarded after returned QR label print'
+        );
+    }
+
+    private function syncPrintedWhatsappReturnedStock(array $channelIds, int $userId, ?int $variantId = null): void {
+        $products = $variantId !== null
+            ? WhatsappReturnedProduct::getForVariant($variantId, $channelIds)
+            : WhatsappReturnedProduct::getAll($channelIds);
+
+        foreach ($products as $product) {
+            if (empty($product['printed_at'])) {
+                continue;
+            }
+
+            Database::beginTransaction();
+            try {
+                $lockedProduct = WhatsappReturnedProduct::find((int)$product['id'], $channelIds, true);
+                if (!$lockedProduct || empty($lockedProduct['printed_at'])) {
+                    Database::rollback();
+                    continue;
+                }
+                $this->ensureWhatsappReturnedProductStock($lockedProduct, $userId);
+                Database::commit();
+            } catch (Throwable $e) {
+                Database::rollback();
+                error_log('WhatsApp returned product inventory sync failed: ' . $e->getMessage());
+                throw $e;
+            }
+        }
+    }
+
+    public function markWhatsappReturnedProductPrinted(int $id): void {
+        CSRF::verify();
+        $channelIds = $this->getWhatsappChannelIds();
+        $userId = Auth::id() ?? Session::userId() ?? 1;
+
+        Database::beginTransaction();
+        try {
+            $product = WhatsappReturnedProduct::find($id, $channelIds, true);
+            if (!$product) {
+                Database::rollback();
+                Response::jsonError('Returned product was not found in WhatsApp inventory.');
+                return;
+            }
+            if (empty($product['printed_at']) && !WhatsappReturnedProduct::markPrinted($id, $channelIds, $userId)) {
+                throw new RuntimeException('Could not update the returned product print status.');
+            }
+
+            $this->ensureWhatsappReturnedProductStock($product, $userId);
+            Database::commit();
+        } catch (Throwable $e) {
+            Database::rollback();
+            error_log('WhatsApp returned product print/reinward failed: ' . $e->getMessage());
+            Response::jsonError('Could not complete the returned product print and inventory update.');
+            return;
+        }
+        Response::jsonSuccess('Returned product label printed and inventory updated.');
     }
 
     /**
@@ -4087,6 +4821,51 @@ class WhatsappController {
                    AND location_id IN ($channelPlaceholders) AND stock_state = 'AVAILABLE'",
                 array_merge([(int)$foundVariant['id']], $whatsappChannelIds)
             )['available_stock'] ?? 0);
+            $isAggregateStock = false;
+            $pieceAvailable = false;
+            if (!empty($_REQUEST['whatsapp_replacement'])) {
+                $variantType = Database::fetchOne(
+                    "SELECT pv.pack_quantity, pv.qr_type, pv.is_complementary,
+                            p.is_complementary as product_is_complementary, wc.category_type
+                     FROM product_variants pv
+                     JOIN products p ON p.id = pv.product_id
+                     LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+                     WHERE pv.id = ?",
+                    [(int)$foundVariant['id']]
+                ) ?: [];
+                $isAggregateStock = in_array(strtoupper((string)($variantType['category_type'] ?? 'NORMAL')), ['SERIES', 'COMPLEMENTARY'], true)
+                    || !empty($variantType['is_complementary'])
+                    || !empty($variantType['product_is_complementary'])
+                    || in_array(strtoupper((string)($variantType['qr_type'] ?? '')), ['SERIES_BATCH', 'SERIES'], true)
+                    || (int)($variantType['pack_quantity'] ?? 1) > 1;
+
+                if ($isAggregateStock) {
+                    if ($availableStock <= 0) {
+                        echo json_encode(['success' => false, 'message' => 'This series or complementary product has no available WhatsApp stock.']);
+                        return;
+                    }
+                    $matchedTagCode = $foundVariant['sku'];
+                } else {
+                    $availablePieceTags = $this->resolveChannelPieceTags(
+                        (int)($whatsappChannelIds[0] ?? 0),
+                        (int)$foundVariant['id'],
+                        $whatsappChannelIds,
+                        'WHATSAPP'
+                    )['available'];
+                    $pieceAvailable = in_array(
+                        strtoupper(trim((string)$matchedTagCode)),
+                        array_map('strtoupper', $availablePieceTags),
+                        true
+                    );
+                    if (!$pieceAvailable) {
+                        echo json_encode([
+                            'success' => false,
+                            'message' => 'This normal product piece is not currently available in WhatsApp stock. Scan an available piece tag; sold or damaged pieces cannot be replacement items.'
+                        ]);
+                        return;
+                    }
+                }
+            }
             $payload = [
                 'id'            => (int)$foundVariant['id'],
                 'variant_id'    => (int)$foundVariant['id'],
@@ -4100,7 +4879,9 @@ class WhatsappController {
                 'price'         => $sellingPrice,
                 'mrp'           => (float)($foundVariant['mrp'] ?? $sellingPrice),
                 'stock'         => $availableStock,
-                'tag_code'      => $matchedTagCode
+                'tag_code'      => $matchedTagCode,
+                'aggregate_stock' => $isAggregateStock,
+                'piece_available' => $pieceAvailable
             ];
             echo json_encode([
                 'success'  => true,
@@ -4909,16 +5690,25 @@ class WhatsappController {
      */
     private function resolveChannelPieceTags(int $channelId, int $variantId, array $chanIds, string $channelName = 'WHATSAPP'): array {
         $placeholders = implode(',', array_fill(0, count($chanIds), '?'));
+        $destinationTypes = array_map(static fn(int $id): string => 'CHANNEL_' . $id, $chanIds);
+        $destinationTypePlaceholders = implode(',', array_fill(0, count($destinationTypes), '?'));
 
         // 1. Inward Allocation Tags (in allocation order)
         $allocItems = Database::fetchAll(
-            "SELECT ai.selected_qr_codes, wa.allocation_number
+            "SELECT ai.selected_qr_codes, ai.received_qr_codes, ai.received_qty,
+                    ai.damaged_qty, ai.dispatched_qty, ai.requested_qty,
+                    wa.allocation_number, wa.status
              FROM allocation_items ai
              JOIN warehouse_allocations wa ON ai.allocation_id = wa.id
              WHERE ai.variant_id = ? 
-               AND wa.destination_type = 'CHANNEL' AND wa.destination_id IN ($placeholders)
+               AND wa.status NOT IN ('REQUESTED', 'PENDING', 'CANCELLED', 'REJECTED')
+               AND (
+                    (wa.destination_type = 'CHANNEL' AND wa.destination_id IN ($placeholders))
+                    OR wa.destination_type IN ($destinationTypePlaceholders)
+                    OR (wa.destination_type = 'WHATSAPP' AND wa.channel_id IN ($placeholders))
+               )
              ORDER BY wa.id ASC, ai.id ASC",
-            array_merge([$variantId], $chanIds)
+            array_merge([$variantId], $chanIds, $destinationTypes, $chanIds)
         );
 
         $allAllocatedTags = [];
@@ -4927,24 +5717,46 @@ class WhatsappController {
             if (empty($allocRef) && !empty($ai['allocation_number'])) {
                 $allocRef = $ai['allocation_number'];
             }
-            if (!empty($ai['selected_qr_codes'])) {
-                $decoded = json_decode($ai['selected_qr_codes'], true);
-                if (is_array($decoded)) {
-                    foreach ($decoded as $t) {
-                        $tStr = is_array($t) ? ($t['tag_code'] ?? ($t['qr_code'] ?? '')) : (string)$t;
-                        $tStr = trim($tStr);
-                        if ($tStr && !in_array($tStr, $allAllocatedTags)) {
-                            $allAllocatedTags[] = $tStr;
-                        }
+            $receivedTags = [];
+            if (!empty($ai['received_qr_codes'])) {
+                $decodedReceived = json_decode((string)$ai['received_qr_codes'], true);
+                $rawReceivedTags = is_array($decodedReceived)
+                    ? $decodedReceived
+                    : explode(',', (string)$ai['received_qr_codes']);
+                foreach ($rawReceivedTags as $tag) {
+                    if (is_array($tag)) {
+                        $tag = $tag['tag_code'] ?? $tag['qr_code'] ?? $tag['tag'] ?? '';
+                    }
+                    $tag = trim((string)$tag);
+                    if ($tag !== '') $receivedTags[] = $tag;
+                }
+            }
+            if (empty($receivedTags) && !empty($ai['selected_qr_codes'])) {
+                $selectedRaw = (string)$ai['selected_qr_codes'];
+                $decodedSelected = json_decode($selectedRaw, true);
+                $selectedTags = [];
+                if (is_array($decodedSelected)) {
+                    foreach ($decodedSelected as $tag) {
+                        $tag = is_array($tag) ? ($tag['tag_code'] ?? ($tag['qr_code'] ?? '')) : (string)$tag;
+                        $tag = trim($tag);
+                        if ($tag !== '') $selectedTags[] = $tag;
                     }
                 } else {
-                    $tags = explode(',', $ai['selected_qr_codes']);
-                    foreach ($tags as $t) {
-                        $t = trim($t);
-                        if ($t && !in_array($t, $allAllocatedTags)) {
-                            $allAllocatedTags[] = $t;
-                        }
-                    }
+                    $selectedTags = array_values(array_filter(array_map('trim', explode(',', $selectedRaw))));
+                }
+                $dispatched = (int)($ai['dispatched_qty'] ?? 0);
+                $requested = (int)($ai['requested_qty'] ?? 0);
+                $receivedQty = (int)($ai['received_qty'] ?? 0);
+                if ($receivedQty <= 0 && in_array(strtoupper((string)$ai['status']), ['COMPLETED', 'DELIVERED', 'RECEIVED'], true)) {
+                    $receivedQty = max($dispatched, $requested);
+                }
+                $physicallyReceivedQty = max(0, $receivedQty + (int)($ai['damaged_qty'] ?? 0));
+                $receivedTags = array_slice($selectedTags, 0, $physicallyReceivedQty);
+            }
+            foreach ($receivedTags as $tag) {
+                $tag = trim((string)$tag);
+                if ($tag !== '' && !in_array($tag, $allAllocatedTags, true)) {
+                    $allAllocatedTags[] = $tag;
                 }
             }
         }
@@ -4970,6 +5782,9 @@ class WhatsappController {
                 $tags = explode(',', $sr['scanned_qr_codes']);
             }
             foreach ($tags as $t) {
+                if (is_array($t)) {
+                    $t = $t['tag_code'] ?? $t['qr_code'] ?? $t['tag'] ?? '';
+                }
                 $t = trim($t);
                 if ($t && !in_array($t, $soldTags)) {
                     $soldTags[] = $t;
@@ -4991,7 +5806,7 @@ class WhatsappController {
         );
 
         $exchangeDispatchedTags = [];
-        $restockedTags = [];
+        $returnedUnavailableTags = [];
         foreach ($exchangeRows as $er) {
             $pTags = array_map('trim', explode(',', $er['piece_tag']));
             foreach ($pTags as $pt) {
@@ -5001,49 +5816,44 @@ class WhatsappController {
                         $exchangeDispatchedTags[] = $pt;
                     }
                 } elseif ($er['item_type'] === 'OLD') {
-                    if (!in_array($pt, $restockedTags)) {
-                        $restockedTags[] = $pt;
+                    if (!in_array($pt, $returnedUnavailableTags)) {
+                        $returnedUnavailableTags[] = $pt;
                     }
                 }
             }
         }
 
-        // 4. Returns Restocked / Returned Damaged Tags
-        $returnsRows = Database::fetchAll(
-            "SELECT ri.condition_type, ri.item_condition, ri.destination, r.notes as return_notes, si.scanned_qr_codes
-             FROM return_items ri
-             JOIN returns r ON ri.return_id = r.id
-             LEFT JOIN sale_items si ON ri.sale_item_id = si.id
-             LEFT JOIN sales s ON r.sale_id = s.id
-             WHERE ri.variant_id = ?
-               AND (r.source_type = ? OR s.sales_channel = ? OR s.notes LIKE ? OR s.shop_id IN ($placeholders))
-               AND r.status NOT IN ('CANCELLED')",
-            array_merge([$variantId, $channelName, $channelName, '%' . $channelName . '%'], $chanIds)
-        );
-
-        $returnedDamagedTags = [];
-        foreach ($returnsRows as $rr) {
-            $cond = strtoupper(trim($rr['item_condition'] ?? $rr['condition_type'] ?? 'GOOD'));
-            $tagsToProcess = [];
-            if (!empty($rr['scanned_qr_codes'])) {
-                $decoded = json_decode($rr['scanned_qr_codes'], true);
-                if (is_array($decoded)) {
-                    $tagsToProcess = $decoded;
-                } else {
-                    $tagsToProcess = explode(',', $rr['scanned_qr_codes']);
+        // Returned pieces enter the channel piece pool only after their QR
+        // label is printed and the print action has reinwarded their stock.
+        $allocatedTagSet = array_fill_keys(array_map('strtoupper', $allAllocatedTags), true);
+        $returnedCustomerDamagedTags = [];
+        foreach (WhatsappReturnedProduct::getForVariant($variantId, $chanIds) as $returnedProduct) {
+            $originalTag = trim((string)($returnedProduct['original_piece_tag'] ?? ''));
+            $isPrinted = !empty($returnedProduct['printed_at']);
+            if ($originalTag !== '' && isset($allocatedTagSet[strtoupper($originalTag)])) {
+                if (!in_array($originalTag, $returnedUnavailableTags, true)) {
+                    $returnedUnavailableTags[] = $originalTag;
                 }
             }
-            foreach ($tagsToProcess as $pt) {
-                $pt = trim($pt);
-                if (!$pt) continue;
-                if ($cond === 'GOOD') {
-                    if (!in_array($pt, $restockedTags)) $restockedTags[] = $pt;
-                } else {
-                    if (!in_array($pt, $returnedDamagedTags)) $returnedDamagedTags[] = $pt;
+            if (!$isPrinted) {
+                continue;
+            }
+
+            if ($originalTag !== '' && !in_array($originalTag, $returnedUnavailableTags, true)) {
+                $returnedUnavailableTags[] = $originalTag;
+            }
+            $returnedTag = trim((string)($returnedProduct['returned_tag'] ?? ''));
+            if ($returnedTag !== '') {
+                $normalizedReturnedTag = strtoupper($returnedTag);
+                if (!isset($allocatedTagSet[$normalizedReturnedTag])) {
+                    $allAllocatedTags[] = $returnedTag;
+                    $allocatedTagSet[$normalizedReturnedTag] = true;
+                }
+                if (strtoupper((string)($returnedProduct['item_condition'] ?? 'GOOD')) !== 'GOOD') {
+                    $returnedCustomerDamagedTags[] = $returnedTag;
                 }
             }
         }
-
         // 5. Quarantined Damaged piece tags
         $damagedRows = Database::fetchAll(
             "SELECT tag_code
@@ -5057,17 +5867,24 @@ class WhatsappController {
 
         $damagedTags = [];
         foreach ($damagedRows as $dr) {
-            $t = trim($dr['tag_code'] ?? '');
-            if ($t && !in_array($t, $damagedTags)) {
-                $damagedTags[] = $t;
+            $rawDamageTags = trim((string)($dr['tag_code'] ?? ''));
+            $decodedDamageTags = json_decode($rawDamageTags, true);
+            $recordedDamageTags = is_array($decodedDamageTags) ? $decodedDamageTags : explode(',', $rawDamageTags);
+            foreach ($recordedDamageTags as $t) {
+                if (is_array($t)) {
+                    $t = $t['tag_code'] ?? $t['qr_code'] ?? $t['tag'] ?? '';
+                }
+                $t = trim((string)$t);
+                if ($t && !in_array($t, $damagedTags, true)) {
+                    $damagedTags[] = $t;
+                }
+            }
+            foreach ($returnedCustomerDamagedTags as $returnedTag) {
+                if (!in_array($returnedTag, $damagedTags, true)) {
+                    $damagedTags[] = $returnedTag;
+                }
             }
         }
-        foreach ($returnedDamagedTags as $rdt) {
-            if (!in_array($rdt, $damagedTags)) {
-                $damagedTags[] = $rdt;
-            }
-        }
-
         // 6. Returned to Warehouse piece tags
         $returnedRows = Database::fetchAll(
             "SELECT wr.notes, wr.created_at, wri.id as return_item_id, wri.variant_id, wri.returned_qty, wri.classification,
@@ -5149,17 +5966,25 @@ class WhatsappController {
 
         // 7. Available pieces = Allocated minus (Sold/Exchanged Out + Damaged + Returned to Warehouse), with Restocked items restored
         $availableTags = [];
+        $damagedTagSet = array_fill_keys(array_map('strtoupper', $damagedTags), true);
+        $returnedTagSet = array_fill_keys(
+            array_map('strtoupper', array_merge($returnedTags, $returnedUnavailableTags)),
+            true
+        );
+        $exchangeTagSet = array_fill_keys(array_map('strtoupper', $exchangeDispatchedTags), true);
+        $soldTagSet = array_fill_keys(array_map('strtoupper', $soldTags), true);
         foreach ($allAllocatedTags as $tag) {
-            if (in_array($tag, $damagedTags)) {
+            $normalizedTag = strtoupper($tag);
+            if (isset($damagedTagSet[$normalizedTag])) {
                 continue;
             }
-            if (in_array($tag, $returnedTags)) {
+            if (isset($returnedTagSet[$normalizedTag])) {
                 continue;
             }
-            if (in_array($tag, $exchangeDispatchedTags)) {
+            if (isset($exchangeTagSet[$normalizedTag])) {
                 continue;
             }
-            if (in_array($tag, $soldTags) && !in_array($tag, $restockedTags)) {
+            if (isset($soldTagSet[$normalizedTag])) {
                 continue;
             }
             $availableTags[] = $tag;
@@ -5175,13 +6000,27 @@ class WhatsappController {
             }
         }
 
+        $adjustedTags = [];
+        foreach ($chanIds as $adjustmentChannelId) {
+            foreach (WhatsappStockAdjustment::getApprovedDecreaseTags((int)$adjustmentChannelId, $variantId) as $adjustedTag) {
+                $adjustedTags[strtoupper($adjustedTag)] = true;
+            }
+        }
+        if ($adjustedTags) {
+            $availableTags = array_values(array_filter(
+                $availableTags,
+                static fn(string $tag): bool => !isset($adjustedTags[strtoupper($tag)])
+            ));
+        }
+
         return [
             'all'                 => $allAllocatedTags,
             'sold'                => array_values(array_unique(array_merge($soldTags, $exchangeDispatchedTags))),
             'exchange_dispatched' => $exchangeDispatchedTags,
-            'restocked'           => $restockedTags,
+            'restocked'           => [],
             'damaged'             => $damagedTags,
-            'returned'            => $returnedTags,
+            'returned'            => array_values(array_unique(array_merge($returnedTags, $returnedUnavailableTags))),
+            'adjusted'            => array_keys($adjustedTags),
             'available'           => $availableTags,
             'inward_ref'          => $allocRef,
         ];

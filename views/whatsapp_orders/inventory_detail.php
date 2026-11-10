@@ -39,7 +39,7 @@ $firstTag = !empty($pieceTags) ? ($pieceTags[0]['tag_code'] ?? '') : '';
 $lastTag  = !empty($pieceTags) ? ($pieceTags[count($pieceTags) - 1]['tag_code'] ?? '') : '';
 $tagRangeStr = ($firstTag && $lastTag) ? ($firstTag === $lastTag ? $firstTag : "{$firstTag} → {$lastTag}") : 'N/A';
 usort($pieceTags, static function ($a, $b) {
-    $priority = ['AVAILABLE' => 0, 'DAMAGED' => 1, 'IN_TRANSIT' => 2, 'SOLD' => 3, 'RETURNED' => 4];
+    $priority = ['AVAILABLE' => 0, 'DAMAGED' => 1, 'ADJUSTED' => 2, 'IN_TRANSIT' => 3, 'SOLD' => 4, 'RETURNED' => 5];
     return ($priority[strtoupper($a['status'] ?? '')] ?? 5) <=> ($priority[strtoupper($b['status'] ?? '')] ?? 5);
 });
 ?>
@@ -426,6 +426,7 @@ usort($pieceTags, static function ($a, $b) {
                                     $isWarehouseReturned => 'border-secondary-subtle',
                                     $st === 'AVAILABLE'  => 'border-success',
                                     $st === 'DAMAGED'    => 'border-danger',
+                                    $st === 'ADJUSTED'   => 'border-dark-subtle',
                                     $st === 'SOLD'       => 'border-secondary-subtle',
                                     $st === 'IN_TRANSIT' => 'border-warning',
                                     default              => 'border-secondary'
@@ -437,6 +438,7 @@ usort($pieceTags, static function ($a, $b) {
                                     $isWarehouseReturned => '<span class="badge bg-secondary text-white fw-bold shadow-sm"><i class="bi bi-box-arrow-right me-1"></i>RETURNED (WAREHOUSE)</span>',
                                     $st === 'AVAILABLE'  => '<span class="badge bg-success-subtle text-success border border-success-subtle fw-bold"><i class="bi bi-check-circle me-1"></i>AVAILABLE IN STOCK</span>',
                                     $st === 'DAMAGED'    => '<span class="badge bg-danger-subtle text-danger border border-danger-subtle fw-bold"><i class="bi bi-shield-x me-1"></i>DAMAGED (QUARANTINED)</span>',
+                                    $st === 'ADJUSTED'   => '<span class="badge bg-dark-subtle text-dark border fw-bold"><i class="bi bi-sliders me-1"></i>ADJUSTED OUT</span>',
                                     $st === 'SOLD'       => '<span class="badge bg-secondary text-white fw-bold shadow-sm"><i class="bi bi-cart-x-fill me-1"></i>SOLD IN INVOICE</span>',
                                     $st === 'IN_TRANSIT' => '<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle fw-bold"><i class="bi bi-truck me-1"></i>IN-TRANSIT</span>',
                                     default              => '<span class="badge bg-light text-dark border">' . htmlspecialchars($st) . '</span>'
@@ -546,9 +548,6 @@ usort($pieceTags, static function ($a, $b) {
                                                     <div class="d-flex justify-content-between align-items-center">
                                                         <small class="text-success fw-semibold"><i class="bi bi-check2-all me-1"></i>Ready for WhatsApp Billing</small>
                                                         <div class="d-flex gap-1">
-                                                            <a href="<?= url('warehouse/whatsapp-orders/damage/create?variant_id=' . $item['variant_id'] . '&tag_code=' . urlencode($pt['tag_code']) . '&allocation_id=' . ($pt['allocation_id'] ?? '')) ?>" class="btn btn-xs btn-outline-danger px-2 py-1" title="Quarantine as Damaged">
-                                                                <i class="bi bi-shield-x"></i> Report Damage
-                                                            </a>
                                                             <button type="button" class="btn btn-xs btn-outline-primary px-2 py-1" title="Print Tag Sticker" onclick="printSinglePieceTag(<?= htmlspecialchars(json_encode($pt)) ?>)">
                                                                 <i class="bi bi-printer"></i>
                                                             </button>
@@ -585,6 +584,8 @@ usort($pieceTags, static function ($a, $b) {
                                                             <span class="badge bg-secondary text-white">Sold</span>
                                                         <?php endif; ?>
                                                     </div>
+                                                <?php elseif ($st === 'ADJUSTED'): ?>
+                                                    <small class="text-muted fw-semibold"><i class="bi bi-sliders me-1"></i><?= htmlspecialchars($pt['meta']['adjustment_reason'] ?? 'Removed by stock adjustment') ?></small>
                                                 <?php elseif ($st === 'IN_TRANSIT'): ?>
                                                     <div class="d-flex justify-content-between align-items-center">
                                                         <small class="text-warning-emphasis"><i class="bi bi-hourglass-split me-1"></i>Awaiting Inward Confirmation</small>
@@ -629,6 +630,7 @@ usort($pieceTags, static function ($a, $b) {
                                             $isExchanged => '<span class="badge text-white" style="background-color: #7c3aed;">EXCHANGED (OUT)</span>',
                                             $st === 'AVAILABLE'  => '<span class="badge bg-success text-white">AVAILABLE</span>',
                                             $st === 'DAMAGED'    => '<span class="badge bg-danger text-white">DAMAGED</span>',
+                                            $st === 'ADJUSTED'   => '<span class="badge bg-dark text-white">ADJUSTED OUT</span>',
                                             $st === 'SOLD'       => '<span class="badge bg-secondary text-white">SOLD OUT</span>',
                                             $st === 'IN_TRANSIT' => '<span class="badge bg-warning text-dark">IN-TRANSIT</span>',
                                             default              => '<span class="badge bg-secondary">' . htmlspecialchars($st) . '</span>'
@@ -675,6 +677,8 @@ usort($pieceTags, static function ($a, $b) {
                                                     <span class="text-danger"><i class="bi bi-shield-x me-1"></i><?= htmlspecialchars($pt['meta']['damage_reason'] ?? 'Defect Quarantined') ?></span>
                                                 <?php elseif ($st === 'SOLD'): ?>
                                                     <span class="text-muted"><i class="bi bi-receipt me-1"></i><?= htmlspecialchars($pt['meta']['invoice_number'] ?? 'WhatsApp Order') ?> (Billed)</span>
+                                                <?php elseif ($st === 'ADJUSTED'): ?>
+                                                    <span class="text-muted"><i class="bi bi-sliders me-1"></i><?= htmlspecialchars($pt['meta']['adjustment_reason'] ?? 'Removed by stock adjustment') ?></span>
                                                 <?php elseif ($st === 'AVAILABLE'): ?>
                                                     <span class="text-success"><i class="bi bi-check2 me-1"></i>In Channel Stock</span>
                                                 <?php else: ?>
@@ -693,10 +697,6 @@ usort($pieceTags, static function ($a, $b) {
                                                     <?php elseif ($isExchanged && !empty($pt['meta']['exchange_id'])): ?>
                                                         <a href="<?= url('warehouse/whatsapp-orders/returns/invoice/' . ($pt['meta']['return_id'] ?? $pt['meta']['exchange_id'])) ?>" class="btn btn-xs btn-outline-primary px-2 py-1" title="View Exchange Slip" style="color: #7c3aed; border-color: #a855f7;">
                                                             <i class="bi bi-receipt"></i>
-                                                        </a>
-                                                    <?php elseif ($st === 'AVAILABLE'): ?>
-                                                        <a href="<?= url('warehouse/whatsapp-orders/damage/create?variant_id=' . $item['variant_id'] . '&tag_code=' . urlencode($pt['tag_code']) . '&allocation_id=' . ($pt['allocation_id'] ?? '')) ?>" class="btn btn-xs btn-outline-danger px-2 py-1" title="Report Damage">
-                                                            <i class="bi bi-shield-x"></i>
                                                         </a>
                                                     <?php elseif ($st === 'SOLD' && !empty($pt['meta']['sale_id'])): ?>
                                                         <a href="<?= url('sales/whatsapp/view/' . $pt['meta']['sale_id']) ?>" class="btn btn-xs btn-outline-secondary px-2 py-1" title="View Sale">
@@ -1250,7 +1250,10 @@ usort($pieceTags, static function ($a, $b) {
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-4 bg-light" id="printableLabelsContainer">
-                <div class="row g-3" id="printableLabelsRow">
+                <div class="d-flex justify-content-between align-items-center mb-3 no-print">
+                    <div class="small text-muted">Sticker format: Standard 50mm × 30mm Barcode/QR Garment Label</div>
+                </div>
+                <div class="printable-stickers-container" id="printableLabelsRow">
                     <!-- Populated dynamically via JS -->
                 </div>
             </div>
@@ -1265,31 +1268,175 @@ usort($pieceTags, static function ($a, $b) {
 </div>
 
 <style>
+.printable-stickers-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    gap: 14px;
+}
+.stock-sticker-item {
+    border: 1.5px dashed #0f172a;
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: #fff;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    min-height: 110px;
+    text-align: left;
+}
+.stock-sticker-left {
+    flex-shrink: 0;
+    text-align: center;
+}
+.stock-sticker-qr-box {
+    width: 72px;
+    height: 72px;
+    background: #fff;
+    padding: 2px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.stock-sticker-qr-box canvas {
+    display: none !important;
+}
+.stock-sticker-qr-box img {
+    max-width: 100% !important;
+    max-height: 100% !important;
+    display: block !important;
+    object-fit: contain;
+    margin: 0 auto !important;
+}
+.stock-sticker-tag-badge {
+    background: #0f172a;
+    color: #fff;
+    font-family: monospace;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 4px;
+    border-radius: 4px;
+    margin-top: 4px;
+    display: block;
+    text-align: center;
+    letter-spacing: 0.5px;
+}
+.stock-sticker-right {
+    flex-grow: 1;
+    overflow: hidden;
+}
+.stock-sticker-title {
+    font-size: 12px;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.2;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.stock-sticker-meta {
+    font-size: 11px;
+    font-weight: 600;
+    color: #475569;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.stock-sticker-sku-meta {
+    font-size: 10px;
+    color: #64748b;
+    font-family: monospace;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.stock-sticker-prices {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid #f1f5f9;
+}
+.stock-sticker-mrp {
+    font-size: 10.5px;
+    color: #94a3b8;
+    text-decoration: line-through;
+    line-height: 1.2;
+}
+.stock-sticker-price {
+    font-size: 12.5px;
+    font-weight: 800;
+    color: #166534;
+    line-height: 1.2;
+}
 @media print {
     body * {
-        visibility: hidden;
+        visibility: hidden !important;
     }
-    #printableLabelsContainer, #printableLabelsContainer * {
-        visibility: visible;
+    #printLabelsModal,
+    #printLabelsModal .modal-dialog,
+    #printLabelsModal .modal-content,
+    #printLabelsModal .modal-body,
+    #printableLabelsContainer,
+    #printableLabelsContainer * {
+        visibility: visible !important;
     }
-    #printableLabelsContainer {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100%;
-        background: #fff !important;
+    #printLabelsModal {
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        margin: 0 !important;
         padding: 0 !important;
+        background: transparent !important;
     }
-    .modal-backdrop, .modal-footer, .modal-header {
+    #printLabelsModal .modal-content {
+        border: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
+    }
+    .no-print, .modal-backdrop, .modal-footer, .modal-header {
         display: none !important;
+    }
+    .printable-stickers-container {
+        display: grid !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 6mm !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        border: none !important;
+    }
+    .stock-sticker-item {
+        border: 1px solid #000 !important;
+        border-radius: 4px !important;
+        padding: 3mm !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
     }
 }
 </style>
 
 <script>
 const allPieceTagsData = <?= json_encode($pieceTags) ?>;
-const masterSku = <?= json_encode($item['sku']) ?>;
-const productName = <?= json_encode($item['product_name']) ?>;
+const labelProductInfo = <?= json_encode([
+    'brand' => $item['brand_name'] ?? 'GRM WAREHOUSE',
+    'categoryHierarchy' => implode(' / ', array_filter([
+        $item['category_name'] ?? '',
+        $item['subcategory_name'] ?? '',
+        $item['sub_subcategory_name'] ?? '',
+    ])),
+    'size' => $item['size_name'] ?? 'Free Size',
+    'color' => $item['color_name'] ?? 'Standard',
+    'sku' => $item['sku'] ?? '',
+]) ?>;
 const mrpVal = <?= json_encode($mrp) ?>;
 const sellVal = <?= json_encode($sellingPrice) ?>;
 
@@ -1435,30 +1582,39 @@ function populatePrintModal(pieces) {
     container.innerHTML = '';
 
     pieces.forEach((p, idx) => {
-        const col = document.createElement('div');
-        col.className = 'col-sm-6 col-md-4 col-lg-3';
-        col.innerHTML = `
-            <div class="bg-white p-2 border rounded text-center shadow-sm" style="page-break-inside: avoid; border: 1.5px dashed #333 !important;">
-                <div class="fw-bold text-dark font-monospace" style="font-size: 11px;">GRM INVENTORY</div>
-                <div class="small fw-semibold text-truncate text-dark mb-1" style="font-size: 10px;">${productName}</div>
-                <div id="modalQr_${idx}" class="d-flex justify-content-center my-1"></div>
-                <div class="fw-bold font-monospace text-dark" style="font-size: 13px;">${p.tag_code}</div>
-                <div class="small font-monospace text-muted" style="font-size: 9px;">${masterSku}</div>
-                <div class="d-flex justify-content-between px-2 text-dark font-monospace" style="font-size: 10px;">
-                    <span>MRP: ₹${p.mrp || mrpVal}</span>
-                    <span class="fw-bold">SP: ₹${p.disc || sellVal}</span>
+        const mrp = parseFloat(p.mrp || mrpVal) || 0;
+        const sellingPrice = parseFloat(p.disc || sellVal) || 0;
+        const fmtMrp = Number.isInteger(mrp) ? mrp : mrp.toFixed(2);
+        const fmtSelling = Number.isInteger(sellingPrice) ? sellingPrice : sellingPrice.toFixed(2);
+        const sticker = document.createElement('div');
+        sticker.className = 'stock-sticker-item';
+        sticker.innerHTML = `
+            <div class="stock-sticker-left">
+                <div class="stock-sticker-qr-box">
+                    <div id="modalQr_${idx}"></div>
+                </div>
+                <span class="stock-sticker-tag-badge">${p.tag_code}</span>
+            </div>
+            <div class="stock-sticker-right">
+                <div class="stock-sticker-title">${labelProductInfo.brand || 'GRM WAREHOUSE'}</div>
+                ${labelProductInfo.categoryHierarchy ? `<div class="stock-sticker-cat" style="font-size: 8px; color: #475569; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${labelProductInfo.categoryHierarchy}</div>` : ''}
+                <div class="stock-sticker-meta">${labelProductInfo.size} - ${labelProductInfo.color}</div>
+                <div class="stock-sticker-sku-meta">SKU: ${labelProductInfo.sku}</div>
+                <div class="stock-sticker-prices">
+                    ${mrp > sellingPrice ? `<div class="stock-sticker-mrp">MRP: ₹${fmtMrp}</div>` : ''}
+                    <div class="stock-sticker-price">Discount Price: ₹${fmtSelling}</div>
                 </div>
             </div>
         `;
-        container.appendChild(col);
+        container.appendChild(sticker);
 
         setTimeout(() => {
             const qrEl = document.getElementById(`modalQr_${idx}`);
             if (qrEl) {
                 new QRCode(qrEl, {
                     text: p.qr_payload,
-                    width: 70,
-                    height: 70,
+                    width: 66,
+                    height: 66,
                     colorDark : "#000000",
                     colorLight : "#ffffff",
                     correctLevel : QRCode.CorrectLevel.M

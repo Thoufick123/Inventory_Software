@@ -318,6 +318,7 @@
                                             <td class="text-center">
                                                 <span id="dmg_display_<?= $it['id'] ?>" class="fw-bold text-danger"><?= $dmgQty ?></span>
                                                 <input type="hidden" name="damaged_qty[<?= $it['id'] ?>]" id="input_dmg_<?= $it['id'] ?>" value="<?= $dmgQty ?>">
+                                                <input type="hidden" name="piece_statuses[<?= $it['id'] ?>]" id="input_piece_statuses_<?= $it['id'] ?>" value="">
                                             </td>
                                             <td class="text-center fw-bold <?= $diff > 0 && $totalProc > 0 ? 'text-danger' : ($diff === 0 ? 'text-success' : 'text-muted') ?>" id="diff_col_<?= $it['id'] ?>">
                                                 <?php if ($diff > 0): ?>
@@ -877,6 +878,13 @@ function updateInspectionUI() {
     const parentDmg = document.getElementById('input_dmg_' + inspState.itemId);
     if (parentRecv) parentRecv.value = inspState.goodCount;
     if (parentDmg) parentDmg.value = inspState.damagedCount;
+    const pieceStatusesInput = document.getElementById('input_piece_statuses_' + inspState.itemId);
+    if (pieceStatusesInput) {
+        pieceStatusesInput.value = JSON.stringify(inspState.pieces.map(piece => ({
+            tag: piece.tag,
+            status: piece.status
+        })));
+    }
 
     // Cache piece statuses for draft restoration
     SAVED_PIECE_STATUSES[inspState.itemId] = inspState.pieces.map(p => ({

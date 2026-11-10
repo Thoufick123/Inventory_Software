@@ -1,5 +1,13 @@
 <?php
 // views/whatsapp_orders/damage/view.php — Damage Record Details
+$pieceTags = $damage['piece_tags'] ?? [];
+if (!is_array($pieceTags)) {
+    $pieceTags = array_filter(array_map('trim', explode(',', (string)$pieceTags)));
+}
+$pieceTags = array_values(array_filter(array_map(
+    static fn($tag): string => trim((string)$tag),
+    $pieceTags
+)));
 ?>
 
 <div class="container-fluid px-4 py-3">
@@ -60,12 +68,20 @@
                             ?>
                             <div><span class="badge <?= $typeClass ?> border px-2 py-1"><?= htmlspecialchars($productType) ?></span></div>
                         </div>
-                        <div class="col-md-6">
-                            <label class="text-muted small">Product QR Code</label>
-                            <div class="d-flex align-items-center gap-2">
-                                <div id="damageProductQr" class="bg-white border rounded p-1" aria-label="Product QR code"></div>
-                                <span class="badge bg-dark-subtle text-dark"><?= htmlspecialchars($productType) ?> QR</span>
-                            </div>
+                        <div class="col-12">
+                            <label class="text-muted small">Damaged Piece Tag<?= count($pieceTags) === 1 ? '' : 's' ?></label>
+                            <?php if ($pieceTags): ?>
+                                <div class="d-flex flex-wrap gap-2">
+                                    <?php foreach ($pieceTags as $tag): ?>
+                                        <div class="d-inline-flex align-items-center gap-2 border rounded bg-light p-2">
+                                            <div class="damage-piece-tag-qr bg-white border rounded p-1" data-piece-tag="<?= htmlspecialchars($tag, ENT_QUOTES, 'UTF-8') ?>"></div>
+                                            <code class="fw-bold text-dark"><?= htmlspecialchars($tag) ?></code>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php else: ?>
+                                <div class="text-muted small">No piece tag was recorded for this damage entry.</div>
+                            <?php endif; ?>
                         </div>
 
                         <div class="col-md-4">
@@ -107,50 +123,6 @@
                 </div>
             </div>
 
-            <!-- Piece Serial Tags (if any) -->
-            <?php
-            $pieceTags = [];
-            if (!empty($damage['piece_tags'])) {
-                $pieceTags = is_array($damage['piece_tags']) ? $damage['piece_tags'] : json_decode($damage['piece_tags'], true);
-            }
-            ?>
-            <div class="card border-0 shadow-sm">
-                <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
-                    <h6 class="card-title mb-0 fw-bold">
-                        <i class="bi bi-qr-code-scan me-2 text-primary"></i>Tracked Piece Tags / Serial QR
-                    </h6>
-                    <span class="badge bg-secondary"><?= count($pieceTags ?? []) ?> Tags Recorded</span>
-                </div>
-                <div class="card-body">
-                    <?php if (!empty($pieceTags) && is_array($pieceTags)): ?>
-                        <div class="d-flex flex-wrap gap-2">
-                            <?php foreach ($pieceTags as $tag): ?>
-                                <div class="p-2 border rounded bg-light d-flex align-items-center gap-2">
-                                    <i class="bi bi-upc text-muted"></i>
-                                    <code class="fw-bold text-dark"><?= htmlspecialchars($tag) ?></code>
-                                    <span class="badge bg-danger-subtle text-danger ms-1">Damaged</span>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php else: ?>
-                        <?php $fallbackQr = (string)($damage['qr_code'] ?? $damage['variant_sku'] ?? ''); ?>
-                        <?php if ($fallbackQr !== ''): ?>
-                            <div class="d-flex flex-wrap justify-content-center gap-3 py-3">
-                                <div class="text-center border rounded bg-white p-3">
-                                    <div id="trackedFallbackQr" class="mb-2 d-flex justify-content-center"></div>
-                                    <div class="fw-bold small"><?= htmlspecialchars($productType) ?> PIECE TAG</div>
-                                    <div><span class="badge bg-danger-subtle text-danger mt-1">Damaged</span></div>
-                                </div>
-                            </div>
-                        <?php else: ?>
-                            <div class="text-center py-4 text-muted">
-                                <i class="bi bi-qr-code fs-1 d-block mb-2 text-secondary opacity-50"></i>
-                                No piece tags or product QR code are available for this damage record.
-                            </div>
-                        <?php endif; ?>
-                    <?php endif; ?>
-                </div>
-            </div>
         </div>
 
         <!-- Sidebar / Meta Details -->
@@ -203,15 +175,19 @@
 
 <script src="<?= url('assets/js/qrcode.min.js') ?>"></script>
 <script>
-document.addEventListener('DOMContentLoaded', function () {
-    const container = document.getElementById('damageProductQr');
-    const code = <?= json_encode((string)($damage['qr_code'] ?? $damage['variant_sku'] ?? '')) ?>;
-    if (container && code && typeof QRCode !== 'undefined') {
-        new QRCode(container, { text: code, width: 96, height: 96, correctLevel: QRCode.CorrectLevel.M });
+function renderDamagePieceTagQrs() {
+    if (typeof QRCode !== 'undefined') {
+        document.querySelectorAll('.damage-piece-tag-qr').forEach(function (pieceQr) {
+            const tag = pieceQr.dataset.pieceTag || '';
+            if (tag) {
+                new QRCode(pieceQr, { text: tag, width: 48, height: 48, correctLevel: QRCode.CorrectLevel.M });
+            }
+        });
     }
-    const trackedQr = document.getElementById('trackedFallbackQr');
-    if (trackedQr && code && typeof QRCode !== 'undefined') {
-        new QRCode(trackedQr, { text: code, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.M });
-    }
-});
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', renderDamagePieceTagQrs, {once: true});
+} else {
+    renderDamagePieceTagQrs();
+}
 </script>

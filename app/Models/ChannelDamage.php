@@ -291,7 +291,9 @@ class ChannelDamage {
     public static function find(int $id): ?array {
         $sql = "SELECT cd.*, 
                        sc.name as channel_name, sc.code as channel_code,
-                       pv.sku, pv.sku as variant_sku, pv.qr_code, pv.qr_type, pv.is_complementary as variant_is_complementary, pv.mrp, pv.selling_price, pv.purchase_price, pv.production_cost,
+                       pv.sku, pv.sku as variant_sku,
+                       COALESCE(NULLIF(TRIM(pv.qr_code), ''), CONCAT('QR-', pv.sku)) as qr_code,
+                       pv.qr_type, pv.is_complementary as variant_is_complementary, pv.mrp, pv.selling_price, pv.purchase_price, pv.production_cost,
                        ai.selected_qr_codes, ai.received_qr_codes,
                        pv.image_url as variant_image,
                        p.id as product_id, p.name as product_name, p.code as product_code, p.image_url as product_image,
@@ -324,13 +326,6 @@ class ChannelDamage {
         $rec['image'] = !empty($rec['variant_image']) ? $rec['variant_image'] : ($rec['product_image'] ?? null);
         $rec['resolved_tags'] = self::resolvePieceTags($rec);
         $rec['piece_tags'] = $rec['resolved_tags'];
-        if (empty($rec['piece_tags']) && !empty($rec['allocation_id'])) {
-            $qrList = json_decode((string)($rec['received_qr_codes'] ?? ''), true);
-            if (!is_array($qrList)) {
-                $qrList = array_filter(array_map('trim', explode(',', (string)($rec['received_qr_codes'] ?: $rec['selected_qr_codes'] ?? ''))));
-            }
-            $rec['piece_tags'] = array_slice(array_values($qrList), 0, max(1, (int)$rec['quantity']));
-        }
         $rec['notes'] = $rec['damage_reason'] . (!empty($rec['defect_notes']) ? ("\n" . $rec['defect_notes']) : '');
         return $rec;
     }
@@ -339,16 +334,17 @@ class ChannelDamage {
      * Resolve piece tags array.
      */
     public static function resolvePieceTags(array $d): array {
-        $rawTags = $d['tag_code'] ?? '';
-        $tagsList = [];
-        if (!empty($rawTags)) {
-            $parts = explode(',', $rawTags);
-            foreach ($parts as $p) {
-                $p = trim($p);
-                if ($p) $tagsList[] = $p;
-            }
+        $rawTags = trim((string)($d['tag_code'] ?? ''));
+        if ($rawTags === '') {
+            return [];
         }
-        return $tagsList;
+
+        $decodedTags = json_decode($rawTags, true);
+        $parts = is_array($decodedTags) ? $decodedTags : explode(',', $rawTags);
+        return array_values(array_filter(array_map(
+            static fn($tag): string => trim((string)$tag),
+            $parts
+        )));
     }
 
     /**

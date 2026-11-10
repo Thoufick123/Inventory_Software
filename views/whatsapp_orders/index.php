@@ -1,21 +1,7 @@
-<?php $canCreateOrder = hasPermission('whatsapp_orders', 'create'); ?>
 <div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
     <div>
         <h2 class="mb-1"><i class="bi bi-whatsapp me-2 text-success"></i>WhatsApp Channel Dashboard</h2>
         <span class="text-muted">Dynamic tracking of WhatsApp allocated stock, orders count, total revenue, and available stock valuation</span>
-    </div>
-    <div class="d-flex gap-2 flex-wrap">
-        <a href="<?= url('warehouse/whatsapp-orders/history') ?>" class="btn btn-outline-success">
-            <i class="bi bi-clock-history me-1"></i> Orders History
-        </a>
-        <a href="<?= url('warehouse/whatsapp-orders/damage') ?>" class="btn btn-outline-danger">
-            <i class="bi bi-exclamation-octagon me-1"></i> Damage Management
-        </a>
-        <?php if ($canCreateOrder): ?>
-        <a href="<?= url('sales/whatsapp/create') ?>" class="btn btn-success">
-            <i class="bi bi-cart-plus me-1"></i> Create WhatsApp Order
-        </a>
-        <?php endif; ?>
     </div>
 </div>
 
@@ -29,7 +15,7 @@
                     <i class="bi bi-boxes fs-3"></i>
                 </div>
                 <div>
-                    <div class="text-muted small fw-semibold">WhatsApp Inventory</div>
+                    <div class="text-muted small fw-semibold">whatsapp</div>
                     <h4 class="fw-bold mb-0 text-dark"><?= number_format($allocatedInventoryQty ?? 0) ?> <span class="fs-7 fw-normal text-muted">pcs</span></h4>
                     <small class="text-muted">Total allocated count</small>
                 </div>
@@ -79,7 +65,7 @@
                 <div>
                     <div class="text-muted small fw-semibold">Available Stock</div>
                     <h4 class="fw-bold mb-0 text-dark"><?= number_format($availableStockQty ?? 0) ?> <span class="fs-7 fw-normal text-muted">pcs</span></h4>
-                    <small class="text-muted">Allocated &minus; Total Sold</small>
+                    <small class="text-muted">Current available channel stock</small>
                 </div>
             </div>
         </div>

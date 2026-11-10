@@ -292,6 +292,7 @@ if (!empty($authUser['shop_name'])) {
                             <?php endif; ?>
                             <?php if (hasPermission('whatsapp_inventory', 'view')): ?>
                             <li><a href="<?= url('warehouse/whatsapp-orders/allocations') ?>" class="<?= in_array(($activeMenu ?? ''), ['wh-whatsapp-allocations', 'whatsapp-allocations']) ? 'active' : '' ?>">Inventory</a></li>
+                            <li><a href="<?= url('warehouse/whatsapp-orders/returned-products') ?>" class="<?= ($activeMenu ?? '') === 'wh-whatsapp-returned-products' ? 'active' : '' ?>">Returned Products</a></li>
                             <?php endif; ?>
                             <?php if (hasPermission('whatsapp_orders', 'view')): ?>
                             <li><a href="<?= url('warehouse/whatsapp-orders/history') ?>" class="<?= in_array(($activeMenu ?? ''), ['wh-whatsapp-history', 'whatsapp-history', 'wh-whatsapp-orders']) ? 'active' : '' ?>">Orders History</a></li>

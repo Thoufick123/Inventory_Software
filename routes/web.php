@@ -651,6 +651,14 @@ class Router {
         $this->post('warehouse/whatsapp-orders/inward/receive/{id}', 'WhatsappController', 'receiveWhatsappInward', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inward', 'receive']]);
         $this->get('api/whatsapp/inward/batch-history/{id}', 'WhatsappController', 'ajaxBatchHistory', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inward', 'view']]);
         $this->get('warehouse/whatsapp-orders/allocations', 'WhatsappController', 'whatsappAllocations', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inventory', 'view']]);
+        $this->get('warehouse/whatsapp-orders/returned-products', 'WhatsappController', 'whatsappReturnedProducts', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inventory', 'view']]);
+        $this->get('warehouse/whatsapp-orders/returned-products/label/{id}', 'WhatsappController', 'whatsappReturnedProductLabel', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inventory', 'view']]);
+        $this->post('warehouse/whatsapp-orders/returned-products/printed/{id}', 'WhatsappController', 'markWhatsappReturnedProductPrinted', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inventory', 'view']]);
+        $this->get('warehouse/whatsapp-orders/adjustments', 'WhatsappController', 'whatsappStockAdjustments', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inventory', 'view']]);
+        $this->post('warehouse/whatsapp-orders/adjustments/store', 'WhatsappController', 'storeWhatsappStockAdjustment', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inventory', 'adjust']]);
+        $this->post('warehouse/whatsapp-orders/adjustments/approve/{id}', 'WhatsappController', 'approveWhatsappStockAdjustment', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inventory', 'adjust']]);
+        $this->get('api/whatsapp/adjustments/variants', 'WhatsappController', 'ajaxWhatsappAdjustmentVariants', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inventory', 'adjust']]);
+        $this->get('api/whatsapp/adjustments/lookup', 'WhatsappController', 'ajaxValidateWhatsappAdjustmentQr', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inventory', 'adjust']]);
         $this->get('warehouse/whatsapp-orders/allocations/view/{id}', 'WhatsappController', 'viewWhatsappAllocation', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inventory', 'view']]);
         $this->get('warehouse/whatsapp-orders/inventory/detail/{id}', 'WhatsappController', 'whatsappInventoryDetail', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inventory', 'view']]);
         $this->get('warehouse/whatsapp-orders/requests/create', 'WhatsappController', 'createWhatsappStockRequest', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_orders', 'create']]);
