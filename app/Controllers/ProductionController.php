@@ -12200,7 +12200,33 @@ class ProductionController {
             ? (number_format((float)$batch['wastage_weight'], 2) . ' kg')
             : ((!empty($batch['wastage_qty']) && (float)$batch['wastage_qty'] > 0)
                 ? (number_format((float)$batch['wastage_qty'], 2) . ' pcs')
-                : '0.00');
+                : '0.00 kg');
+
+        $totalCut = array_sum(array_column($items, 'cut_qty')) ?: (int)($batch['cut_qty'] ?? 0);
+        $batchWastageWeight = (float)($batch['wastage_weight'] ?? 0);
+        $batchWastageQty = (int)($batch['wastage_qty'] ?? 0);
+
+        foreach ($items as &$it) {
+            $itemCut = (int)($it['cut_qty'] ?? 0);
+            $itemWastageQty = (int)($it['wastage_qty'] ?? 0);
+
+            if ($batchWastageWeight > 0) {
+                if (count($items) === 1) {
+                    $itemWWeight = $batchWastageWeight;
+                } elseif ($totalCut > 0) {
+                    $itemWWeight = round(($itemCut / $totalCut) * $batchWastageWeight, 2);
+                } else {
+                    $itemWWeight = round($batchWastageWeight / count($items), 2);
+                }
+                $it['display_wastage'] = number_format($itemWWeight, 2) . ' kg';
+            } elseif ($itemWastageQty > 0 || $batchWastageQty > 0) {
+                $qty = $itemWastageQty > 0 ? $itemWastageQty : (count($items) === 1 ? $batchWastageQty : round(($itemCut / max(1, $totalCut)) * $batchWastageQty));
+                $it['display_wastage'] = number_format($qty) . ' pcs';
+            } else {
+                $it['display_wastage'] = '0.00 kg';
+            }
+        }
+        unset($it);
 
         $this->renderProductionRecord(
             'Cutting Batch ' . ($batch['batch_number'] ?? ('#' . $batch['id'])),
@@ -12227,7 +12253,7 @@ class ProductionController {
                 'Color'           => 'color_name',
                 'Planned'         => 'planned_qty',
                 'Cut'             => 'cut_qty',
-                'Cutting Wastage' => 'wastage_qty',
+                'Cutting Wastage' => 'display_wastage',
             ],
             'Cut Items'
         );
