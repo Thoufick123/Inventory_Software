@@ -18,7 +18,8 @@
             </div>
             <div class="col-md-6">
                 <label class="form-label required">Phone Number *</label>
-                <input type="tel" name="phone" class="form-control" required pattern="[0-9]{10}" maxlength="10" inputmode="numeric" value="<?= e($seller['phone']) ?>">
+                <input type="tel" name="phone" id="supplierPhone" class="form-control" required pattern="[0-9]{10}" maxlength="10" inputmode="numeric" value="<?= e($seller['phone']) ?>" placeholder="10-digit mobile number" autocomplete="tel">
+                <div class="invalid-feedback" id="phoneFeedback">Phone number must be exactly 10 digits.</div>
             </div>
             <div class="col-md-6">
                 <label class="form-label">Email Address (Optional)</label>
@@ -122,9 +123,40 @@
 (function() {
     const cityInput = document.getElementById('supplierCity');
     const stateInput = document.getElementById('supplierState');
+    const phoneInput = document.getElementById('supplierPhone');
+    const phoneFeedback = document.getElementById('phoneFeedback');
     const alertContainer = document.getElementById('cityStateAlertContainer');
     const alertText = document.getElementById('cityStateAlertText');
     const form = document.getElementById('supplierEditForm');
+
+    function checkPhone() {
+        if (!phoneInput) return true;
+        phoneInput.value = phoneInput.value.replace(/\D/g, '').slice(0, 10);
+        const val = phoneInput.value.trim();
+
+        if (val.length === 0) {
+            phoneInput.classList.remove('is-valid');
+            phoneInput.classList.add('is-invalid');
+            if (phoneFeedback) phoneFeedback.textContent = 'Phone number is required (10 digits).';
+            return false;
+        }
+
+        if (val.length !== 10) {
+            phoneInput.classList.remove('is-valid');
+            phoneInput.classList.add('is-invalid');
+            if (phoneFeedback) phoneFeedback.textContent = `Phone number must be exactly 10 digits (currently ${val.length} digits).`;
+            return false;
+        }
+
+        phoneInput.classList.remove('is-invalid');
+        phoneInput.classList.add('is-valid');
+        return true;
+    }
+
+    if (phoneInput) {
+        phoneInput.addEventListener('input', checkPhone);
+        phoneInput.addEventListener('blur', checkPhone);
+    }
 
     const tnCities = [
         'ARIYALUR', 'CHENGALPATTU', 'CHENGALPET', 'CHENNAI', 'MADRAS', 'COIMBATORE', 'KOVAI',
@@ -247,6 +279,14 @@
     stateInput.addEventListener('change', checkCityState);
 
     form.addEventListener('submit', function(e) {
+        if (!checkPhone()) {
+            e.preventDefault();
+            e.stopPropagation();
+            phoneInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            phoneInput.focus();
+            return false;
+        }
+
         if (!checkCityState()) {
             e.preventDefault();
             e.stopPropagation();

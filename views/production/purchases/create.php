@@ -13,7 +13,7 @@
             <div class="row g-3">
                 <div class="col-md-5">
                     <label class="form-label required" for="purchaseSeller">Supplier *</label>
-                    <select class="form-select" name="seller_id" id="purchaseSeller" required>
+                    <select class="d-none" name="seller_id" id="purchaseSeller" required>
                         <option value="">-- Select registered supplier --</option>
                         <?php foreach ($sellers as $seller): ?>
                             <option value="<?= (int)$seller['id'] ?>"
@@ -24,11 +24,48 @@
                                 data-supplier-gst="<?= e($seller['gst_number'] ?? '') ?>"
                                 data-supplier-city="<?= e($seller['city'] ?? '') ?>"
                                 data-supplier-state="<?= e($seller['state'] ?? '') ?>"
-                                data-supplier-address="<?= e($seller['address'] ?? '') ?>"
-                                data-supplier-payment-terms="<?= e($seller['payment_terms'] ?? '') ?>"><?= e($seller['company'] ?: $seller['name']) ?><?= $seller['company'] ? ' — ' . e($seller['name']) : '' ?></option>
+                                data-supplier-address="<?= e($seller['address'] ?? '') ?>"><?= e($seller['company'] ?: $seller['name']) ?><?= $seller['company'] ? ' — ' . e($seller['name']) : '' ?></option>
                         <?php endforeach; ?>
                     </select>
-                    <?php if (empty($sellers)): ?><small class="text-danger">Add a supplier profile before recording a purchase.</small><?php endif; ?>
+
+                    <!-- Searchable Supplier Dropdown UI -->
+                    <div class="dropdown w-100" id="supplierSearchDropdown">
+                        <button type="button" class="form-select text-start d-flex justify-content-between align-items-center" id="supplierDropdownBtn" data-bs-toggle="dropdown" data-bs-auto-close="true" aria-expanded="false">
+                            <span id="supplierDropdownSelectedText" class="text-truncate">-- Select registered supplier --</span>
+                        </button>
+                        <div class="dropdown-menu shadow w-100 p-2" id="supplierDropdownMenu" style="max-height: 360px;">
+                            <div class="input-group input-group-sm mb-2">
+                                <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                                <input type="text" class="form-control border-start-0" id="supplierSearchInput" placeholder="Search supplier by name, company, phone..." autocomplete="off">
+                            </div>
+                            <div class="overflow-auto" id="supplierListContainer" style="max-height: 250px;">
+                                <button type="button" class="dropdown-item py-2 border-bottom supplier-opt-item active" data-id="" data-display="-- Select registered supplier --">
+                                    <span class="text-muted">-- Select registered supplier --</span>
+                                </button>
+                                <?php foreach ($sellers as $seller): ?>
+                                    <button type="button" class="dropdown-item py-2 border-bottom supplier-opt-item"
+                                            data-id="<?= (int)$seller['id'] ?>"
+                                            data-display="<?= e($seller['company'] ?: $seller['name']) ?><?= $seller['company'] ? ' — ' . e($seller['name']) : '' ?>"
+                                            data-search="<?= e(strtolower(($seller['company'] ?? '') . ' ' . ($seller['name'] ?? '') . ' ' . ($seller['phone'] ?? '') . ' ' . ($seller['city'] ?? '') . ' ' . ($seller['gst_number'] ?? ''))) ?>">
+                                        <div class="d-flex justify-content-between align-items-center mb-1">
+                                            <strong class="text-dark"><?= e($seller['company'] ?: $seller['name']) ?></strong>
+                                            <?php if (!empty($seller['city'])): ?>
+                                                <span class="badge bg-light text-secondary border"><?= e($seller['city']) ?></span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="small text-muted d-flex justify-content-between flex-wrap gap-1">
+                                            <span><i class="bi bi-person me-1"></i><?= e($seller['name']) ?></span>
+                                            <span><i class="bi bi-telephone me-1"></i><?= e($seller['phone']) ?></span>
+                                        </div>
+                                    </button>
+                                <?php endforeach; ?>
+                            </div>
+                            <div class="text-center text-muted py-3 small d-none" id="supplierNoResults">
+                                <i class="bi bi-inbox d-block fs-5 mb-1"></i> No suppliers match your search.
+                            </div>
+                        </div>
+                    </div>
+                    <?php if (empty($sellers)): ?><small class="text-danger d-block mt-1">Add a supplier profile before recording a purchase.</small><?php endif; ?>
                 </div>
                 <div class="col-md-3">
                     <label class="form-label required" for="purchaseDate">Purchase Date *</label>
@@ -57,8 +94,7 @@
                             <div class="col-md-4"><small class="text-muted d-block">Email</small><span data-supplier-detail="email">—</span></div>
                             <div class="col-md-4"><small class="text-muted d-block">GSTIN / Tax ID</small><span data-supplier-detail="gst">—</span></div>
                             <div class="col-md-4"><small class="text-muted d-block">City / State</small><span data-supplier-detail="location">—</span></div>
-                            <div class="col-md-6"><small class="text-muted d-block">Business Address</small><span data-supplier-detail="address">—</span></div>
-                            <div class="col-md-6"><small class="text-muted d-block">Payment Terms</small><span data-supplier-detail="payment-terms">—</span></div>
+                            <div class="col-12"><small class="text-muted d-block">Business Address</small><span data-supplier-detail="address">—</span></div>
                         </div>
                     </div>
                 </div>
@@ -397,11 +433,11 @@
             email: selected.dataset.supplierEmail,
             gst: selected.dataset.supplierGst,
             location: [selected.dataset.supplierCity, selected.dataset.supplierState].filter(Boolean).join(', '),
-            address: selected.dataset.supplierAddress,
-            'payment-terms': selected.dataset.supplierPaymentTerms
+            address: selected.dataset.supplierAddress
         };
         Object.entries(fields).forEach(([field, value]) => {
-            supplierDetails.querySelector(`[data-supplier-detail="${field}"]`).textContent = value || '—';
+            const el = supplierDetails.querySelector(`[data-supplier-detail="${field}"]`);
+            if (el) el.textContent = value || '—';
         });
         supplierDetails.classList.remove('d-none');
     }
@@ -694,6 +730,68 @@
     document.getElementById('previewLabels')?.addEventListener('click', previewLabels);
     supplierSelect.addEventListener('change', updateSupplierDetails);
     updateSupplierDetails();
+
+    // Searchable Supplier Dropdown Controller
+    const supplierDropdownBtn = document.getElementById('supplierDropdownBtn');
+    const supplierDropdownSelectedText = document.getElementById('supplierDropdownSelectedText');
+    const supplierSearchInput = document.getElementById('supplierSearchInput');
+    const supplierOptItems = document.querySelectorAll('.supplier-opt-item');
+    const supplierNoResults = document.getElementById('supplierNoResults');
+    const supplierDropdown = document.getElementById('supplierSearchDropdown');
+
+    if (supplierDropdown && supplierSearchInput) {
+        supplierDropdown.addEventListener('shown.bs.dropdown', function () {
+            supplierSearchInput.focus();
+            supplierSearchInput.select();
+        });
+
+        supplierSearchInput.addEventListener('input', function () {
+            const query = this.value.trim().toLowerCase();
+            let visibleCount = 0;
+
+            supplierOptItems.forEach(item => {
+                const searchData = item.dataset.search || '';
+                const isDefault = item.dataset.id === '';
+                if (isDefault) {
+                    item.style.display = query === '' ? '' : 'none';
+                    return;
+                }
+                if (query === '' || searchData.includes(query)) {
+                    item.style.display = '';
+                    visibleCount++;
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+
+            if (supplierNoResults) {
+                supplierNoResults.classList.toggle('d-none', visibleCount > 0 || query === '');
+            }
+        });
+
+        supplierOptItems.forEach(item => {
+            item.addEventListener('click', function (e) {
+                e.preventDefault();
+                const id = this.dataset.id || '';
+                const displayText = this.dataset.display || '-- Select registered supplier --';
+
+                supplierOptItems.forEach(opt => opt.classList.remove('active'));
+                this.classList.add('active');
+
+                if (supplierDropdownSelectedText) {
+                    supplierDropdownSelectedText.textContent = displayText;
+                }
+
+                supplierSelect.value = id;
+                supplierSelect.dispatchEvent(new Event('change', { bubbles: true }));
+
+                if (supplierDropdownBtn) {
+                    const bsDropdown = bootstrap.Dropdown.getInstance(supplierDropdownBtn) || new bootstrap.Dropdown(supplierDropdownBtn);
+                    bsDropdown.hide();
+                }
+            });
+        });
+    }
     fetch('<?= url("api/sellers/next-roll-codes") ?>')
         .then(response => { if (!response.ok) throw new Error('Unable to fetch roll code sequence.'); return response.json(); })
         .then(response => {

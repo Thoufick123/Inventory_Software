@@ -55,8 +55,7 @@ $taxValueForItem = static function (array $item, string $type): float {
                             <div class="col-md-4"><small class="text-muted d-block">Email</small><?= e($purchase['seller_email'] ?: '—') ?></div>
                             <div class="col-md-4"><small class="text-muted d-block">GSTIN / Tax ID</small><?= e($purchase['seller_gst_number'] ?: '—') ?></div>
                             <div class="col-md-4"><small class="text-muted d-block">City / State</small><?= e(trim(($purchase['seller_city'] ?? '') . ', ' . ($purchase['seller_state'] ?? ''), ', ') ?: '—') ?></div>
-                            <div class="col-md-6"><small class="text-muted d-block">Business Address</small><?= e($purchase['seller_address'] ?: '—') ?></div>
-                            <div class="col-md-6"><small class="text-muted d-block">Payment Terms</small><?= e($purchase['seller_payment_terms'] ?: '—') ?></div>
+                            <div class="col-12"><small class="text-muted d-block">Business Address</small><?= e($purchase['seller_address'] ?: '—') ?></div>
                         </div>
                     </div>
                 </div>
