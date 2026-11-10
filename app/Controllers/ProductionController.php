@@ -342,7 +342,7 @@ class ProductionController {
         $status = $_GET['status'] ?? '';
         $city = trim($_GET['city'] ?? '');
 
-        $sql = "SELECT s.* FROM sellers s WHERE s.seller_type = 'MATERIAL_SUPPLIER'";
+        $sql = "SELECT s.* FROM sellers s WHERE s.seller_type = 'MATERIAL_SUPPLIER' AND (s.is_active = 1 OR s.is_active IS NULL)";
         $params = [];
 
         if ($search !== '') {
@@ -360,7 +360,7 @@ class ProductionController {
         $sql .= " ORDER BY s.created_at DESC";
         $sellers = Database::fetchAll($sql, $params);
 
-        $cities = Database::fetchAll("SELECT DISTINCT city FROM sellers WHERE seller_type = 'MATERIAL_SUPPLIER' AND city IS NOT NULL AND TRIM(city) != '' ORDER BY city ASC");
+        $cities = Database::fetchAll("SELECT DISTINCT city FROM sellers WHERE seller_type = 'MATERIAL_SUPPLIER' AND (is_active = 1 OR is_active IS NULL) AND city IS NOT NULL AND TRIM(city) != '' ORDER BY city ASC");
 
         Response::view('production.sellers.index', [
             'pageTitle'      => 'Production Suppliers',
@@ -461,47 +461,15 @@ class ProductionController {
             return;
         }
 
-        $purchaseCount = Database::fetchOne(
+        $purchaseCount = (int)(Database::fetchOne(
             "SELECT COUNT(*) AS purchase_count FROM production_purchases WHERE seller_id = ?",
             [(int)$id]
-        );
-        if ((int)($purchaseCount['purchase_count'] ?? 0) > 0) {
-            Session::flash('error', 'This supplier has purchase history and cannot be deleted. Deactivate the supplier to prevent future purchases.');
-            Response::redirect(url('production/sellers'));
-            return;
-        }
+        )['purchase_count'] ?? 0);
 
-        // Check if any fabric rolls from this supplier are used in active production programs or cutting batches
-        $usedPrograms = Database::fetchAll(
-            "SELECT DISTINCT pp.program_number, pp.name as program_name
-             FROM production_program_rolls ppr
-             JOIN production_programs pp ON ppr.production_program_id = pp.id
-             WHERE ppr.seller_id = ? AND (pp.is_active = 1 OR pp.is_active IS NULL) AND pp.status != 'CANCELLED'",
+        $poCount = (int)(Database::fetchOne(
+            "SELECT COUNT(*) AS po_count FROM purchase_orders WHERE seller_id = ?",
             [(int)$id]
-        );
-
-        if (empty($usedPrograms)) {
-            $usedPrograms = Database::fetchAll(
-                "SELECT pp.program_number, pp.name as program_name
-                 FROM production_programs pp
-                 WHERE (pp.seller_id = ? OR pp.seller_roll_id IN (SELECT id FROM seller_rolls WHERE seller_id = ?))
-                   AND (pp.is_active = 1 OR pp.is_active IS NULL) AND pp.status != 'CANCELLED'",
-                [(int)$id, (int)$id]
-            );
-        }
-
-        if (!empty($usedPrograms)) {
-            $progNames = array_map(fn($p) => $p['program_number'] . (!empty($p['program_name']) ? " ({$p['program_name']})" : ''), $usedPrograms);
-            Session::flash('error', "Cannot delete Supplier '{$seller['name']}' because fabric rolls from this lot are assigned to active Production Programs: " . implode(', ', array_slice($progNames, 0, 3)) . ". Please unassign or cancel these programs first.");
-            Response::redirect(url('production/sellers'));
-            return;
-        }
-
-        // Delete all associated seller rolls
-        Database::execute("DELETE FROM seller_rolls WHERE seller_id = ?", [(int)$id]);
-
-        // Delete the seller record
-        Database::execute("DELETE FROM sellers WHERE id = ?", [(int)$id]);
+        )['po_count'] ?? 0);
 
         $delSnapshot = [
             'Supplier Name'  => $seller['name'] ?? '',
@@ -514,9 +482,22 @@ class ProductionController {
             'Total Price'    => '₹' . number_format((float)($seller['roll_price'] ?? 0), 2),
         ];
 
+        if ($purchaseCount > 0 || $poCount > 0) {
+            // Soft delete supplier to preserve purchase / financial integrity and foreign keys
+            Database::execute("UPDATE sellers SET is_active = 0, updated_at = NOW() WHERE id = ?", [(int)$id]);
+        } else {
+            // No purchase history - hard delete if possible, fallback to soft delete
+            try {
+                Database::execute("DELETE FROM seller_rolls WHERE seller_id = ?", [(int)$id]);
+                Database::execute("DELETE FROM sellers WHERE id = ?", [(int)$id]);
+            } catch (Throwable $e) {
+                Database::execute("UPDATE sellers SET is_active = 0, updated_at = NOW() WHERE id = ?", [(int)$id]);
+            }
+        }
+
         AuditService::log('production', 'DELETE', 'sellers', (int)$id, $delSnapshot, null);
 
-        Session::flash('success', "Material Supplier '{$seller['name']}' and associated fabric rolls deleted successfully.");
+        Session::flash('success', "Supplier '{$seller['name']}' deleted successfully.");
         Response::redirect(url('production/sellers'));
     }
 
@@ -1077,7 +1058,7 @@ class ProductionController {
         $sellers = Database::fetchAll(
             "SELECT id, name, company, phone, email, gst_number, city, state, address
              FROM sellers
-             WHERE seller_type = 'MATERIAL_SUPPLIER'
+             WHERE seller_type = 'MATERIAL_SUPPLIER' AND (is_active = 1 OR is_active IS NULL)
              ORDER BY company, name"
         );
         Response::view('production.purchases.create', [
@@ -11948,6 +11929,80 @@ class ProductionController {
             Session::flash('error', 'Error deleting expense record: ' . $e->getMessage());
             Response::back();
         }
+    }
+
+    public function viewExpense(string $id): void {
+        $expenseId = (int)$id;
+        $expense = Database::fetchOne(
+            "SELECT pe.*,
+                    pp.program_number,
+                    pp.name as program_name,
+                    u.full_name as created_by_name
+             FROM production_expenses pe
+             LEFT JOIN production_programs pp ON pe.program_id = pp.id
+             LEFT JOIN users u ON pe.created_by = u.id
+             WHERE pe.id = ?",
+            [$expenseId]
+        );
+
+        if (!$expense) {
+            Session::flash('error', 'Expense record not found.');
+            Response::redirect(url('production/expenses'));
+            return;
+        }
+
+        $unitLabels = [
+            'PRODUCTION_1' => 'Production Unit 1 (PU-01)',
+            'PRODUCTION_2' => 'Production Unit 2 (PU-02)',
+            'BOTH_UNITS'   => 'Both Units / Common',
+            'GENERAL'      => 'General Facility',
+        ];
+
+        $items = [
+            [
+                'item_name'   => $expense['item_name'],
+                'category'    => ucwords(str_replace('_', ' ', strtolower((string)$expense['category']))),
+                'quantity'    => number_format((float)$expense['quantity'], 2) . ' ' . ($expense['unit_type'] ?: 'PCS'),
+                'unit_cost'   => '₹' . number_format((float)$expense['unit_cost'], 2),
+                'total_cost'  => '₹' . number_format((float)$expense['total_cost'], 2),
+            ]
+        ];
+
+        $fields = [
+            'Expense Number'   => $expense['expense_number'],
+            'Expense Date'     => date('d M Y', strtotime($expense['expense_date'])),
+            'Production Unit'  => $unitLabels[$expense['production_unit']] ?? ($expense['production_unit'] ?: '—'),
+            'Category'         => ucwords(str_replace('_', ' ', strtolower((string)$expense['category']))),
+            'Vendor / Payee'   => $expense['vendor_name'] ?: 'Direct',
+            'Vendor Phone'     => $expense['vendor_phone'] ?: '—',
+            'Invoice / Ref #'  => $expense['invoice_number'] ?: ($expense['payment_reference'] ?: '—'),
+            'Payment Status'   => $expense['payment_status'],
+            'Payment Method'   => $expense['payment_method'],
+            'Total Cost'       => '₹' . number_format((float)$expense['total_cost'], 2),
+            'Amount Paid'      => '₹' . number_format((float)$expense['paid_amount'], 2),
+            'Balance Due'      => '₹' . number_format(max(0, (float)$expense['total_cost'] - (float)$expense['paid_amount']), 2),
+            'Program'          => !empty($expense['program_number']) ? ($expense['program_number'] . (!empty($expense['program_name']) ? ' (' . $expense['program_name'] . ')' : '')) : '—',
+            'Created By'       => $expense['created_by_name'] ?: '—',
+            'Created At'       => $expense['created_at'] ?: '—',
+            'Notes / Remarks'  => $expense['notes'] ?: 'No remarks',
+        ];
+
+        $this->renderProductionRecord(
+            'Expense ' . $expense['expense_number'],
+            'prod-expenses',
+            'Expenses',
+            url('production/expenses'),
+            $fields,
+            $items,
+            [
+                'Item Description' => 'item_name',
+                'Category'         => 'category',
+                'Quantity & Unit'  => 'quantity',
+                'Unit Cost'        => 'unit_cost',
+                'Total Cost'       => 'total_cost',
+            ],
+            'Expense Items & Cost Breakdown'
+        );
     }
 
     public function expenseReceipt(string $id): void {

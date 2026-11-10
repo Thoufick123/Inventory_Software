@@ -455,6 +455,7 @@ class Router {
 
         // Production Expenses Management (Unit 1 & Unit 2)
         $this->get('production/expenses', 'ProductionController', 'expensesList', ['AuthMiddleware', ['PermissionMiddleware', 'production_expenses', 'view']]);
+        $this->get('production/expenses/view/{id}', 'ProductionController', 'viewExpense', ['AuthMiddleware', ['PermissionMiddleware', 'production_expenses', 'view']]);
         $this->post('production/expenses/store', 'ProductionController', 'storeExpense', ['AuthMiddleware', ['PermissionMiddleware', 'production_expenses', 'create']]);
         $this->post('production/expenses/update/{id}', 'ProductionController', 'updateExpense', ['AuthMiddleware', ['PermissionMiddleware', 'production_expenses', 'edit']]);
         $this->post('production/expenses/delete/{id}', 'ProductionController', 'deleteExpense', ['AuthMiddleware', ['PermissionMiddleware', 'production_expenses', 'delete']]);

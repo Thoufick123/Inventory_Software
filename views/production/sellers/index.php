@@ -78,7 +78,7 @@
                                 <a href="<?= url('production/sellers/edit/' . $seller['id']) ?>" class="btn btn-sm btn-outline-primary" title="Edit supplier"><i class="bi bi-pencil"></i></a>
                             <?php endif; ?>
                             <?php if (hasPermission('sellers', 'delete')): ?>
-                                <form method="POST" action="<?= url('production/sellers/delete/' . $seller['id']) ?>" class="d-inline" onsubmit="return confirm('Delete this supplier? Suppliers with purchase history cannot be deleted.');">
+                                <form method="POST" action="<?= url('production/sellers/delete/' . $seller['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to delete supplier \'<?= e($seller['name']) ?>\'?');">
                                     <?= CSRF::field() ?>
                                     <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete supplier"><i class="bi bi-trash"></i></button>
                                 </form>

@@ -352,7 +352,7 @@
                                     <td class="text-center">
                                         <div class="btn-group btn-group-sm">
                                             <?php if (hasPermission('production_expenses', 'view')): ?>
-                                            <button type="button" class="btn btn-outline-info" title="View Expense Details" onclick='openExpenseReceipt(<?= (int)$e['id'] ?>)'>
+                                            <button type="button" class="btn btn-outline-info" title="View Expense Details" onclick='openExpenseNormalView(<?= (int)$e['id'] ?>)'>
                                                 <i class="bi bi-eye"></i>
                                             </button>
                                             <?php endif; ?>
@@ -716,6 +716,192 @@
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- 2.5 NORMAL PRODUCTION EXPENSE VIEW MODAL                                  -->
+<!-- ========================================================================= -->
+<div class="modal fade" id="viewExpenseDetailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-3">
+            <div class="modal-header bg-white border-bottom py-3 px-4 d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="p-2 bg-primary-subtle text-primary rounded-circle">
+                        <i class="bi bi-wallet2 fs-5"></i>
+                    </div>
+                    <div>
+                        <h5 class="modal-title fw-bold text-dark mb-0 d-flex align-items-center gap-2">
+                            <span>Production Expense Details</span>
+                            <span class="badge bg-light text-primary border font-monospace fs-6" id="normExpNo">EXP-2026-0001</span>
+                        </h5>
+                        <small class="text-muted">Read-only operational expense record</small>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4 bg-light bg-opacity-50">
+                <!-- 1. Top KPI Summary Cards -->
+                <div class="row g-3 mb-4">
+                    <div class="col-sm-4">
+                        <div class="card border-0 shadow-sm rounded-3 bg-white h-100">
+                            <div class="card-body p-3">
+                                <span class="text-muted small fw-semibold text-uppercase d-block" style="font-size: 11px;">Total Spend</span>
+                                <h4 class="fw-bold text-primary mb-0 mt-1" id="normExpTotalSpend">₹0.00</h4>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-4">
+                        <div class="card border-0 shadow-sm rounded-3 bg-white h-100">
+                            <div class="card-body p-3">
+                                <span class="text-muted small fw-semibold text-uppercase d-block" style="font-size: 11px;">Amount Paid</span>
+                                <h4 class="fw-bold text-success mb-0 mt-1" id="normExpAmountPaid">₹0.00</h4>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-4">
+                        <div class="card border-0 shadow-sm rounded-3 bg-white h-100">
+                            <div class="card-body p-3">
+                                <span class="text-muted small fw-semibold text-uppercase d-block" style="font-size: 11px;">Balance Due</span>
+                                <h4 class="fw-bold text-danger mb-0 mt-1" id="normExpBalanceDue">₹0.00</h4>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Record Details Card -->
+                <div class="card border-0 shadow-sm rounded-3 mb-4 bg-white">
+                    <div class="card-header bg-white py-3 border-bottom">
+                        <h6 class="fw-bold text-dark mb-0">
+                            <i class="bi bi-info-circle text-primary me-2"></i>Record Details
+                        </h6>
+                    </div>
+                    <div class="card-body p-4">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Expense Number</div>
+                                <div class="fw-bold text-dark font-monospace" id="normExpNumber">—</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Expense Date</div>
+                                <div class="fw-bold text-dark" id="normExpDate">—</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Payment Status</div>
+                                <div id="normExpStatusBadge">—</div>
+                            </div>
+
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Production Unit</div>
+                                <div class="text-dark fw-semibold" id="normExpUnit">—</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Category</div>
+                                <div class="text-dark fw-semibold" id="normExpCategory">—</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Payment Mode</div>
+                                <div class="text-dark font-monospace" id="normExpMethod">—</div>
+                            </div>
+
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Paid To / Vendor</div>
+                                <div class="text-dark fw-semibold" id="normExpVendor">—</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Vendor Phone</div>
+                                <div class="text-dark" id="normExpPhone">—</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Invoice / Reference #</div>
+                                <div class="text-dark font-monospace" id="normExpInvoice">—</div>
+                            </div>
+
+                            <div class="col-md-4" id="normExpProgramCol">
+                                <div class="text-muted small fw-semibold">Linked Program</div>
+                                <div class="text-dark fw-semibold" id="normExpProgram">—</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Recorded By</div>
+                                <div class="text-dark" id="normExpCreatedBy">—</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small fw-semibold">Created At</div>
+                                <div class="text-dark" id="normExpCreatedAt">—</div>
+                            </div>
+                        </div>
+
+                        <!-- Logistics details if available -->
+                        <div id="normExpLogisticsRow" class="mt-3 pt-3 border-top d-none">
+                            <div class="text-muted small fw-semibold mb-1"><i class="bi bi-truck me-1"></i>Logistics &amp; Transport Details</div>
+                            <div class="small text-dark" id="normExpLogisticsText">—</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Expense Items Breakdown Table -->
+                <div class="card border-0 shadow-sm rounded-3 mb-4 bg-white">
+                    <div class="card-header bg-white py-3 border-bottom">
+                        <h6 class="fw-bold text-dark mb-0">
+                            <i class="bi bi-list-check text-primary me-2"></i>Expense Items &amp; Spend Breakdown
+                        </h6>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light small text-uppercase">
+                                <tr>
+                                    <th style="width: 50px;">#</th>
+                                    <th>Item Description</th>
+                                    <th class="text-end">Quantity</th>
+                                    <th class="text-end">Unit Rate</th>
+                                    <th class="text-end">Total Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody id="normExpItemsTbody">
+                                <!-- Populated dynamically -->
+                            </tbody>
+                            <tfoot class="table-light fw-bold">
+                                <tr>
+                                    <td colspan="4" class="text-end">Total Expense Amount:</td>
+                                    <td class="text-end text-primary" id="normExpFooterTotal">₹0.00</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 4. Remarks & Document Attachment -->
+                <div class="card border-0 shadow-sm rounded-3 bg-white">
+                    <div class="card-header bg-white py-3 border-bottom">
+                        <h6 class="fw-bold text-dark mb-0">
+                            <i class="bi bi-chat-left-text text-primary me-2"></i>Remarks &amp; Bill Attachment
+                        </h6>
+                    </div>
+                    <div class="card-body p-3">
+                        <div class="mb-3">
+                            <div class="text-muted small fw-semibold">Notes / Remarks</div>
+                            <div class="text-dark small mt-1" id="normExpNotes">No additional remarks.</div>
+                        </div>
+                        <div id="normExpAttachRow" class="d-none">
+                            <div class="text-muted small fw-semibold mb-1">Attached Bill / Receipt Copy</div>
+                            <a href="#" target="_blank" id="normExpAttachLink" class="btn btn-outline-primary btn-sm">
+                                <i class="bi bi-file-earmark-arrow-down me-1"></i> View Attached Receipt
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-white border-top py-3 px-4 d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                <div class="d-flex gap-2">
+                    <?php if (hasPermission('production_expenses', 'print')): ?>
+                    <button type="button" class="btn btn-outline-dark" id="normExpBtnPrintVoucher" onclick="openPrintableVoucherFromNormalView()">
+                        <i class="bi bi-printer me-1"></i> Print Voucher
+                    </button>
+                    <?php endif; ?>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -1160,6 +1346,118 @@ function openEditExpenseModal(data) {
 
     const modal = new bootstrap.Modal(document.getElementById('editExpenseModal'));
     modal.show();
+}
+
+let currentExpenseIdForPrint = null;
+
+function openExpenseNormalView(id) {
+    currentExpenseIdForPrint = id;
+    fetch('<?= url('production/expenses/receipt') ?>/' + id)
+        .then(res => res.json())
+        .then(res => {
+            if (res.success && res.expense) {
+                const e = res.expense;
+                const totalCost = parseFloat(e.total_cost || 0);
+                const paidAmount = parseFloat(e.paid_amount || 0);
+                const dueAmount = Math.max(0, totalCost - paidAmount);
+
+                document.getElementById('normExpNo').textContent = e.expense_number || ('#' + id);
+                document.getElementById('normExpNumber').textContent = e.expense_number || ('#' + id);
+                document.getElementById('normExpTotalSpend').textContent = '₹' + totalCost.toFixed(2);
+                document.getElementById('normExpAmountPaid').textContent = '₹' + paidAmount.toFixed(2);
+                document.getElementById('normExpBalanceDue').textContent = '₹' + dueAmount.toFixed(2);
+
+                document.getElementById('normExpDate').textContent = e.expense_date || '—';
+
+                // Payment Status badge
+                let statusBadgeClass = 'bg-secondary';
+                if (e.payment_status === 'PAID') statusBadgeClass = 'bg-success';
+                else if (e.payment_status === 'PARTIAL') statusBadgeClass = 'bg-warning text-dark';
+                else if (e.payment_status === 'PENDING') statusBadgeClass = 'bg-danger';
+                document.getElementById('normExpStatusBadge').innerHTML = `<span class="badge ${statusBadgeClass} px-2 py-1">${e.payment_status || 'PAID'}</span>`;
+
+                const unitLabels = {
+                    'PRODUCTION_1': 'Production Unit 1 (PU-01)',
+                    'PRODUCTION_2': 'Production Unit 2 (PU-02)',
+                    'BOTH_UNITS': 'Both Units / Common',
+                    'GENERAL': 'General Facility'
+                };
+                document.getElementById('normExpUnit').textContent = unitLabels[e.production_unit] || e.production_unit || '—';
+                document.getElementById('normExpCategory').textContent = (e.category || '').replace(/_/g, ' ') || 'General';
+                document.getElementById('normExpMethod').textContent = e.payment_method || 'CASH';
+
+                document.getElementById('normExpVendor').textContent = e.vendor_name || 'Direct';
+                document.getElementById('normExpPhone').textContent = e.vendor_phone || (e.vendor_company ? ('Company: ' + e.vendor_company) : '—');
+                document.getElementById('normExpInvoice').textContent = e.invoice_number || (e.payment_reference ? e.payment_reference : '—');
+
+                if (e.program_number) {
+                    document.getElementById('normExpProgramCol').classList.remove('d-none');
+                    document.getElementById('normExpProgram').textContent = e.program_number + (e.program_name ? ' (' + e.program_name + ')' : '');
+                } else {
+                    document.getElementById('normExpProgramCol').classList.add('d-none');
+                }
+
+                document.getElementById('normExpCreatedBy').textContent = e.created_by_name || 'System Administrator';
+                document.getElementById('normExpCreatedAt').textContent = e.created_at || '—';
+
+                // Logistics row if payment reference has transport info
+                const ref = (e.payment_reference || '').trim();
+                const logRow = document.getElementById('normExpLogisticsRow');
+                const logText = document.getElementById('normExpLogisticsText');
+                if (ref && (ref.toLowerCase().includes('transporter') || ref.toLowerCase().includes('lr') || ref.toLowerCase().includes('vehicle'))) {
+                    logText.textContent = ref;
+                    logRow.classList.remove('d-none');
+                } else {
+                    logRow.classList.add('d-none');
+                }
+
+                // Table items
+                const tbody = document.getElementById('normExpItemsTbody');
+                tbody.innerHTML = `
+                    <tr>
+                        <td class="text-muted fw-bold">1</td>
+                        <td>
+                            <strong class="text-dark">${e.item_name || 'Operational Expense'}</strong>
+                            ${e.item_type ? '<span class="badge bg-light text-secondary border ms-2">' + e.item_type + '</span>' : ''}
+                        </td>
+                        <td class="text-end fw-semibold">${parseFloat(e.quantity || 1).toFixed(2)} ${e.unit_type || 'PCS'}</td>
+                        <td class="text-end">₹${parseFloat(e.unit_cost || 0).toFixed(2)}</td>
+                        <td class="text-end fw-bold text-dark">₹${totalCost.toFixed(2)}</td>
+                    </tr>
+                `;
+                document.getElementById('normExpFooterTotal').textContent = '₹' + totalCost.toFixed(2);
+
+                // Notes / remarks
+                document.getElementById('normExpNotes').textContent = e.notes ? e.notes : 'No additional remarks recorded.';
+
+                // Bill attachment
+                const attachRow = document.getElementById('normExpAttachRow');
+                const attachLink = document.getElementById('normExpAttachLink');
+                if (e.photo_url) {
+                    attachLink.href = e.photo_url;
+                    attachRow.classList.remove('d-none');
+                } else {
+                    attachRow.classList.add('d-none');
+                }
+
+                const modal = new bootstrap.Modal(document.getElementById('viewExpenseDetailsModal'));
+                modal.show();
+            } else {
+                alert('Could not load expense details.');
+            }
+        })
+        .catch(err => {
+            console.error('Error loading expense details:', err);
+            alert('Error loading expense details.');
+        });
+}
+
+function openPrintableVoucherFromNormalView() {
+    if (currentExpenseIdForPrint) {
+        const normModal = bootstrap.Modal.getInstance(document.getElementById('viewExpenseDetailsModal'));
+        if (normModal) normModal.hide();
+        openExpenseReceipt(currentExpenseIdForPrint);
+    }
 }
 
 function openExpenseReceipt(id) {
