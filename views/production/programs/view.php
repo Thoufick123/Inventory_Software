@@ -44,9 +44,7 @@
         <a href="<?= url('production/programs') ?>" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i> Back to Programs
         </a>
-        <a href="<?= url('production/programs/edit/' . $program['id']) ?>" class="btn btn-primary">
-            <i class="bi bi-pencil me-1"></i> Edit Program
-        </a>
+       
     </div>
 </div>
 
