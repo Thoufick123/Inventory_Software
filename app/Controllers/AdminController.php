@@ -965,6 +965,19 @@ class AdminController {
             Response::redirect(url('admin/dashboard?tab=production-units'), 'error', 'Enter a valid 15-character GSTIN.');
         }
 
+        if (empty($code)) {
+            $num = 1;
+            do {
+                $code = 'PU-' . str_pad((string)$num, 2, '0', STR_PAD_LEFT);
+                $exists = ProductionUnit::findByCode($code);
+                if ($exists) {
+                    $num++;
+                } else {
+                    break;
+                }
+            } while (true);
+        }
+
         try {
             $id = ProductionUnit::create([
                 'name'         => $name,
@@ -1038,22 +1051,22 @@ class AdminController {
             $unit = ProductionUnit::find($unitId);
             $unitName = $unit['name'] ?? "ID #{$unitId}";
 
+            try { Database::execute("SET FOREIGN_KEY_CHECKS = 0"); } catch (\Throwable $e) {}
             Database::beginTransaction();
-            Database::execute("SET FOREIGN_KEY_CHECKS = 0");
 
             // Unlink all programs, batches, outwards, reworks, damages, and users referencing this production unit
-            Database::execute("UPDATE production_programs SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]);
-            Database::execute("UPDATE cutting_batches SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]);
-            Database::execute("UPDATE stitching_batches SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]);
-            Database::execute("UPDATE production_outwards SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]);
-            Database::execute("UPDATE production_warehouse_reworks SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]);
-            Database::execute("UPDATE warehouse_damages SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]);
-            Database::execute("UPDATE users SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]);
+            try { Database::execute("UPDATE production_programs SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]); } catch (\Throwable $e) {}
+            try { Database::execute("UPDATE cutting_batches SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]); } catch (\Throwable $e) {}
+            try { Database::execute("UPDATE stitching_batches SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]); } catch (\Throwable $e) {}
+            try { Database::execute("UPDATE production_outwards SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]); } catch (\Throwable $e) {}
+            try { Database::execute("UPDATE production_warehouse_reworks SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]); } catch (\Throwable $e) {}
+            try { Database::execute("UPDATE warehouse_damages SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]); } catch (\Throwable $e) {}
+            try { Database::execute("UPDATE users SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]); } catch (\Throwable $e) {}
 
             ProductionUnit::delete($unitId);
 
-            Database::execute("SET FOREIGN_KEY_CHECKS = 1");
             Database::commit();
+            try { Database::execute("SET FOREIGN_KEY_CHECKS = 1"); } catch (\Throwable $e) {}
 
             AuditService::log('production_units', 'delete', 'production_units', $unitId, "Deleted Production Facility: {$unitName}");
             Response::redirect(url('admin/dashboard?tab=production-units'), 'success', "Production Unit \"{$unitName}\" deleted successfully. Action permanently recorded in Live Staff Activity & System Change Logs.");
@@ -1097,6 +1110,19 @@ class AdminController {
         }
         if (!$this->isValidGstNumber($gstNumber)) {
             Response::jsonError('Enter a valid 15-character GSTIN.');
+        }
+
+        if (empty($code)) {
+            $num = 1;
+            do {
+                $code = 'PU-' . str_pad((string)$num, 2, '0', STR_PAD_LEFT);
+                $exists = ProductionUnit::findByCode($code);
+                if ($exists) {
+                    $num++;
+                } else {
+                    break;
+                }
+            } while (true);
         }
 
         try {
@@ -1145,6 +1171,19 @@ class AdminController {
         }
         if (!$this->isValidGstNumber($gstNumber)) {
             Response::redirect(url('admin/dashboard?tab=warehouses'), 'error', 'Enter a valid 15-character GSTIN.');
+        }
+
+        if (empty($code)) {
+            $num = 1;
+            do {
+                $code = 'WH-' . str_pad((string)$num, 2, '0', STR_PAD_LEFT);
+                $exists = Warehouse::findByCode($code);
+                if ($exists) {
+                    $num++;
+                } else {
+                    break;
+                }
+            } while (true);
         }
 
         try {
@@ -1220,21 +1259,28 @@ class AdminController {
             $wh = Warehouse::find($whId);
             $whName = $wh['name'] ?? "ID #{$whId}";
 
+            try { Database::execute("SET FOREIGN_KEY_CHECKS = 0"); } catch (\Throwable $e) {}
             Database::beginTransaction();
-            Database::execute("SET FOREIGN_KEY_CHECKS = 0");
 
-            // Clean up stock balances, locations, and unlink users/returns/outwards
-            Database::execute("DELETE FROM stock_balances WHERE location_type = 'WAREHOUSE' AND location_id = ?", [$whId]);
-            Database::execute("DELETE FROM locations WHERE warehouse_id = ?", [$whId]);
-            Database::execute("DELETE FROM warehouse_qr_codes WHERE warehouse_id = ?", [$whId]);
-            Database::execute("UPDATE users SET warehouse_id = NULL WHERE warehouse_id = ?", [$whId]);
-            Database::execute("UPDATE returns SET warehouse_id = NULL WHERE warehouse_id = ?", [$whId]);
-            Database::execute("UPDATE production_outwards SET warehouse_id = NULL WHERE warehouse_id = ?", [$whId]);
+            // Clean up stock balances, locations, and unlink all warehouse foreign keys
+            try { Database::execute("DELETE FROM stock_balances WHERE location_type = 'WAREHOUSE' AND location_id = ?", [$whId]); } catch (\Throwable $e) {}
+            try { Database::execute("DELETE FROM locations WHERE warehouse_id = ?", [$whId]); } catch (\Throwable $e) {}
+            try { Database::execute("DELETE FROM warehouse_qr_codes WHERE warehouse_id = ?", [$whId]); } catch (\Throwable $e) {}
+            try { Database::execute("UPDATE users SET warehouse_id = NULL WHERE warehouse_id = ?", [$whId]); } catch (\Throwable $e) {}
+            try { Database::execute("UPDATE returns SET warehouse_id = NULL WHERE warehouse_id = ?", [$whId]); } catch (\Throwable $e) {}
+            try { Database::execute("UPDATE production_outwards SET warehouse_id = NULL WHERE warehouse_id = ?", [$whId]); } catch (\Throwable $e) {}
+            try { Database::execute("UPDATE production_batches SET destination_warehouse_id = NULL WHERE destination_warehouse_id = ?", [$whId]); } catch (\Throwable $e) {}
+            try { Database::execute("UPDATE purchase_inwards SET warehouse_id = NULL WHERE warehouse_id = ?", [$whId]); } catch (\Throwable $e) {}
+            try { Database::execute("UPDATE purchase_orders SET warehouse_id = NULL WHERE warehouse_id = ?", [$whId]); } catch (\Throwable $e) {}
+            try { Database::execute("UPDATE stock_adjustments SET warehouse_id = NULL WHERE warehouse_id = ?", [$whId]); } catch (\Throwable $e) {}
+            try { Database::execute("UPDATE warehouse_allocations SET warehouse_id = NULL WHERE warehouse_id = ?", [$whId]); } catch (\Throwable $e) {}
+            try { Database::execute("UPDATE warehouse_damages SET warehouse_id = NULL WHERE warehouse_id = ?", [$whId]); } catch (\Throwable $e) {}
+            try { Database::execute("UPDATE warehouse_returns SET warehouse_id = NULL WHERE warehouse_id = ?", [$whId]); } catch (\Throwable $e) {}
 
             Warehouse::delete($whId);
 
-            Database::execute("SET FOREIGN_KEY_CHECKS = 1");
             Database::commit();
+            try { Database::execute("SET FOREIGN_KEY_CHECKS = 1"); } catch (\Throwable $e) {}
 
             AuditService::log('warehouses', 'delete', 'warehouses', $whId, "Deleted Central Warehouse: {$whName}");
             Response::redirect(url('admin/dashboard?tab=warehouses'), 'success', "Warehouse \"{$whName}\" deleted successfully.");
@@ -1282,6 +1328,19 @@ class AdminController {
         }
         if (!$this->isValidGstNumber($gstNumber)) {
             Response::redirect(url('admin/dashboard?tab=shops'), 'error', 'Enter a valid 15-character GSTIN.');
+        }
+
+        if (empty($code)) {
+            $num = 1;
+            do {
+                $code = 'SH-' . str_pad((string)$num, 2, '0', STR_PAD_LEFT);
+                $exists = Shop::findByCode($code);
+                if ($exists) {
+                    $num++;
+                } else {
+                    break;
+                }
+            } while (true);
         }
 
         try {
@@ -1357,17 +1416,19 @@ class AdminController {
             $shop = Shop::find($shopId);
             $shopName = $shop['name'] ?? "ID #{$shopId}";
 
+            try { Database::execute("SET FOREIGN_KEY_CHECKS = 0"); } catch (\Throwable $e) {}
             Database::beginTransaction();
-            Database::execute("SET FOREIGN_KEY_CHECKS = 0");
 
-            // Clean up stock balances and unlink sales
-            Database::execute("DELETE FROM stock_balances WHERE location_type = 'SHOP' AND location_id = ?", [$shopId]);
-            Database::execute("UPDATE sales SET shop_id = NULL WHERE shop_id = ?", [$shopId]);
+            // Clean up stock balances and unlink sales / returns / users
+            try { Database::execute("DELETE FROM stock_balances WHERE location_type = 'SHOP' AND location_id = ?", [$shopId]); } catch (\Throwable $e) {}
+            try { Database::execute("UPDATE sales SET shop_id = NULL WHERE shop_id = ?", [$shopId]); } catch (\Throwable $e) {}
+            try { Database::execute("UPDATE users SET shop_id = NULL WHERE shop_id = ?", [$shopId]); } catch (\Throwable $e) {}
+            try { Database::execute("DELETE FROM shop_returned_products WHERE shop_id = ?", [$shopId]); } catch (\Throwable $e) {}
 
             Shop::delete($shopId);
 
-            Database::execute("SET FOREIGN_KEY_CHECKS = 1");
             Database::commit();
+            try { Database::execute("SET FOREIGN_KEY_CHECKS = 1"); } catch (\Throwable $e) {}
 
             AuditService::log('shops', 'delete', 'shops', $shopId, "Deleted Retail Shop: {$shopName}");
             Response::redirect(url('admin/dashboard?tab=shops'), 'success', "Retail Shop \"{$shopName}\" deleted successfully.");

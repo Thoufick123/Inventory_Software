@@ -1061,13 +1061,29 @@ function switchOrgTab(tabId, scroll = true) {
     }
 }
 
+// Facility Code Auto-generation Lists
+const existingUnitCodes = <?= json_encode(array_values(array_filter(array_column($productionUnits ?? [], 'code')))) ?>;
+const existingWhCodes = <?= json_encode(array_values(array_filter(array_column($warehouses ?? [], 'code')))) ?>;
+const existingShopCodes = <?= json_encode(array_values(array_filter(array_column($shops ?? [], 'code')))) ?>;
+const existingChannels = <?= json_encode(array_values(array_filter(array_column($channels ?? [], 'code')))) ?>;
+
+function getNextSequentialCode(prefix, existingList) {
+    let num = 1;
+    while (existingList.some(c => c && c.toUpperCase() === (prefix + '-' + String(num).padStart(2, '0')).toUpperCase())) {
+        num++;
+    }
+    return prefix + '-' + String(num).padStart(2, '0');
+}
+
 // Production Unit Modal Helpers
 function resetUnitModal() {
     document.getElementById('formProductionUnit').classList.remove('was-validated');
     document.getElementById('modalProductionUnitLabel').innerHTML = '<i class="bi bi-gear-wide-connected me-2"></i>Add Production Unit';
     document.getElementById('formProductionUnit').action = '<?= url("admin/production-units/store") ?>';
     document.getElementById('unit_name').value = '';
-    document.getElementById('unit_code').value = '';
+    const autoCode = getNextSequentialCode('PU', existingUnitCodes);
+    document.getElementById('unit_code').value = autoCode;
+    document.getElementById('unit_code').placeholder = autoCode;
     document.getElementById('unit_manager_name').value = '';
     document.getElementById('unit_phone').value = '';
     document.getElementById('unit_gst_number').value = '';
@@ -1080,7 +1096,7 @@ function editUnit(unit) {
     document.getElementById('modalProductionUnitLabel').innerHTML = '<i class="bi bi-pencil-square me-2"></i>Edit Production Unit';
     document.getElementById('formProductionUnit').action = '<?= url("admin/production-units/update/") ?>' + unit.id;
     document.getElementById('unit_name').value = unit.name || '';
-    document.getElementById('unit_code').value = unit.code || '';
+    document.getElementById('unit_code').value = unit.code || getNextSequentialCode('PU', existingUnitCodes);
     document.getElementById('unit_manager_name').value = unit.manager_name || '';
     document.getElementById('unit_phone').value = unit.phone || '';
     document.getElementById('unit_gst_number').value = unit.gst_number || '';
@@ -1096,7 +1112,9 @@ function resetWarehouseModal() {
     document.getElementById('modalWarehouseLabel').innerHTML = '<i class="bi bi-buildings me-2"></i>Add Warehouse';
     document.getElementById('formWarehouse').action = '<?= url("admin/warehouses/store") ?>';
     document.getElementById('wh_name').value = '';
-    document.getElementById('wh_code').value = '';
+    const autoCode = getNextSequentialCode('WH', existingWhCodes);
+    document.getElementById('wh_code').value = autoCode;
+    document.getElementById('wh_code').placeholder = autoCode;
     document.getElementById('wh_manager_name').value = '';
     document.getElementById('wh_phone').value = '';
     document.getElementById('wh_gst_number').value = '';
@@ -1109,7 +1127,7 @@ function editWarehouse(wh) {
     document.getElementById('modalWarehouseLabel').innerHTML = '<i class="bi bi-pencil-square me-2"></i>Edit Warehouse';
     document.getElementById('formWarehouse').action = '<?= url("admin/warehouses/update/") ?>' + wh.id;
     document.getElementById('wh_name').value = wh.name || '';
-    document.getElementById('wh_code').value = wh.code || '';
+    document.getElementById('wh_code').value = wh.code || getNextSequentialCode('WH', existingWhCodes);
     document.getElementById('wh_manager_name').value = wh.manager_name || '';
     document.getElementById('wh_phone').value = wh.phone || '';
     document.getElementById('wh_gst_number').value = wh.gst_number || '';
@@ -1125,7 +1143,9 @@ function resetShopModal() {
     document.getElementById('modalShopLabel').innerHTML = '<i class="bi bi-shop me-2"></i>Add Retail Shop';
     document.getElementById('formShop').action = '<?= url("admin/shops/store") ?>';
     document.getElementById('shop_name').value = '';
-    document.getElementById('shop_code').value = '';
+    const autoCode = getNextSequentialCode('SH', existingShopCodes);
+    document.getElementById('shop_code').value = autoCode;
+    document.getElementById('shop_code').placeholder = autoCode;
     document.getElementById('shop_manager_name').value = '';
     document.getElementById('shop_gst_number').value = '';
     document.getElementById('shop_phone').value = '';
@@ -1138,7 +1158,7 @@ function editShop(shop) {
     document.getElementById('modalShopLabel').innerHTML = '<i class="bi bi-pencil-square me-2"></i>Edit Retail Shop';
     document.getElementById('formShop').action = '<?= url("admin/shops/update/") ?>' + shop.id;
     document.getElementById('shop_name').value = shop.name || '';
-    document.getElementById('shop_code').value = shop.code || '';
+    document.getElementById('shop_code').value = shop.code || getNextSequentialCode('SH', existingShopCodes);
     document.getElementById('shop_manager_name').value = shop.manager_name || '';
     document.getElementById('shop_gst_number').value = shop.gst_number || '';
     document.getElementById('shop_phone').value = shop.phone || '';
@@ -1155,6 +1175,8 @@ function resetChannelModal(type) {
     const title = isWhatsapp ? 'WhatsApp Channel' : 'Website Channel';
     const icon = isWhatsapp ? 'bi-whatsapp' : 'bi-globe';
     const bgClass = isWhatsapp ? 'bg-success' : 'bg-website';
+    const prefix = isWhatsapp ? 'WA' : 'WE';
+    const autoCode = getNextSequentialCode(prefix, existingChannels);
     
     document.getElementById('modalChannelLabel').innerHTML = `<i class="bi ${icon} me-2"></i>Add ${title}`;
     const header = document.querySelector('#modalChannel .modal-header');
@@ -1163,7 +1185,8 @@ function resetChannelModal(type) {
     document.getElementById('formChannel').action = '<?= url("admin/channels/store") ?>';
     document.getElementById('channel_type').value = type;
     document.getElementById('chan_name').value = '';
-    document.getElementById('chan_code').value = '';
+    document.getElementById('chan_code').value = autoCode;
+    document.getElementById('chan_code').placeholder = autoCode;
     document.getElementById('chan_manager_name').value = '';
     document.getElementById('chan_phone').value = '';
     document.getElementById('chan_gst_number').value = '';
