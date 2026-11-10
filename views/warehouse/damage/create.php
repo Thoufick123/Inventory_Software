@@ -431,6 +431,18 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
+        const isSeries = Boolean(
+            variant.is_series ||
+            (variant.category_type && String(variant.category_type).toUpperCase() === 'SERIES') ||
+            (variant.qr_type && String(variant.qr_type).toUpperCase() === 'SERIES_BATCH')
+        );
+        const isComplementary = Boolean(
+            variant.is_complementary ||
+            (variant.category_type && String(variant.category_type).toUpperCase() === 'COMPLEMENTARY')
+        );
+        const isQtyEditable = Boolean(variant.is_qty_editable !== undefined ? variant.is_qty_editable : (isSeries || isComplementary));
+        const effectiveQty = isQtyEditable ? qty : 1;
+
         queue.push({
             variant_id: variant.id,
             product_name: variant.product_name,
@@ -444,15 +456,16 @@ document.addEventListener('DOMContentLoaded', function() {
             subcategory_name: variant.subcategory_name || '',
             sub_subcategory_name: variant.sub_subcategory_name || '',
             category_hierarchy: variant.category_hierarchy || '',
-            available_stock: variant.available_stock || 0,
-            is_series: Boolean(variant.is_series),
-            is_complementary: Boolean(variant.is_complementary),
+            available_stock: availableStock,
+            is_series: isSeries,
+            is_complementary: isComplementary,
+            is_qty_editable: isQtyEditable,
             pack_quantity: Number(variant.pack_quantity) || 1,
-            quantity: qty,
+            quantity: effectiveQty,
             mrp: parseFloat(variant.mrp || 0),
             selling_price: parseFloat(variant.selling_price || 0),
             cost_per_unit: unitPrice,
-            total_loss: qty * unitPrice,
+            total_loss: effectiveQty * unitPrice,
             source_type: 'STORAGE_HANDLING',
             damage_reason: 'Fabric Tear / Cut',
             defect_notes: ''
@@ -486,7 +499,12 @@ document.addEventListener('DOMContentLoaded', function() {
         let totalValuation = 0;
 
         queue.forEach((item, index) => {
-            totalUnits += parseInt(item.quantity) || 0;
+            const isQtyEditable = Boolean(item.is_qty_editable !== undefined ? item.is_qty_editable : (item.is_series || item.is_complementary));
+            const itemQty = isQtyEditable ? (parseInt(item.quantity) || 1) : 1;
+            item.quantity = itemQty;
+            item.total_loss = itemQty * (parseFloat(item.cost_per_unit) || 0);
+
+            totalUnits += itemQty;
             totalValuation += parseFloat(item.total_loss) || 0;
 
             const tr = document.createElement('tr');
@@ -509,6 +527,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="d-flex flex-wrap align-items-center gap-1">
                         <span class="badge bg-light text-muted border small px-2 py-0.5"><i class="bi bi-tag-fill me-1 text-muted"></i>MRP: ₹${parseFloat(item.mrp || 0).toFixed(2)}</span>
                         ${item.selling_price > 0 ? `<span class="badge bg-light text-secondary border small px-2 py-0.5">Sale: ₹${parseFloat(item.selling_price || 0).toFixed(2)}</span>` : ''}
+                        ${item.is_series ? `<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle small px-2 py-0.5"><i class="bi bi-collection me-1"></i>Series</span>` : ''}
+                        ${item.is_complementary ? `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle small px-2 py-0.5"><i class="bi bi-gift me-1"></i>Complementary</span>` : ''}
                     </div>
                 </td>
                 <td class="text-center text-nowrap">
@@ -530,7 +550,19 @@ document.addEventListener('DOMContentLoaded', function() {
                     </select>
                 </td>
                 <td class="text-center">
-                    <input type="number" min="1" class="form-control form-control-sm fw-bold text-center mx-auto" style="max-width: 75px;" value="${item.quantity}" onchange="updateItemQty(${index}, this.value)">
+                    ${isQtyEditable ? `
+                        <div class="d-inline-flex flex-column align-items-center">
+                            <input type="number" min="1" max="${parseInt(item.available_stock, 10) || 1}" class="form-control form-control-sm fw-bold text-center mx-auto text-primary" style="max-width: 75px;" value="${item.quantity}" oninput="updateItemQty(${index}, this.value)" onchange="updateItemQty(${index}, this.value)">
+                            <small class="text-primary d-block mt-0.5 fw-semibold" style="font-size: 0.65rem;">
+                                ${item.is_series ? '<i class="bi bi-collection me-0.5"></i>Series' : '<i class="bi bi-gift me-0.5"></i>Comp'}
+                            </small>
+                        </div>
+                    ` : `
+                        <div class="d-inline-flex flex-column align-items-center" title="Normal product piece QR tags are single individual pieces (quantity is fixed at 1 pc)">
+                            <input type="number" value="1" readonly tabindex="-1" class="form-control form-control-sm fw-bold text-center mx-auto bg-light text-muted" style="max-width: 75px; cursor: not-allowed; border-color: #cbd5e1; user-select: none;">
+                            <small class="text-muted d-block mt-0.5" style="font-size: 0.65rem;"><i class="bi bi-lock-fill me-0.5"></i>1 pc fixed</small>
+                        </div>
+                    `}
                 </td>
                 <td class="text-center">
                     <div class="input-group input-group-sm mx-auto shadow-xs" style="min-width: 125px; max-width: 135px;">
@@ -567,9 +599,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Update quantity
     window.updateItemQty = function(index, value) {
-        const qty = Math.max(1, parseInt(value) || 1);
-        if (queue[index]) {
-            queue[index].quantity = qty;
+        if (!queue[index]) return;
+        const item = queue[index];
+        const isEditable = Boolean(item.is_qty_editable !== undefined ? item.is_qty_editable : (item.is_series || item.is_complementary));
+        if (!isEditable) {
+            item.quantity = 1;
+            item.total_loss = 1 * (parseFloat(item.cost_per_unit) || 0);
+            renderQueue();
+            return;
+        }
+
+        let qty = parseInt(value, 10);
+        if (isNaN(qty) || qty < 1) qty = 1;
+        const maxStock = Math.max(1, parseInt(item.available_stock, 10) || 1);
+        if (qty > maxStock) {
+            qty = maxStock;
+        }
+        item.quantity = qty;
+        item.total_loss = qty * (parseFloat(item.cost_per_unit) || 0);
+        renderQueue();
+    };
             queue[index].total_loss = qty * (parseFloat(queue[index].cost_per_unit) || 0);
             renderQueue();
         }
@@ -714,6 +763,21 @@ document.addEventListener('DOMContentLoaded', function() {
             scanInput.focus();
             return false;
         }
+
+        // Strictly normalize quantities: Normal products are locked to 1 pc
+        queue.forEach(item => {
+            const isEditable = Boolean(item.is_qty_editable !== undefined ? item.is_qty_editable : (item.is_series || item.is_complementary));
+            if (!isEditable) {
+                item.quantity = 1;
+                item.total_loss = 1 * (parseFloat(item.cost_per_unit) || 0);
+            } else {
+                let q = parseInt(item.quantity, 10) || 1;
+                const maxStock = Math.max(1, parseInt(item.available_stock, 10) || 1);
+                item.quantity = Math.min(maxStock, Math.max(1, q));
+                item.total_loss = item.quantity * (parseFloat(item.cost_per_unit) || 0);
+            }
+        });
+
         hiddenItemsJson.value = JSON.stringify(queue);
     });
 

@@ -2887,14 +2887,25 @@ class WarehouseController {
                      WHERE pv.id = ?",
                     [$tagCode, $variantId]
                 );
-                $isPackProduct = $packInfo && (
-                    strtoupper((string)($packInfo['qr_type'] ?? '')) === 'SERIES_BATCH'
-                    || strtoupper((string)($packInfo['category_type'] ?? '')) === 'SERIES'
-                    || strtoupper((string)($packInfo['category_type'] ?? '')) === 'COMPLEMENTARY'
+                $catTypeUpper = strtoupper((string)($packInfo['category_type'] ?? ''));
+                $isSeries = $packInfo && (
+                    $catTypeUpper === 'SERIES'
+                    || strtoupper((string)($packInfo['qr_type'] ?? '')) === 'SERIES_BATCH'
                     || (int)($packInfo['pack_quantity'] ?? 1) > 1
+                );
+                $isComp = $packInfo && (
+                    $catTypeUpper === 'COMPLEMENTARY'
                     || !empty($packInfo['is_complementary'])
                     || !empty($packInfo['product_is_complementary'])
                 );
+                $isPackProduct = $isSeries || $isComp;
+
+                // Validation: Only series and complementary products are allowed to have quantity > 1.
+                // Normal products have 1 unique piece tag per item and must strictly be 1 pc.
+                if (!$isSeries && !$isComp && $qty > 1) {
+                    $qty = 1;
+                    $totalLoss = 1 * $costPerUnit;
+                }
                 $isPackMasterTag = $isPackProduct && $tagCode !== ''
                     && (
                         (!empty($packInfo['qr_code'])
@@ -3684,13 +3695,16 @@ class WarehouseController {
              WHERE pv.id = ?",
             [(int)$variant['id']]
         ) ?? [];
-        $isSeriesProduct = strtoupper((string)($damageScanInfo['qr_type'] ?? '')) === 'SERIES_BATCH'
-            || strtoupper((string)($damageScanInfo['category_type'] ?? '')) === 'SERIES';
-        $isComplementaryProduct = strtoupper((string)($damageScanInfo['category_type'] ?? '')) === 'COMPLEMENTARY'
+        $catTypeUpper = strtoupper((string)($damageScanInfo['category_type'] ?? ''));
+        $isSeriesProduct = $catTypeUpper === 'SERIES'
+            || strtoupper((string)($damageScanInfo['qr_type'] ?? '')) === 'SERIES_BATCH'
+            || (int)($damageScanInfo['pack_quantity'] ?? 1) > 1;
+        $isComplementaryProduct = $catTypeUpper === 'COMPLEMENTARY'
             || !empty($damageScanInfo['is_complementary'])
             || !empty($damageScanInfo['product_is_complementary']);
-        $isPackProduct = $isSeriesProduct || $isComplementaryProduct
-            || (int)($damageScanInfo['pack_quantity'] ?? 1) > 1;
+        $isPackProduct = $isSeriesProduct || $isComplementaryProduct;
+        $productType = $isComplementaryProduct ? 'COMPLEMENTARY' : ($isSeriesProduct ? 'SERIES' : 'NORMAL');
+        $isQtyEditable = ($isSeriesProduct || $isComplementaryProduct);
         $storedWarehouseQr = !empty($extractedTag) ? Database::fetchOne(
             "SELECT qr_code FROM warehouse_qr_codes
              WHERE variant_id = ? AND UPPER(qr_code) = UPPER(?)
@@ -3842,9 +3856,12 @@ class WarehouseController {
                 'mrp'                  => (float)($variant['mrp'] ?? $variant['selling_price'] ?? 0),
                 'selling_price'        => (float)($variant['selling_price'] ?? 0),
                 'tag_code'             => $extractedTag,
+                'category_type'        => $damageScanInfo['category_type'] ?? 'NORMAL',
+                'product_type'         => $productType,
                 'is_series'            => $isSeriesProduct,
                 'is_complementary'     => $isComplementaryProduct,
                 'is_pack_product'      => $isPackProduct,
+                'is_qty_editable'      => $isQtyEditable,
                 'pack_quantity'        => $packQuantity,
                 'damage_quantity'      => $damageQuantity,
                 'tag_is_unique'        => $tagIsUnique,
