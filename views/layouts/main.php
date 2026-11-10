@@ -454,66 +454,6 @@ if (!empty($authUser['shop_name'])) {
                     </li>
                     <?php endif; ?>
 
-                    <!-- Reports -->
-                    <?php 
-                    $canViewReports = hasPermission('reports', 'view')
-                        || hasPermission('reports_overview', 'view')
-                        || hasPermission('reports_profitability', 'view')
-                        || hasPermission('reports_sales', 'view')
-                        || hasPermission('reports_online', 'view')
-                        || hasPermission('reports_website', 'view')
-                        || hasPermission('reports_whatsapp', 'view')
-                        || hasPermission('reports_production', 'view')
-                        || hasPermission('reports_warehouse', 'view')
-                        || hasPermission('reports_purchase', 'view')
-                        || hasPermission('reports_shop', 'view')
-                        || hasPermission('reports_inventory', 'view');
-                    ?>
-                    <?php if ($canViewReports): ?>
-                    <li class="nav-item has-submenu">
-                        <a href="#" class="nav-link <?= ($activeModule ?? '') === 'reports' ? 'active' : '' ?>">
-                            <i class="bi bi-bar-chart-line"></i>
-                            <span>Reports</span>
-                            <i class="bi bi-chevron-down submenu-arrow"></i>
-                        </a>
-                        <ul class="submenu <?= ($activeModule ?? '') === 'reports' ? 'show' : '' ?>">
-                            <?php if (hasPermission('reports_overview', 'view') || hasPermission('reports', 'view')): ?>
-                            <li><a href="<?= url('reports') ?>" class="<?= in_array(($activeMenu ?? ''), ['reports-overview', 'reports']) ? 'active' : '' ?>"><i class="bi bi-pie-chart me-1"></i> Overview &amp; P&amp;L</a></li>
-                            <?php endif; ?>
-                            <?php if (hasPermission('reports_profitability', 'view') || hasPermission('reports', 'view')): ?>
-                            <li><a href="<?= url('reports/profitability') ?>" class="<?= ($activeMenu ?? '') === 'reports-profitability' ? 'active' : '' ?>"><i class="bi bi-cash-coin me-1"></i> Revenue &amp; Loss</a></li>
-                            <?php endif; ?>
-                            <?php if (hasPermission('reports_sales', 'view') || hasPermission('reports', 'view')): ?>
-                            <li><a href="<?= url('reports/sales') ?>" class="<?= ($activeMenu ?? '') === 'reports-sales' ? 'active' : '' ?>"><i class="bi bi-cart-check me-1"></i> Multi-Channel Sales</a></li>
-                            <?php endif; ?>
-                            <?php if (hasPermission('reports_online', 'view') || hasPermission('reports', 'view')): ?>
-                            <li><a href="<?= url('reports/online') ?>" class="<?= ($activeMenu ?? '') === 'reports-online' ? 'active' : '' ?>"><i class="bi bi-broadcast me-1 text-primary"></i> Online &amp; Digital Reports</a></li>
-                            <?php endif; ?>
-                            <?php if (hasPermission('reports_website', 'view') || hasPermission('reports', 'view')): ?>
-                            <li><a href="<?= url('reports/website') ?>" class="<?= ($activeMenu ?? '') === 'reports-website' ? 'active' : '' ?>"><i class="bi bi-globe2 me-1 text-info"></i> Website Reports</a></li>
-                            <?php endif; ?>
-                            <?php if (hasPermission('reports_whatsapp', 'view') || hasPermission('reports', 'view')): ?>
-                            <li><a href="<?= url('reports/whatsapp') ?>" class="<?= ($activeMenu ?? '') === 'reports-whatsapp' ? 'active' : '' ?>"><i class="bi bi-whatsapp me-1 text-success"></i> WhatsApp Reports</a></li>
-                            <?php endif; ?>
-                            <?php if (hasPermission('reports_production', 'view') || hasPermission('reports', 'view')): ?>
-                            <li><a href="<?= url('reports/production') ?>" class="<?= ($activeMenu ?? '') === 'reports-production' ? 'active' : '' ?>"><i class="bi bi-gear me-1"></i> Production Reports</a></li>
-                            <?php endif; ?>
-                            <?php if (hasPermission('reports_warehouse', 'view') || hasPermission('reports', 'view')): ?>
-                            <li><a href="<?= url('reports/warehouse') ?>" class="<?= ($activeMenu ?? '') === 'reports-warehouse' ? 'active' : '' ?>"><i class="bi bi-buildings me-1"></i> Warehouse Reports</a></li>
-                            <?php endif; ?>
-                            <?php if (hasPermission('reports_purchase', 'view') || hasPermission('reports', 'view')): ?>
-                            <li><a href="<?= url('reports/purchase') ?>" class="<?= ($activeMenu ?? '') === 'reports-purchase' ? 'active' : '' ?>"><i class="bi bi-truck me-1"></i> Purchase Reports</a></li>
-                            <?php endif; ?>
-                            <?php if (hasPermission('reports_shop', 'view') || hasPermission('reports', 'view')): ?>
-                            <li><a href="<?= url('reports/shop') ?>" class="<?= ($activeMenu ?? '') === 'reports-shop' ? 'active' : '' ?>"><i class="bi bi-shop me-1"></i> Shop Reports</a></li>
-                            <?php endif; ?>
-                            <?php if (hasPermission('reports_inventory', 'view') || hasPermission('reports', 'view')): ?>
-                            <li><a href="<?= url('reports/inventory') ?>" class="<?= ($activeMenu ?? '') === 'reports-inventory' ? 'active' : '' ?>"><i class="bi bi-boxes me-1"></i> Inventory Reports</a></li>
-                            <?php endif; ?>
-                        </ul>
-                    </li>
-                    <?php endif; ?>
-
                     <li class="nav-divider"></li>
 
                     <!-- Staff -->

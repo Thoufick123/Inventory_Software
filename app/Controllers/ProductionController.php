@@ -11409,59 +11409,92 @@ class ProductionController {
             return;
         }
 
-        $itemNames = $_POST['item_name'] ?? [];
-        $quantities = $_POST['quantity'] ?? [];
-        $unitTypes = $_POST['unit_type'] ?? [];
-        $unitCosts = $_POST['unit_cost'] ?? [];
-        $notesList = $_POST['notes'] ?? [];
-
-        if (!is_array($itemNames)) {
-            $itemNames = (string)$itemNames !== '' ? [$itemNames] : [];
-            $quantities = is_array($quantities) ? $quantities : [$quantities];
-            $unitTypes = is_array($unitTypes) ? $unitTypes : [$unitTypes];
-            $unitCosts = is_array($unitCosts) ? $unitCosts : [$unitCosts];
-            $notesList = is_array($notesList) ? $notesList : [$notesList];
-        }
-
-        if (empty($itemNames) || !is_array($quantities) || !is_array($unitCosts)) {
-            Session::flash('error', 'Please enter at least one valid expense item.');
-            Response::back();
-            return;
-        }
-
-        $defaultUnitType = strtoupper(trim($_POST['default_unit_type'] ?? 'PCS')) ?: 'PCS';
-
         $expenseLines = [];
-        foreach ($itemNames as $index => $submittedName) {
-            $itemName = trim((string)$submittedName);
-            $quantityValue = $quantities[$index] ?? null;
-            $unitCostValue = $unitCosts[$index] ?? null;
-            $lineUnitType = !empty($unitTypes[$index]) ? strtoupper(trim((string)$unitTypes[$index])) : $defaultUnitType;
-            if ($lineUnitType === '') $lineUnitType = 'PCS';
-            $noteText = trim((string)($notesList[$index] ?? ''));
-            if ($itemName === '' || !is_numeric($quantityValue) || !is_finite((float)$quantityValue)
-                || !is_numeric($unitCostValue) || !is_finite((float)$unitCostValue)) {
-                Session::flash('error', 'Each expense item must have a type, quantity, and valid price.');
+
+        // Support direct single-voucher form submission (matching Warehouse flow)
+        if (isset($_POST['amount']) && !is_array($_POST['amount'])) {
+            $amount = (float)$_POST['amount'];
+            if ($amount <= 0) {
+                Session::flash('error', 'Expense amount must be greater than zero.');
+                Response::back();
+                return;
+            }
+            $singleItem = trim($_POST['item_name'] ?? '');
+            if ($singleItem === '') {
+                Session::flash('error', 'Particulars / Item Description is required.');
+                Response::back();
+                return;
+            }
+            $notes = trim($_POST['notes'] ?? '');
+            $logisticsInfo = [];
+            if (!empty($_POST['transporter_name'])) $logisticsInfo[] = 'Transporter: ' . trim($_POST['transporter_name']);
+            if (!empty($_POST['vehicle_number'])) $logisticsInfo[] = 'Vehicle: ' . trim($_POST['vehicle_number']);
+            if ($logisticsInfo) {
+                $notes = ($notes ? $notes . ' | ' : '') . implode(' | ', $logisticsInfo);
+            }
+
+            $expenseLines = [[
+                'item_name' => $singleItem,
+                'quantity' => 1,
+                'unit_type' => 'PCS',
+                'unit_cost' => $amount,
+                'total_cost' => $amount,
+                'notes' => $notes,
+            ]];
+        } else {
+            $itemNames = $_POST['item_name'] ?? [];
+            $quantities = $_POST['quantity'] ?? [];
+            $unitTypes = $_POST['unit_type'] ?? [];
+            $unitCosts = $_POST['unit_cost'] ?? [];
+            $notesList = $_POST['notes'] ?? [];
+
+            if (!is_array($itemNames)) {
+                $itemNames = (string)$itemNames !== '' ? [$itemNames] : [];
+                $quantities = is_array($quantities) ? $quantities : [$quantities];
+                $unitTypes = is_array($unitTypes) ? $unitTypes : [$unitTypes];
+                $unitCosts = is_array($unitCosts) ? $unitCosts : [$unitCosts];
+                $notesList = is_array($notesList) ? $notesList : [$notesList];
+            }
+
+            if (empty($itemNames) || !is_array($quantities) || !is_array($unitCosts)) {
+                Session::flash('error', 'Please enter at least one valid expense item.');
                 Response::back();
                 return;
             }
 
-            $quantity = (float)$quantityValue;
-            $unitCost = (float)$unitCostValue;
-            if ($quantity <= 0 || $unitCost < 0) {
-                Session::flash('error', 'Expense quantities must be greater than zero and prices cannot be negative.');
-                Response::back();
-                return;
-            }
+            $defaultUnitType = strtoupper(trim($_POST['default_unit_type'] ?? 'PCS')) ?: 'PCS';
 
-            $expenseLines[] = [
-                'item_name' => $itemName,
-                'quantity' => $quantity,
-                'unit_type' => $lineUnitType,
-                'unit_cost' => $unitCost,
-                'total_cost' => round($quantity * $unitCost, 2),
-                'notes' => $noteText,
-            ];
+            foreach ($itemNames as $index => $submittedName) {
+                $itemName = trim((string)$submittedName);
+                $quantityValue = $quantities[$index] ?? null;
+                $unitCostValue = $unitCosts[$index] ?? null;
+                $lineUnitType = !empty($unitTypes[$index]) ? strtoupper(trim((string)$unitTypes[$index])) : $defaultUnitType;
+                if ($lineUnitType === '') $lineUnitType = 'PCS';
+                $noteText = trim((string)($notesList[$index] ?? ''));
+                if ($itemName === '' || !is_numeric($quantityValue) || !is_finite((float)$quantityValue)
+                    || !is_numeric($unitCostValue) || !is_finite((float)$unitCostValue)) {
+                    Session::flash('error', 'Each expense item must have a type, quantity, and valid price.');
+                    Response::back();
+                    return;
+                }
+
+                $quantity = (float)$quantityValue;
+                $unitCost = (float)$unitCostValue;
+                if ($quantity <= 0 || $unitCost < 0) {
+                    Session::flash('error', 'Expense quantities must be greater than zero and prices cannot be negative.');
+                    Response::back();
+                    return;
+                }
+
+                $expenseLines[] = [
+                    'item_name' => $itemName,
+                    'quantity' => $quantity,
+                    'unit_type' => $lineUnitType,
+                    'unit_cost' => $unitCost,
+                    'total_cost' => round($quantity * $unitCost, 2),
+                    'notes' => $noteText,
+                ];
+            }
         }
 
         if (!$expenseLines) {
@@ -11476,7 +11509,7 @@ class ProductionController {
         $category = trim($_POST['category'] ?? 'SEWING_MATERIALS');
         if ($category === '') $category = 'SEWING_MATERIALS';
 
-        $vendorName = trim($_POST['vendor_name'] ?? '');
+        $vendorName = trim($_POST['paid_to'] ?? $_POST['vendor_name'] ?? '');
         if ($vendorName === '') $vendorName = 'Direct / Floor Expense';
 
         $paymentStatus = trim($_POST['payment_status'] ?? 'PAID');
@@ -11498,12 +11531,13 @@ class ProductionController {
 
         // Handle photo / receipt / bill image upload
         $photoUrl = null;
-        if (!empty($_FILES['photo']['name']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
+        $fileKey = !empty($_FILES['receipt_file']['name']) ? 'receipt_file' : (!empty($_FILES['photo']['name']) ? 'photo' : null);
+        if ($fileKey && $_FILES[$fileKey]['error'] === UPLOAD_ERR_OK) {
             $allowedExts = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
-            $ext = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
+            $ext = strtolower(pathinfo($_FILES[$fileKey]['name'], PATHINFO_EXTENSION));
             if (in_array($ext, $allowedExts, true)) {
                 if (class_exists('CloudinaryService')) {
-                    $photoUrl = CloudinaryService::upload($_FILES['photo'], 'grm_inventory/production/expenses', 'auto');
+                    $photoUrl = CloudinaryService::upload($_FILES[$fileKey], 'grm_inventory/production/expenses', 'auto');
                 }
                 if (!$photoUrl) {
                     $uploadDir = BASE_PATH . '/public/uploads/production_expenses/';
@@ -11511,7 +11545,7 @@ class ProductionController {
                         @mkdir($uploadDir, 0777, true);
                     }
                     $filename = 'exp_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-                    if (move_uploaded_file($_FILES['photo']['tmp_name'], $uploadDir . $filename)) {
+                    if (move_uploaded_file($_FILES[$fileKey]['tmp_name'], $uploadDir . $filename)) {
                         $photoUrl = 'uploads/production_expenses/' . $filename;
                     }
                 }
@@ -11535,8 +11569,8 @@ class ProductionController {
                     "INSERT INTO production_expenses
                         (expense_number, production_unit, category, item_name,
                          quantity, unit_type, unit_cost, total_cost, paid_amount, payment_status,
-                         payment_method, vendor_name, invoice_number, expense_date, photo_url, notes, created_by, created_at, updated_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
+                         payment_method, vendor_name, vendor_phone, invoice_number, expense_date, photo_url, notes, created_by, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
                     [
                         $expenseNumber,
                         $productionUnit,
@@ -11550,6 +11584,7 @@ class ProductionController {
                         $paymentStatus,
                         $paymentMethod,
                         $vendorName,
+                        !empty($_POST['vendor_phone']) ? trim($_POST['vendor_phone']) : null,
                         $invoiceNumber ?: null,
                         $expenseDate,
                         $photoUrl,

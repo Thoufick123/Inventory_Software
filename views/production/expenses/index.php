@@ -416,233 +416,150 @@
 </div>
 
 <!-- ========================================================================= -->
-<!-- 1. RECORD EXPENSE MODAL (Comprehensive Production Expense Form)           -->
+<!-- 1. RECORD EXPENSE MODAL (Production Unit Operational Expense Form)        -->
 <!-- ========================================================================= -->
-<div class="modal fade" id="recordExpenseModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content shadow-lg border-0 rounded-4 overflow-hidden">
-            <div class="modal-header bg-primary text-white py-3 px-4">
-                <h5 class="modal-title fw-bold fs-6">
-                    <i class="bi bi-plus-circle me-2"></i>Record Production Expense
+<div class="modal fade" id="recordExpenseModal" tabindex="-1" aria-labelledby="recordExpenseModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-primary text-white py-3">
+                <h5 class="modal-title fw-bold" id="recordExpenseModalLabel">
+                    <i class="bi bi-plus-circle me-2"></i>Record Production Unit Operational Expense
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form method="POST" action="<?= url('production/expenses/store') ?>" id="recordExpenseForm" enctype="multipart/form-data">
                 <?= CSRF::field() ?>
                 <div class="modal-body p-4">
-                    <!-- SECTION 1: VOUCHER CONTEXT (Production Unit, Date & Category) -->
-                    <div class="row g-2 mb-3 p-3 bg-white rounded-3 border">
-                        <div class="col-md-4 col-sm-6">
-                            <label class="form-label small fw-bold text-dark required mb-1">Production Unit</label>
-                            <select name="production_unit" id="newProductionUnit" class="form-select form-select-sm fw-bold">
+                    <div class="row g-3">
+                        <!-- Production Unit -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Production Unit Location <span class="text-danger">*</span></label>
+                            <select name="production_unit" class="form-select" required>
                                 <?php foreach ($productionUnitOptions as $uVal => $uLbl): ?>
-                                    <option value="<?= e($uVal) ?>" <?= $uVal === 'PRODUCTION_1' ? 'selected' : '' ?>><?= e($uLbl) ?></option>
+                                    <option value="<?= e($uVal) ?>" <?= $uVal === 'PRODUCTION_1' ? 'selected' : '' ?>>
+                                        <?= e($uLbl) ?>
+                                    </option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-md-4 col-sm-6">
-                            <label class="form-label small fw-bold text-dark required mb-1">Expense Date</label>
-                            <input type="date" name="expense_date" id="newExpenseDate" class="form-control form-control-sm fw-bold" value="<?= date('Y-m-d') ?>">
-                        </div>
-                        <div class="col-md-4 col-sm-12">
-                            <div class="d-flex justify-content-between align-items-center mb-1">
-                                <label class="form-label small fw-bold text-dark required mb-0">Expense Category</label>
-                                <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none fw-bold text-primary" style="font-size: 11px;" onclick="openQuickAddCategoryModal()">
-                                    <i class="bi bi-plus-circle me-1"></i>+ New Category
-                                </button>
-                            </div>
-                            <select name="category" id="newCategory" class="form-select form-select-sm fw-bold" onchange="onCategorySelectChange(this)">
+
+                        <!-- Expense Category -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Expense Category <span class="text-danger">*</span></label>
+                            <input type="text" name="category" class="form-control" list="prodCategoryList" placeholder="e.g. Logistics & Freight Shipping, Machine Maintenance..." required>
+                            <datalist id="prodCategoryList">
                                 <?php foreach ($expenseCategoryOptions as $catVal => $catLbl): ?>
-                                    <option value="<?= e($catVal) ?>" <?= $catVal === 'SEWING_MATERIALS' ? 'selected' : '' ?>><?= e($catLbl) ?></option>
-                                <?php endforeach; ?>
-                                <option value="__ADD_NEW_CATEGORY__" class="fw-bold text-primary bg-light">+ Add New Category...</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- SECTION 2: ENTRY SECTION FOR ADDING EXPENSE ITEMS -->
-                    <div class="p-3 bg-light rounded-3 border mb-3">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="small fw-bold text-uppercase text-secondary">
-                                <i class="bi bi-plus-square text-primary me-1"></i> Add Expense Item(s)
-                            </span>
-                            <span class="small text-muted">Add 1 or more items to this voucher</span>
-                        </div>
-
-                        <!-- Item Name Input (Clean, without + button or drawer) -->
-                        <div class="mb-2">
-                            <label class="form-label small fw-bold text-dark required mb-1">Item / Expense Type</label>
-                            <input type="text" 
-                                   id="newItemName" 
-                                   class="form-control form-control-sm fw-bold" 
-                                   list="expenseTypesList" 
-                                   placeholder="e.g. White Sewing Thread Cones, Machine Servicing, Overlock Needles..." 
-                                   autocomplete="off" 
-                                   oninput="onExpenseTypeSelect(this.value)">
-                            <datalist id="expenseTypesList">
-                                <?php foreach ($expenseItems ?? [] as $item): ?>
-                                    <option value="<?= htmlspecialchars($item['name']) ?>" data-rate="<?= (float)($item['default_rate'] ?? 0) ?>" data-unit="<?= htmlspecialchars($item['unit_type'] ?? 'PCS') ?>">
+                                    <option value="<?= e($catLbl) ?>"><?= e($catLbl) ?></option>
                                 <?php endforeach; ?>
                             </datalist>
                         </div>
 
-                        <!-- Row: Quantity, Unit, Rate, and Reason -->
-                        <div class="row g-2 mb-2">
-                            <div class="col-sm-3 col-6">
-                                <label class="form-label small fw-bold text-dark required mb-1">Quantity</label>
-                                <input type="number" 
-                                       step="any" 
-                                       min="0.01" 
-                                       id="newQuantity" 
-                                       class="form-control form-control-sm fw-bold text-center" 
-                                       value="1" 
-                                       oninput="calculateNewExpenseTotal()">
-                            </div>
+                        <!-- Particulars / Line Item -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Particulars / Item Description <span class="text-danger">*</span></label>
+                            <input type="text" name="item_name" class="form-control" placeholder="e.g. Staff Tea & Snacks / Carton Packaging / Sewing Needles" required>
+                        </div>
 
-                            <div class="col-sm-3 col-6">
-                                <div class="d-flex justify-content-between align-items-center mb-1">
-                                    <label class="form-label small fw-bold text-dark mb-0">Unit</label>
-                                    <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none fw-bold text-primary" style="font-size: 11px;" onclick="openQuickAddUnitModal()">
-                                        <i class="bi bi-plus-circle me-1"></i>+ New Unit
-                                    </button>
-                                </div>
-                                <select id="newUnitType" class="form-select form-select-sm fw-semibold" onchange="onUnitSelectChange(this)">
-                                    <?php foreach ($unitsList as $u): ?>
-                                        <option value="<?= e($u['abbreviation']) ?>" <?= $u['abbreviation'] === 'PCS' ? 'selected' : '' ?>>
-                                            <?= e($u['abbreviation']) ?><?= (!empty($u['name']) && strtoupper($u['name']) !== strtoupper($u['abbreviation'])) ? ' (' . e($u['name']) . ')' : '' ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                    <option value="__ADD_NEW_UNIT__" class="fw-bold text-primary bg-light">+ Add New Unit...</option>
-                                </select>
-                            </div>
-
-                            <div class="col-sm-3 col-6">
-                                <label class="form-label small fw-bold text-dark required mb-1">Price (₹)</label>
-                                <div class="input-group input-group-sm">
-                                    <span class="input-group-text bg-white fw-bold text-muted small">₹</span>
-                                    <input type="number" 
-                                           step="any" 
-                                           min="0" 
-                                           id="newUnitCost" 
-                                           class="form-control form-control-sm fw-bold text-primary" 
-                                           placeholder="0.00" 
-                                           oninput="calculateNewExpenseTotal()">
-                                </div>
-                            </div>
-
-                            <div class="col-sm-3 col-6">
-                                <label class="form-label small fw-bold text-dark mb-1">Reason / Purpose</label>
-                                <input type="text" 
-                                       id="newReason" 
-                                       class="form-control form-control-sm" 
-                                       placeholder="e.g. Urgent trims, Routine service">
+                        <!-- Amount -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Amount (INR ₹) <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <span class="input-group-text">₹</span>
+                                <input type="number" step="0.01" min="0.01" name="amount" class="form-control fw-bold font-monospace" placeholder="0.00" required>
                             </div>
                         </div>
 
-                        <!-- Subtotal Preview & Action Buttons -->
-                        <div class="d-flex justify-content-between align-items-center pt-2 border-top">
-                            <div class="d-flex align-items-baseline gap-2">
-                                <span class="small text-muted fw-bold">ITEM SUBTOTAL:</span>
-                                <span class="fw-bold text-primary fs-6 font-monospace" id="newItemSubtotal">₹ 0.00</span>
-                            </div>
-                            <div class="d-flex gap-2">
-                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="cancelExpenseEntry()">
-                                    Clear
-                                </button>
-                                <button type="button" class="btn btn-primary btn-sm fw-bold px-3 shadow-sm" onclick="addExpenseItemToList()">
-                                    <i class="bi bi-plus-lg me-1"></i> Add to Expense List
-                                </button>
-                            </div>
+                        <!-- Paid To / Vendor -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Paid To / Vendor Name <span class="text-danger">*</span></label>
+                            <input type="text" name="paid_to" class="form-control" placeholder="e.g. Sri Balaji Packaging / Tea Stall / Vendor" required>
                         </div>
-                    </div>
 
-                    <!-- SECTION 3: STAGED EXPENSE ITEMS LIST -->
-                    <div id="stagedExpensesContainer" class="card border rounded-3 mb-3 overflow-hidden shadow-xs d-none">
-                        <div class="card-header bg-white py-2 px-3 d-flex justify-content-between align-items-center border-bottom">
-                            <span class="small fw-bold text-dark text-uppercase">
-                                <i class="bi bi-list-check text-primary me-1"></i> Added Items in Voucher (<span id="stagedItemCount">0</span>)
-                            </span>
-                            <span class="small fw-bold text-primary font-monospace" id="stagedGrandTotalHeader">₹ 0.00</span>
-                        </div>
-                        <div class="table-responsive" style="max-height: 200px;">
-                            <table class="table table-sm table-hover align-middle mb-0">
-                                <thead class="table-light small">
-                                    <tr>
-                                        <th style="width: 35px;" class="text-center">#</th>
-                                        <th>Expense Item</th>
-                                        <th class="text-center">Qty &amp; Unit</th>
-                                        <th class="text-end">Rate</th>
-                                        <th class="text-end">Amount (₹)</th>
-                                        <th>Reason / Remarks</th>
-                                        <th style="width: 45px;" class="text-center">Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="stagedExpensesTbody">
-                                </tbody>
-                            </table>
-                        </div>
-                        <div class="card-footer bg-light py-2 px-3 d-flex justify-content-between align-items-center border-top">
-                            <span class="fw-bold text-muted small text-uppercase">Total Voucher Amount:</span>
-                            <div class="d-flex align-items-center">
-                                <span class="fs-4 fw-bolder text-primary font-monospace" id="stagedGrandTotal">₹ 0.00</span>
-                                <input type="hidden" name="total_cost" id="newTotalCost" value="0.00">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- SECTION 4: PAYMENT & VENDOR DOCUMENTATION -->
-                    <div class="row g-2 mb-2 p-3 bg-white rounded-3 border">
-                        <div class="col-md-4 col-sm-6">
-                            <label class="form-label small fw-bold text-dark mb-1">Paid To / Vendor</label>
-                            <input type="text" name="vendor_name" id="newVendorName" class="form-control form-control-sm" placeholder="e.g. Local Hardware, Singer Service, Sri Murugan">
-                        </div>
-                        <div class="col-md-4 col-sm-6">
-                            <label class="form-label small fw-bold text-dark mb-1">Payment Method</label>
-                            <select name="payment_method" id="newPaymentMethod" class="form-select form-select-sm">
-                                <option value="CASH" selected>Cash</option>
-                                <option value="UPI">UPI / GPay / PhonePe</option>
-                                <option value="BANK_TRANSFER">Bank Transfer / NEFT</option>
-                                <option value="CREDIT">Credit / Due</option>
+                        <!-- Payment Method -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Payment Mode <span class="text-danger">*</span></label>
+                            <select name="payment_method" class="form-select" required>
+                                <option value="CASH">Cash (Petty Cash)</option>
+                                <option value="UPI">UPI (GPay / PhonePe)</option>
+                                <option value="BANK_TRANSFER">Bank Transfer (NEFT/RTGS)</option>
+                                <option value="CARD">Debit / Credit Card</option>
+                                <option value="CHEQUE">Cheque</option>
                             </select>
                         </div>
-                        <div class="col-md-4 col-sm-6">
-                            <label class="form-label small fw-bold text-dark mb-1">Payment Status</label>
-                            <select name="payment_status" id="newPaymentStatus" class="form-select form-select-sm">
-                                <option value="PAID" selected>Paid / Settled</option>
-                                <option value="PENDING">Pending Payment</option>
-                                <option value="PARTIAL">Partially Paid</option>
+
+                        <!-- Payment Status -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Payment Status</label>
+                            <select name="payment_status" class="form-select">
+                                <option value="PAID">PAID (Disbursed)</option>
+                                <option value="PENDING">PENDING (Payable)</option>
+                                <option value="PARTIAL">PARTIAL</option>
                             </select>
                         </div>
-                        <div class="col-md-4 col-sm-6">
-                            <label class="form-label small fw-bold text-dark mb-1">Bill / Invoice Number</label>
-                            <input type="text" name="invoice_number" id="newInvoiceNumber" class="form-control form-control-sm" placeholder="e.g. INV-10492 / Slip #">
+
+                        <!-- Expense Date -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Expense Date</label>
+                            <input type="date" name="expense_date" class="form-control" value="<?= date('Y-m-d') ?>">
                         </div>
-                        <div class="col-md-8 col-sm-12">
-                            <label class="form-label small fw-bold text-dark mb-1">
-                                <i class="bi bi-image text-primary me-1"></i>Receipt / Bill Proof Image (Optional)
-                            </label>
-                            <input type="file" 
-                                   name="photo" 
-                                   id="newPhoto" 
-                                   class="form-control form-control-sm" 
-                                   accept="image/*,.pdf" 
-                                   onchange="previewExpenseImage(this, 'newPhotoPreview')">
-                            <div id="newPhotoPreview" class="mt-2 text-center d-none p-2 bg-light rounded border">
-                                <img src="" class="img-thumbnail rounded shadow-sm border" style="max-height: 100px;" alt="Selected receipt">
-                                <div class="small text-muted mt-1" id="newPhotoFilename"></div>
-                            </div>
+
+                        <div class="col-12">
+                            <details>
+                                <summary class="small fw-semibold text-primary cursor-pointer">Additional details (optional)</summary>
+                                <div class="row g-3 mt-1">
+                                    <div class="col-md-6">
+                                        <label class="form-label small fw-bold text-dark">Vendor Phone</label>
+                                        <input type="text" name="vendor_phone" class="form-control" placeholder="e.g. 9840123456">
+                                    </div>
+                                    <div class="col-12">
+                                        <div class="p-3 bg-light rounded-3 border">
+                                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                                <h6 class="fw-bold text-primary mb-0 small text-uppercase">
+                                                    <i class="bi bi-truck me-1"></i>Logistics &amp; Transport Details
+                                                </h6>
+                                                <span class="text-muted" style="font-size: 11px;">Skip for general expenses</span>
+                                            </div>
+                                            <div class="row g-2">
+                                                <div class="col-md-4">
+                                                    <label class="form-label small text-muted mb-1">Transporter Name</label>
+                                                    <input type="text" name="transporter_name" class="form-control form-control-sm" placeholder="e.g. VRL Logistics">
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <label class="form-label small text-muted mb-1">Vehicle #</label>
+                                                    <input type="text" name="vehicle_number" class="form-control form-control-sm" placeholder="e.g. TN-01-AB-1234">
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <label class="form-label small text-muted mb-1">Bill / LR #</label>
+                                                    <input type="text" name="invoice_number" class="form-control form-control-sm" placeholder="e.g. INV-9876">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label small fw-bold text-dark d-flex align-items-center justify-content-between">
+                                            <span><i class="bi bi-paperclip me-1"></i>Attach Bill / Receipt / Invoice Copy</span>
+                                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 0.7rem;"><i class="bi bi-cloud-arrow-up me-1"></i>Cloudinary CDN</span>
+                                        </label>
+                                        <input type="file" name="receipt_file" class="form-control" accept="image/*,.pdf">
+                                        <div class="form-text small text-muted" style="font-size: 11px;"><i class="bi bi-cloud-check text-success me-1"></i>JPG, PNG, WEBP or PDF.</div>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label small text-muted">Internal Remarks / Notes</label>
+                                        <textarea name="notes" class="form-control" rows="2" placeholder="Additional details, approval remarks, or bill descriptions..."></textarea>
+                                    </div>
+                                </div>
+                            </details>
                         </div>
                     </div>
                 </div>
-
-                <div class="modal-footer bg-light py-2 px-4 border-top">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary px-4 fw-bold shadow-sm" id="btnSubmitExpenses">
-                        <i class="bi bi-check-circle me-1"></i> Save Expenses
-                    </button>
+                <div class="modal-footer bg-light py-2.5">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary btn-sm fw-semibold"><i class="bi bi-check-circle me-1"></i>Save &amp; Generate Voucher</button>
                 </div>
             </form>
         </div>
+    </div>
+</div>
     </div>
 </div>
 
