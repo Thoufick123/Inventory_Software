@@ -25,6 +25,13 @@ class CSRF {
     }
 
     /**
+     * Alias for token()
+     */
+    public static function getToken(): string {
+        return self::token();
+    }
+
+    /**
      * Validate a submitted CSRF token.
      * If no token passed, validates from request POST/header.
      */

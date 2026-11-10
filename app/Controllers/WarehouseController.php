@@ -12848,6 +12848,169 @@ class WarehouseController {
     }
 
     /**
+     * Validate consistency between city/district and state for warehouse suppliers.
+     */
+    private function validateCityAndState(string $city, string $state): ?string {
+        $c = strtoupper(trim($city));
+        $s = strtoupper(trim($state));
+        $cNorm = preg_replace('/[\s\-_.]+/', '', $c);
+        $sNorm = preg_replace('/[\s\-_.]+/', '', $s);
+
+        if ($cNorm === '' || $sNorm === '') {
+            return 'City/District and State are required.';
+        }
+
+        $allIndianStates = [
+            'TAMIL NADU' => ['TAMILNADU', 'TN'],
+            'ANDHRA PRADESH' => ['ANDHRAPRADESH', 'AP'],
+            'ARUNACHAL PRADESH' => ['ARUNACHALPRADESH', 'AR'],
+            'ASSAM' => ['ASSAM', 'AS'],
+            'BIHAR' => ['BIHAR', 'BR'],
+            'CHHATTISGARH' => ['CHHATTISGARH', 'CG'],
+            'GOA' => ['GOA', 'GA'],
+            'GUJARAT' => ['GUJARAT', 'GJ'],
+            'HARYANA' => ['HARYANA', 'HR'],
+            'HIMACHAL PRADESH' => ['HIMACHALPRADESH', 'HP'],
+            'JHARKHAND' => ['JHARKHAND', 'JH'],
+            'KARNATAKA' => ['KARNATAKA', 'KA'],
+            'KERALA' => ['KERALA', 'KL'],
+            'MADHYA PRADESH' => ['MADHYAPRADESH', 'MP'],
+            'MAHARASHTRA' => ['MAHARASHTRA', 'MH'],
+            'MANIPUR' => ['MANIPUR', 'MN'],
+            'MEGHALAYA' => ['MEGHALAYA', 'ML'],
+            'MIZORAM' => ['MIZORAM', 'MZ'],
+            'NAGALAND' => ['NAGALAND', 'NL'],
+            'ODISHA' => ['ODISHA', 'ORISSA', 'OD', 'OR'],
+            'PUNJAB' => ['PUNJAB', 'PB'],
+            'RAJASTHAN' => ['RAJASTHAN', 'RJ'],
+            'SIKKIM' => ['SIKKIM', 'SK'],
+            'TELANGANA' => ['TELANGANA', 'TS', 'TG'],
+            'TRIPURA' => ['TRIPURA', 'TR'],
+            'UTTAR PRADESH' => ['UTTARPRADESH', 'UP'],
+            'UTTARAKHAND' => ['UTTARAKHAND', 'UK', 'UA'],
+            'WEST BENGAL' => ['WESTBENGAL', 'WB'],
+            'DELHI' => ['DELHI', 'DL', 'NEWDELHI'],
+            'JAMMU AND KASHMIR' => ['JAMMUANDKASHMIR', 'JAMMUKASHMIR', 'JK'],
+            'LADAKH' => ['LADAKH', 'LA'],
+            'PUDUCHERRY' => ['PUDUCHERRY', 'PONDICHERRY', 'PY'],
+            'CHANDIGARH' => ['CHANDIGARH', 'CH'],
+            'DADRA AND NAGAR HAVELI AND DAMAN AND DIU' => ['DADRAANDNAGARHAVELIANDDAMANANDDIU', 'DAMAN', 'DIU', 'DNH'],
+            'ANDAMAN AND NICOBAR ISLANDS' => ['ANDAMANANDNICOBARISLANDS', 'ANDAMAN', 'AN'],
+            'LAKSHADWEEP' => ['LAKSHADWEEP', 'LD']
+        ];
+
+        $tnCities = [
+            'ARIYALUR', 'CHENGALPATTU', 'CHENGALPET', 'CHENNAI', 'MADRAS', 'COIMBATORE', 'KOVAI',
+            'CUDDALORE', 'DHARMAPURI', 'DINDIGUL', 'ERODE', 'KALLAKURICHI', 'KANCHIPURAM',
+            'KANCHEEPURAM', 'KANYAKUMARI', 'NAGERCOIL', 'KARUR', 'KRISHNAGIRI', 'MADURAI',
+            'MAYILADUTHURAI', 'NAGAPATTINAM', 'NAMAKKAL', 'NILGIRIS', 'UDHAGAMANDALAM', 'OOTY',
+            'COONOOR', 'PERAMBALUR', 'PUDUKKOTTAI', 'RAMANATHAPURAM', 'RAMNAD', 'RANIPET',
+            'SALEM', 'SIVAGANGA', 'SIVAGANGAI', 'TENKASI', 'THANJAVUR', 'TANJORE', 'THENI',
+            'THOOTHUKUDI', 'TUTICORIN', 'TIRUCHIRAPPALLI', 'TIRUCHIRAPALLI', 'TRICHY', 'TIRUCHI',
+            'TIRUNELVELI', 'NELLAI', 'TIRUPATHUR', 'TIRUPATTUR', 'TIRUPPUR', 'TIRUPUR',
+            'TIRUVALLUR', 'THIRUVALLUR', 'TIRUVANNAMALAI', 'THIRUVANNAMALAI', 'TIRUVARUR',
+            'THIRUVARUR', 'VELLORE', 'VILUPPURAM', 'VILLUPURAM', 'VIRUDHUNAGAR', 'POLLACHI',
+            'METTUPALAYAM', 'AVINASHI', 'PALLADAM', 'KANGEYAM', 'KANGAYAM', 'DHARAPURAM',
+            'UDUMALAIPETTAI', 'UDUMALPET', 'GOBICHETTIPALAYAM', 'GOBI', 'SATHYAMANGALAM', 'SATHY',
+            'BHAVANI', 'KOMARAPALAYAM', 'KUMARAPALAYAM', 'TIRUCHENGODE', 'RASIPURAM', 'AMBUR',
+            'VANIYAMBADI', 'GUDIYATHAM', 'ARAKKONAM', 'HOSUR', 'RAJAPALAYAM', 'SIVAKASI',
+            'SRIVILLIPUTHUR', 'ARUPPUKKOTTAI', 'KOVILPATTI', 'KUMBAKONAM', 'PATTUKKOTTAI',
+            'MANNARGUDI', 'SIRKAZHI', 'CHIDAMBARAM', 'NEYVELI', 'PANRUTI', 'TINDIVANAM',
+            'ARANI', 'CHEYYAR', 'TAMBARAM', 'AVADI', 'AMBATTUR', 'SRIPERUMBUDUR', 'KARAIKUDI',
+            'DEVAKOTTAI', 'PARAMAKUDI', 'SANKARANKOVIL', 'AMBASAMUDRAM', 'BODINAYAKANUR',
+            'CUMBUM', 'PERIYAKULAM'
+        ];
+
+        $otherStateCities = [
+            'BENGALURU' => 'KARNATAKA', 'BANGALORE' => 'KARNATAKA', 'MYSORE' => 'KARNATAKA', 'MYSURU' => 'KARNATAKA',
+            'MANGALORE' => 'KARNATAKA', 'MANGALURU' => 'KARNATAKA', 'HUBLI' => 'KARNATAKA', 'HUBBALLI' => 'KARNATAKA',
+            'BELGAUM' => 'KARNATAKA', 'BELAGAVI' => 'KARNATAKA', 'DAVANAGERE' => 'KARNATAKA', 'BELLARY' => 'KARNATAKA',
+            'SHIMOGA' => 'KARNATAKA', 'SHIVAMOGGA' => 'KARNATAKA', 'TUMKUR' => 'KARNATAKA', 'UDUPI' => 'KARNATAKA',
+            'HASSAN' => 'KARNATAKA', 'GULBARGA' => 'KARNATAKA',
+            'KOCHI' => 'KERALA', 'COCHIN' => 'KERALA', 'THIRUVANANTHAPURAM' => 'KERALA', 'TRIVANDRUM' => 'KERALA',
+            'KOZHIKODE' => 'KERALA', 'CALICUT' => 'KERALA', 'THRISSUR' => 'KERALA', 'TRICHUR' => 'KERALA',
+            'KOLLAM' => 'KERALA', 'PALAKKAD' => 'KERALA', 'ALAPPUZHA' => 'KERALA', 'KANNUR' => 'KERALA',
+            'KOTTAYAM' => 'KERALA', 'MALAPPURAM' => 'KERALA', 'KASARAGOD' => 'KERALA',
+            'HYDERABAD' => 'TELANGANA', 'SECUNDERABAD' => 'TELANGANA', 'WARANGAL' => 'TELANGANA', 'NIZAMABAD' => 'TELANGANA',
+            'VISAKHAPATNAM' => 'ANDHRA PRADESH', 'VIZAG' => 'ANDHRA PRADESH', 'VIJAYAWADA' => 'ANDHRA PRADESH',
+            'GUNTUR' => 'ANDHRA PRADESH', 'NELLORE' => 'ANDHRA PRADESH', 'KURNOOL' => 'ANDHRA PRADESH',
+            'RAJAHMUNDRY' => 'ANDHRA PRADESH', 'TIRUPATI' => 'ANDHRA PRADESH', 'KAKINADA' => 'ANDHRA PRADESH',
+            'MUMBAI' => 'MAHARASHTRA', 'BOMBAY' => 'MAHARASHTRA', 'PUNE' => 'MAHARASHTRA', 'NAGPUR' => 'MAHARASHTRA',
+            'THANE' => 'MAHARASHTRA', 'NASHIK' => 'MAHARASHTRA', 'AURANGABAD' => 'MAHARASHTRA', 'KOLHAPUR' => 'MAHARASHTRA',
+            'AHMEDABAD' => 'GUJARAT', 'SURAT' => 'GUJARAT', 'VADODARA' => 'GUJARAT', 'BARODA' => 'GUJARAT',
+            'RAJKOT' => 'GUJARAT', 'BHAVNAGAR' => 'GUJARAT', 'JAMNAGAR' => 'GUJARAT', 'GANDHINAGAR' => 'GUJARAT',
+            'DELHI' => 'DELHI', 'NEW DELHI' => 'DELHI', 'NOIDA' => 'UTTAR PRADESH', 'GURGAON' => 'HARYANA', 'GURUGRAM' => 'HARYANA',
+            'LUCKNOW' => 'UTTAR PRADESH', 'KANPUR' => 'UTTAR PRADESH', 'AGRA' => 'UTTAR PRADESH', 'VARANASI' => 'UTTAR PRADESH',
+            'KOLKATA' => 'WEST BENGAL', 'CALCUTTA' => 'WEST BENGAL', 'HOWRAH' => 'WEST BENGAL',
+            'JAIPUR' => 'RAJASTHAN', 'JODHPUR' => 'RAJASTHAN', 'UDAIPUR' => 'RAJASTHAN', 'KOTA' => 'RAJASTHAN',
+            'INDORE' => 'MADHYA PRADESH', 'BHOPAL' => 'MADHYA PRADESH', 'GWALIOR' => 'MADHYA PRADESH',
+            'PATNA' => 'BIHAR', 'LUDHIANA' => 'PUNJAB', 'AMRITSAR' => 'PUNJAB', 'CHANDIGARH' => 'CHANDIGARH'
+        ];
+
+        // 1. Check if City/District is mistakenly entered as an Indian State
+        foreach ($allIndianStates as $stateName => $aliases) {
+            $stNorm = preg_replace('/[\s\-_.]+/', '', $stateName);
+            if ($cNorm === $stNorm || in_array($cNorm, $aliases, true)) {
+                return "Invalid City/District: '{$city}' is an Indian State name, not a city or district. Please enter a valid district (e.g. COIMBATORE, TIRUPPUR, ERODE, CHENNAI).";
+            }
+        }
+
+        // 2. Check if State is mistakenly entered as a known City/District
+        foreach ($tnCities as $tnCity) {
+            $tnNorm = preg_replace('/[\s\-_.]+/', '', $tnCity);
+            if ($sNorm === $tnNorm || $s === $tnCity) {
+                return "Invalid State: '{$state}' is a city or district in Tamil Nadu, not a state. Please enter TAMIL NADU as the state.";
+            }
+        }
+        foreach ($otherStateCities as $otherCity => $expectedState) {
+            $otherNorm = preg_replace('/[\s\-_.]+/', '', $otherCity);
+            if ($sNorm === $otherNorm || $s === $otherCity) {
+                return "Invalid State: '{$state}' is a city in {$expectedState}, not a state. Please enter {$expectedState} as the state.";
+            }
+        }
+
+        // 3. Check if State is a recognized Indian State or UT
+        $matchedStateName = null;
+        foreach ($allIndianStates as $stateName => $aliases) {
+            $stNorm = preg_replace('/[\s\-_.]+/', '', $stateName);
+            if ($sNorm === $stNorm || in_array($sNorm, $aliases, true)) {
+                $matchedStateName = $stateName;
+                break;
+            }
+        }
+        if (!$matchedStateName) {
+            return "Invalid State: '{$state}' is not a recognized Indian State or Union Territory. Please enter a valid State (e.g. TAMIL NADU, KARNATAKA, KERALA).";
+        }
+
+        // 4. Check City-State Location Consistency
+        $isTnCity = false;
+        foreach ($tnCities as $tnCity) {
+            $tnNorm = preg_replace('/[\s\-_.]+/', '', $tnCity);
+            if ($cNorm === $tnNorm || str_contains($cNorm, $tnNorm) || str_contains($tnNorm, $cNorm)) {
+                $isTnCity = true;
+                break;
+            }
+        }
+
+        if ($isTnCity && $matchedStateName !== 'TAMIL NADU') {
+            return "Location Mismatch: '{$city}' is located in Tamil Nadu, but the State is entered as '{$state}'. Please set the state to TAMIL NADU.";
+        }
+
+        foreach ($otherStateCities as $otherCity => $expectedState) {
+            $otherNorm = preg_replace('/[\s\-_.]+/', '', $otherCity);
+            if ($cNorm === $otherNorm || str_contains($cNorm, $otherNorm) || str_contains($otherNorm, $cNorm)) {
+                $expNorm = preg_replace('/[\s\-_.]+/', '', $expectedState);
+                if ($matchedStateName !== $expectedState && $sNorm !== $expNorm) {
+                    return "Location Mismatch: '{$city}' is located in {$expectedState}, but the State is entered as '{$state}'. Please set the state to {$expectedState}.";
+                }
+                break;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Store new seller.
      */
     public function storeSeller(): void {
@@ -12884,6 +13047,21 @@ class WarehouseController {
 
         if ($this->supplierPhoneExists($phone)) {
             Session::flash('error', 'This phone number is already registered to an existing supplier. Duplicate supplier creation is not allowed.');
+            Response::redirect(url('warehouse/sellers/create'));
+            return;
+        }
+
+        if ($city !== '' || $state !== '') {
+            $cityStateErr = $this->validateCityAndState($city, $state);
+            if ($cityStateErr !== null) {
+                Session::flash('error', $cityStateErr);
+                Response::redirect(url('warehouse/sellers/create'));
+                return;
+            }
+        }
+
+        if ($address !== '' && (mb_strlen($address) < 6 || !preg_match('/[a-zA-Z]/', $address))) {
+            Session::flash('error', 'Full Business Address must include valid street/door/area details (at least 6 characters).');
             Response::redirect(url('warehouse/sellers/create'));
             return;
         }
@@ -13583,6 +13761,27 @@ class WarehouseController {
         $sellerType = trim($_POST['seller_type'] ?? 'PRODUCT_SELLER');
         $notes = trim($_POST['notes'] ?? ($seller['notes'] ?? ''));
         $isActive = isset($_POST['is_active']) ? (int)$_POST['is_active'] : 1;
+
+        if (empty($name)) {
+            Session::flash('error', 'Supplier name is required.');
+            Response::redirect(url("warehouse/sellers/{$id}/edit"));
+            return;
+        }
+
+        if ($city !== '' || $state !== '') {
+            $cityStateErr = $this->validateCityAndState($city, $state);
+            if ($cityStateErr !== null) {
+                Session::flash('error', $cityStateErr);
+                Response::redirect(url("warehouse/sellers/{$id}/edit"));
+                return;
+            }
+        }
+
+        if ($address !== '' && (mb_strlen($address) < 6 || !preg_match('/[a-zA-Z]/', $address))) {
+            Session::flash('error', 'Full Business Address must include valid street/door/area details (at least 6 characters).');
+            Response::redirect(url("warehouse/sellers/{$id}/edit"));
+            return;
+        }
 
         $documentUrl = $seller['document_url'] ?? null;
         if (!empty($_FILES['bill_image']['name']) && $_FILES['bill_image']['error'] === UPLOAD_ERR_OK) {
@@ -15393,6 +15592,19 @@ class WarehouseController {
 
         if ($gstNumber !== '' && !preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/', $gstNumber)) {
             $rejectValidation('Enter a valid 15-character GSTIN.');
+            return;
+        }
+
+        if ($city !== '' || $state !== '') {
+            $cityStateErr = $this->validateCityAndState($city, $state);
+            if ($cityStateErr !== null) {
+                $rejectValidation($cityStateErr);
+                return;
+            }
+        }
+
+        if ($address !== '' && (mb_strlen($address) < 6 || !preg_match('/[a-zA-Z]/', $address))) {
+            $rejectValidation('Full Business Address must include valid street/door/area details (at least 6 characters).');
             return;
         }
 

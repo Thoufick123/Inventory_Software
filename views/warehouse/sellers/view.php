@@ -937,7 +937,7 @@ function submitEditSupplierProduct(e) {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
 
     const formData = new FormData(document.getElementById('formEditSupplierProduct'));
-    formData.append('csrf_token', '<?= CSRF::getToken() ?>');
+    formData.append('csrf_token', '<?= CSRF::token() ?>');
 
     fetch('<?= url("warehouse/sellers/update-product") ?>', {
         method: 'POST',

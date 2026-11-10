@@ -91,15 +91,58 @@ class ProductionController {
 
     /**
      * Validate consistency between city/district and state.
-     * Prevents mismatched entry where a Tamil Nadu city is entered with another state,
-     * or a known city from another state is marked as Tamil Nadu.
+     * Prevents mismatched entry where a state is entered as city, a city is entered as state,
+     * or a known city from one state is marked under another state.
      */
     private function validateCityAndState(string $city, string $state): ?string {
         $c = strtoupper(trim($city));
         $s = strtoupper(trim($state));
+        $cNorm = preg_replace('/[\s\-_.]+/', '', $c);
         $sNorm = preg_replace('/[\s\-_.]+/', '', $s);
 
-        $isTamilNaduState = in_array($sNorm, ['TAMILNADU', 'TN'], true);
+        if ($cNorm === '' || $sNorm === '') {
+            return 'City/District and State are required fields.';
+        }
+
+        // All Indian States and Union Territories with normalized abbreviations
+        $allIndianStates = [
+            'TAMIL NADU' => ['TAMILNADU', 'TN'],
+            'ANDHRA PRADESH' => ['ANDHRAPRADESH', 'AP'],
+            'ARUNACHAL PRADESH' => ['ARUNACHALPRADESH', 'AR'],
+            'ASSAM' => ['ASSAM', 'AS'],
+            'BIHAR' => ['BIHAR', 'BR'],
+            'CHHATTISGARH' => ['CHHATTISGARH', 'CG'],
+            'GOA' => ['GOA', 'GA'],
+            'GUJARAT' => ['GUJARAT', 'GJ'],
+            'HARYANA' => ['HARYANA', 'HR'],
+            'HIMACHAL PRADESH' => ['HIMACHALPRADESH', 'HP'],
+            'JHARKHAND' => ['JHARKHAND', 'JH'],
+            'KARNATAKA' => ['KARNATAKA', 'KA'],
+            'KERALA' => ['KERALA', 'KL'],
+            'MADHYA PRADESH' => ['MADHYAPRADESH', 'MP'],
+            'MAHARASHTRA' => ['MAHARASHTRA', 'MH'],
+            'MANIPUR' => ['MANIPUR', 'MN'],
+            'MEGHALAYA' => ['MEGHALAYA', 'ML'],
+            'MIZORAM' => ['MIZORAM', 'MZ'],
+            'NAGALAND' => ['NAGALAND', 'NL'],
+            'ODISHA' => ['ODISHA', 'ORISSA', 'OD', 'OR'],
+            'PUNJAB' => ['PUNJAB', 'PB'],
+            'RAJASTHAN' => ['RAJASTHAN', 'RJ'],
+            'SIKKIM' => ['SIKKIM', 'SK'],
+            'TELANGANA' => ['TELANGANA', 'TS', 'TG'],
+            'TRIPURA' => ['TRIPURA', 'TR'],
+            'UTTAR PRADESH' => ['UTTARPRADESH', 'UP'],
+            'UTTARAKHAND' => ['UTTARAKHAND', 'UK', 'UA'],
+            'WEST BENGAL' => ['WESTBENGAL', 'WB'],
+            'DELHI' => ['DELHI', 'DL', 'NEWDELHI'],
+            'JAMMU AND KASHMIR' => ['JAMMUANDKASHMIR', 'JAMMUKASHMIR', 'JK'],
+            'LADAKH' => ['LADAKH', 'LA'],
+            'PUDUCHERRY' => ['PUDUCHERRY', 'PONDICHERRY', 'PY'],
+            'CHANDIGARH' => ['CHANDIGARH', 'CH'],
+            'DADRA AND NAGAR HAVELI AND DAMAN AND DIU' => ['DADRAANDNAGARHAVELIANDDAMANANDDIU', 'DAMAN', 'DIU', 'DNH'],
+            'ANDAMAN AND NICOBAR ISLANDS' => ['ANDAMANANDNICOBARISLANDS', 'ANDAMAN', 'AN'],
+            'LAKSHADWEEP' => ['LAKSHADWEEP', 'LD']
+        ];
 
         // Comprehensive list of Tamil Nadu districts and prominent industrial towns
         $tnCities = [
@@ -151,9 +194,42 @@ class ProductionController {
             'PATNA' => 'BIHAR', 'LUDHIANA' => 'PUNJAB', 'AMRITSAR' => 'PUNJAB', 'CHANDIGARH' => 'CHANDIGARH'
         ];
 
-        $cNorm = preg_replace('/[\s\-_.]+/', '', $c);
+        // 1. Check if City/District is mistakenly entered as an Indian State
+        foreach ($allIndianStates as $stateName => $aliases) {
+            $stNorm = preg_replace('/[\s\-_.]+/', '', $stateName);
+            if ($cNorm === $stNorm || in_array($cNorm, $aliases, true)) {
+                return "Invalid City/District: '{$city}' is an Indian State name, not a city or district. Please enter a valid district (e.g. COIMBATORE, TIRUPPUR, ERODE, CHENNAI).";
+            }
+        }
 
-        // Check if city belongs to Tamil Nadu
+        // 2. Check if State is mistakenly entered as a known City/District
+        foreach ($tnCities as $tnCity) {
+            $tnNorm = preg_replace('/[\s\-_.]+/', '', $tnCity);
+            if ($sNorm === $tnNorm || $s === $tnCity) {
+                return "Invalid State: '{$state}' is a city or district in Tamil Nadu, not a state. Please enter TAMIL NADU as the state.";
+            }
+        }
+        foreach ($otherStateCities as $otherCity => $expectedState) {
+            $otherNorm = preg_replace('/[\s\-_.]+/', '', $otherCity);
+            if ($sNorm === $otherNorm || $s === $otherCity) {
+                return "Invalid State: '{$state}' is a city in {$expectedState}, not a state. Please enter {$expectedState} as the state.";
+            }
+        }
+
+        // 3. Check if State is a recognized Indian State or UT
+        $matchedStateName = null;
+        foreach ($allIndianStates as $stateName => $aliases) {
+            $stNorm = preg_replace('/[\s\-_.]+/', '', $stateName);
+            if ($sNorm === $stNorm || in_array($sNorm, $aliases, true)) {
+                $matchedStateName = $stateName;
+                break;
+            }
+        }
+        if (!$matchedStateName) {
+            return "Invalid State: '{$state}' is not a recognized Indian State or Union Territory. Please enter a valid State (e.g. TAMIL NADU, KARNATAKA, KERALA).";
+        }
+
+        // 4. Check City-State Location Consistency
         $isTnCity = false;
         foreach ($tnCities as $tnCity) {
             $tnNorm = preg_replace('/[\s\-_.]+/', '', $tnCity);
@@ -163,20 +239,16 @@ class ProductionController {
             }
         }
 
-        if ($isTnCity && !$isTamilNaduState) {
-            return "The city '{$city}' is located in Tamil Nadu, but the State is entered as '{$state}'. Please set the state to TAMIL NADU.";
+        if ($isTnCity && $matchedStateName !== 'TAMIL NADU') {
+            return "Location Mismatch: '{$city}' is located in Tamil Nadu, but the State is entered as '{$state}'. Please set the state to TAMIL NADU.";
         }
 
-        // Check if city belongs to another state
         foreach ($otherStateCities as $otherCity => $expectedState) {
             $otherNorm = preg_replace('/[\s\-_.]+/', '', $otherCity);
             if ($cNorm === $otherNorm || str_contains($cNorm, $otherNorm) || str_contains($otherNorm, $cNorm)) {
-                if ($isTamilNaduState) {
-                    return "The city '{$city}' is located in {$expectedState}, but the State is entered as TAMIL NADU. Please correct the state or city.";
-                }
-                $expStateNorm = preg_replace('/[\s\-_.]+/', '', $expectedState);
-                if ($sNorm !== '' && $sNorm !== $expStateNorm) {
-                    return "The city '{$city}' is located in {$expectedState}, but the State is entered as '{$state}'. Please correct the state to {$expectedState}.";
+                $expNorm = preg_replace('/[\s\-_.]+/', '', $expectedState);
+                if ($matchedStateName !== $expectedState && $sNorm !== $expNorm) {
+                    return "Location Mismatch: '{$city}' is located in {$expectedState}, but the State is entered as '{$state}'. Please set the state to {$expectedState}.";
                 }
                 break;
             }
@@ -229,6 +301,14 @@ class ProductionController {
         }
         if ($gstNumber !== '' && !preg_match('/^[0-9A-Z]{15}$/', $gstNumber)) {
             Session::flash('error', 'GST number must be a valid 15-character alphanumeric code.');
+            Response::back();
+            return;
+        }
+
+        if (mb_strlen($address) < 6 || !preg_match('/[a-zA-Z]/', $address)) {
+            $msg = 'Full Business Address must include valid street/door/area details (at least 6 characters).';
+            Session::flash('error', $msg);
+            Session::flash('city_state_error', $msg);
             Response::back();
             return;
         }
@@ -310,6 +390,14 @@ class ProductionController {
         }
         if ($gstNumber !== '' && !preg_match('/^[0-9A-Z]{15}$/', $gstNumber)) {
             Session::flash('error', 'GST number must be a valid 15-character alphanumeric code.');
+            Response::back();
+            return;
+        }
+
+        if (mb_strlen($address) < 6 || !preg_match('/[a-zA-Z]/', $address)) {
+            $msg = 'Full Business Address must include valid street/door/area details (at least 6 characters).';
+            Session::flash('error', $msg);
+            Session::flash('city_state_error', $msg);
             Response::back();
             return;
         }
