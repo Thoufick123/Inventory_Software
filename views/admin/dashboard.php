@@ -60,7 +60,7 @@
                     <div class="stat-label text-uppercase fw-600 text-muted small">Production Facilities</div>
                     <div class="stat-value fw-700 text-primary mt-1"><?= number_format($totalProductionUnits ?? 0) ?> <span class="fs-6 fw-normal text-secondary">Units</span></div>
                     <div class="small text-muted mt-2">
-                        <i class="bi bi-check2-circle text-success me-1"></i><?= count(array_filter($productionUnits ?? [], fn($u) => !empty($u['is_active']))) ?> Active
+                        <i class="bi bi-gear-wide-connected text-primary me-1"></i>Apparel Manufacturing
                     </div>
                 </div>
                 <div class="stat-icon icon-primary bg-primary-subtle text-primary p-3 rounded-circle">
@@ -112,7 +112,7 @@
             <div class="d-flex align-items-center justify-content-between">
                 <div>
                     <div class="stat-label text-uppercase fw-600 text-muted small">WhatsApp Channels</div>
-                    <div class="stat-value fw-700 text-success mt-1"><?= number_format($totalWhatsapp ?? 0) ?> <span class="fs-6 fw-normal text-secondary">Active</span></div>
+                    <div class="stat-value fw-700 text-success mt-1"><?= number_format($totalWhatsapp ?? 0) ?> <span class="fs-6 fw-normal text-secondary">Channels</span></div>
                     <div class="small text-muted mt-2">
                         <i class="bi bi-whatsapp text-success me-1"></i>Order Channels
                     </div>
@@ -130,7 +130,7 @@
             <div class="d-flex align-items-center justify-content-between">
                 <div>
                     <div class="stat-label text-uppercase fw-600 text-muted small">Website Channels</div>
-                    <div class="stat-value fw-700 text-website mt-1"><?= number_format($totalWebsite ?? 0) ?> <span class="fs-6 fw-normal text-secondary">Active</span></div>
+                    <div class="stat-value fw-700 text-website mt-1"><?= number_format($totalWebsite ?? 0) ?> <span class="fs-6 fw-normal text-secondary">Channels</span></div>
                     <div class="small text-muted mt-2">
                         <i class="bi bi-globe text-website me-1"></i>E-Commerce
                     </div>
@@ -178,32 +178,44 @@
     <div class="card-header bg-white border-bottom p-3">
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
             <div>
-                <h5 class="mb-0 fw-700 text-dark"><i class="bi bi-diagram-3 me-2 text-primary"></i>Organization & Infrastructure Management</h5>
-                <small class="text-muted">Manage your production units, storage warehouses, and retail shops across the supply chain.</small>
+                <h5 class="mb-0 fw-700 text-dark"><i class="bi bi-diagram-3 me-2 text-primary"></i>Organization &amp; Infrastructure Management</h5>
             </div>
+            <?php
+            $currentTab = $_GET['tab'] ?? '';
+            $activeTab = 'prod-units';
+            if (in_array($currentTab, ['warehouses', 'warehouse'])) {
+                $activeTab = 'warehouses';
+            } elseif (in_array($currentTab, ['shops', 'shop', 'stores'])) {
+                $activeTab = 'shops';
+            } elseif (in_array($currentTab, ['whatsapp', 'wa'])) {
+                $activeTab = 'whatsapp';
+            } elseif (in_array($currentTab, ['website', 'web'])) {
+                $activeTab = 'website';
+            }
+            ?>
             <ul class="nav nav-pills card-header-pills" id="orgTabs" role="tablist">
                 <li class="nav-item" role="presentation">
-                    <button class="nav-link active fw-600 px-3 py-2" id="tab-prod-units" data-bs-toggle="pill" data-bs-target="#panel-prod-units" type="button" role="tab">
+                    <button class="nav-link <?= $activeTab === 'prod-units' ? 'active' : '' ?> fw-600 px-3 py-2" id="tab-prod-units" data-bs-toggle="pill" data-bs-target="#panel-prod-units" type="button" role="tab">
                         <i class="bi bi-gear-wide-connected me-1"></i> Production Units <span class="badge bg-primary ms-1"><?= count($productionUnits ?? []) ?></span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
-                    <button class="nav-link fw-600 px-3 py-2 text-warehouse" id="tab-warehouses" data-bs-toggle="pill" data-bs-target="#panel-warehouses" type="button" role="tab">
+                    <button class="nav-link <?= $activeTab === 'warehouses' ? 'active' : '' ?> fw-600 px-3 py-2 text-warehouse" id="tab-warehouses" data-bs-toggle="pill" data-bs-target="#panel-warehouses" type="button" role="tab">
                         <i class="bi bi-buildings me-1"></i> Warehouses <span class="badge bg-warehouse ms-1"><?= count($warehouses ?? []) ?></span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
-                    <button class="nav-link fw-600 px-3 py-2" id="tab-shops" data-bs-toggle="pill" data-bs-target="#panel-shops" type="button" role="tab">
+                    <button class="nav-link <?= $activeTab === 'shops' ? 'active' : '' ?> fw-600 px-3 py-2" id="tab-shops" data-bs-toggle="pill" data-bs-target="#panel-shops" type="button" role="tab">
                         <i class="bi bi-shop me-1"></i> Retail Shops <span class="badge bg-info ms-1"><?= count($shops ?? []) ?></span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
-                    <button class="nav-link fw-600 px-3 py-2 text-success" id="tab-whatsapp" data-bs-toggle="pill" data-bs-target="#panel-whatsapp" type="button" role="tab">
+                    <button class="nav-link <?= $activeTab === 'whatsapp' ? 'active' : '' ?> fw-600 px-3 py-2 text-success" id="tab-whatsapp" data-bs-toggle="pill" data-bs-target="#panel-whatsapp" type="button" role="tab">
                         <i class="bi bi-whatsapp me-1"></i> WhatsApp <span class="badge bg-success ms-1"><?= $totalWhatsapp ?? 0 ?></span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
-                    <button class="nav-link fw-600 px-3 py-2 text-website" id="tab-website" data-bs-toggle="pill" data-bs-target="#panel-website" type="button" role="tab">
+                    <button class="nav-link <?= $activeTab === 'website' ? 'active' : '' ?> fw-600 px-3 py-2 text-website" id="tab-website" data-bs-toggle="pill" data-bs-target="#panel-website" type="button" role="tab">
                         <i class="bi bi-globe me-1"></i> Website <span class="badge bg-website ms-1"><?= $totalWebsite ?? 0 ?></span>
                     </button>
                 </li>
@@ -217,7 +229,7 @@
             <!-- ========================================================================= -->
             <!-- TAB 1: PRODUCTION UNITS -->
             <!-- ========================================================================= -->
-            <div class="tab-pane fade show active" id="panel-prod-units" role="tabpanel">
+            <div class="tab-pane fade <?= $activeTab === 'prod-units' ? 'show active' : '' ?>" id="panel-prod-units" role="tabpanel">
                 <div class="p-3 bg-light border-bottom d-flex align-items-center justify-content-between flex-wrap gap-2">
                     <div class="text-secondary small">
                         <strong><?= count($productionUnits ?? []) ?></strong> production facilities configured for cutting, stitching, and assembly.
@@ -232,9 +244,6 @@
                             <tr>
                                 <th class="ps-3">Unit Details</th>
                                 <th>Manager & Contact</th>
-                                <th>Active Workload</th>
-                                <th>Total Output</th>
-                                <th>Status</th>
                                 <th class="text-end pe-3">Actions</th>
                             </tr>
                         </thead>
@@ -255,23 +264,6 @@
                                         <div class="fw-600 text-dark"><?= e($unit['manager_name'] ?: 'Unassigned') ?></div>
                                         <small class="text-muted"><?= e($unit['phone'] ?: '-') ?></small>
                                     </td>
-                                    <td>
-                                        <div>
-                                            <span class="badge bg-info-subtle text-info fw-bold px-2 py-1"><?= $unit['active_programs'] ?> Active Programs</span>
-                                        </div>
-                                        <small class="text-muted"><?= number_format($unit['total_planned_qty']) ?> pcs planned</small>
-                                    </td>
-                                    <td>
-                                        <div class="fw-bold text-success"><?= number_format($unit['total_completed_qty']) ?> pcs</div>
-                                        <small class="text-muted"><?= $unit['total_cutting'] ?> cut batches</small>
-                                    </td>
-                                    <td>
-                                        <?php if (!empty($unit['is_active'])): ?>
-                                            <span class="badge bg-success-subtle text-success"><i class="bi bi-check-circle me-1"></i>Active</span>
-                                        <?php else: ?>
-                                            <span class="badge bg-secondary-subtle text-secondary"><i class="bi bi-dash-circle me-1"></i>Inactive</span>
-                                        <?php endif; ?>
-                                    </td>
                                     <td class="text-end pe-3">
                                         <div class="btn-group btn-group-sm">
                                             <button type="button" class="btn btn-outline-secondary" title="View Unit Details"
@@ -282,12 +274,6 @@
                                                     onclick="editUnit(<?= htmlspecialchars(json_encode($unit), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
-                                            <form method="POST" action="<?= url('admin/production-units/toggle/' . $unit['id']) ?>" class="d-inline">
-                                                <?= csrf_field() ?>
-                                                <button type="submit" class="btn btn-outline-warning" title="<?= !empty($unit['is_active']) ? 'Deactivate (Pause)' : 'Activate (Resume)' ?>">
-                                                    <i class="bi <?= !empty($unit['is_active']) ? 'bi-pause-circle' : 'bi-play-circle' ?>"></i>
-                                                </button>
-                                            </form>
                                             <form method="POST" action="<?= url('admin/production-units/delete/' . $unit['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to delete production unit \'<?= addslashes(e($unit['name'])) ?>\'? This action cannot be undone.');">
                                                 <?= csrf_field() ?>
                                                 <button type="submit" class="btn btn-outline-danger" title="Delete Production Unit">
@@ -300,7 +286,7 @@
                                 <?php endforeach; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="6" class="text-center py-4 text-muted">
+                                    <td colspan="3" class="text-center py-4 text-muted">
                                         <i class="bi bi-gear-wide-connected fs-2 d-block mb-2 text-secondary"></i>
                                         No production units registered yet. Click "Add Production Unit" to create one.
                                     </td>
@@ -314,10 +300,10 @@
             <!-- ========================================================================= -->
             <!-- TAB 2: WAREHOUSES -->
             <!-- ========================================================================= -->
-            <div class="tab-pane fade" id="panel-warehouses" role="tabpanel">
+            <div class="tab-pane fade <?= $activeTab === 'warehouses' ? 'show active' : '' ?>" id="panel-warehouses" role="tabpanel">
                 <div class="p-3 bg-light border-bottom d-flex align-items-center justify-content-between flex-wrap gap-2">
                     <div class="text-secondary small">
-                        <strong><?= count($warehouses ?? []) ?></strong> storage & distribution warehouses holding central stock.
+                        <strong><?= count($warehouses ?? []) ?></strong> storage &amp; distribution warehouses holding central stock.
                     </div>
                     <button class="btn btn-sm btn-warehouse shadow-sm" data-bs-toggle="modal" data-bs-target="#modalWarehouse" onclick="resetWarehouseModal()">
                         <i class="bi bi-plus-lg me-1"></i> Add Warehouse
@@ -329,10 +315,6 @@
                             <tr>
                                 <th class="ps-3">Warehouse Details</th>
                                 <th>Manager & Contact</th>
-                                <th>Available Stock Units</th>
-                                <th>Stock Valuation</th>
-                                <th>Storage Bins</th>
-                                <th>Status</th>
                                 <th class="text-end pe-3">Actions</th>
                             </tr>
                         </thead>
@@ -353,45 +335,16 @@
                                         <div class="fw-600 text-dark"><?= e($wh['manager_name'] ?: 'Unassigned') ?></div>
                                         <small class="text-muted"><?= e($wh['phone'] ?: '-') ?></small>
                                     </td>
-                                    <td>
-                                        <div class="fw-bold text-primary"><?= number_format($wh['available_units']) ?> pcs</div>
-                                        <small class="text-muted"><?= $wh['total_skus'] ?> distinct SKUs</small>
-                                    </td>
-                                    <td>
-                                        <div class="fw-bold text-success"><?= formatCurrency($wh['available_valuation']) ?></div>
-                                    </td>
-                                    <td>
-                                        <span class="badge bg-secondary-subtle text-dark"><i class="bi bi-grid-3x3 me-1"></i><?= $wh['locations_count'] ?> Locations</span>
-                                    </td>
-                                    <td>
-                                        <?php if (!empty($wh['is_active'])): ?>
-                                            <span class="badge bg-success-subtle text-success"><i class="bi bi-check-circle me-1"></i>Active</span>
-                                        <?php else: ?>
-                                            <span class="badge bg-secondary-subtle text-secondary"><i class="bi bi-dash-circle me-1"></i>Inactive</span>
-                                        <?php endif; ?>
-                                    </td>
                                     <td class="text-end pe-3">
                                         <div class="btn-group btn-group-sm">
                                             <button type="button" class="btn btn-outline-secondary" title="View Warehouse Details"
                                                     onclick="viewFacilityDetails('warehouse', <?= htmlspecialchars(json_encode($wh), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-eye"></i>
                                             </button>
-                                            <a href="<?= url('warehouse/stock?warehouse_id=' . $wh['id']) ?>" class="btn btn-outline-secondary" title="View Stock">
-                                                <i class="bi bi-boxes"></i>
-                                            </a>
-                                            <a href="<?= url('master/locations?warehouse_id=' . $wh['id']) ?>" class="btn btn-outline-secondary" title="Manage Racks/Bins">
-                                                <i class="bi bi-grid-3x3"></i>
-                                            </a>
                                             <button type="button" class="btn btn-outline-primary" title="Edit Warehouse" 
                                                     onclick="editWarehouse(<?= htmlspecialchars(json_encode($wh), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
-                                            <form method="POST" action="<?= url('admin/warehouses/toggle/' . $wh['id']) ?>" class="d-inline">
-                                                <?= csrf_field() ?>
-                                                <button type="submit" class="btn btn-outline-warning" title="<?= !empty($wh['is_active']) ? 'Deactivate (Pause)' : 'Activate (Resume)' ?>">
-                                                    <i class="bi <?= !empty($wh['is_active']) ? 'bi-pause-circle' : 'bi-play-circle' ?>"></i>
-                                                </button>
-                                            </form>
                                             <form method="POST" action="<?= url('admin/warehouses/delete/' . $wh['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to delete warehouse \'<?= addslashes(e($wh['name'])) ?>\'? This action cannot be undone.');">
                                                 <?= csrf_field() ?>
                                                 <button type="submit" class="btn btn-outline-danger" title="Delete Warehouse">
@@ -404,7 +357,7 @@
                                 <?php endforeach; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="7" class="text-center py-4 text-muted">
+                                    <td colspan="3" class="text-center py-4 text-muted">
                                         <i class="bi bi-buildings fs-2 d-block mb-2 text-secondary"></i>
                                         No warehouses registered. Click "Add Warehouse" to create one.
                                     </td>
@@ -418,7 +371,7 @@
             <!-- ========================================================================= -->
             <!-- TAB 3: RETAIL SHOPS -->
             <!-- ========================================================================= -->
-            <div class="tab-pane fade" id="panel-shops" role="tabpanel">
+            <div class="tab-pane fade <?= $activeTab === 'shops' ? 'show active' : '' ?>" id="panel-shops" role="tabpanel">
                 <div class="p-3 bg-light border-bottom d-flex align-items-center justify-content-between flex-wrap gap-2">
                     <div class="text-secondary small">
                         <strong><?= count($shops ?? []) ?></strong> retail store counters connected for real-time POS billing.
@@ -433,10 +386,6 @@
                             <tr>
                                 <th class="ps-3">Shop Details</th>
                                 <th>Manager & Contact</th>
-                                <th>GSTIN</th>
-                                <th>Live Shop Stock</th>
-                                <th>Sales Revenue</th>
-                                <th>Status</th>
                                 <th class="text-end pe-3">Actions</th>
                             </tr>
                         </thead>
@@ -457,48 +406,16 @@
                                         <div class="fw-600 text-dark"><?= e($shop['manager_name'] ?: 'Unassigned') ?></div>
                                         <small class="text-muted"><?= e($shop['phone'] ?: '-') ?></small>
                                     </td>
-                                    <td>
-                                        <span class="badge bg-light text-dark font-monospace"><?= e($shop['gst_number'] ?: 'Unregistered') ?></span>
-                                    </td>
-                                    <td>
-                                        <div class="fw-bold text-dark"><?= number_format($shop['available_units']) ?> pcs</div>
-                                        <small class="text-muted"><?= $shop['total_skus'] ?> SKUs available</small>
-                                    </td>
-                                    <td>
-                                        <div class="small"><span class="text-muted">Today:</span> <strong class="text-success"><?= formatCurrency($shop['today_revenue']) ?></strong></div>
-                                        <div class="small"><span class="text-muted">Month:</span> <strong class="text-primary"><?= formatCurrency($shop['month_revenue']) ?></strong></div>
-                                    </td>
-                                    <td>
-                                        <?php if (!empty($shop['is_active'])): ?>
-                                            <span class="badge bg-success-subtle text-success"><i class="bi bi-check-circle me-1"></i>Active</span>
-                                        <?php else: ?>
-                                            <span class="badge bg-secondary-subtle text-secondary"><i class="bi bi-dash-circle me-1"></i>Inactive</span>
-                                        <?php endif; ?>
-                                    </td>
                                     <td class="text-end pe-3">
                                         <div class="btn-group btn-group-sm">
                                             <button type="button" class="btn btn-outline-secondary" title="View Shop Details"
                                                     onclick="viewFacilityDetails('shop', <?= htmlspecialchars(json_encode($shop), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-eye"></i>
                                             </button>
-                                            <?php if (hasPermission('pos', 'view') || hasPermission('pos', 'create')): ?>
-                                            <a href="<?= url('shop/pos') ?>" class="btn btn-outline-success" title="Launch POS Terminal">
-                                                <i class="bi bi-receipt"></i>
-                                            </a>
-                                            <?php endif; ?>
-                                            <a href="<?= url('shop/inventory?shop_id=' . $shop['id']) ?>" class="btn btn-outline-secondary" title="View Shop Inventory">
-                                                <i class="bi bi-boxes"></i>
-                                            </a>
                                             <button type="button" class="btn btn-outline-primary" title="Edit Shop" 
                                                     onclick="editShop(<?= htmlspecialchars(json_encode($shop), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
-                                            <form method="POST" action="<?= url('admin/shops/toggle/' . $shop['id']) ?>" class="d-inline">
-                                                <?= csrf_field() ?>
-                                                <button type="submit" class="btn btn-outline-warning" title="<?= !empty($shop['is_active']) ? 'Deactivate (Pause)' : 'Activate (Resume)' ?>">
-                                                    <i class="bi <?= !empty($shop['is_active']) ? 'bi-pause-circle' : 'bi-play-circle' ?>"></i>
-                                                </button>
-                                            </form>
                                             <form method="POST" action="<?= url('admin/shops/delete/' . $shop['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to delete retail shop \'<?= addslashes(e($shop['name'])) ?>\'? This action cannot be undone.');">
                                                 <?= csrf_field() ?>
                                                 <button type="submit" class="btn btn-outline-danger" title="Delete Shop">
@@ -511,7 +428,7 @@
                                 <?php endforeach; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="7" class="text-center py-4 text-muted">
+                                    <td colspan="3" class="text-center py-4 text-muted">
                                         <i class="bi bi-shop fs-2 d-block mb-2 text-secondary"></i>
                                         No retail shops registered yet. Click "Add Retail Shop" to create one.
                                     </td>
@@ -525,7 +442,7 @@
             <!-- ========================================================================= -->
             <!-- TAB 4: WHATSAPP CHANNELS -->
             <!-- ========================================================================= -->
-            <div class="tab-pane fade" id="panel-whatsapp" role="tabpanel">
+            <div class="tab-pane fade <?= $activeTab === 'whatsapp' ? 'show active' : '' ?>" id="panel-whatsapp" role="tabpanel">
                 <div class="p-3 bg-light border-bottom d-flex align-items-center justify-content-between flex-wrap gap-2">
                     <div class="text-secondary small">
                         <strong><?= count($whatsappChannels ?? []) ?></strong> WhatsApp sales channels configured.
@@ -538,10 +455,8 @@
                     <table class="table table-hover align-middle mb-0">
                         <thead class="table-light text-uppercase small text-muted">
                             <tr>
-                                <th class="ps-3">Channel Name</th>
-                                <th>Code</th>
+                                <th class="ps-3">Channel Details</th>
                                 <th>Manager & Contact</th>
-                                <th>Status</th>
                                 <th class="text-end pe-3">Actions</th>
                             </tr>
                         </thead>
@@ -549,18 +464,15 @@
                             <?php if (!empty($whatsappChannels)): ?>
                                 <?php foreach ($whatsappChannels as $chan): ?>
                                 <tr>
-                                    <td class="ps-3 fw-bold text-dark"><?= e($chan['name']) ?></td>
-                                    <td><span class="badge bg-success-subtle text-success font-monospace"><?= e($chan['code']) ?></span></td>
+                                    <td class="ps-3">
+                                        <div class="d-flex align-items-center gap-2">
+                                            <span class="badge bg-success-subtle text-success font-monospace fw-bold px-2 py-1"><?= e($chan['code']) ?></span>
+                                            <div class="fw-bold text-dark"><?= e($chan['name']) ?></div>
+                                        </div>
+                                    </td>
                                     <td>
                                         <div class="fw-600 text-dark"><?= e($chan['manager_name'] ?: 'Unassigned') ?></div>
                                         <small class="text-muted"><?= e($chan['phone'] ?: '-') ?></small>
-                                    </td>
-                                    <td>
-                                        <?php if (!empty($chan['is_active'])): ?>
-                                            <span class="badge bg-success-subtle text-success"><i class="bi bi-check-circle me-1"></i>Active</span>
-                                        <?php else: ?>
-                                            <span class="badge bg-secondary-subtle text-secondary"><i class="bi bi-dash-circle me-1"></i>Inactive</span>
-                                        <?php endif; ?>
                                     </td>
                                     <td class="text-end pe-3">
                                         <div class="btn-group btn-group-sm">
@@ -571,12 +483,6 @@
                                             <button type="button" class="btn btn-outline-primary" title="Edit Channel" onclick="editChannel(<?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
-                                            <form method="POST" action="<?= url('admin/channels/toggle/' . $chan['id']) ?>" class="d-inline">
-                                                <?= csrf_field() ?>
-                                                <button type="submit" class="btn btn-outline-warning" title="<?= !empty($chan['is_active']) ? 'Deactivate' : 'Activate' ?>">
-                                                    <i class="bi <?= !empty($chan['is_active']) ? 'bi-pause-circle' : 'bi-play-circle' ?>"></i>
-                                                </button>
-                                            </form>
                                             <form method="POST" action="<?= url('admin/channels/delete/' . $chan['id']) ?>" class="d-inline" onsubmit="return confirm('Delete WhatsApp channel?');">
                                                 <?= csrf_field() ?>
                                                 <button type="submit" class="btn btn-outline-danger" title="Delete Channel">
@@ -588,7 +494,7 @@
                                 </tr>
                                 <?php endforeach; ?>
                             <?php else: ?>
-                                <tr><td colspan="5" class="text-center py-4 text-muted">No WhatsApp channels added yet.</td></tr>
+                                <tr><td colspan="3" class="text-center py-4 text-muted">No WhatsApp channels added yet.</td></tr>
                             <?php endif; ?>
                         </tbody>
                     </table>
@@ -598,7 +504,7 @@
             <!-- ========================================================================= -->
             <!-- TAB 5: WEBSITE CHANNELS -->
             <!-- ========================================================================= -->
-            <div class="tab-pane fade" id="panel-website" role="tabpanel">
+            <div class="tab-pane fade <?= $activeTab === 'website' ? 'show active' : '' ?>" id="panel-website" role="tabpanel">
                 <div class="p-3 bg-light border-bottom d-flex align-items-center justify-content-between flex-wrap gap-2">
                     <div class="text-secondary small">
                         <strong><?= count($websiteChannels ?? []) ?></strong> Website sales channels configured.
@@ -611,10 +517,8 @@
                     <table class="table table-hover align-middle mb-0">
                         <thead class="table-light text-uppercase small text-muted">
                             <tr>
-                                <th class="ps-3">Channel Name</th>
-                                <th>Code</th>
+                                <th class="ps-3">Channel Details</th>
                                 <th>Manager & Contact</th>
-                                <th>Status</th>
                                 <th class="text-end pe-3">Actions</th>
                             </tr>
                         </thead>
@@ -622,18 +526,15 @@
                             <?php if (!empty($websiteChannels)): ?>
                                 <?php foreach ($websiteChannels as $chan): ?>
                                 <tr>
-                                    <td class="ps-3 fw-bold text-dark"><?= e($chan['name']) ?></td>
-                                    <td><span class="badge bg-primary-subtle text-primary font-monospace"><?= e($chan['code']) ?></span></td>
+                                    <td class="ps-3">
+                                        <div class="d-flex align-items-center gap-2">
+                                            <span class="badge bg-primary-subtle text-primary font-monospace fw-bold px-2 py-1"><?= e($chan['code']) ?></span>
+                                            <div class="fw-bold text-dark"><?= e($chan['name']) ?></div>
+                                        </div>
+                                    </td>
                                     <td>
                                         <div class="fw-600 text-dark"><?= e($chan['manager_name'] ?: 'Unassigned') ?></div>
                                         <small class="text-muted"><?= e($chan['phone'] ?: '-') ?></small>
-                                    </td>
-                                    <td>
-                                        <?php if (!empty($chan['is_active'])): ?>
-                                            <span class="badge bg-success-subtle text-success"><i class="bi bi-check-circle me-1"></i>Active</span>
-                                        <?php else: ?>
-                                            <span class="badge bg-secondary-subtle text-secondary"><i class="bi bi-dash-circle me-1"></i>Inactive</span>
-                                        <?php endif; ?>
                                     </td>
                                     <td class="text-end pe-3">
                                         <div class="btn-group btn-group-sm">
@@ -644,12 +545,6 @@
                                             <button type="button" class="btn btn-outline-primary" title="Edit Channel" onclick="editChannel(<?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
-                                            <form method="POST" action="<?= url('admin/channels/toggle/' . $chan['id']) ?>" class="d-inline">
-                                                <?= csrf_field() ?>
-                                                <button type="submit" class="btn btn-outline-warning" title="<?= !empty($chan['is_active']) ? 'Deactivate' : 'Activate' ?>">
-                                                    <i class="bi <?= !empty($chan['is_active']) ? 'bi-pause-circle' : 'bi-play-circle' ?>"></i>
-                                                </button>
-                                            </form>
                                             <form method="POST" action="<?= url('admin/channels/delete/' . $chan['id']) ?>" class="d-inline" onsubmit="return confirm('Delete Website channel?');">
                                                 <?= csrf_field() ?>
                                                 <button type="submit" class="btn btn-outline-danger" title="Delete Channel">
@@ -661,7 +556,7 @@
                                 </tr>
                                 <?php endforeach; ?>
                             <?php else: ?>
-                                <tr><td colspan="5" class="text-center py-4 text-muted">No Website channels added yet.</td></tr>
+                                <tr><td colspan="3" class="text-center py-4 text-muted">No Website channels added yet.</td></tr>
                             <?php endif; ?>
                         </tbody>
                     </table>
@@ -673,58 +568,11 @@
 </div>
 
 <!-- ========================================================================= -->
-<!-- 3. RECENT SALES & QUICK ACTIONS / ALERTS -->
+<!-- 3. INVENTORY ALERTS -->
 <!-- ========================================================================= -->
 <div class="row g-3">
-    <!-- Recent Sales Table -->
-    <div class="col-lg-8">
-        <div class="card border-0 shadow-sm rounded-3 h-100">
-            <div class="card-header bg-white border-bottom p-3 d-flex align-items-center justify-content-between">
-                <h6 class="mb-0 fw-700 text-dark"><i class="bi bi-clock-history me-2 text-primary"></i>Recent In-Store & Multi-Channel Sales</h6>
-                <a href="<?= url('reports/sales') ?>" class="btn btn-sm btn-outline-primary">View All Reports</a>
-            </div>
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light small text-uppercase text-muted">
-                        <tr>
-                            <th class="ps-3">Invoice</th>
-                            <th>Channel</th>
-                            <th>Customer</th>
-                            <th>Amount</th>
-                            <th>Status</th>
-                            <th class="pe-3">Date</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (!empty($recentSales)): ?>
-                            <?php foreach ($recentSales as $sale): ?>
-                            <tr>
-                                <td class="ps-3 fw-bold text-dark font-monospace"><?= e($sale['invoice_number']) ?></td>
-                                <td><span class="badge bg-light text-dark border"><?= e($sale['sale_type']) ?></span></td>
-                                <td><?= e($sale['customer_name'] ?? 'Walk-in Customer') ?></td>
-                                <td class="fw-bold text-success"><?= formatCurrency($sale['total_amount']) ?></td>
-                                <td>
-                                    <span class="badge bg-<?= strtolower($sale['status']) === 'paid' ? 'success' : 'secondary' ?>-subtle text-<?= strtolower($sale['status']) === 'paid' ? 'success' : 'secondary' ?>">
-                                        <?= e($sale['status']) ?>
-                                    </span>
-                                </td>
-                                <td class="pe-3 text-muted small"><?= formatDate($sale['created_at']) ?></td>
-                            </tr>
-                            <?php endforeach; ?>
-                        <?php else: ?>
-                            <tr>
-                                <td colspan="6" class="text-center text-muted py-4">No recent sales records found.</td>
-                            </tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
     <!-- Low Stock Alerts -->
-    <div class="col-lg-4">
-        <!-- Low Stock Alerts -->
+    <div class="col-12">
         <div class="card border-0 shadow-sm rounded-3">
             <div class="card-header bg-white border-bottom p-3 d-flex align-items-center justify-content-between">
                 <h6 class="mb-0 fw-700 text-danger"><i class="bi bi-exclamation-triangle me-2"></i>Low Stock Warnings</h6>
@@ -732,16 +580,18 @@
             </div>
             <div class="card-body p-3">
                 <?php if (!empty($lowStockItems)): ?>
-                    <div class="list-group list-group-flush">
-                        <?php foreach (array_slice($lowStockItems, 0, 5) as $item): ?>
-                        <div class="list-group-item px-0 py-2 d-flex justify-content-between align-items-center border-bottom">
-                            <div>
-                                <div class="fw-bold text-dark small"><?= e($item['product_name']) ?></div>
-                                <span class="font-monospace text-muted small"><?= e($item['sku']) ?></span>
+                    <div class="row g-2">
+                        <?php foreach (array_slice($lowStockItems, 0, 8) as $item): ?>
+                        <div class="col-md-6 col-lg-3">
+                            <div class="p-2 border rounded d-flex justify-content-between align-items-center bg-light">
+                                <div class="overflow-hidden me-2">
+                                    <div class="fw-bold text-dark small text-truncate"><?= e($item['product_name']) ?></div>
+                                    <span class="font-monospace text-muted small"><?= e($item['sku']) ?></span>
+                                </div>
+                                <span class="badge bg-danger-subtle text-danger px-2 py-1 font-monospace fw-bold flex-shrink-0">
+                                    <?= number_format($item['quantity']) ?> left
+                                </span>
                             </div>
-                            <span class="badge bg-danger-subtle text-danger px-2 py-1 font-monospace fw-bold">
-                                <?= number_format($item['quantity']) ?> left
-                            </span>
                         </div>
                         <?php endforeach; ?>
                     </div>
@@ -765,12 +615,8 @@
             <h6 class="mb-0 fw-700 text-dark">
                 <i class="bi bi-shield-check text-primary me-2"></i>Live Staff Activity &amp; System Change Logs
             </h6>
-            <small class="text-muted">Real-time audit records of staff actions, status toggles, unit reassignments, and operational updates.</small>
         </div>
         <div class="d-flex align-items-center gap-2">
-            <a href="<?= url('system/audit?module=staff') ?>" class="btn btn-sm btn-outline-primary rounded-pill px-3">
-                <i class="bi bi-people me-1"></i> Staff Changes Only
-            </a>
             <a href="<?= url('system/audit') ?>" class="btn btn-sm btn-primary rounded-pill px-3 shadow-sm">
                 <i class="bi bi-journal-text me-1"></i> View Full Audit Trail (<?= number_format($auditStats['total'] ?? 0) ?>)
             </a>
@@ -899,10 +745,7 @@
                         <label class="form-label fw-600">Facility Address</label>
                         <textarea name="address" id="unit_address" class="form-control" rows="2" placeholder="Full address of the production unit..."></textarea>
                     </div>
-                    <div class="form-check form-switch">
-                        <input class="form-check-input" type="checkbox" name="is_active" id="unit_is_active" value="1" checked>
-                        <label class="form-check-label fw-600" for="unit_is_active">Facility is Active</label>
-                    </div>
+                    <input type="hidden" name="is_active" value="1">
                 </div>
                 <div class="modal-footer bg-light">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -958,10 +801,7 @@
                         <label class="form-label fw-600">Warehouse Address</label>
                         <textarea name="address" id="wh_address" class="form-control" rows="2" placeholder="Full address of the warehouse facility..."></textarea>
                     </div>
-                    <div class="form-check form-switch">
-                        <input class="form-check-input" type="checkbox" name="is_active" id="wh_is_active" value="1" checked>
-                        <label class="form-check-label fw-600" for="wh_is_active">Warehouse is Active</label>
-                    </div>
+                    <input type="hidden" name="is_active" value="1">
                 </div>
                 <div class="modal-footer bg-light">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -1019,10 +859,7 @@
                         <label class="form-label fw-600">Store Address</label>
                         <textarea name="address" id="shop_address" class="form-control" rows="2" placeholder="Full physical address of the retail outlet..."></textarea>
                     </div>
-                    <div class="form-check form-switch">
-                        <input class="form-check-input" type="checkbox" name="is_active" id="shop_is_active" value="1" checked>
-                        <label class="form-check-label fw-600" for="shop_is_active">Store is Active</label>
-                    </div>
+                    <input type="hidden" name="is_active" value="1">
                 </div>
                 <div class="modal-footer bg-light">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -1080,10 +917,7 @@
                         <label class="form-label fw-600">Description</label>
                         <textarea name="description" id="chan_description" class="form-control" rows="2" placeholder="Optional details..."></textarea>
                     </div>
-                    <div class="form-check form-switch">
-                        <input class="form-check-input" type="checkbox" name="is_active" id="chan_is_active" value="1" checked>
-                        <label class="form-check-label fw-600" for="chan_is_active">Channel is Active</label>
-                    </div>
+                    <input type="hidden" name="is_active" value="1">
                 </div>
                 <div class="modal-footer bg-light">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -1119,15 +953,9 @@
                                 <span class="text-muted small d-block">Facility / Unit Name:</span>
                                 <span class="fw-bold text-dark fs-6" id="facilityDetailName">-</span>
                             </div>
-                            <div class="row g-2 mb-2">
-                                <div class="col-6">
-                                    <span class="text-muted small d-block">Facility Code:</span>
-                                    <span class="badge bg-secondary-subtle text-secondary font-monospace" id="facilityDetailCode">-</span>
-                                </div>
-                                <div class="col-6">
-                                    <span class="text-muted small d-block">Operational Status:</span>
-                                    <span id="facilityDetailStatus">-</span>
-                                </div>
+                            <div class="mb-2">
+                                <span class="text-muted small d-block">Facility Code:</span>
+                                <span class="badge bg-secondary-subtle text-secondary font-monospace" id="facilityDetailCode">-</span>
                             </div>
                             <div>
                                 <span class="text-muted small d-block">GST / Reg Number:</span>
@@ -1164,13 +992,8 @@
                     </div>
                 </div>
             </div>
-            <div class="modal-footer bg-light d-flex justify-content-between">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
-                <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-primary" id="btnEditFacilityModal">
-                        <i class="bi bi-pencil me-1"></i>Edit Details
-                    </button>
-                </div>
+            <div class="modal-footer bg-light d-flex justify-content-end">
+                <button type="button" class="btn btn-secondary px-4 fw-600" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
@@ -1193,24 +1016,58 @@ document.addEventListener('DOMContentLoaded', function() {
         }, false);
     });
 
-    // Check URL parameters for active tab
+    // Handle Active Tab State & Persistence across Refreshes
+    const tabMap = {
+        'production-units': 'tab-prod-units',
+        'units': 'tab-prod-units',
+        'prod-units': 'tab-prod-units',
+        'warehouses': 'tab-warehouses',
+        'warehouse': 'tab-warehouses',
+        'shops': 'tab-shops',
+        'shop': 'tab-shops',
+        'whatsapp': 'tab-whatsapp',
+        'wa': 'tab-whatsapp',
+        'website': 'tab-website',
+        'web': 'tab-website'
+    };
+
     const urlParams = new URLSearchParams(window.location.search);
     const tabParam = urlParams.get('tab');
-    if (tabParam === 'production-units' || tabParam === 'units') {
-        switchOrgTab('tab-prod-units');
-    } else if (tabParam === 'warehouses') {
-        switchOrgTab('tab-warehouses');
-    } else if (tabParam === 'shops') {
-        switchOrgTab('tab-shops');
+    const savedLocalTab = localStorage.getItem('admin_org_active_tab');
+
+    if (tabParam && tabMap[tabParam]) {
+        switchOrgTab(tabMap[tabParam], false);
+    } else if (savedLocalTab && document.getElementById(savedLocalTab)) {
+        switchOrgTab(savedLocalTab, false);
     }
+
+    // Persist active tab when user clicks any tab button
+    const tabButtons = document.querySelectorAll('#orgTabs button[data-bs-toggle="pill"]');
+    tabButtons.forEach(function(btn) {
+        btn.addEventListener('shown.bs.tab', function(e) {
+            const btnId = e.target.id;
+            localStorage.setItem('admin_org_active_tab', btnId);
+            const key = btnId.replace('tab-', '');
+            const newUrl = new URL(window.location);
+            newUrl.searchParams.set('tab', key);
+            window.history.replaceState({}, '', newUrl);
+        });
+    });
 });
 
-function switchOrgTab(tabId) {
+function switchOrgTab(tabId, scroll = true) {
     const triggerEl = document.getElementById(tabId);
     if (triggerEl) {
         const tab = bootstrap.Tab.getOrCreateInstance(triggerEl);
         tab.show();
-        triggerEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        localStorage.setItem('admin_org_active_tab', tabId);
+        const key = tabId.replace('tab-', '');
+        const newUrl = new URL(window.location);
+        newUrl.searchParams.set('tab', key);
+        window.history.replaceState({}, '', newUrl);
+        if (scroll) {
+            triggerEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
     }
 }
 
@@ -1225,7 +1082,6 @@ function resetUnitModal() {
     document.getElementById('unit_phone').value = '';
     document.getElementById('unit_gst_number').value = '';
     document.getElementById('unit_address').value = '';
-    document.getElementById('unit_is_active').checked = true;
     document.getElementById('btnSubmitUnit').textContent = 'Save Production Unit';
 }
 
@@ -1239,7 +1095,6 @@ function editUnit(unit) {
     document.getElementById('unit_phone').value = unit.phone || '';
     document.getElementById('unit_gst_number').value = unit.gst_number || '';
     document.getElementById('unit_address').value = unit.address || '';
-    document.getElementById('unit_is_active').checked = (unit.is_active == 1);
     document.getElementById('btnSubmitUnit').textContent = 'Update Production Unit';
     const modal = new bootstrap.Modal(document.getElementById('modalProductionUnit'));
     modal.show();
@@ -1256,7 +1111,6 @@ function resetWarehouseModal() {
     document.getElementById('wh_phone').value = '';
     document.getElementById('wh_gst_number').value = '';
     document.getElementById('wh_address').value = '';
-    document.getElementById('wh_is_active').checked = true;
     document.getElementById('btnSubmitWarehouse').textContent = 'Save Warehouse';
 }
 
@@ -1270,7 +1124,6 @@ function editWarehouse(wh) {
     document.getElementById('wh_phone').value = wh.phone || '';
     document.getElementById('wh_gst_number').value = wh.gst_number || '';
     document.getElementById('wh_address').value = wh.address || '';
-    document.getElementById('wh_is_active').checked = (wh.is_active == 1);
     document.getElementById('btnSubmitWarehouse').textContent = 'Update Warehouse';
     const modal = new bootstrap.Modal(document.getElementById('modalWarehouse'));
     modal.show();
@@ -1287,7 +1140,6 @@ function resetShopModal() {
     document.getElementById('shop_gst_number').value = '';
     document.getElementById('shop_phone').value = '';
     document.getElementById('shop_address').value = '';
-    document.getElementById('shop_is_active').checked = true;
     document.getElementById('btnSubmitShop').textContent = 'Save Retail Shop';
 }
 
@@ -1301,7 +1153,6 @@ function editShop(shop) {
     document.getElementById('shop_gst_number').value = shop.gst_number || '';
     document.getElementById('shop_phone').value = shop.phone || '';
     document.getElementById('shop_address').value = shop.address || '';
-    document.getElementById('shop_is_active').checked = (shop.is_active == 1);
     document.getElementById('btnSubmitShop').textContent = 'Update Retail Shop';
     const modal = new bootstrap.Modal(document.getElementById('modalShop'));
     modal.show();
@@ -1327,7 +1178,6 @@ function resetChannelModal(type) {
     document.getElementById('chan_phone').value = '';
     document.getElementById('chan_gst_number').value = '';
     document.getElementById('chan_description').value = '';
-    document.getElementById('chan_is_active').checked = true;
     document.getElementById('btnSubmitChannel').className = `btn ${bgClass} text-white fw-600`;
     document.getElementById('btnSubmitChannel').textContent = `Save ${title}`;
 }
@@ -1351,7 +1201,6 @@ function editChannel(chan) {
     document.getElementById('chan_phone').value = chan.phone || '';
     document.getElementById('chan_gst_number').value = chan.gst_number || '';
     document.getElementById('chan_description').value = chan.description || '';
-    document.getElementById('chan_is_active').checked = (chan.is_active == 1);
     
     document.getElementById('btnSubmitChannel').className = `btn ${bgClass} text-white fw-600`;
     document.getElementById('btnSubmitChannel').textContent = `Update ${title}`;
@@ -1370,14 +1219,12 @@ function viewFacilityDetails(type, data) {
     const subtitle = document.getElementById('facilityDetailSubtitle');
     const name = document.getElementById('facilityDetailName');
     const code = document.getElementById('facilityDetailCode');
-    const status = document.getElementById('facilityDetailStatus');
     const gst = document.getElementById('facilityDetailGst');
     const manager = document.getElementById('facilityDetailManager');
     const phone = document.getElementById('facilityDetailPhone');
     const address = document.getElementById('facilityDetailAddress');
     const metricsTitle = document.getElementById('facilityMetricsTitle');
     const metricsCont = document.getElementById('facilityMetricsContainer');
-    const btnEdit = document.getElementById('btnEditFacilityModal');
 
     name.textContent = data.name || '-';
     code.textContent = data.code || '-';
@@ -1385,12 +1232,6 @@ function viewFacilityDetails(type, data) {
     manager.textContent = data.manager_name || 'Unassigned';
     phone.textContent = data.phone || 'N/A';
     address.textContent = data.address || 'No address specified';
-
-    if (data.is_active == 1) {
-        status.innerHTML = '<span class="badge bg-success-subtle text-success"><i class="bi bi-check-circle me-1"></i>Active</span>';
-    } else {
-        status.innerHTML = '<span class="badge bg-secondary-subtle text-secondary"><i class="bi bi-dash-circle me-1"></i>Inactive</span>';
-    }
 
     metricsCont.innerHTML = '';
 
@@ -1400,7 +1241,6 @@ function viewFacilityDetails(type, data) {
         title.textContent = data.name || 'Production Unit Details';
         subtitle.textContent = 'Apparel Cutting, Stitching & Manufacturing Unit Profile';
         metricsTitle.innerHTML = '<i class="bi bi-activity me-1"></i>Active Production Capacity';
-        btnEdit.className = 'btn btn-primary';
 
         metricsCont.innerHTML = `
             <div class="col-sm-3 col-6">
@@ -1428,17 +1268,12 @@ function viewFacilityDetails(type, data) {
                 </div>
             </div>
         `;
-        btnEdit.onclick = function() {
-            bootstrap.Modal.getInstance(document.getElementById('modalFacilityDetails')).hide();
-            editUnit(data);
-        };
     } else if (type === 'warehouse') {
         header.style.background = '#cc8a26';
         headerIcon.innerHTML = '<i class="bi bi-buildings"></i>';
         title.textContent = data.name || 'Warehouse Details';
         subtitle.textContent = 'Storage & Distribution Facility Profile';
         metricsTitle.innerHTML = '<i class="bi bi-boxes me-1"></i>Warehouse Stock & Valuation';
-        btnEdit.className = 'btn btn-warning text-white';
 
         const stockPcs = parseInt(data.total_stock_pcs, 10) || 0;
         const valuation = parseFloat(data.total_valuation) || 0;
@@ -1463,17 +1298,12 @@ function viewFacilityDetails(type, data) {
                 </div>
             </div>
         `;
-        btnEdit.onclick = function() {
-            bootstrap.Modal.getInstance(document.getElementById('modalFacilityDetails')).hide();
-            editWarehouse(data);
-        };
     } else if (type === 'shop') {
         header.style.background = '#0dcaf0';
         headerIcon.innerHTML = '<i class="bi bi-shop"></i>';
         title.textContent = data.name || 'Retail Shop Details';
         subtitle.textContent = 'Direct Retail Storefront Profile';
         metricsTitle.innerHTML = '<i class="bi bi-receipt me-1"></i>Storefront Sales Activity';
-        btnEdit.className = 'btn btn-info text-white';
 
         const todaySales = parseFloat(data.today_sales) || 0;
         const monthSales = parseFloat(data.month_sales) || 0;
@@ -1498,10 +1328,6 @@ function viewFacilityDetails(type, data) {
                 </div>
             </div>
         `;
-        btnEdit.onclick = function() {
-            bootstrap.Modal.getInstance(document.getElementById('modalFacilityDetails')).hide();
-            editShop(data);
-        };
     } else {
         const isWhatsapp = type === 'whatsapp';
         header.style.background = isWhatsapp ? '#198754' : '#6f42c1';
@@ -1509,7 +1335,6 @@ function viewFacilityDetails(type, data) {
         title.textContent = data.name || (isWhatsapp ? 'WhatsApp Channel Details' : 'Website Channel Details');
         subtitle.textContent = isWhatsapp ? 'WhatsApp Business Channel Profile' : 'Online Website E-Commerce Channel Profile';
         metricsTitle.innerHTML = '<i class="bi bi-broadcast me-1"></i>Channel Status';
-        btnEdit.className = `btn ${isWhatsapp ? 'btn-success' : 'btn-primary'}`;
 
         metricsCont.innerHTML = `
             <div class="col-6">
@@ -1525,10 +1350,6 @@ function viewFacilityDetails(type, data) {
                 </div>
             </div>
         `;
-        btnEdit.onclick = function() {
-            bootstrap.Modal.getInstance(document.getElementById('modalFacilityDetails')).hide();
-            editChannel(data);
-        };
     }
 
     const modal = new bootstrap.Modal(document.getElementById('modalFacilityDetails'));

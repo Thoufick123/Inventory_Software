@@ -686,5 +686,7 @@ if (!empty($authUser['shop_name'])) {
     <?php endif; ?>
     <!-- Global Universal QR Status Finder Modal -->
     <?php require BASE_PATH . '/views/partials/qr_status_finder_modal.php'; ?>
+    <!-- Global Modern Confirmation Modal -->
+    <?php require BASE_PATH . '/views/partials/confirm_modal.php'; ?>
 </body>
 </html>
