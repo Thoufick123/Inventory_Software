@@ -118,6 +118,7 @@ $definitions = array_merge($definitions, [
     // Shop Stock & Pricing Management
     ['module' => 'shop_stock', 'action' => 'edit', 'desc' => 'Edit Shop Product Selling Price & MRP'],
     ['module' => 'shop_stock', 'action' => 'edit_price', 'desc' => 'Quick Edit Retail Selling Price and MRP'],
+    ['module' => 'shop_stock', 'action' => 'adjust', 'desc' => 'Request and approve shop stock adjustments'],
 
     // Granular Reports & Business Intelligence
     ['module' => 'reports_overview', 'action' => 'view', 'desc' => 'View Executive Overview and P&L Report'],

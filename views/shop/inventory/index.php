@@ -25,6 +25,9 @@ $shopQuery = '?shop_id=' . (int)$shop['id'];
             <h2 class="fw-bold mb-1 text-dark">Shop Stock Inventory</h2>
         </div>
         <div class="d-flex gap-2 flex-wrap">
+            <a href="<?= url('shop/inventory/adjustments') . $shopQuery ?>" class="btn btn-outline-secondary rounded-pill px-3 shadow-sm fw-semibold">
+                <i class="bi bi-sliders me-1"></i> Stock Adjustments
+            </a>
             <?php if (hasPermission('shop_stock', 'request') || hasPermission('shop_stock', 'create')): ?>
                 <button type="button" class="btn btn-primary rounded-pill px-3 shadow-sm fw-semibold" data-bs-toggle="modal" data-bs-target="#requestStockModal">
                     <i class="bi bi-box-arrow-in-down me-1"></i> Request Warehouse Stock

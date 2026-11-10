@@ -14,6 +14,8 @@ require_once BASE_PATH . '/app/Models/AllocationItem.php';
 require_once BASE_PATH . '/app/Models/Warehouse.php';
 require_once BASE_PATH . '/app/Models/Shop.php';
 require_once BASE_PATH . '/app/Models/ShopDamage.php';
+require_once BASE_PATH . '/app/Models/ShopStockAdjustment.php';
+require_once BASE_PATH . '/app/Models/ShopReturnedProduct.php';
 
 class ShopService {
 
@@ -769,6 +771,33 @@ class ShopService {
             }
         }
 
+        foreach ($candidates as $cand) {
+            $adjustmentVariantId = ShopStockAdjustment::findApprovedIncreaseQrVariant($shopId, $cand);
+            if ($adjustmentVariantId) {
+                $variant = Database::fetchOne(
+                    $baseSql . "AND pv.id = ? LIMIT 1",
+                    [$adjustmentVariantId]
+                );
+                if ($variant) {
+                    return self::formatVariantForPOS($variant, $shopId, $cand, $parsedMrp, $parsedSellingPrice);
+                }
+            }
+        }
+
+        foreach ($candidates as $cand) {
+            $returnedProduct = ShopReturnedProduct::findByTag((string)$cand, $shopId);
+            if (!$returnedProduct || empty($returnedProduct['printed_at'])) {
+                continue;
+            }
+            $variant = Database::fetchOne(
+                $baseSql . "AND pv.id = ? LIMIT 1",
+                [(int)$returnedProduct['variant_id']]
+            );
+            if ($variant) {
+                return self::formatVariantForPOS($variant, $shopId, (string)$cand, $parsedMrp, $parsedSellingPrice);
+            }
+        }
+
         // 5. Piece-Level Tag Code Search in QC Items (e.g. TTT092611)
         foreach ($candidates as $cand) {
             $qcItem = Database::fetchOne(
@@ -1425,7 +1454,15 @@ class ShopService {
                        (SELECT COALESCE(SUM(quantity), 0) FROM stock_balances WHERE variant_id = sb.variant_id AND location_type = 'SHOP' AND location_id = sb.location_id AND stock_state = 'DAMAGED') as damaged_quantity,
                        (SELECT COALESCE(SUM(si.quantity), 0) FROM sale_items si JOIN sales sl ON si.sale_id = sl.id WHERE si.variant_id = sb.variant_id AND sl.shop_id = sb.location_id AND sl.sale_type = 'SHOP' AND sl.status != 'CANCELLED') as sold_quantity,
                        (SELECT COALESCE(SUM(wri.returned_qty), 0) FROM warehouse_return_items wri JOIN warehouse_returns wr ON wri.warehouse_return_id = wr.id WHERE wri.variant_id = sb.variant_id AND wr.source_type = 'SHOP' AND wr.source_id = sb.location_id) as returned_quantity,
-                       (SELECT COALESCE(SUM(ri.quantity), 0) FROM return_items ri JOIN returns r ON ri.return_id = r.id LEFT JOIN sales s ON r.sale_id = s.id WHERE ri.variant_id = sb.variant_id AND (r.source_type = 'SHOP' OR s.shop_id = sb.location_id) AND r.return_type = 'EXCHANGE') as exchanged_quantity,
+                       (SELECT COALESCE(SUM(ri.quantity), 0)
+                        FROM return_items ri
+                        JOIN returns r ON ri.return_id = r.id
+                        JOIN sales s ON r.sale_id = s.id
+                        WHERE ri.variant_id = sb.variant_id
+                          AND s.shop_id = sb.location_id
+                          AND s.sale_type = 'SHOP'
+                          AND r.return_type = 'EXCHANGE'
+                          AND r.status != 'REJECTED') as exchanged_quantity,
                        (SELECT wa.allocation_number FROM allocation_items ai JOIN warehouse_allocations wa ON ai.allocation_id = wa.id WHERE ai.variant_id = sb.variant_id AND (wa.shop_id = sb.location_id OR (wa.destination_type = 'SHOP' AND wa.destination_id = sb.location_id)) ORDER BY wa.id DESC LIMIT 1) as latest_allocation_number
                 FROM stock_balances sb
                 JOIN product_variants pv ON sb.variant_id = pv.id
@@ -1481,7 +1518,16 @@ class ShopService {
                 $sql .= " AND (sb.variant_id IN (SELECT wri.variant_id FROM warehouse_return_items wri JOIN warehouse_returns wr ON wri.warehouse_return_id = wr.id WHERE wr.source_type = 'SHOP' AND wr.source_id = ?))";
                 $params[] = $shopId;
             } elseif ($status === 'exchanged') {
-                $sql .= " AND (sb.variant_id IN (SELECT ri.variant_id FROM return_items ri JOIN returns r ON ri.return_id = r.id LEFT JOIN sales s ON r.sale_id = s.id WHERE (r.source_type = 'SHOP' OR s.shop_id = ?) AND r.return_type = 'EXCHANGE'))";
+                $sql .= " AND (sb.variant_id IN (
+                    SELECT ri.variant_id
+                    FROM return_items ri
+                    JOIN returns r ON ri.return_id = r.id
+                    JOIN sales s ON r.sale_id = s.id
+                    WHERE s.shop_id = ?
+                      AND s.sale_type = 'SHOP'
+                      AND r.return_type = 'EXCHANGE'
+                      AND r.status != 'REJECTED'
+                ))";
                 $params[] = $shopId;
             }
         }
@@ -1714,7 +1760,15 @@ class ShopService {
                        (SELECT COALESCE(SUM(quantity), 0) FROM stock_balances WHERE variant_id = sb.variant_id AND location_type = 'SHOP' AND location_id = sb.location_id AND stock_state = 'DAMAGED') as damaged_quantity,
                        (SELECT COALESCE(SUM(si.quantity), 0) FROM sale_items si JOIN sales sl ON si.sale_id = sl.id WHERE si.variant_id = sb.variant_id AND sl.shop_id = sb.location_id AND sl.sale_type = 'SHOP' AND sl.status != 'CANCELLED') as sold_quantity,
                        (SELECT COALESCE(SUM(wri.returned_qty), 0) FROM warehouse_return_items wri JOIN warehouse_returns wr ON wri.warehouse_return_id = wr.id WHERE wri.variant_id = sb.variant_id AND wr.source_type = 'SHOP' AND wr.source_id = sb.location_id) as returned_quantity,
-                       (SELECT COALESCE(SUM(ri.quantity), 0) FROM return_items ri JOIN returns r ON ri.return_id = r.id LEFT JOIN sales s ON r.sale_id = s.id WHERE ri.variant_id = sb.variant_id AND (r.source_type = 'SHOP' OR s.shop_id = sb.location_id) AND r.return_type = 'EXCHANGE') as exchanged_quantity
+                       (SELECT COALESCE(SUM(ri.quantity), 0)
+                        FROM return_items ri
+                        JOIN returns r ON ri.return_id = r.id
+                        JOIN sales s ON r.sale_id = s.id
+                        WHERE ri.variant_id = sb.variant_id
+                          AND s.shop_id = sb.location_id
+                          AND s.sale_type = 'SHOP'
+                          AND r.return_type = 'EXCHANGE'
+                          AND r.status != 'REJECTED') as exchanged_quantity
                 FROM stock_balances sb
                 JOIN product_variants pv ON sb.variant_id = pv.id
                 JOIN products p ON pv.product_id = p.id
@@ -1920,6 +1974,13 @@ class ShopService {
                 ];
             }
             $savedTags = array_values($savedTagsByKey);
+            foreach (ShopStockAdjustment::getApprovedIncreaseTags($shopId, $variantId) as $adjustedInTag) {
+                $tagKey = strtoupper(trim($adjustedInTag));
+                if ($tagKey !== '' && !isset($savedTagsByKey[$tagKey])) {
+                    $savedTagsByKey[$tagKey] = $tagKey;
+                }
+            }
+            $savedTags = array_values($savedTagsByKey);
 
             // Fetch sales / billed pieces for this shop & variant
             $salesRecords = Database::fetchAll(
@@ -1953,11 +2014,15 @@ class ShopService {
                         s.invoice_number as sale_invoice, s.customer_name, si.scanned_qr_codes
                  FROM return_items ri
                  JOIN returns r ON ri.return_id = r.id
-                 LEFT JOIN sales s ON r.sale_id = s.id
+                 JOIN sales s ON r.sale_id = s.id
                  LEFT JOIN sale_items si ON ri.sale_item_id = si.id
-                 WHERE ri.variant_id = ? AND r.source_type = 'SHOP' AND r.status != 'CANCELLED'
+                 WHERE ri.variant_id = ?
+                   AND s.shop_id = ?
+                   AND s.sale_type = 'SHOP'
+                   AND r.source_type = 'SHOP'
+                   AND r.status != 'CANCELLED'
                  ORDER BY r.id DESC",
-                [$variantId]
+                [$variantId, $shopId]
             );
             foreach ($returnRecords as $rr) {
                 $rawTagString = '';
@@ -1986,10 +2051,14 @@ class ShopService {
                  FROM exchange_items ei
                  JOIN exchanges e ON ei.exchange_id = e.id
                  LEFT JOIN returns r ON e.return_id = r.id
-                 LEFT JOIN sales s ON e.sale_id = s.id
-                 WHERE ei.variant_id = ? AND e.source_type = 'SHOP' AND e.status != 'CANCELLED'
+                 JOIN sales s ON s.id = COALESCE(e.sale_id, r.sale_id)
+                 WHERE ei.variant_id = ?
+                   AND s.shop_id = ?
+                   AND s.sale_type = 'SHOP'
+                   AND e.source_type = 'SHOP'
+                   AND e.status != 'CANCELLED'
                  ORDER BY e.id DESC",
-                [$variantId]
+                [$variantId, $shopId]
             );
 
             foreach ($exchangesHistory as $ex) {
@@ -2026,6 +2095,34 @@ class ShopService {
                 [$variantId, $shopId]
             );
 
+            $returnedProducts = ShopReturnedProduct::getForVariant($variantId, $shopId);
+            $reissuedSourceTags = [];
+            foreach ($returnedProducts as $returnedProduct) {
+                $originalTag = strtoupper(trim((string)($returnedProduct['original_piece_tag'] ?? '')));
+                if ($originalTag !== '') {
+                    $reissuedSourceTags[$originalTag] = $returnedProduct;
+                }
+
+                if (empty($returnedProduct['printed_at'])) {
+                    continue;
+                }
+                $returnedTag = strtoupper(trim((string)$returnedProduct['returned_tag']));
+                if ($returnedTag === '') {
+                    continue;
+                }
+                $savedTagsByKey[$returnedTag] = $returnedTag;
+                if (strtoupper((string)$returnedProduct['item_condition']) === 'GOOD') {
+                    continue;
+                } else {
+                    $damagedTagsMap[$returnedTag] = [
+                        'damage_number' => $returnedProduct['return_number'] ?? 'Returned Product',
+                        'damage_reason' => 'Returned product condition: ' . $returnedProduct['item_condition'],
+                        'status' => 'DAMAGED',
+                    ];
+                }
+            }
+            $savedTags = array_values($savedTagsByKey);
+
             $pieces = [];
             foreach ($savedTags as $index => $tag) {
                 $pieceNumber = $index + 1;
@@ -2049,7 +2146,11 @@ class ShopService {
                 $returnInfo = null;
                 $exchangeInfo = null;
 
-                if ($isSingleQrProduct
+                if (isset($damagedTagsMap[$tag])) {
+                    $isDamaged = true;
+                    $damageInfo = $damagedTagsMap[$tag];
+                    $pieceStatus = 'Damaged';
+                } elseif ($isSingleQrProduct
                     && (float)($item['damaged_quantity'] ?? 0) > 0
                     && (float)($item['available_quantity'] ?? $item['quantity'] ?? 0) > 0
                 ) {
@@ -2057,10 +2158,16 @@ class ShopService {
                     // Keep the QR partially damaged when both good and damaged quantities remain.
                     $isPartialDamage = true;
                     $pieceStatus = 'Partially Damaged';
-                } elseif (isset($damagedTagsMap[$tag])) {
-                    $isDamaged = true;
-                    $damageInfo = $damagedTagsMap[$tag];
-                    $pieceStatus = 'Damaged';
+                } elseif (isset($reissuedSourceTags[$tag])) {
+                    $isReturned = true;
+                    $pieceStatus = empty($reissuedSourceTags[$tag]['printed_at'])
+                        ? 'Returned - Awaiting Label Print'
+                        : 'Returned - QR Reissued';
+                    $returnInfo = [
+                        'return_number' => $reissuedSourceTags[$tag]['return_number'] ?? null,
+                        'sale_invoice' => $reissuedSourceTags[$tag]['invoice_number'] ?? null,
+                        'created_at' => $reissuedSourceTags[$tag]['created_at'] ?? null,
+                    ];
                 } elseif (isset($returnedTagsMap[$tag])) {
                     // Piece was returned / restocked in Shop Return or Exchange
                     $rInfo = $returnedTagsMap[$tag];
@@ -2133,6 +2240,17 @@ class ShopService {
                     'exchange_number'      => $exchangeInfo['return_number'] ?? null,
                     'inward_reference'     => $pieceAllocRef ? "Allocation #$pieceAllocRef" : 'Inward Consignment',
                 ];
+            }
+
+            $adjustedTags = array_fill_keys(ShopStockAdjustment::getApprovedDecreaseTags($shopId, $variantId), true);
+            if ($adjustedTags) {
+                foreach ($pieces as &$piece) {
+                    if (isset($adjustedTags[strtoupper((string)$piece['tag_code'])]) && $piece['status'] === 'In Stock') {
+                        $piece['status'] = 'Out of Stock';
+                        $piece['is_adjusted'] = true;
+                    }
+                }
+                unset($piece);
             }
 
             if (!$isSingleQrProduct) {
@@ -3457,30 +3575,37 @@ class ShopService {
                     WHERE status = 'COMPLETED'
                     GROUP BY sale_id
                 ) payment_totals ON payment_totals.sale_id = s.id
-                WHERE s.shop_id = ? AND s.sale_type = 'SHOP'";
+                WHERE s.shop_id = ? AND s.sale_type = 'SHOP' AND s.status <> 'CANCELLED'";
         
         $params = [$shopId];
+        $whereSql = "s.shop_id = ? AND s.sale_type = 'SHOP' AND s.status <> 'CANCELLED'";
 
         // Filter by Search Query (Product, SKU, Invoice, Customer, Piece Tag)
         if (!empty($filters['search'])) {
             $search = '%' . trim($filters['search']) . '%';
-            $sql .= " AND (p.name LIKE ? OR pv.sku LIKE ? OR s.invoice_number LIKE ? OR c.name LIKE ? OR c.phone LIKE ? OR si.scanned_qr_codes LIKE ?)";
-            $params = array_merge($params, [$search, $search, $search, $search, $search, $search]);
+            $searchCondition = " AND (p.name LIKE ? OR pv.sku LIKE ? OR s.invoice_number LIKE ? OR c.name LIKE ? OR c.phone LIKE ? OR si.scanned_qr_codes LIKE ?)";
+            $sql .= $searchCondition;
+            $whereSql .= $searchCondition;
+            $searchParams = [$search, $search, $search, $search, $search, $search];
+            $params = array_merge($params, $searchParams);
         }
 
         // Filter by Date Range
         if (!empty($filters['start_date'])) {
             $sql .= " AND DATE(s.created_at) >= ?";
+            $whereSql .= " AND DATE(s.created_at) >= ?";
             $params[] = $filters['start_date'];
         }
         if (!empty($filters['end_date'])) {
             $sql .= " AND DATE(s.created_at) <= ?";
+            $whereSql .= " AND DATE(s.created_at) <= ?";
             $params[] = $filters['end_date'];
         }
 
         // Filter by Category
         if (!empty($filters['category_id']) && $filters['category_id'] !== 'ALL') {
             $sql .= " AND p.category_id = ?";
+            $whereSql .= " AND p.category_id = ?";
             $params[] = (int)$filters['category_id'];
         }
 
@@ -3503,19 +3628,12 @@ class ShopService {
                           COALESCE(SUM(si.discount_amount), 0) as total_discount
                    FROM sale_items si
                    JOIN sales s ON si.sale_id = s.id
-                   WHERE s.shop_id = ? AND s.sale_type = 'SHOP'";
-        $kpiParams = [$shopId];
+                   JOIN product_variants pv ON si.variant_id = pv.id
+                   JOIN products p ON pv.product_id = p.id
+                   LEFT JOIN customers c ON s.customer_id = c.id
+                   WHERE {$whereSql}";
 
-        if (!empty($filters['start_date'])) {
-            $kpiSql .= " AND DATE(s.created_at) >= ?";
-            $kpiParams[] = $filters['start_date'];
-        }
-        if (!empty($filters['end_date'])) {
-            $kpiSql .= " AND DATE(s.created_at) <= ?";
-            $kpiParams[] = $filters['end_date'];
-        }
-
-        $kpis = Database::fetchOne($kpiSql, $kpiParams) ?: [
+        $kpis = Database::fetchOne($kpiSql, $params) ?: [
             'total_invoices'   => 0,
             'total_units_sold' => 0,
             'total_revenue'    => 0,

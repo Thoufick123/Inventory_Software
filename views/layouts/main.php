@@ -6,6 +6,53 @@ $userRoleName = $authUser['role_name'] ?? ($isSuperAdminUser ? 'Super Admin' : '
 $userRoleSlug = strtolower($authUser['role_slug'] ?? ($isSuperAdminUser ? 'super-admin' : ''));
 $userDept = $authUser['department'] ?? '';
 $isAdminRole = $isSuperAdminUser || ($authUser['role_id'] ?? 0) === 1 || str_contains($userRoleSlug, 'admin');
+$whatsappReportModule = null;
+$requestPath = (string)(parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?? '');
+$whatsappRoutePosition = strrpos($requestPath, '/warehouse/whatsapp-orders');
+if ($whatsappRoutePosition !== false) {
+    $whatsappRouteTail = trim(substr($requestPath, $whatsappRoutePosition + strlen('/warehouse/whatsapp-orders')), '/');
+    if ($whatsappRouteTail === '') {
+        $whatsappReportModule = 'dashboard';
+    } elseif (str_starts_with($whatsappRouteTail, 'inward')) {
+        $whatsappReportModule = 'inward';
+    } elseif (str_starts_with($whatsappRouteTail, 'returned-products')) {
+        $whatsappReportModule = 'returned-products';
+    } elseif (str_starts_with($whatsappRouteTail, 'adjustments')) {
+        $whatsappReportModule = 'adjustments';
+    } elseif (str_starts_with($whatsappRouteTail, 'allocations')) {
+        $whatsappReportModule = ($_GET['tab'] ?? '') === 'allocations' ? 'allocations' : 'inventory';
+    } elseif (str_starts_with($whatsappRouteTail, 'inventory')) {
+        $whatsappReportModule = 'inventory';
+    } elseif (str_starts_with($whatsappRouteTail, 'history')) {
+        $whatsappReportModule = 'orders';
+    } elseif (str_starts_with($whatsappRouteTail, 'damage')) {
+        $whatsappReportModule = 'damage';
+    } elseif (str_starts_with($whatsappRouteTail, 'returns')) {
+        $whatsappReportModule = 'returns';
+    } elseif (str_starts_with($whatsappRouteTail, 'customers')) {
+        $whatsappReportModule = 'customers';
+    } elseif (str_starts_with($whatsappRouteTail, 'return-to-warehouse')) {
+        $whatsappReportModule = 'return-to-warehouse';
+    } elseif (str_starts_with($whatsappRouteTail, 'expenses')) {
+        $whatsappReportModule = 'expenses';
+    }
+}
+$whatsappReportPermissions = [
+    'dashboard' => 'whatsapp_dashboard',
+    'inward' => 'whatsapp_inward',
+    'inventory' => 'whatsapp_inventory',
+    'allocations' => 'whatsapp_inventory',
+    'returned-products' => 'whatsapp_inventory',
+    'adjustments' => 'whatsapp_inventory',
+    'orders' => 'whatsapp_orders',
+    'damage' => 'whatsapp_damage',
+    'returns' => 'whatsapp_returns',
+    'customers' => 'whatsapp_customers',
+    'return-to-warehouse' => 'whatsapp_return_to_wh',
+    'expenses' => 'whatsapp_expenses',
+];
+$canDownloadWhatsappReport = $whatsappReportModule !== null
+    && hasPermission($whatsappReportPermissions[$whatsappReportModule], 'view');
 
 // Extract all assigned units defined by admin
 $userAssignedUnits = [];
@@ -411,6 +458,7 @@ if (!empty($authUser['shop_name'])) {
                             <?php endif; ?>
                             <?php if (hasPermission('shop_returns', 'view')): ?>
                             <li><a href="<?= url('shop/returns') ?>" class="<?= in_array(($activeMenu ?? ''), ['shop-returns', 'returns', 'shop-exchanges', 'exchanges']) ? 'active' : '' ?>">Customer Returns &amp; Exchanges</a></li>
+                            <li><a href="<?= url('shop/returns/returned-products') ?>" class="<?= ($activeMenu ?? '') === 'shop-returned-products' ? 'active' : '' ?>">Returned Products</a></li>
                             <?php endif; ?>
                             <?php if (hasPermission('return_to_warehouse', 'view')): ?>
                             <li><a href="<?= url('shop/return-to-warehouse') ?>" class="<?= in_array(($activeMenu ?? ''), ['shop-return-to-wh', 'return-to-warehouse']) ? 'active' : '' ?>">Return to Warehouse</a></li>
@@ -603,6 +651,44 @@ if (!empty($authUser['shop_name'])) {
                         </div>
                     <?php endforeach; ?>
                 <?php endforeach; ?>
+
+                <?php if ($canDownloadWhatsappReport): ?>
+                    <form method="get" action="<?= url('warehouse/whatsapp-orders/reports/download/' . rawurlencode($whatsappReportModule)) ?>" class="whatsapp-report-toolbar card border shadow-sm mb-3">
+                        <?php foreach ($_GET as $key => $value): ?>
+                            <?php if (is_scalar($value) && !in_array($key, ['url', 'format', 'scope'], true)): ?>
+                                <input type="hidden" name="<?= e((string)$key) ?>" value="<?= e((string)$value) ?>">
+                            <?php endif; ?>
+                        <?php endforeach; ?>
+                        <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3 p-3">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="whatsapp-report-icon"><i class="bi bi-file-earmark-arrow-down"></i></span>
+                                <div>
+                                    <div class="fw-semibold text-dark">Export report</div>
+                                    <small class="text-muted">Choose a format and data scope</small>
+                                </div>
+                            </div>
+                            <div class="whatsapp-report-controls d-flex flex-wrap align-items-end gap-2">
+                                <div>
+                                    <label for="whatsappReportFormat" class="form-label small fw-semibold text-muted mb-1">Format</label>
+                                    <select id="whatsappReportFormat" name="format" class="form-select form-select-sm">
+                                        <option value="csv">CSV</option>
+                                        <option value="pdf">PDF</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="whatsappReportScope" class="form-label small fw-semibold text-muted mb-1">Data</label>
+                                    <select id="whatsappReportScope" name="scope" class="form-select form-select-sm">
+                                        <option value="filtered">Current filters</option>
+                                        <option value="all">All records</option>
+                                    </select>
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-primary whatsapp-report-download">
+                                    <i class="bi bi-download me-1"></i>Download
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                <?php endif; ?>
 
                 <!-- Main Content from child view -->
                 <?= $content ?? '' ?>

@@ -30,7 +30,7 @@ $onlineRecordCount = count(array_filter($items, static fn($item) => (float)($ite
                             <i class="bi bi-bag-check-fill fs-5"></i>
                         </div>
                     </div>
-                    <div class="fs-3 fw-bold text-dark"><?= number_format((int)($kpis['total_units_sold'] ?? 0)) ?> <span class="fs-6 text-muted fw-normal">pcs</span></div>
+                    <div class="fs-3 fw-bold text-dark"><span id="totalUnitsSoldValue"><?= number_format((int)($kpis['total_units_sold'] ?? 0)) ?></span> <span class="fs-6 text-muted fw-normal">pcs</span></div>
                     <div class="small text-muted mt-1"><i class="bi bi-receipt me-1 text-primary"></i> Across <?= number_format((int)($kpis['total_invoices'] ?? 0)) ?> invoices</div>
                 </div>
             </div>
@@ -90,7 +90,14 @@ $onlineRecordCount = count(array_filter($items, static fn($item) => (float)($ite
         <div class="card-body p-2">
             <div class="nav nav-pills gap-2" role="tablist" aria-label="Filter sold products by payment type">
                 <button type="button" class="nav-link active rounded-3 d-flex align-items-center gap-2"
-                        id="cashPaymentTab" data-payment-tab="cash" role="tab" aria-selected="true">
+                        id="allPaymentTab" data-payment-tab="all" role="tab" aria-selected="true">
+                    <i class="bi bi-list-ul"></i>
+                    <span>All</span>
+                    <span class="badge bg-white text-dark" id="allPaymentTabTotal">₹<?= number_format($cashRevenueTotal + $onlineRevenueTotal, 2) ?></span>
+                    <span class="small opacity-75" id="allPaymentTabCount"><?= number_format(count($items)) ?> records</span>
+                </button>
+                <button type="button" class="nav-link rounded-3 d-flex align-items-center gap-2 text-dark"
+                        id="cashPaymentTab" data-payment-tab="cash" role="tab" aria-selected="false">
                     <i class="bi bi-cash-stack"></i>
                     <span>Cash</span>
                     <span class="badge bg-white text-success" id="cashPaymentTabTotal">₹<?= number_format($cashRevenueTotal, 2) ?></span>
@@ -162,7 +169,7 @@ $onlineRecordCount = count(array_filter($items, static fn($item) => (float)($ite
         <div class="card-header bg-white py-3 border-0 d-flex justify-content-between align-items-center">
             <h5 class="fw-bold text-dark mb-0"><i class="bi bi-cart-check-fill me-2 text-primary"></i>Itemized Sold Products</h5>
             <span class="badge bg-primary-subtle text-primary fw-semibold px-3 py-2 rounded-pill" id="salesCountBadge">
-                Showing <?= count($items) ?> records
+                Showing <?= count($items) ?> records &middot; <?= number_format((int)($kpis['total_units_sold'] ?? 0)) ?> pcs
             </span>
         </div>
         <div class="card-body p-0 table-responsive">
@@ -201,6 +208,7 @@ $onlineRecordCount = count(array_filter($items, static fn($item) => (float)($ite
                                 data-search="<?= e($searchHaystack) ?>"
                                 data-cat="<?= (int)($it['category_id'] ?? 0) ?>"
                                 data-date="<?= e($saleDateFormatted) ?>"
+                                data-quantity="<?= (int)($it['quantity'] ?? 0) ?>"
                                 data-cash-revenue="<?= number_format((float)($it['cash_revenue'] ?? 0), 2, '.', '') ?>"
                                 data-online-revenue="<?= number_format((float)($it['online_revenue'] ?? 0), 2, '.', '') ?>">
                                 <td class="ps-4 text-muted small fw-bold sales-idx"><?= $idx + 1 ?></td>
@@ -1259,7 +1267,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const btnClear = document.getElementById('btnClearSalesSearch');
     const rows = Array.from(document.querySelectorAll('.sales-row'));
     const paymentTabs = Array.from(document.querySelectorAll('[data-payment-tab]'));
-    let activePaymentTab = 'cash';
+    let activePaymentTab = 'all';
 
     window.applySalesFilters = function() {
         const query = (searchInput ? searchInput.value : '').trim().toLowerCase();
@@ -1273,6 +1281,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         let visibleCount = 0;
+        let visibleUnits = 0;
+        let allCount = 0;
+        let allUnits = 0;
+        let allRevenue = 0;
         let cashCount = 0;
         let onlineCount = 0;
         let cashRevenue = 0;
@@ -1282,6 +1294,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const searchData = row.getAttribute('data-search') || '';
             const rowCat = row.getAttribute('data-cat') || '';
             const rowDate = row.getAttribute('data-date') || '';
+            const rowQuantity = parseInt(row.getAttribute('data-quantity'), 10) || 0;
             const rowCashRevenue = parseFloat(row.getAttribute('data-cash-revenue')) || 0;
             const rowOnlineRevenue = parseFloat(row.getAttribute('data-online-revenue')) || 0;
 
@@ -1292,34 +1305,43 @@ document.addEventListener('DOMContentLoaded', function() {
             const matchesOtherFilters = matchQuery && matchCat && matchStart && matchEnd;
 
             if (matchesOtherFilters) {
+                allCount++;
+                allUnits += rowQuantity;
+                allRevenue += rowCashRevenue + rowOnlineRevenue;
                 cashRevenue += rowCashRevenue;
                 onlineRevenue += rowOnlineRevenue;
                 if (rowCashRevenue > 0) cashCount++;
                 if (rowOnlineRevenue > 0) onlineCount++;
             }
 
-            const matchesPaymentTab = activePaymentTab === 'cash'
-                ? rowCashRevenue > 0
-                : rowOnlineRevenue > 0;
+            const matchesPaymentTab = activePaymentTab === 'all'
+                || (activePaymentTab === 'cash' ? rowCashRevenue > 0 : rowOnlineRevenue > 0);
             if (matchesOtherFilters && matchesPaymentTab) {
                 row.style.display = '';
                 visibleCount++;
+                visibleUnits += rowQuantity;
             } else {
                 row.style.display = 'none';
             }
         });
 
+        const allTotalEl = document.getElementById('allPaymentTabTotal');
+        const allCountEl = document.getElementById('allPaymentTabCount');
+        const totalUnitsEl = document.getElementById('totalUnitsSoldValue');
         const cashTotalEl = document.getElementById('cashPaymentTabTotal');
         const onlineTotalEl = document.getElementById('onlinePaymentTabTotal');
         const cashCountEl = document.getElementById('cashPaymentTabCount');
         const onlineCountEl = document.getElementById('onlinePaymentTabCount');
+        if (allTotalEl) allTotalEl.textContent = `₹${allRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        if (allCountEl) allCountEl.textContent = `${allCount.toLocaleString('en-IN')} records`;
+        if (totalUnitsEl) totalUnitsEl.textContent = allUnits.toLocaleString('en-IN');
         if (cashTotalEl) cashTotalEl.textContent = `₹${cashRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         if (onlineTotalEl) onlineTotalEl.textContent = `₹${onlineRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         if (cashCountEl) cashCountEl.textContent = `${cashCount.toLocaleString('en-IN')} records`;
         if (onlineCountEl) onlineCountEl.textContent = `${onlineCount.toLocaleString('en-IN')} records`;
 
         if (countBadge) {
-            countBadge.textContent = `Showing ${visibleCount} records`;
+            countBadge.textContent = `Showing ${visibleCount} records · ${visibleUnits.toLocaleString('en-IN')} pcs`;
         }
 
         paymentTabs.forEach(tab => {
@@ -1330,7 +1352,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const totalBadge = tab.querySelector('.badge');
             if (totalBadge) {
                 totalBadge.className = isActive
-                    ? (activePaymentTab === 'cash' ? 'badge bg-white text-success' : 'badge bg-white text-primary')
+                    ? (activePaymentTab === 'cash' ? 'badge bg-white text-success' : (activePaymentTab === 'online' ? 'badge bg-white text-primary' : 'badge bg-white text-dark'))
                     : 'badge bg-light text-primary';
             }
         });

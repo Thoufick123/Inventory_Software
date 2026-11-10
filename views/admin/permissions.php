@@ -132,6 +132,14 @@ foreach ($hierarchicalModules as $m) {
                         }
                     }
                 }
+                foreach (($submodules['shop_stock']['permissions'] ?? []) as $permission) {
+                    if (($permission['action'] ?? '') === 'adjust') {
+                        $modTotalPerms++;
+                        if (in_array((int)$permission['id'], $rolePermIds, true)) {
+                            $modActivePerms++;
+                        }
+                    }
+                }
                 ?>
                 <div class="card border-0 shadow-sm rounded-3 module-section" data-module-key="<?= e($modKey) ?>">
                     
@@ -176,18 +184,21 @@ foreach ($hierarchicalModules as $m) {
                             <table class="table table-hover align-middle mb-0 permissions-table">
                                 <thead class="table-light">
                                     <tr class="text-uppercase small text-muted font-monospace">
-                                        <th class="ps-4 py-3" style="min-width: 260px; width: 34%;">Submodule & Description</th>
-                                        <th class="text-center py-3" style="width: 14%;">
+                                        <th class="ps-4 py-3" style="min-width: 260px; width: 30%;">Submodule & Description</th>
+                                        <th class="text-center py-3" style="width: 12%;">
                                             <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">View</span>
                                         </th>
-                                        <th class="text-center py-3" style="width: 14%;">
+                                        <th class="text-center py-3" style="width: 12%;">
                                             <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">Create</span>
                                         </th>
-                                        <th class="text-center py-3" style="width: 14%;">
+                                        <th class="text-center py-3" style="width: 12%;">
                                             <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1">Edit</span>
                                         </th>
-                                        <th class="text-center py-3" style="width: 14%;">
+                                        <th class="text-center py-3" style="width: 12%;">
                                             <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1">Delete</span>
+                                        </th>
+                                        <th class="text-center py-3" style="width: 12%;">
+                                            <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle px-2 py-1">Adjust</span>
                                         </th>
                                         <th class="text-center pe-4 py-3" style="width: 10%;">
                                             <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1">Row All</span>
@@ -203,6 +214,9 @@ foreach ($hierarchicalModules as $m) {
                                         $subDesc = $sub['desc'] ?? '';
 
                                         $crudColumns = Role::getCrudPermissionsByAction($subPerms);
+                                        $shopAdjustPermissions = $subKey === 'shop_stock'
+                                            ? array_values(array_filter($subPerms, static fn(array $permission): bool => ($permission['action'] ?? '') === 'adjust'))
+                                            : [];
                                         ?>
                                         <tr class="submodule-row" data-submodule-key="<?= e($subKey) ?>" data-module-key="<?= e($modKey) ?>">
                                             <!-- Submodule Title & Info -->
@@ -246,6 +260,28 @@ foreach ($hierarchicalModules as $m) {
                                                     <?php endif; ?>
                                                 </td>
                                             <?php endforeach; ?>
+
+                                            <td class="text-center py-3">
+                                                <?php if ($shopAdjustPermissions): ?>
+                                                    <div class="d-flex flex-column align-items-center gap-1">
+                                                        <?php foreach ($shopAdjustPermissions as $permission): ?>
+                                                            <label class="form-check-label d-inline-flex align-items-center justify-content-center gap-1 small" title="<?= e($permission['description'] ?? 'Adjust shop stock') ?>">
+                                                                <input class="form-check-input perm-checkbox perm-adjust"
+                                                                       type="checkbox"
+                                                                       name="permissions[]"
+                                                                       value="<?= (int)$permission['id'] ?>"
+                                                                       data-action="adjust"
+                                                                       data-module="<?= e($modKey) ?>"
+                                                                       data-submodule="<?= e($subKey) ?>"
+                                                                       <?= in_array((int)$permission['id'], $rolePermIds, true) ? 'checked' : '' ?>>
+                                                                <span>Adjust</span>
+                                                            </label>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                <?php else: ?>
+                                                    <span class="text-muted opacity-25">&mdash;</span>
+                                                <?php endif; ?>
+                                            </td>
 
                                             <!-- 6. ROW MASTER TOGGLE -->
                                             <td class="text-center pe-4 py-3">

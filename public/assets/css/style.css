@@ -359,6 +359,34 @@ body {
     margin: 0;
 }
 
+.whatsapp-report-toolbar {
+    border-color: var(--border) !important;
+    border-radius: 12px;
+    background: #fff;
+}
+
+.whatsapp-report-icon {
+    display: inline-flex;
+    width: 40px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: var(--primary-light);
+    color: var(--primary);
+    font-size: 1.1rem;
+}
+
+.whatsapp-report-controls > div {
+    min-width: 140px;
+}
+
+.whatsapp-report-download {
+    min-height: 31px;
+    padding-right: 1rem;
+    padding-left: 1rem;
+}
+
 /* ============================================================
    CARDS & STATS
    ============================================================ */
@@ -718,6 +746,19 @@ body {
     .page-content {
         padding: 1rem;
     }
+    .whatsapp-report-toolbar .card-body {
+        align-items: stretch !important;
+    }
+    .whatsapp-report-controls {
+        width: 100%;
+    }
+    .whatsapp-report-controls > div {
+        flex: 1 1 125px;
+    }
+    .whatsapp-report-download {
+        flex: 1 1 100%;
+        min-height: 38px;
+    }
     .page-header h2 {
         font-size: 1.25rem;
     }
@@ -912,4 +953,3 @@ body {
     width: 100%;
     overflow: visible;
 }
-
