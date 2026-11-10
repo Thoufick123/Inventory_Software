@@ -586,6 +586,145 @@ function handlePhase1Submit(event) {
         }
     }
 
+    // Validate City, State & Address
+    const cityInput = document.querySelector('input[name="city"]');
+    const stateInput = document.querySelector('input[name="state"]');
+    const addressInput = document.querySelector('textarea[name="address"]');
+
+    const rawCity = cityInput ? cityInput.value.trim() : '';
+    const rawState = stateInput ? stateInput.value.trim() : '';
+    const rawAddress = addressInput ? addressInput.value.trim() : '';
+
+    if (rawAddress && (rawAddress.length < 6 || !/[a-zA-Z]/.test(rawAddress))) {
+        event.preventDefault();
+        if (addressInput) addressInput.focus();
+        showValidationAlert('Full Business Address must include valid street/door/area details (at least 6 characters).');
+        return false;
+    }
+
+    if (rawCity || rawState) {
+        const normCity = rawCity.toUpperCase().replace(/[\s\-_.]+/g, '');
+        const normState = rawState.toUpperCase().replace(/[\s\-_.]+/g, '');
+
+        const allIndianStates = {
+            'TAMIL NADU': ['TAMILNADU', 'TN'],
+            'ANDHRA PRADESH': ['ANDHRAPRADESH', 'AP'],
+            'ARUNACHAL PRADESH': ['ARUNACHALPRADESH', 'AR'],
+            'ASSAM': ['ASSAM', 'AS'],
+            'BIHAR': ['BIHAR', 'BR'],
+            'CHHATTISGARH': ['CHHATTISGARH', 'CG'],
+            'GOA': ['GOA', 'GA'],
+            'GUJARAT': ['GUJARAT', 'GJ'],
+            'HARYANA': ['HARYANA', 'HR'],
+            'HIMACHAL PRADESH': ['HIMACHALPRADESH', 'HP'],
+            'JHARKHAND': ['JHARKHAND', 'JH'],
+            'KARNATAKA': ['KARNATAKA', 'KA'],
+            'KERALA': ['KERALA', 'KL'],
+            'MADHYA PRADESH': ['MADHYAPRADESH', 'MP'],
+            'MAHARASHTRA': ['MAHARASHTRA', 'MH'],
+            'MANIPUR': ['MANIPUR', 'MN'],
+            'MEGHALAYA': ['MEGHALAYA', 'ML'],
+            'MIZORAM': ['MIZORAM', 'MZ'],
+            'NAGALAND': ['NAGALAND', 'NL'],
+            'ODISHA': ['ODISHA', 'ORISSA', 'OD', 'OR'],
+            'PUNJAB': ['PUNJAB', 'PB'],
+            'RAJASTHAN': ['RAJASTHAN', 'RJ'],
+            'SIKKIM': ['SIKKIM', 'SK'],
+            'TELANGANA': ['TELANGANA', 'TS', 'TG'],
+            'TRIPURA': ['TRIPURA', 'TR'],
+            'UTTAR PRADESH': ['UTTARPRADESH', 'UP'],
+            'UTTARAKHAND': ['UTTARAKHAND', 'UK', 'UA'],
+            'WEST BENGAL': ['WESTBENGAL', 'WB'],
+            'DELHI': ['DELHI', 'DL', 'NEWDELHI'],
+            'JAMMU AND KASHMIR': ['JAMMUANDKASHMIR', 'JAMMUKASHMIR', 'JK'],
+            'LADAKH': ['LADAKH', 'LA'],
+            'PUDUCHERRY': ['PUDUCHERRY', 'PONDICHERRY', 'PY'],
+            'CHANDIGARH': ['CHANDIGARH', 'CH'],
+            'ANDAMAN AND NICOBAR ISLANDS': ['ANDAMANANDNICOBARISLANDS', 'ANDAMAN', 'NICOBAR', 'AN'],
+            'DADRA AND NAGAR HAVELI AND DAMAN AND DIU': ['DADRAANDNAGARHAVELIANDDAMANANDDIU', 'DAMAN', 'DIU', 'DN', 'DD'],
+            'LAKSHADWEEP': ['LAKSHADWEEP', 'LD']
+        };
+
+        const tnCities = [
+            'CHENNAI', 'COIMBATORE', 'TIRUPPUR', 'TIRUPUR', 'MADURAI', 'SALEM', 'TRICHY', 'TIRUCHIRAPPALLI',
+            'ERODE', 'VELLORE', 'THOOTHUKUDI', 'TUTICORIN', 'DINDIGUL', 'THANJAVUR', 'RANIPET',
+            'SIVAKASI', 'KARUR', 'UDHAGAMANDALAM', 'OOTY', 'HOSUR', 'NAGERCOIL', 'KANCHEEPURAM',
+            'KANCHIPURAM', 'KUMBAKONAM', 'TIRUNELVELI', 'CUDDALORE', 'POLLACHI', 'PUDUKKOTTAI',
+            'VANIYAMBADI', 'AMBUR', 'NAGAPATTINAM', 'VILLUPURAM', 'THENI', 'ARIYALUR', 'PERAMBALUR',
+            'TIRUVANNAMALAI', 'DHARMAPURI', 'KRISHNAGIRI', 'TENKASI', 'MAYILADUTHURAI', 'VIRUDHUNAGAR'
+        ];
+
+        const otherStateCities = {
+            'BENGALURU': 'KARNATAKA', 'BANGALORE': 'KARNATAKA', 'MYSURU': 'KARNATAKA', 'MYSORE': 'KARNATAKA',
+            'MUMBAI': 'MAHARASHTRA', 'PUNE': 'MAHARASHTRA', 'NAGPUR': 'MAHARASHTRA', 'SURAT': 'GUJARAT',
+            'AHMEDABAD': 'GUJARAT', 'HYDERABAD': 'TELANGANA', 'KOLKATA': 'WEST BENGAL', 'JAIPUR': 'RAJASTHAN',
+            'KOCHI': 'KERALA', 'COCHIN': 'KERALA', 'THIRUVANANTHAPURAM': 'KERALA', 'TRIVANDRUM': 'KERALA',
+            'KOZHIKODE': 'KERALA', 'CALICUT': 'KERALA', 'LUCKNOW': 'UTTAR PRADESH', 'KANPUR': 'UTTAR PRADESH',
+            'INDORE': 'MADHYA PRADESH', 'BHOPAL': 'MADHYA PRADESH', 'PATNA': 'BIHAR', 'LUDHIANA': 'PUNJAB'
+        };
+
+        // 1. City is State
+        for (const [stName, aliases] of Object.entries(allIndianStates)) {
+            const stNorm = stName.replace(/[\s\-_.]+/g, '');
+            if (normCity === stNorm || aliases.includes(normCity)) {
+                event.preventDefault();
+                if (cityInput) cityInput.focus();
+                showValidationAlert(`Invalid City/District: "${rawCity.toUpperCase()}" is an Indian State name. Please enter a valid district or city.`);
+                return false;
+            }
+        }
+
+        // 2. State is City
+        for (const tn of tnCities) {
+            if (normState === tn.replace(/[\s\-_.]+/g, '')) {
+                event.preventDefault();
+                if (stateInput) stateInput.focus();
+                showValidationAlert(`Invalid State: "${rawState.toUpperCase()}" is a city or district in Tamil Nadu. Please enter TAMIL NADU as the state.`);
+                return false;
+            }
+        }
+        for (const [otherCity, expectedState] of Object.entries(otherStateCities)) {
+            if (normState === otherCity.replace(/[\s\-_.]+/g, '')) {
+                event.preventDefault();
+                if (stateInput) stateInput.focus();
+                showValidationAlert(`Invalid State: "${rawState.toUpperCase()}" is a city in ${expectedState}. Please enter ${expectedState} as the state.`);
+                return false;
+            }
+        }
+
+        // 3. State recognized
+        let matchedStateName = null;
+        for (const [stName, aliases] of Object.entries(allIndianStates)) {
+            const stNorm = stName.replace(/[\s\-_.]+/g, '');
+            if (normState === stNorm || aliases.includes(normState)) {
+                matchedStateName = stName;
+                break;
+            }
+        }
+        if (normState && !matchedStateName) {
+            event.preventDefault();
+            if (stateInput) stateInput.focus();
+            showValidationAlert(`Invalid State: "${rawState.toUpperCase()}" is not a recognized Indian State or UT.`);
+            return false;
+        }
+
+        // 4. City-State match
+        let isTnCity = false;
+        for (const tn of tnCities) {
+            const normTn = tn.replace(/[\s\-_.]+/g, '');
+            if (normCity === normTn || normCity.includes(normTn) || normTn.includes(normCity)) {
+                isTnCity = true;
+                break;
+            }
+        }
+        if (isTnCity && matchedStateName && matchedStateName !== 'TAMIL NADU') {
+            event.preventDefault();
+            if (stateInput) stateInput.focus();
+            showValidationAlert(`Location Mismatch: "${rawCity.toUpperCase()}" is in Tamil Nadu, but State is entered as "${rawState.toUpperCase()}".`);
+            return false;
+        }
+    }
+
     const btn = document.getElementById('btnSubmitPhase1');
     if (btn) {
         btn.disabled = true;

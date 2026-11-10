@@ -120,7 +120,22 @@ $taxValueForItem = static function (array $item, string $type): float {
                                 <div class="col-lg-1 col-md-3"><label class="form-label">RQ *</label><input class="form-control" value="<?= number_format((float)$item['quantity'], 0) ?>" disabled></div>
                                 <div class="col-lg-2 col-md-3"><label class="form-label required">Weight (kg) *</label><div class="input-group"><input type="number" min="0.01" step="0.01" name="items[<?= $key ?>][weight_kg]" class="form-control roll-weight" value="<?= e($item['weight_kg']) ?>" required><span class="input-group-text">kg</span></div></div>
                                 <div class="col-lg-2 col-md-3"><label class="form-label required">Price (₹) *</label><div class="input-group"><span class="input-group-text">₹</span><input type="number" min="0" step="0.01" name="items[<?= $key ?>][unit_price]" class="roll-price form-control" value="<?= e($item['unit_price']) ?>" required></div></div>
-                                <div class="col-lg-2 col-md-3"><label class="form-label">HSN Code</label><input name="items[<?= $key ?>][hsn_code]" class="form-control roll-hsn text-uppercase font-monospace" maxlength="50" value="<?= e($item['hsn_code'] ?? '') ?>" placeholder="E.G. 5208"></div>
+                                <div class="col-lg-2 col-md-3">
+                                    <label class="form-label">HSN Code</label>
+                                    <div class="dropdown hsn-dropdown w-100 position-relative">
+                                        <input type="hidden" name="items[<?= $key ?>][hsn_code]" class="roll-hsn" value="<?= e($item['hsn_code'] ?? '') ?>">
+                                        <button type="button" class="form-select form-select-sm text-start d-flex justify-content-between align-items-center hsn-dropdown-btn font-monospace py-1.5 px-2" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" style="font-size: 0.82rem; height: 38px;">
+                                            <span class="hsn-btn-text text-truncate">-- Select HSN --</span>
+                                        </button>
+                                        <div class="dropdown-menu shadow-lg p-2 hsn-dropdown-menu" style="min-width: 280px; max-width: 340px; z-index: 1055;">
+                                            <div class="input-group input-group-sm mb-2">
+                                                <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                                                <input type="text" class="form-control border-start-0 hsn-search-input" placeholder="Search HSN code or item..." autocomplete="off">
+                                            </div>
+                                            <div class="overflow-auto hsn-options-list" style="max-height: 200px;"></div>
+                                        </div>
+                                    </div>
+                                </div>
                                 <div class="col-lg-2 col-md-3"><label class="form-label">GST</label><select name="items[<?= $key ?>][gst_type]" class="form-select item-gst-type">
                                     <?php foreach (['SGST'=>'SGST','IGST'=>'IGST','CGST'=>'CGST','BOTH'=>'Both (CGST and SGST)','EXEMPTED'=>'Exempted'] as $type => $label): ?><option value="<?= e($type) ?>" <?= $gstType === $type ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?>
                                 </select></div>
@@ -184,7 +199,22 @@ $taxValueForItem = static function (array $item, string $type): float {
                         <input type="hidden" name="items[<?= $key ?>][id]" value="<?= $key ?>">
                         <input type="hidden" name="items[<?= $key ?>][item_type]" value="GENERAL_SUPPLY">
                         <div class="col-md-3"><label class="form-label">Item Name / Description *</label><input name="items[<?= $key ?>][item_name]" class="form-control supply-name" maxlength="255" value="<?= e($item['item_name']) ?>" required></div>
-                        <div class="col-md-2"><label class="form-label">HSN Code</label><input name="items[<?= $key ?>][hsn_code]" class="form-control supply-hsn text-uppercase font-monospace" maxlength="50" value="<?= e($item['hsn_code'] ?? '') ?>" placeholder="E.G. 9606"></div>
+                        <div class="col-md-2">
+                            <label class="form-label">HSN Code</label>
+                            <div class="dropdown hsn-dropdown w-100 position-relative">
+                                <input type="hidden" name="items[<?= $key ?>][hsn_code]" class="supply-hsn" value="<?= e($item['hsn_code'] ?? '') ?>">
+                                <button type="button" class="form-select form-select-sm text-start d-flex justify-content-between align-items-center hsn-dropdown-btn font-monospace py-1.5 px-2" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" style="font-size: 0.82rem; height: 38px;">
+                                    <span class="hsn-btn-text text-truncate">-- Select HSN --</span>
+                                </button>
+                                <div class="dropdown-menu shadow-lg p-2 hsn-dropdown-menu" style="min-width: 280px; max-width: 340px; z-index: 1055;">
+                                    <div class="input-group input-group-sm mb-2">
+                                        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                                        <input type="text" class="form-control border-start-0 hsn-search-input" placeholder="Search HSN code or item..." autocomplete="off">
+                                    </div>
+                                    <div class="overflow-auto hsn-options-list" style="max-height: 200px;"></div>
+                                </div>
+                            </div>
+                        </div>
                         <div class="col-md-2"><label class="form-label">Quantity *</label><input type="number" min="0.001" step="0.001" name="items[<?= $key ?>][quantity]" class="form-control supply-quantity" value="<?= e($item['quantity']) ?>" required></div>
                         <div class="col-md-2"><label class="form-label">Unit *</label><select name="items[<?= $key ?>][unit]" class="form-select supply-unit" required>
                             <?php foreach (['PCS'=>'Pieces','KG'=>'Kilograms','METRE'=>'Metres','LITRE'=>'Litres','BOX'=>'Boxes','PACK'=>'Packs','PAIR'=>'Pairs','SET'=>'Sets','BUNDLE'=>'Bundles'] as $unit => $label): ?><option value="<?= e($unit) ?>" <?= $item['unit'] === $unit ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?>
@@ -337,7 +367,22 @@ $taxValueForItem = static function (array $item, string $type): float {
 <template id="editSupplyTemplate">
     <div class="row g-2 align-items-end supply-row mb-3">
         <div class="col-md-3"><label class="form-label">Item Name / Description *</label><input class="form-control supply-name" maxlength="255" required></div>
-        <div class="col-md-2"><label class="form-label">HSN Code</label><input class="form-control supply-hsn text-uppercase font-monospace" maxlength="50" placeholder="E.G. 9606"></div>
+        <div class="col-md-2">
+            <label class="form-label">HSN Code</label>
+            <div class="dropdown hsn-dropdown w-100 position-relative">
+                <input type="hidden" class="supply-hsn">
+                <button type="button" class="form-select form-select-sm text-start d-flex justify-content-between align-items-center hsn-dropdown-btn font-monospace py-1.5 px-2" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" style="font-size: 0.82rem; height: 38px;">
+                    <span class="hsn-btn-text text-truncate">-- Select HSN --</span>
+                </button>
+                <div class="dropdown-menu shadow-lg p-2 hsn-dropdown-menu" style="min-width: 280px; max-width: 340px; z-index: 1055;">
+                    <div class="input-group input-group-sm mb-2">
+                        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" class="form-control border-start-0 hsn-search-input" placeholder="Search HSN code or item..." autocomplete="off">
+                    </div>
+                    <div class="overflow-auto hsn-options-list" style="max-height: 200px;"></div>
+                </div>
+            </div>
+        </div>
         <div class="col-md-2"><label class="form-label">Quantity *</label><input type="number" class="form-control supply-quantity" min="0.001" step="0.001" value="1" required></div>
         <div class="col-md-2"><label class="form-label">Unit *</label><select class="form-select supply-unit"><option value="PCS">Pieces</option><option value="KG">Kilograms</option><option value="METRE">Metres</option><option value="LITRE">Litres</option><option value="BOX">Boxes</option><option value="PACK">Packs</option><option value="PAIR">Pairs</option><option value="SET">Sets</option><option value="BUNDLE">Bundles</option><option value="OTHER">Other</option></select></div>
         <div class="col-md-2 custom-unit d-none"><label class="form-label">Unit Name *</label><input class="form-control custom-unit-name" maxlength="30"></div>
@@ -356,8 +401,117 @@ $taxValueForItem = static function (array $item, string $type): float {
     const form = document.getElementById('editProductionPurchaseForm');
     const rollsContainer = document.getElementById('rollsContainer');
     const suppliesContainer = document.getElementById('supplyRows');
+    window.hsnCodesList = <?= json_encode($hsnCodes ?? []) ?>;
     const money = value => '₹' + (Number(value) || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     const safe = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+
+    function initHsnDropdown(container, hiddenSelector) {
+        const dropdownEl = container.querySelector('.hsn-dropdown');
+        if (!dropdownEl) return;
+        const hiddenInput = dropdownEl.querySelector(hiddenSelector);
+        const btn = dropdownEl.querySelector('.hsn-dropdown-btn');
+        const btnText = dropdownEl.querySelector('.hsn-btn-text');
+        const searchInput = dropdownEl.querySelector('.hsn-search-input');
+        const listContainer = dropdownEl.querySelector('.hsn-options-list');
+
+        function updateBtnDisplay(code, desc) {
+            if (code) {
+                btnText.innerHTML = `<span class="fw-bold text-primary">${safe(code)}</span> ${desc ? `<span class="text-muted small">(${safe(desc).slice(0, 16)}${desc.length > 16 ? '...' : ''})</span>` : ''}`;
+            } else {
+                btnText.textContent = '-- Select HSN --';
+            }
+        }
+
+        if (hiddenInput && hiddenInput.value) {
+            const found = (window.hsnCodesList || []).find(h => String(h.hsn_code).toUpperCase() === hiddenInput.value.toUpperCase());
+            updateBtnDisplay(hiddenInput.value, found ? found.description : '');
+        }
+
+        function renderOptions(filter = '') {
+            const q = filter.trim().toLowerCase();
+            let html = `
+                <button type="button" class="dropdown-item py-1.5 px-2 small border-bottom hsn-opt-item text-muted" data-code="" data-desc="">
+                    <em>-- Clear / No HSN --</em>
+                </button>
+            `;
+            let matchCount = 0;
+            const currentVal = (hiddenInput ? hiddenInput.value : '').trim();
+
+            (window.hsnCodesList || []).forEach(h => {
+                const code = String(h.hsn_code || '').trim();
+                const desc = String(h.description || '').trim();
+                const gst = h.gst_rate ? Number(h.gst_rate) : null;
+                const searchStr = (code + ' ' + desc).toLowerCase();
+                if (q === '' || searchStr.includes(q)) {
+                    matchCount++;
+                    const isSelected = currentVal && currentVal.toUpperCase() === code.toUpperCase();
+                    html += `
+                        <button type="button" class="dropdown-item py-1.5 px-2 small border-bottom hsn-opt-item ${isSelected ? 'active' : ''}" 
+                                data-code="${safe(code)}" data-desc="${safe(desc)}" data-gst="${gst || 0}">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="font-monospace fw-bold text-primary">${safe(code)}</span>
+                                ${gst !== null ? `<span class="badge bg-light text-secondary border fs-8">${gst}% GST</span>` : ''}
+                            </div>
+                            <div class="text-truncate small text-muted" style="max-width: 250px;">${safe(desc)}</div>
+                        </button>
+                    `;
+                }
+            });
+
+            if (q !== '' && !matchCount) {
+                html += `
+                    <div class="text-muted p-2 text-center small">No matching standard HSN found.</div>
+                    <button type="button" class="dropdown-item py-1.5 px-2 small text-primary fw-semibold hsn-opt-item border-top" data-code="${safe(q.toUpperCase())}" data-desc="Custom HSN">
+                        <i class="bi bi-plus-circle me-1"></i>Use "${safe(q.toUpperCase())}"
+                    </button>
+                `;
+            }
+
+            listContainer.innerHTML = html;
+
+            listContainer.querySelectorAll('.hsn-opt-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const code = item.dataset.code || '';
+                    const desc = item.dataset.desc || '';
+                    if (hiddenInput) {
+                        hiddenInput.value = code;
+                    }
+                    updateBtnDisplay(code, desc);
+                    const bsDropdown = bootstrap.Dropdown.getInstance(btn);
+                    if (bsDropdown) bsDropdown.hide();
+                    if (hiddenInput) {
+                        hiddenInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+            });
+        }
+
+        renderOptions();
+
+        dropdownEl.addEventListener('shown.bs.dropdown', () => {
+            if (searchInput) {
+                searchInput.value = '';
+                renderOptions('');
+                searchInput.focus();
+            }
+        });
+
+        if (searchInput) {
+            searchInput.addEventListener('input', () => {
+                renderOptions(searchInput.value);
+            });
+            searchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const first = listContainer.querySelector('.hsn-opt-item:not(.text-muted)');
+                    if (first) first.click();
+                }
+            });
+        }
+    }
 
     function calculateTax(row, base) {
         const type = row.querySelector('.item-gst-type').value;
@@ -468,12 +622,16 @@ $taxValueForItem = static function (array $item, string $type): float {
         const key = `new-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
         const itemKey = `new_${key.replace(/[^A-Za-z0-9_]/g, '')}`;
         const names = {'.supply-name':'item_name','.supply-hsn':'hsn_code','.supply-quantity':'quantity','.supply-unit':'unit','.supply-price':'unit_price','.item-gst-type':'gst_type','.item-tax-mode':'tax_mode','.item-tax-value':'tax_value','.item-cgst-value':'cgst_tax_value'};
-        Object.entries(names).forEach(([selector, field]) => row.querySelector(selector).name = `items[${itemKey}][${field}]`);
+        Object.entries(names).forEach(([selector, field]) => {
+            const input = row.querySelector(selector);
+            if (input) input.name = `items[${itemKey}][${field}]`;
+        });
         const typeInput = document.createElement('input');
         typeInput.type = 'hidden';
         typeInput.name = `items[${itemKey}][item_type]`;
         typeInput.value = 'GENERAL_SUPPLY';
         row.appendChild(typeInput);
+        initHsnDropdown(row, '.supply-hsn');
         configureSupplyRow(row);
         suppliesContainer.appendChild(row);
         document.getElementById('emptySupplyMessage').classList.add('d-none');
@@ -593,6 +751,7 @@ $taxValueForItem = static function (array $item, string $type): float {
     }
 
     rollsContainer.querySelectorAll('.roll-card').forEach(card => {
+        initHsnDropdown(card, '.roll-hsn');
         card.querySelectorAll('input,select').forEach(input => {
             input.addEventListener('input', updateSummary);
             input.addEventListener('change', updateSummary);
@@ -601,7 +760,10 @@ $taxValueForItem = static function (array $item, string $type): float {
         card.querySelector('.item-tax-mode').addEventListener('change', () => { updateTaxFields(card); updateSummary(); });
         updateTaxFields(card);
     });
-    suppliesContainer.querySelectorAll('.supply-row').forEach(configureSupplyRow);
+    suppliesContainer.querySelectorAll('.supply-row').forEach(row => {
+        initHsnDropdown(row, '.supply-hsn');
+        configureSupplyRow(row);
+    });
     document.getElementById('editFabricDescription').addEventListener('input', updateSummary);
     document.getElementById('addSupply').addEventListener('click', addSupplyRow);
     document.getElementById('previewPurchaseLabels').addEventListener('click', previewLabels);
@@ -611,7 +773,16 @@ $taxValueForItem = static function (array $item, string $type): float {
         if (!hasRoll && !hasSupply) {
             event.preventDefault();
             alert('Add at least one fabric roll or general supply.');
+            return;
         }
+
+        // Clean up empty roll photo inputs so max_file_uploads is never exceeded
+        rollsContainer.querySelectorAll('.roll-card').forEach(card => {
+            const photoInput = card.querySelector('.roll-photo');
+            if (photoInput && (!photoInput.files || photoInput.files.length === 0)) {
+                photoInput.removeAttribute('name');
+            }
+        });
     });
     updateSummary();
 })();

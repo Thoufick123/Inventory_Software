@@ -1359,20 +1359,20 @@ function confirmDeleteFacility(type, id, name, actionUrl) {
 
     if (type === 'unit') {
         title.textContent = 'Delete Production Unit';
-        desc.innerHTML = `Are you sure you want to delete <strong class="text-danger">${name}</strong>? All operational assignments will be unlinked from active infrastructure.`;
-        notice.innerHTML = 'Units with active programs or cutting batches cannot be deleted. Any deletion will create an audit entry in the <strong>Live Staff Activity & System Change Logs</strong>.';
+        desc.innerHTML = `Are you sure you want to permanently delete <strong class="text-danger">${name}</strong>?`;
+        notice.innerHTML = 'All programs, cutting/stitching batches, and operational assignments will be unlinked from this facility. Deletion will be permanently recorded in the <strong>Live Staff Activity & System Change Logs</strong>.';
     } else if (type === 'warehouse') {
         title.textContent = 'Delete Central Warehouse';
-        desc.innerHTML = `Are you sure you want to delete warehouse <strong class="text-danger">${name}</strong>?`;
-        notice.innerHTML = 'Warehouses with on-hand inventory stock cannot be deleted. Deletion will be logged in System Audit Trail.';
+        desc.innerHTML = `Are you sure you want to permanently delete warehouse <strong class="text-danger">${name}</strong>?`;
+        notice.innerHTML = 'Associated warehouse locations and inventory records will be cleared. Deletion will be permanently logged in System Audit Trail.';
     } else if (type === 'shop') {
         title.textContent = 'Delete Retail Store';
-        desc.innerHTML = `Are you sure you want to delete retail outlet <strong class="text-danger">${name}</strong>?`;
-        notice.innerHTML = 'Retail outlets with historical transactions will be archived in the System Audit Trail.';
+        desc.innerHTML = `Are you sure you want to permanently delete retail store <strong class="text-danger">${name}</strong>?`;
+        notice.innerHTML = 'Associated store stock and POS assignments will be cleared. Action will be permanently logged in System Audit Trail.';
     } else {
         title.textContent = 'Delete Sales Channel';
-        desc.innerHTML = `Are you sure you want to delete channel <strong class="text-danger">${name}</strong>?`;
-        notice.innerHTML = 'Action will be logged in Live Staff Activity & System Change Logs.';
+        desc.innerHTML = `Are you sure you want to permanently delete channel <strong class="text-danger">${name}</strong>?`;
+        notice.innerHTML = 'Action will be permanently logged in Live Staff Activity & System Change Logs.';
     }
 
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
@@ -1410,7 +1410,7 @@ function confirmDeleteFacility(type, id, name, actionUrl) {
                     <div class="d-flex gap-2 justify-content-center">
                         <button type="button" class="btn btn-light px-4 fw-semibold border" data-bs-dismiss="modal">Cancel</button>
                         <button type="submit" class="btn btn-danger px-4 fw-semibold shadow-sm d-flex align-items-center gap-1">
-                            <i class="bi bi-trash me-1"></i> Yes, Delete Facility
+                            <i class="bi bi-trash me-1"></i> Confirm &amp; Delete
                         </button>
                     </div>
                 </form>

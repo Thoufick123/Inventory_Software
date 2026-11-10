@@ -91,15 +91,58 @@ class ProductionController {
 
     /**
      * Validate consistency between city/district and state.
-     * Prevents mismatched entry where a Tamil Nadu city is entered with another state,
-     * or a known city from another state is marked as Tamil Nadu.
+     * Prevents mismatched entry where a state is entered as city, a city is entered as state,
+     * or a known city from one state is marked under another state.
      */
     private function validateCityAndState(string $city, string $state): ?string {
         $c = strtoupper(trim($city));
         $s = strtoupper(trim($state));
+        $cNorm = preg_replace('/[\s\-_.]+/', '', $c);
         $sNorm = preg_replace('/[\s\-_.]+/', '', $s);
 
-        $isTamilNaduState = in_array($sNorm, ['TAMILNADU', 'TN'], true);
+        if ($cNorm === '' || $sNorm === '') {
+            return 'City/District and State are required fields.';
+        }
+
+        // All Indian States and Union Territories with normalized abbreviations
+        $allIndianStates = [
+            'TAMIL NADU' => ['TAMILNADU', 'TN'],
+            'ANDHRA PRADESH' => ['ANDHRAPRADESH', 'AP'],
+            'ARUNACHAL PRADESH' => ['ARUNACHALPRADESH', 'AR'],
+            'ASSAM' => ['ASSAM', 'AS'],
+            'BIHAR' => ['BIHAR', 'BR'],
+            'CHHATTISGARH' => ['CHHATTISGARH', 'CG'],
+            'GOA' => ['GOA', 'GA'],
+            'GUJARAT' => ['GUJARAT', 'GJ'],
+            'HARYANA' => ['HARYANA', 'HR'],
+            'HIMACHAL PRADESH' => ['HIMACHALPRADESH', 'HP'],
+            'JHARKHAND' => ['JHARKHAND', 'JH'],
+            'KARNATAKA' => ['KARNATAKA', 'KA'],
+            'KERALA' => ['KERALA', 'KL'],
+            'MADHYA PRADESH' => ['MADHYAPRADESH', 'MP'],
+            'MAHARASHTRA' => ['MAHARASHTRA', 'MH'],
+            'MANIPUR' => ['MANIPUR', 'MN'],
+            'MEGHALAYA' => ['MEGHALAYA', 'ML'],
+            'MIZORAM' => ['MIZORAM', 'MZ'],
+            'NAGALAND' => ['NAGALAND', 'NL'],
+            'ODISHA' => ['ODISHA', 'ORISSA', 'OD', 'OR'],
+            'PUNJAB' => ['PUNJAB', 'PB'],
+            'RAJASTHAN' => ['RAJASTHAN', 'RJ'],
+            'SIKKIM' => ['SIKKIM', 'SK'],
+            'TELANGANA' => ['TELANGANA', 'TS', 'TG'],
+            'TRIPURA' => ['TRIPURA', 'TR'],
+            'UTTAR PRADESH' => ['UTTARPRADESH', 'UP'],
+            'UTTARAKHAND' => ['UTTARAKHAND', 'UK', 'UA'],
+            'WEST BENGAL' => ['WESTBENGAL', 'WB'],
+            'DELHI' => ['DELHI', 'DL', 'NEWDELHI'],
+            'JAMMU AND KASHMIR' => ['JAMMUANDKASHMIR', 'JAMMUKASHMIR', 'JK'],
+            'LADAKH' => ['LADAKH', 'LA'],
+            'PUDUCHERRY' => ['PUDUCHERRY', 'PONDICHERRY', 'PY'],
+            'CHANDIGARH' => ['CHANDIGARH', 'CH'],
+            'DADRA AND NAGAR HAVELI AND DAMAN AND DIU' => ['DADRAANDNAGARHAVELIANDDAMANANDDIU', 'DAMAN', 'DIU', 'DNH'],
+            'ANDAMAN AND NICOBAR ISLANDS' => ['ANDAMANANDNICOBARISLANDS', 'ANDAMAN', 'AN'],
+            'LAKSHADWEEP' => ['LAKSHADWEEP', 'LD']
+        ];
 
         // Comprehensive list of Tamil Nadu districts and prominent industrial towns
         $tnCities = [
@@ -151,9 +194,42 @@ class ProductionController {
             'PATNA' => 'BIHAR', 'LUDHIANA' => 'PUNJAB', 'AMRITSAR' => 'PUNJAB', 'CHANDIGARH' => 'CHANDIGARH'
         ];
 
-        $cNorm = preg_replace('/[\s\-_.]+/', '', $c);
+        // 1. Check if City/District is mistakenly entered as an Indian State
+        foreach ($allIndianStates as $stateName => $aliases) {
+            $stNorm = preg_replace('/[\s\-_.]+/', '', $stateName);
+            if ($cNorm === $stNorm || in_array($cNorm, $aliases, true)) {
+                return "Invalid City/District: '{$city}' is an Indian State name, not a city or district. Please enter a valid district (e.g. COIMBATORE, TIRUPPUR, ERODE, CHENNAI).";
+            }
+        }
 
-        // Check if city belongs to Tamil Nadu
+        // 2. Check if State is mistakenly entered as a known City/District
+        foreach ($tnCities as $tnCity) {
+            $tnNorm = preg_replace('/[\s\-_.]+/', '', $tnCity);
+            if ($sNorm === $tnNorm || $s === $tnCity) {
+                return "Invalid State: '{$state}' is a city or district in Tamil Nadu, not a state. Please enter TAMIL NADU as the state.";
+            }
+        }
+        foreach ($otherStateCities as $otherCity => $expectedState) {
+            $otherNorm = preg_replace('/[\s\-_.]+/', '', $otherCity);
+            if ($sNorm === $otherNorm || $s === $otherCity) {
+                return "Invalid State: '{$state}' is a city in {$expectedState}, not a state. Please enter {$expectedState} as the state.";
+            }
+        }
+
+        // 3. Check if State is a recognized Indian State or UT
+        $matchedStateName = null;
+        foreach ($allIndianStates as $stateName => $aliases) {
+            $stNorm = preg_replace('/[\s\-_.]+/', '', $stateName);
+            if ($sNorm === $stNorm || in_array($sNorm, $aliases, true)) {
+                $matchedStateName = $stateName;
+                break;
+            }
+        }
+        if (!$matchedStateName) {
+            return "Invalid State: '{$state}' is not a recognized Indian State or Union Territory. Please enter a valid State (e.g. TAMIL NADU, KARNATAKA, KERALA).";
+        }
+
+        // 4. Check City-State Location Consistency
         $isTnCity = false;
         foreach ($tnCities as $tnCity) {
             $tnNorm = preg_replace('/[\s\-_.]+/', '', $tnCity);
@@ -163,20 +239,16 @@ class ProductionController {
             }
         }
 
-        if ($isTnCity && !$isTamilNaduState) {
-            return "The city '{$city}' is located in Tamil Nadu, but the State is entered as '{$state}'. Please set the state to TAMIL NADU.";
+        if ($isTnCity && $matchedStateName !== 'TAMIL NADU') {
+            return "Location Mismatch: '{$city}' is located in Tamil Nadu, but the State is entered as '{$state}'. Please set the state to TAMIL NADU.";
         }
 
-        // Check if city belongs to another state
         foreach ($otherStateCities as $otherCity => $expectedState) {
             $otherNorm = preg_replace('/[\s\-_.]+/', '', $otherCity);
             if ($cNorm === $otherNorm || str_contains($cNorm, $otherNorm) || str_contains($otherNorm, $cNorm)) {
-                if ($isTamilNaduState) {
-                    return "The city '{$city}' is located in {$expectedState}, but the State is entered as TAMIL NADU. Please correct the state or city.";
-                }
-                $expStateNorm = preg_replace('/[\s\-_.]+/', '', $expectedState);
-                if ($sNorm !== '' && $sNorm !== $expStateNorm) {
-                    return "The city '{$city}' is located in {$expectedState}, but the State is entered as '{$state}'. Please correct the state to {$expectedState}.";
+                $expNorm = preg_replace('/[\s\-_.]+/', '', $expectedState);
+                if ($matchedStateName !== $expectedState && $sNorm !== $expNorm) {
+                    return "Location Mismatch: '{$city}' is located in {$expectedState}, but the State is entered as '{$state}'. Please set the state to {$expectedState}.";
                 }
                 break;
             }
@@ -229,6 +301,14 @@ class ProductionController {
         }
         if ($gstNumber !== '' && !preg_match('/^[0-9A-Z]{15}$/', $gstNumber)) {
             Session::flash('error', 'GST number must be a valid 15-character alphanumeric code.');
+            Response::back();
+            return;
+        }
+
+        if (mb_strlen($address) < 6 || !preg_match('/[a-zA-Z]/', $address)) {
+            $msg = 'Full Business Address must include valid street/door/area details (at least 6 characters).';
+            Session::flash('error', $msg);
+            Session::flash('city_state_error', $msg);
             Response::back();
             return;
         }
@@ -310,6 +390,14 @@ class ProductionController {
         }
         if ($gstNumber !== '' && !preg_match('/^[0-9A-Z]{15}$/', $gstNumber)) {
             Session::flash('error', 'GST number must be a valid 15-character alphanumeric code.');
+            Response::back();
+            return;
+        }
+
+        if (mb_strlen($address) < 6 || !preg_match('/[a-zA-Z]/', $address)) {
+            $msg = 'Full Business Address must include valid street/door/area details (at least 6 characters).';
+            Session::flash('error', $msg);
+            Session::flash('city_state_error', $msg);
             Response::back();
             return;
         }
@@ -687,12 +775,14 @@ class ProductionController {
              ORDER BY ppi.id",
             [(int)$purchase['id']]
         );
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         Response::view('production.purchases.edit', [
             'pageTitle' => 'Edit Purchase ' . $purchase['purchase_number'],
             'activeModule' => 'production',
             'activeMenu' => 'prod-purchases',
             'purchase' => $purchase,
             'items' => $items,
+            'hsnCodes' => $hsnCodes,
             'breadcrumb' => [
                 ['label' => 'Production', 'url' => url('production/dashboard')],
                 ['label' => 'Purchases', 'url' => url('production/purchases')],
@@ -724,7 +814,19 @@ class ProductionController {
             return;
         }
 
-        $submittedItems = $_POST['items'] ?? [];
+        $submittedItems = [];
+        if (!empty($_POST['items_payload']) && is_string($_POST['items_payload'])) {
+            $decoded = json_decode($_POST['items_payload'], true);
+            if (is_array($decoded)) {
+                $submittedItems = $decoded;
+            }
+        }
+        if (empty($submittedItems)) {
+            $submittedItems = $_POST['items'] ?? [];
+            if (is_string($submittedItems)) {
+                $submittedItems = json_decode($submittedItems, true) ?: [];
+            }
+        }
         if (!is_array($submittedItems)) {
             Session::flash('error', 'Invalid purchase items submitted.');
             Response::back();
@@ -994,7 +1096,7 @@ class ProductionController {
                 Database::rollback();
             }
             error_log('Production purchase could not be updated: ' . $e->getMessage());
-            Session::flash('error', 'Purchase could not be updated. Please review the entries and try again.');
+            Session::flash('error', 'Purchase could not be updated: ' . $e->getMessage());
             Response::back();
         }
     }
@@ -1063,11 +1165,13 @@ class ProductionController {
              WHERE seller_type = 'MATERIAL_SUPPLIER' AND (is_active = 1 OR is_active IS NULL)
              ORDER BY company, name"
         );
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         Response::view('production.purchases.create', [
             'pageTitle' => 'Record Production Purchase',
             'activeModule' => 'production',
             'activeMenu' => 'prod-purchases',
             'sellers' => $sellers,
+            'hsnCodes' => $hsnCodes,
             'breadcrumb' => [
                 ['label' => 'Production', 'url' => url('production/dashboard')],
                 ['label' => 'Purchases', 'url' => url('production/purchases')],
@@ -1103,7 +1207,19 @@ class ProductionController {
             return;
         }
 
-        $submittedItems = $_POST['items'] ?? [];
+        $submittedItems = [];
+        if (!empty($_POST['items_payload']) && is_string($_POST['items_payload'])) {
+            $decoded = json_decode($_POST['items_payload'], true);
+            if (is_array($decoded)) {
+                $submittedItems = $decoded;
+            }
+        }
+        if (empty($submittedItems)) {
+            $submittedItems = $_POST['items'] ?? [];
+            if (is_string($submittedItems)) {
+                $submittedItems = json_decode($submittedItems, true) ?: [];
+            }
+        }
         if (!is_array($submittedItems)) {
             $submittedItems = [];
         }
@@ -1300,13 +1416,29 @@ class ProductionController {
                 [$purchaseNumber, $purchaseId]
             );
 
+            $currentSeqData = null;
+            $currentEndSeq = 0;
+            $prefix = '';
+
             foreach ($items as $item) {
                 $sellerRollId = null;
                 if ($item['type'] === 'FABRIC_ROLL') {
-                    $sequence = ProductionService::getNextFabricRollSequence((int)$item['quantity'], $purchaseDate);
-                    $rollQrCode = $item['quantity'] > 1
-                        ? $sequence['start_code'] . '-' . $sequence['end_code']
-                        : $sequence['start_code'];
+                    $rollQty = max(1, (int)$item['quantity']);
+                    if ($currentSeqData === null) {
+                        $currentSeqData = ProductionService::getNextFabricRollSequence($rollQty, $purchaseDate);
+                        $startSeq = (int)$currentSeqData['start_seq'];
+                        $endSeq = (int)$currentSeqData['end_seq'];
+                        $prefix = $currentSeqData['prefix'];
+                        $currentEndSeq = $endSeq;
+                    } else {
+                        $startSeq = $currentEndSeq + 1;
+                        $endSeq = $startSeq + $rollQty - 1;
+                        $currentEndSeq = $endSeq;
+                    }
+                    $startCode = sprintf('%s%02d', $prefix, $startSeq);
+                    $endCode = sprintf('%s%02d', $prefix, $endSeq);
+                    $rollQrCode = $rollQty > 1 ? ($startCode . '-' . $endCode) : $startCode;
+
                     Database::execute(
                         "INSERT INTO seller_rolls
                             (seller_id, roll_number, color, design_name, design_count, quantity, weight, price,
@@ -1314,7 +1446,7 @@ class ProductionController {
                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         [$sellerId, $item['roll_number'], $item['color'], $item['design_name'], $item['design_count'],
                             $item['quantity'], $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'],
-                            $sequence['start_seq'], $sequence['end_seq'], $sequence['start_code'], $sequence['end_code'], $rollQrCode, $item['hsn_code']]
+                            $startSeq, $endSeq, $startCode, $endCode, $rollQrCode, $item['hsn_code']]
                     );
                     $sellerRollId = (int)Database::lastInsertId();
                 }
@@ -1351,7 +1483,7 @@ class ProductionController {
                 Database::rollback();
             }
             error_log('Production purchase could not be saved: ' . $e->getMessage());
-            Session::flash('error', 'Purchase could not be saved. Please review the entries and try again.');
+            Session::flash('error', 'Purchase could not be saved: ' . $e->getMessage());
             Response::back();
         }
     }
@@ -8278,12 +8410,14 @@ class ProductionController {
             return;
         }
 
+        $batchNumber = !empty($_POST['batch_number']) ? trim((string)$_POST['batch_number']) : ($batch['batch_number'] ?? '');
         $warehouseId = !empty($_POST['destination_warehouse_id']) ? (int)$_POST['destination_warehouse_id'] : (int)$batch['destination_warehouse_id'];
         $boxCount = isset($_POST['box_count']) ? (int)$_POST['box_count'] : (int)($batch['box_count'] ?? 0);
         $status = !empty($_POST['status']) ? trim($_POST['status']) : ($batch['status'] ?? 'PREPARING');
         $notes = trim($_POST['notes'] ?? '');
 
         $updateData = [
+            'batch_number'             => $batchNumber ?: ($batch['batch_number'] ?? ''),
             'destination_warehouse_id' => $warehouseId,
             'box_count'                => max(1, $boxCount),
             'status'                   => $status,
@@ -8305,10 +8439,27 @@ class ProductionController {
 
         ProductionBatch::update($batchId, $updateData);
 
-        // Keep outward in sync if destination warehouse changed
-        Database::execute("UPDATE production_outwards SET warehouse_id = ?, total_boxes = ? WHERE production_batch_id = ?", [$warehouseId, max(1, $boxCount), $batchId]);
+        // Keep outward in sync if outward exists or destination warehouse / logistics changed
+        $transporterName = trim((string)($_POST['transporter_name'] ?? ''));
+        $vehicleNumber = trim((string)($_POST['vehicle_number'] ?? ''));
+        $lrNumber = trim((string)($_POST['lr_number'] ?? ''));
+        $driverName = trim((string)($_POST['driver_name'] ?? ''));
+        $driverContact = trim((string)($_POST['driver_contact'] ?? ''));
+        $totalQty = $updateData['total_qty'] ?? ($batch['total_qty'] ?? 0);
 
-        Session::flash('success', 'Production Batch ' . ($batch['batch_number'] ?? ('#' . $batchId)) . ' updated successfully.');
+        Database::execute(
+            "UPDATE production_outwards 
+             SET warehouse_id = ?, total_boxes = ?, total_quantity = ?,
+                 transporter_name = COALESCE(NULLIF(?, ''), transporter_name),
+                 vehicle_number = COALESCE(NULLIF(?, ''), vehicle_number),
+                 lr_number = COALESCE(NULLIF(?, ''), lr_number),
+                 driver_name = COALESCE(NULLIF(?, ''), driver_name),
+                 driver_contact = COALESCE(NULLIF(?, ''), driver_contact)
+             WHERE production_batch_id = ?",
+            [$warehouseId, max(1, $boxCount), $totalQty, $transporterName, $vehicleNumber, $lrNumber, $driverName, $driverContact, $batchId]
+        );
+
+        Session::flash('success', 'Production Batch ' . ($updateData['batch_number'] ?? ('#' . $batchId)) . ' updated successfully.');
         Response::redirect(url('production/batches'));
     }
 

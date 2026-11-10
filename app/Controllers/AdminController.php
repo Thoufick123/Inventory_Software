@@ -1038,16 +1038,28 @@ class AdminController {
             $unit = ProductionUnit::find($unitId);
             $unitName = $unit['name'] ?? "ID #{$unitId}";
 
-            // Check if programs are linked
-            $progCount = (int)(Database::fetchOne("SELECT COUNT(*) as cnt FROM production_programs WHERE production_unit_id = ?", [$unitId])['cnt'] ?? 0);
-            if ($progCount > 0) {
-                Response::redirect(url('admin/dashboard?tab=production-units'), 'error', "Cannot delete production unit \"{$unitName}\": {$progCount} active production program(s) are assigned to it. Reassign or complete programs before deleting.");
-            }
+            Database::beginTransaction();
+            Database::execute("SET FOREIGN_KEY_CHECKS = 0");
+
+            // Unlink all programs, batches, outwards, reworks, damages, and users referencing this production unit
+            Database::execute("UPDATE production_programs SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]);
+            Database::execute("UPDATE cutting_batches SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]);
+            Database::execute("UPDATE stitching_batches SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]);
+            Database::execute("UPDATE production_outwards SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]);
+            Database::execute("UPDATE production_warehouse_reworks SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]);
+            Database::execute("UPDATE warehouse_damages SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]);
+            Database::execute("UPDATE users SET production_unit_id = NULL WHERE production_unit_id = ?", [$unitId]);
 
             ProductionUnit::delete($unitId);
+
+            Database::execute("SET FOREIGN_KEY_CHECKS = 1");
+            Database::commit();
+
             AuditService::log('production_units', 'delete', 'production_units', $unitId, "Deleted Production Facility: {$unitName}");
             Response::redirect(url('admin/dashboard?tab=production-units'), 'success', "Production Unit \"{$unitName}\" deleted successfully. Action permanently recorded in Live Staff Activity & System Change Logs.");
         } catch (Exception $e) {
+            Database::rollback();
+            try { Database::execute("SET FOREIGN_KEY_CHECKS = 1"); } catch (Exception $ignored) {}
             Response::redirect(url('admin/dashboard?tab=production-units'), 'error', 'Error deleting production unit: ' . $e->getMessage());
         }
     }
@@ -1205,16 +1217,30 @@ class AdminController {
 
         $whId = (int)$id;
         try {
-            // Check stock balances
-            $stockCount = (float)(Database::fetchOne("SELECT COALESCE(SUM(quantity), 0) as total FROM stock_balances WHERE location_type = 'WAREHOUSE' AND location_id = ?", [$whId])['total'] ?? 0);
-            if ($stockCount > 0) {
-                Response::redirect(url('admin/dashboard?tab=warehouses'), 'error', "Cannot delete warehouse: It holds {$stockCount} active inventory units. Please transfer stock or deactivate it.");
-            }
+            $wh = Warehouse::find($whId);
+            $whName = $wh['name'] ?? "ID #{$whId}";
+
+            Database::beginTransaction();
+            Database::execute("SET FOREIGN_KEY_CHECKS = 0");
+
+            // Clean up stock balances, locations, and unlink users/returns/outwards
+            Database::execute("DELETE FROM stock_balances WHERE location_type = 'WAREHOUSE' AND location_id = ?", [$whId]);
+            Database::execute("DELETE FROM locations WHERE warehouse_id = ?", [$whId]);
+            Database::execute("DELETE FROM warehouse_qr_codes WHERE warehouse_id = ?", [$whId]);
+            Database::execute("UPDATE users SET warehouse_id = NULL WHERE warehouse_id = ?", [$whId]);
+            Database::execute("UPDATE returns SET warehouse_id = NULL WHERE warehouse_id = ?", [$whId]);
+            Database::execute("UPDATE production_outwards SET warehouse_id = NULL WHERE warehouse_id = ?", [$whId]);
 
             Warehouse::delete($whId);
-            AuditService::log('warehouses', 'delete', 'warehouses', $whId);
-            Response::redirect(url('admin/dashboard?tab=warehouses'), 'success', 'Warehouse deleted successfully.');
+
+            Database::execute("SET FOREIGN_KEY_CHECKS = 1");
+            Database::commit();
+
+            AuditService::log('warehouses', 'delete', 'warehouses', $whId, "Deleted Central Warehouse: {$whName}");
+            Response::redirect(url('admin/dashboard?tab=warehouses'), 'success', "Warehouse \"{$whName}\" deleted successfully.");
         } catch (Exception $e) {
+            Database::rollback();
+            try { Database::execute("SET FOREIGN_KEY_CHECKS = 1"); } catch (Exception $ignored) {}
             Response::redirect(url('admin/dashboard?tab=warehouses'), 'error', 'Error deleting warehouse: ' . $e->getMessage());
         }
     }
@@ -1328,16 +1354,26 @@ class AdminController {
 
         $shopId = (int)$id;
         try {
-            // Check stock balances
-            $stockCount = (float)(Database::fetchOne("SELECT COALESCE(SUM(quantity), 0) as total FROM stock_balances WHERE location_type = 'SHOP' AND location_id = ?", [$shopId])['total'] ?? 0);
-            if ($stockCount > 0) {
-                Response::redirect(url('admin/dashboard?tab=shops'), 'error', "Cannot delete shop: It holds {$stockCount} active stock items. Please transfer stock or deactivate it.");
-            }
+            $shop = Shop::find($shopId);
+            $shopName = $shop['name'] ?? "ID #{$shopId}";
+
+            Database::beginTransaction();
+            Database::execute("SET FOREIGN_KEY_CHECKS = 0");
+
+            // Clean up stock balances and unlink sales
+            Database::execute("DELETE FROM stock_balances WHERE location_type = 'SHOP' AND location_id = ?", [$shopId]);
+            Database::execute("UPDATE sales SET shop_id = NULL WHERE shop_id = ?", [$shopId]);
 
             Shop::delete($shopId);
-            AuditService::log('shops', 'delete', 'shops', $shopId);
-            Response::redirect(url('admin/dashboard?tab=shops'), 'success', 'Retail Shop deleted successfully.');
+
+            Database::execute("SET FOREIGN_KEY_CHECKS = 1");
+            Database::commit();
+
+            AuditService::log('shops', 'delete', 'shops', $shopId, "Deleted Retail Shop: {$shopName}");
+            Response::redirect(url('admin/dashboard?tab=shops'), 'success', "Retail Shop \"{$shopName}\" deleted successfully.");
         } catch (Exception $e) {
+            Database::rollback();
+            try { Database::execute("SET FOREIGN_KEY_CHECKS = 1"); } catch (Exception $ignored) {}
             Response::redirect(url('admin/dashboard?tab=shops'), 'error', 'Error deleting shop: ' . $e->getMessage());
         }
     }

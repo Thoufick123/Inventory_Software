@@ -207,8 +207,64 @@
         'PATNA': 'BIHAR', 'LUDHIANA': 'PUNJAB', 'AMRITSAR': 'PUNJAB', 'CHANDIGARH': 'CHANDIGARH'
     };
 
+    // All recognized Indian States & UTs
+    const allIndianStates = {
+        'TAMIL NADU': ['TAMILNADU', 'TN'],
+        'ANDHRA PRADESH': ['ANDHRAPRADESH', 'AP'],
+        'ARUNACHAL PRADESH': ['ARUNACHALPRADESH', 'AR'],
+        'ASSAM': ['ASSAM', 'AS'],
+        'BIHAR': ['BIHAR', 'BR'],
+        'CHHATTISGARH': ['CHHATTISGARH', 'CG'],
+        'GOA': ['GOA', 'GA'],
+        'GUJARAT': ['GUJARAT', 'GJ'],
+        'HARYANA': ['HARYANA', 'HR'],
+        'HIMACHAL PRADESH': ['HIMACHALPRADESH', 'HP'],
+        'JHARKHAND': ['JHARKHAND', 'JH'],
+        'KARNATAKA': ['KARNATAKA', 'KA'],
+        'KERALA': ['KERALA', 'KL'],
+        'MADHYA PRADESH': ['MADHYAPRADESH', 'MP'],
+        'MAHARASHTRA': ['MAHARASHTRA', 'MH'],
+        'MANIPUR': ['MANIPUR', 'MN'],
+        'MEGHALAYA': ['MEGHALAYA', 'ML'],
+        'MIZORAM': ['MIZORAM', 'MZ'],
+        'NAGALAND': ['NAGALAND', 'NL'],
+        'ODISHA': ['ODISHA', 'ORISSA', 'OD', 'OR'],
+        'PUNJAB': ['PUNJAB', 'PB'],
+        'RAJASTHAN': ['RAJASTHAN', 'RJ'],
+        'SIKKIM': ['SIKKIM', 'SK'],
+        'TELANGANA': ['TELANGANA', 'TS', 'TG'],
+        'TRIPURA': ['TRIPURA', 'TR'],
+        'UTTAR PRADESH': ['UTTARPRADESH', 'UP'],
+        'UTTARAKHAND': ['UTTARAKHAND', 'UK', 'UA'],
+        'WEST BENGAL': ['WESTBENGAL', 'WB'],
+        'DELHI': ['DELHI', 'DL', 'NEWDELHI'],
+        'JAMMU AND KASHMIR': ['JAMMUANDKASHMIR', 'JAMMUKASHMIR', 'JK'],
+        'LADAKH': ['LADAKH', 'LA'],
+        'PUDUCHERRY': ['PUDUCHERRY', 'PONDICHERRY', 'PY'],
+        'CHANDIGARH': ['CHANDIGARH', 'CH'],
+        'DADRA AND NAGAR HAVELI AND DAMAN AND DIU': ['DADRAANDNAGARHAVELIANDDAMANANDDIU', 'DAMAN', 'DIU'],
+        'ANDAMAN AND NICOBAR ISLANDS': ['ANDAMANANDNICOBARISLANDS', 'ANDAMAN', 'AN'],
+        'LAKSHADWEEP': ['LAKSHADWEEP', 'LD']
+    };
+
     function normalizeText(txt) {
         return (txt || '').toUpperCase().trim().replace(/[\s\-_.]+/g, '');
+    }
+
+    const addressInput = document.querySelector('textarea[name="address"]');
+    function checkAddress() {
+        if (!addressInput) return true;
+        const val = addressInput.value.trim();
+        if (val.length < 6 || !/[a-zA-Z]/.test(val)) {
+            addressInput.classList.add('is-invalid');
+            return false;
+        }
+        addressInput.classList.remove('is-invalid');
+        return true;
+    }
+    if (addressInput) {
+        addressInput.addEventListener('input', checkAddress);
+        addressInput.addEventListener('blur', checkAddress);
     }
 
     function checkCityState() {
@@ -217,14 +273,49 @@
         const normCity = normalizeText(rawCity);
         const normState = normalizeText(rawState);
 
-        if (!normCity || !normState) {
+        if (!normCity && !normState) {
             clearAlert();
             return true;
         }
 
-        const isTamilNaduState = (normState === 'TAMILNADU' || normState === 'TN');
+        // 1. Check if City/District is entered as a State name
+        for (const [stName, aliases] of Object.entries(allIndianStates)) {
+            const stNorm = normalizeText(stName);
+            if (normCity === stNorm || aliases.includes(normCity)) {
+                showAlert(`<strong>Invalid City/District:</strong> "${rawCity.toUpperCase()}" is an Indian State name. Please enter a valid district or city (e.g. COIMBATORE, TIRUPPUR, CHENNAI).`, true, false);
+                return false;
+            }
+        }
 
-        // Check if city belongs to Tamil Nadu
+        // 2. Check if State is entered as a City/District
+        for (const tn of tnCities) {
+            if (normState === normalizeText(tn)) {
+                showAlert(`<strong>Invalid State:</strong> "${rawState.toUpperCase()}" is a city or district in Tamil Nadu. Please enter <strong>TAMIL NADU</strong> as the state.`, false, true);
+                return false;
+            }
+        }
+        for (const [otherCity, expectedState] of Object.entries(otherStateCities)) {
+            if (normState === normalizeText(otherCity)) {
+                showAlert(`<strong>Invalid State:</strong> "${rawState.toUpperCase()}" is a city in ${expectedState}. Please enter <strong>${expectedState}</strong> as the state.`, false, true);
+                return false;
+            }
+        }
+
+        // 3. Check if State is a valid recognized Indian State
+        let matchedStateName = null;
+        for (const [stName, aliases] of Object.entries(allIndianStates)) {
+            const stNorm = normalizeText(stName);
+            if (normState === stNorm || aliases.includes(normState)) {
+                matchedStateName = stName;
+                break;
+            }
+        }
+        if (normState && !matchedStateName) {
+            showAlert(`<strong>Invalid State:</strong> "${rawState.toUpperCase()}" is not a recognized Indian State or UT. Please enter a valid state (e.g. TAMIL NADU, KARNATAKA, KERALA).`, false, true);
+            return false;
+        }
+
+        // 4. Check City-State Location consistency
         let isTnCity = false;
         for (const tn of tnCities) {
             const normTn = normalizeText(tn);
@@ -234,21 +325,15 @@
             }
         }
 
-        if (isTnCity && !isTamilNaduState) {
+        if (isTnCity && matchedStateName && matchedStateName !== 'TAMIL NADU') {
             showAlert(`<strong>Location Mismatch:</strong> "${rawCity.toUpperCase()}" is located in Tamil Nadu, but the State is entered as "${rawState.toUpperCase()}". Please enter <strong>TAMIL NADU</strong> as the state.`, true, true);
             return false;
         }
 
-        // Check if city belongs to another state but state is Tamil Nadu
         for (const [otherCity, otherState] of Object.entries(otherStateCities)) {
             const normOther = normalizeText(otherCity);
             if (normCity === normOther || normCity.includes(normOther) || normOther.includes(normCity)) {
-                if (isTamilNaduState) {
-                    showAlert(`<strong>Location Mismatch:</strong> "${rawCity.toUpperCase()}" is located in ${otherState}, but the State is entered as TAMIL NADU. Please correct the state or city.`, true, true);
-                    return false;
-                }
-                const normExpected = normalizeText(otherState);
-                if (normState && normState !== normExpected) {
+                if (matchedStateName && matchedStateName !== otherState) {
                     showAlert(`<strong>Location Mismatch:</strong> "${rawCity.toUpperCase()}" is located in ${otherState}, but the State is entered as "${rawState.toUpperCase()}". Please set State to ${otherState}.`, true, true);
                     return false;
                 }
@@ -293,6 +378,16 @@
             e.stopPropagation();
             alertContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
             stateInput.focus();
+            return false;
+        }
+
+        if (!checkAddress()) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (addressInput) {
+                addressInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                addressInput.focus();
+            }
             return false;
         }
     });
