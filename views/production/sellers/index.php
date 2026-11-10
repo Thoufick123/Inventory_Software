@@ -30,7 +30,7 @@
           
             <div class="col-lg-2 d-flex gap-2">
                 <button type="submit" class="btn btn-primary flex-grow-1"><i class="bi bi-search me-1"></i>Filter</button>
-                <?php if ($search !== '' || $city !== '' || $status !== ''): ?>
+                <?php if ($search !== '' || $city !== ''): ?>
                     <a href="<?= url('production/sellers') ?>" class="btn btn-outline-secondary" aria-label="Clear filters"><i class="bi bi-x-lg"></i></a>
                 <?php endif; ?>
             </div>

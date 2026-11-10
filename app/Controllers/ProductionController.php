@@ -89,6 +89,102 @@ class ProductionController {
     // SELLERS (Material Suppliers)
     // =========================================================================
 
+    /**
+     * Validate consistency between city/district and state.
+     * Prevents mismatched entry where a Tamil Nadu city is entered with another state,
+     * or a known city from another state is marked as Tamil Nadu.
+     */
+    private function validateCityAndState(string $city, string $state): ?string {
+        $c = strtoupper(trim($city));
+        $s = strtoupper(trim($state));
+        $sNorm = preg_replace('/[\s\-_.]+/', '', $s);
+
+        $isTamilNaduState = in_array($sNorm, ['TAMILNADU', 'TN'], true);
+
+        // Comprehensive list of Tamil Nadu districts and prominent industrial towns
+        $tnCities = [
+            'ARIYALUR', 'CHENGALPATTU', 'CHENGALPET', 'CHENNAI', 'MADRAS', 'COIMBATORE', 'KOVAI',
+            'CUDDALORE', 'DHARMAPURI', 'DINDIGUL', 'ERODE', 'KALLAKURICHI', 'KANCHIPURAM',
+            'KANCHEEPURAM', 'KANYAKUMARI', 'NAGERCOIL', 'KARUR', 'KRISHNAGIRI', 'MADURAI',
+            'MAYILADUTHURAI', 'NAGAPATTINAM', 'NAMAKKAL', 'NILGIRIS', 'UDHAGAMANDALAM', 'OOTY',
+            'COONOOR', 'PERAMBALUR', 'PUDUKKOTTAI', 'RAMANATHAPURAM', 'RAMNAD', 'RANIPET',
+            'SALEM', 'SIVAGANGA', 'SIVAGANGAI', 'TENKASI', 'THANJAVUR', 'TANJORE', 'THENI',
+            'THOOTHUKUDI', 'TUTICORIN', 'TIRUCHIRAPPALLI', 'TIRUCHIRAPALLI', 'TRICHY', 'TIRUCHI',
+            'TIRUNELVELI', 'NELLAI', 'TIRUPATHUR', 'TIRUPATTUR', 'TIRUPPUR', 'TIRUPUR',
+            'TIRUVALLUR', 'THIRUVALLUR', 'TIRUVANNAMALAI', 'THIRUVANNAMALAI', 'TIRUVARUR',
+            'THIRUVARUR', 'VELLORE', 'VILUPPURAM', 'VILLUPURAM', 'VIRUDHUNAGAR', 'POLLACHI',
+            'METTUPALAYAM', 'AVINASHI', 'PALLADAM', 'KANGEYAM', 'KANGAYAM', 'DHARAPURAM',
+            'UDUMALAIPETTAI', 'UDUMALPET', 'GOBICHETTIPALAYAM', 'GOBI', 'SATHYAMANGALAM', 'SATHY',
+            'BHAVANI', 'KOMARAPALAYAM', 'KUMARAPALAYAM', 'TIRUCHENGODE', 'RASIPURAM', 'AMBUR',
+            'VANIYAMBADI', 'GUDIYATHAM', 'ARAKKONAM', 'HOSUR', 'RAJAPALAYAM', 'SIVAKASI',
+            'SRIVILLIPUTHUR', 'ARUPPUKKOTTAI', 'KOVILPATTI', 'KUMBAKONAM', 'PATTUKKOTTAI',
+            'MANNARGUDI', 'SIRKAZHI', 'CHIDAMBARAM', 'NEYVELI', 'PANRUTI', 'TINDIVANAM',
+            'ARANI', 'CHEYYAR', 'TAMBARAM', 'AVADI', 'AMBATTUR', 'SRIPERUMBUDUR', 'KARAIKUDI',
+            'DEVAKOTTAI', 'PARAMAKUDI', 'SANKARANKOVIL', 'AMBASAMUDRAM', 'BODINAYAKANUR',
+            'CUMBUM', 'PERIYAKULAM'
+        ];
+
+        // Known prominent cities in other states
+        $otherStateCities = [
+            'BENGALURU' => 'KARNATAKA', 'BANGALORE' => 'KARNATAKA', 'MYSORE' => 'KARNATAKA', 'MYSURU' => 'KARNATAKA',
+            'MANGALORE' => 'KARNATAKA', 'MANGALURU' => 'KARNATAKA', 'HUBLI' => 'KARNATAKA', 'HUBBALLI' => 'KARNATAKA',
+            'BELGAUM' => 'KARNATAKA', 'BELAGAVI' => 'KARNATAKA', 'DAVANAGERE' => 'KARNATAKA', 'BELLARY' => 'KARNATAKA',
+            'SHIMOGA' => 'KARNATAKA', 'SHIVAMOGGA' => 'KARNATAKA', 'TUMKUR' => 'KARNATAKA', 'UDUPI' => 'KARNATAKA',
+            'HASSAN' => 'KARNATAKA', 'GULBARGA' => 'KARNATAKA',
+            'KOCHI' => 'KERALA', 'COCHIN' => 'KERALA', 'THIRUVANANTHAPURAM' => 'KERALA', 'TRIVANDRUM' => 'KERALA',
+            'KOZHIKODE' => 'KERALA', 'CALICUT' => 'KERALA', 'THRISSUR' => 'KERALA', 'TRICHUR' => 'KERALA',
+            'KOLLAM' => 'KERALA', 'PALAKKAD' => 'KERALA', 'ALAPPUZHA' => 'KERALA', 'KANNUR' => 'KERALA',
+            'KOTTAYAM' => 'KERALA', 'MALAPPURAM' => 'KERALA', 'KASARAGOD' => 'KERALA',
+            'HYDERABAD' => 'TELANGANA', 'SECUNDERABAD' => 'TELANGANA', 'WARANGAL' => 'TELANGANA', 'NIZAMABAD' => 'TELANGANA',
+            'VISAKHAPATNAM' => 'ANDHRA PRADESH', 'VIZAG' => 'ANDHRA PRADESH', 'VIJAYAWADA' => 'ANDHRA PRADESH',
+            'GUNTUR' => 'ANDHRA PRADESH', 'NELLORE' => 'ANDHRA PRADESH', 'KURNOOL' => 'ANDHRA PRADESH',
+            'RAJAHMUNDRY' => 'ANDHRA PRADESH', 'TIRUPATI' => 'ANDHRA PRADESH', 'KAKINADA' => 'ANDHRA PRADESH',
+            'MUMBAI' => 'MAHARASHTRA', 'BOMBAY' => 'MAHARASHTRA', 'PUNE' => 'MAHARASHTRA', 'NAGPUR' => 'MAHARASHTRA',
+            'THANE' => 'MAHARASHTRA', 'NASHIK' => 'MAHARASHTRA', 'AURANGABAD' => 'MAHARASHTRA', 'KOLHAPUR' => 'MAHARASHTRA',
+            'AHMEDABAD' => 'GUJARAT', 'SURAT' => 'GUJARAT', 'VADODARA' => 'GUJARAT', 'BARODA' => 'GUJARAT',
+            'RAJKOT' => 'GUJARAT', 'BHAVNAGAR' => 'GUJARAT', 'JAMNAGAR' => 'GUJARAT', 'GANDHINAGAR' => 'GUJARAT',
+            'DELHI' => 'DELHI', 'NEW DELHI' => 'DELHI', 'NOIDA' => 'UTTAR PRADESH', 'GURGAON' => 'HARYANA', 'GURUGRAM' => 'HARYANA',
+            'LUCKNOW' => 'UTTAR PRADESH', 'KANPUR' => 'UTTAR PRADESH', 'AGRA' => 'UTTAR PRADESH', 'VARANASI' => 'UTTAR PRADESH',
+            'KOLKATA' => 'WEST BENGAL', 'CALCUTTA' => 'WEST BENGAL', 'HOWRAH' => 'WEST BENGAL',
+            'JAIPUR' => 'RAJASTHAN', 'JODHPUR' => 'RAJASTHAN', 'UDAIPUR' => 'RAJASTHAN', 'KOTA' => 'RAJASTHAN',
+            'INDORE' => 'MADHYA PRADESH', 'BHOPAL' => 'MADHYA PRADESH', 'GWALIOR' => 'MADHYA PRADESH',
+            'PATNA' => 'BIHAR', 'LUDHIANA' => 'PUNJAB', 'AMRITSAR' => 'PUNJAB', 'CHANDIGARH' => 'CHANDIGARH'
+        ];
+
+        $cNorm = preg_replace('/[\s\-_.]+/', '', $c);
+
+        // Check if city belongs to Tamil Nadu
+        $isTnCity = false;
+        foreach ($tnCities as $tnCity) {
+            $tnNorm = preg_replace('/[\s\-_.]+/', '', $tnCity);
+            if ($cNorm === $tnNorm || str_contains($cNorm, $tnNorm) || str_contains($tnNorm, $cNorm)) {
+                $isTnCity = true;
+                break;
+            }
+        }
+
+        if ($isTnCity && !$isTamilNaduState) {
+            return "The city '{$city}' is located in Tamil Nadu, but the State is entered as '{$state}'. Please set the state to TAMIL NADU.";
+        }
+
+        // Check if city belongs to another state
+        foreach ($otherStateCities as $otherCity => $expectedState) {
+            $otherNorm = preg_replace('/[\s\-_.]+/', '', $otherCity);
+            if ($cNorm === $otherNorm || str_contains($cNorm, $otherNorm) || str_contains($otherNorm, $cNorm)) {
+                if ($isTamilNaduState) {
+                    return "The city '{$city}' is located in {$expectedState}, but the State is entered as TAMIL NADU. Please correct the state or city.";
+                }
+                $expStateNorm = preg_replace('/[\s\-_.]+/', '', $expectedState);
+                if ($sNorm !== '' && $sNorm !== $expStateNorm) {
+                    return "The city '{$city}' is located in {$expectedState}, but the State is entered as '{$state}'. Please correct the state to {$expectedState}.";
+                }
+                break;
+            }
+        }
+
+        return null;
+    }
+
     private function storeSupplierProfile(): void {
         $validator = Validator::make($_POST, [
             'name' => 'required|minLength:2|maxLength:200',
@@ -99,7 +195,6 @@ class ProductionController {
             'state' => 'required|maxLength:100',
             'address' => 'required|maxLength:500',
             'gst_number' => 'maxLength:20',
-            'payment_terms' => 'maxLength:200',
         ]);
         if ($validator->fails()) {
             Session::flash('error', $validator->firstError());
@@ -115,7 +210,6 @@ class ProductionController {
         $state = mb_strtoupper(trim((string)$_POST['state']));
         $address = mb_strtoupper(trim((string)$_POST['address']));
         $gstNumber = mb_strtoupper(trim((string)($_POST['gst_number'] ?? '')));
-        $paymentTerms = mb_strtoupper(trim((string)($_POST['payment_terms'] ?? '')));
 
         if (preg_match('/[0-9]/', $name) || preg_match('/[0-9]/', $company)
             || preg_match('/[0-9]/', $city) || preg_match('/[0-9]/', $state)) {
@@ -139,16 +233,24 @@ class ProductionController {
             return;
         }
 
+        $cityStateError = $this->validateCityAndState($city, $state);
+        if ($cityStateError !== null) {
+            Session::flash('error', $cityStateError);
+            Session::flash('city_state_error', $cityStateError);
+            Response::back();
+            return;
+        }
+
         Database::execute(
-            "INSERT INTO sellers (name, company, phone, email, gst_number, city, state, address, payment_terms, seller_type, is_active)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'MATERIAL_SUPPLIER', 1)",
+            "INSERT INTO sellers (name, company, phone, email, gst_number, city, state, address, seller_type, is_active)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'MATERIAL_SUPPLIER', 1)",
             [$name, $company, $phone, $email !== '' ? $email : null, $gstNumber !== '' ? $gstNumber : null,
-                $city, $state, $address, $paymentTerms !== '' ? $paymentTerms : null]
+                $city, $state, $address]
         );
         $sellerId = (int)Database::lastInsertId();
         AuditService::log('production', 'CREATE', 'sellers', $sellerId, null, [
             'Supplier Name' => $name, 'Company / Mill' => $company, 'Phone' => $phone,
-            'Email' => $email, 'City' => $city, 'State' => $state,
+            'Email' => $email, 'City' => $city, 'State' => $state, 'Address' => $address,
         ]);
         Session::flash('success', 'Supplier details saved. Record fabric and other purchases in Production Purchases.');
         Response::redirect(url('production/sellers'));
@@ -174,7 +276,6 @@ class ProductionController {
             'state' => 'required|maxLength:100',
             'address' => 'required|maxLength:500',
             'gst_number' => 'maxLength:20',
-            'payment_terms' => 'maxLength:200',
         ]);
         if ($validator->fails()) {
             Session::flash('error', $validator->firstError());
@@ -190,7 +291,6 @@ class ProductionController {
         $state = mb_strtoupper(trim((string)$_POST['state']));
         $address = mb_strtoupper(trim((string)$_POST['address']));
         $gstNumber = mb_strtoupper(trim((string)($_POST['gst_number'] ?? '')));
-        $paymentTerms = mb_strtoupper(trim((string)($_POST['payment_terms'] ?? '')));
 
         if (preg_match('/[0-9]/', $name) || preg_match('/[0-9]/', $company)
             || preg_match('/[0-9]/', $city) || preg_match('/[0-9]/', $state)) {
@@ -214,18 +314,24 @@ class ProductionController {
             return;
         }
 
+        $cityStateError = $this->validateCityAndState($city, $state);
+        if ($cityStateError !== null) {
+            Session::flash('error', $cityStateError);
+            Session::flash('city_state_error', $cityStateError);
+            Response::back();
+            return;
+        }
+
         Database::execute(
             "UPDATE sellers SET name = ?, company = ?, phone = ?, email = ?, gst_number = ?, city = ?, state = ?,
-                    address = ?, payment_terms = ?, is_active = ?, updated_at = NOW()
+                    address = ?, is_active = 1, updated_at = NOW()
              WHERE id = ? AND seller_type = 'MATERIAL_SUPPLIER'",
             [$name, $company, $phone, $email !== '' ? $email : null, $gstNumber !== '' ? $gstNumber : null,
-                $city, $state, $address, $paymentTerms !== '' ? $paymentTerms : null,
-                isset($_POST['is_active']) ? 1 : 0, $sellerId]
+                $city, $state, $address, $sellerId]
         );
         AuditService::log('production', 'UPDATE', 'sellers', $sellerId, $existing, [
             'name' => $name, 'company' => $company, 'phone' => $phone, 'email' => $email,
             'gst_number' => $gstNumber, 'city' => $city, 'state' => $state, 'address' => $address,
-            'payment_terms' => $paymentTerms, 'is_active' => isset($_POST['is_active']) ? 1 : 0,
         ]);
         Session::flash('success', 'Supplier details updated.');
         Response::redirect(url('production/sellers'));
@@ -241,14 +347,9 @@ class ProductionController {
 
         if ($search !== '') {
             $sql .= " AND (s.name LIKE ? OR s.company LIKE ? OR s.phone LIKE ? OR s.city LIKE ?
-                OR s.state LIKE ? OR s.gst_number LIKE ? OR s.payment_terms LIKE ? OR s.address LIKE ?)";
+                OR s.state LIKE ? OR s.gst_number LIKE ? OR s.address LIKE ?)";
             $s = '%' . $search . '%';
-            $params = array_merge($params, [$s, $s, $s, $s, $s, $s, $s, $s]);
-        }
-
-        if ($status !== '') {
-            $sql .= " AND s.is_active = ?";
-            $params[] = (int)$status;
+            $params = array_merge($params, [$s, $s, $s, $s, $s, $s, $s]);
         }
 
         if ($city !== '') {
@@ -974,9 +1075,9 @@ class ProductionController {
 
     public function createProductionPurchase(): void {
         $sellers = Database::fetchAll(
-            "SELECT id, name, company, phone, email, gst_number, city, state, address, payment_terms
+            "SELECT id, name, company, phone, email, gst_number, city, state, address
              FROM sellers
-             WHERE seller_type = 'MATERIAL_SUPPLIER' AND is_active = 1
+             WHERE seller_type = 'MATERIAL_SUPPLIER'
              ORDER BY company, name"
         );
         Response::view('production.purchases.create', [
@@ -1002,11 +1103,11 @@ class ProductionController {
         $sellerId = (int)($_POST['seller_id'] ?? 0);
         $seller = Database::fetchOne(
             "SELECT id, name, company FROM sellers
-             WHERE id = ? AND seller_type = 'MATERIAL_SUPPLIER' AND is_active = 1",
+             WHERE id = ? AND seller_type = 'MATERIAL_SUPPLIER'",
             [$sellerId]
         );
         if (!$seller) {
-            Session::flash('error', 'Select an active registered supplier.');
+            Session::flash('error', 'Select a valid registered supplier.');
             Response::back();
             return;
         }
