@@ -416,7 +416,6 @@ thead th.sticky-col-select {
                                             data-stock-state="<?= e($item['stock_state']) ?>"
                                             data-qr-code="<?= e(strtolower($item['qr_code'] ?? '')) ?>"
                                             data-piece-tags="<?= e(strtolower(implode('|', array_map('strval', $item['piece_tags'] ?? [])))) ?>"
-                                            data-all-piece-tags="<?= e(strtolower(implode('|', array_map('strval', $item['piece_tags_all'] ?? [])))) ?>"
                                             data-category-type="<?= e(strtoupper($item['category_type'] ?? 'NORMAL')) ?>"
                                             data-complementary="<?= !empty($item['is_complementary']) ? '1' : '0' ?>"
                                             data-qr-type="<?= e(strtoupper($item['qr_type'] ?? '')) ?>"
@@ -1571,17 +1570,18 @@ document.addEventListener('DOMContentLoaded', function() {
     function scanReturnProduct() {
         const rawCode = (returnScanInput?.value || '').trim();
         if (!rawCode) return;
-        const code = (rawCode.includes('|') ? rawCode.split('|')[0] : rawCode).trim().toLowerCase();
+        const code = (rawCode.includes('|') ? rawCode.split('|')[0] : rawCode).trim();
+        const normalizedCode = code.toLowerCase();
         const stockPool = document.querySelector('input[name="returnScanPool"]:checked')?.value || 'AVAILABLE';
         const candidates = Array.from(document.querySelectorAll('.inv-row')).filter(row =>
             (row.getAttribute('data-stock-state') || 'AVAILABLE').toUpperCase() === stockPool
         );
         const row = candidates.find(candidate => {
+            const allowsMultiple = returnRowAllowsMultiple(candidate);
             const exactValues = [candidate.getAttribute('data-qr-code'), candidate.getAttribute('data-sku'), candidate.getAttribute('data-code')]
                 .filter(Boolean).map(value => value.trim().toLowerCase());
-            const tagAttribute = returnRowAllowsMultiple(candidate) ? 'data-all-piece-tags' : 'data-piece-tags';
-            const pieceTags = (candidate.getAttribute(tagAttribute) || '').split('|').map(value => value.trim().toLowerCase()).filter(Boolean);
-            return exactValues.includes(code) || pieceTags.includes(code);
+            const pieceTags = (candidate.getAttribute('data-piece-tags') || '').split('|').map(value => value.trim().toLowerCase()).filter(Boolean);
+            return (allowsMultiple && exactValues.includes(normalizedCode)) || pieceTags.includes(normalizedCode);
         });
         if (!row) {
             if (returnScanStatus) returnScanStatus.innerHTML = `<span class="text-danger fw-semibold"><i class="bi bi-x-circle me-1"></i>No ${stockPool === 'DAMAGED' ? 'damaged' : 'available'} WhatsApp stock matches this QR.</span>`;
@@ -1616,12 +1616,12 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (error) {
             console.error('Unable to read scanned WhatsApp return QR tags.', error);
         }
-        if (!scannedQrs.some(qr => qr.toLowerCase() === rawCode.toLowerCase())) scannedQrs.push(rawCode);
+        if (!scannedQrs.some(qr => qr.toLowerCase() === normalizedCode)) scannedQrs.push(code);
         if (qrInput) {
             qrInput.value = JSON.stringify(scannedQrs);
             qrInput.disabled = false;
         }
-        if (tagInput) { tagInput.value = scannedQrs[0] || rawCode; tagInput.disabled = false; }
+        if (tagInput) { tagInput.value = scannedQrs[0] || code; tagInput.disabled = false; }
         if (classSelect) classSelect.value = stockPool === 'DAMAGED' ? 'DAMAGED' : 'GOOD';
         calculateConsignment();
         if (returnScanStatus) returnScanStatus.innerHTML = `<span class="text-success fw-semibold"><i class="bi bi-check-circle me-1"></i>Added ${escapeHtml(row.getAttribute('data-name-raw') || code)} from ${stockPool === 'DAMAGED' ? 'damaged' : 'available'} WhatsApp stock.</span>`;

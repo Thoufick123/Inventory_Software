@@ -1467,8 +1467,11 @@ document.addEventListener('DOMContentLoaded', function() {
         const damagedTags = JSON.parse(row.getAttribute('data-damaged-piece-tags') || '[]')
             .map(tag => String(tag).trim().toLowerCase());
         const scannedTag = code.trim().toLowerCase();
+        const aggregateCodes = [row.getAttribute('data-sku'), row.getAttribute('data-code'), row.getAttribute('data-qr-code')]
+            .filter(Boolean).map(value => value.trim().toLowerCase());
         if (tagInput) {
-            tagInput.value = !allowMultiple && (pieceTags.includes(scannedTag) || damagedTags.includes(scannedTag)) ? code.trim() : '';
+            tagInput.value = pieceTags.includes(scannedTag) || damagedTags.includes(scannedTag)
+                || (allowMultiple && aggregateCodes.includes(scannedTag)) ? code.trim() : '';
         }
         if (checkbox && !checkbox.checked) checkbox.checked = true;
         else if (qtyInput && allowMultiple) qtyInput.value = Math.min(maxQty, (parseInt(qtyInput.value) || 0) + 1);
@@ -1543,12 +1546,17 @@ document.addEventListener('DOMContentLoaded', function() {
             if ((candidate.getAttribute('data-stock-state') || 'AVAILABLE').toUpperCase() !== selectedStockPool) return false;
             if (selectedStockPool === 'DAMAGED' && (candidate.getAttribute('data-category-type') || 'NORMAL').toUpperCase() === 'NORMAL'
                 && JSON.parse(candidate.getAttribute('data-damaged-piece-tags') || '[]').length > 0) return false;
+            const categoryType = (candidate.getAttribute('data-category-type') || 'NORMAL').toUpperCase();
+            const allowsMultiple = categoryType === 'SERIES'
+                || candidate.getAttribute('data-complementary') === '1'
+                || (candidate.getAttribute('data-qr-type') || '').toUpperCase() === 'SERIES_BATCH'
+                || parseInt(candidate.getAttribute('data-pack-quantity') || '1', 10) > 1;
             const values = [
                 candidate.getAttribute('data-sku'), candidate.getAttribute('data-code'),
                 candidate.getAttribute('data-qr-code')
             ].filter(Boolean).map(value => value.toLowerCase());
             const pieceTags = (candidate.getAttribute('data-piece-tags') || '').split('|').map(value => value.toLowerCase());
-            return values.some(value => normalizedCandidates.includes(value))
+            return (allowsMultiple && values.some(value => normalizedCandidates.includes(value)))
                 || pieceTags.some(value => normalizedCandidates.includes(value));
         });
         if (row) {
@@ -1575,9 +1583,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
         }
+        const normalVariantCodeRow = rows.find(candidate =>
+            (candidate.getAttribute('data-stock-state') || 'AVAILABLE').toUpperCase() === selectedStockPool
+            && (candidate.getAttribute('data-category-type') || 'NORMAL').toUpperCase() === 'NORMAL'
+            && [candidate.getAttribute('data-sku'), candidate.getAttribute('data-code'), candidate.getAttribute('data-qr-code')]
+                .filter(Boolean)
+                .some(value => normalizedCandidates.includes(value.toLowerCase()))
+        );
+        if (normalVariantCodeRow) {
+            damageScanStatus.innerHTML = '<span class="text-danger fw-semibold"><i class="bi bi-x-circle me-1"></i>Scan the exact available or damaged piece QR; product SKU codes cannot identify a normal stock unit.</span>';
+            return;
+        }
 
         damageScanStatus.innerHTML = '<span class="text-primary fw-semibold"><span class="spinner-border spinner-border-sm me-1"></span>Looking up QR code...</span>';
-        fetch(`<?= url('api/shop/damage/lookup-scan') ?>?purpose=return&code=${encodeURIComponent(rawCode)}`)
+        fetch(`<?= url('api/shop/damage/lookup-scan') ?>?purpose=return&stock_state=${encodeURIComponent(selectedStockPool)}&code=${encodeURIComponent(rawCode)}`)
             .then(response => response.json())
             .then(data => {
                 if (!data.success) throw new Error(data.message || 'Product not found');

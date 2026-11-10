@@ -3389,54 +3389,28 @@ class ShopController {
             [$shopId]
         );
 
-        // Fetch piece tags mapped to variants for this shop
-        $allocTags = Database::fetchAll(
-            "SELECT ai.variant_id, ai.selected_qr_codes
-             FROM allocation_items ai
-             JOIN warehouse_allocations wa ON ai.allocation_id = wa.id
-             WHERE (wa.shop_id = ? OR (wa.destination_type = 'SHOP' AND wa.destination_id = ?))
-                  AND wa.status NOT IN ('REQUESTED', 'PENDING', 'CANCELLED', 'REJECTED')
-               AND ai.selected_qr_codes IS NOT NULL AND ai.selected_qr_codes != ''",
-            [$shopId, $shopId]
-        );
-
-        $variantTagsMap = [];
-        foreach ($allocTags as $at) {
-            $vid = (int)$at['variant_id'];
-            if (!isset($variantTagsMap[$vid])) {
-                $variantTagsMap[$vid] = [];
-            }
-            $decodedTags = json_decode((string)$at['selected_qr_codes'], true);
-            $tags = is_array($decodedTags) ? $decodedTags : preg_split('/[,|]/', (string)$at['selected_qr_codes']);
-            foreach ($tags as $t) {
-                $trimmed = is_array($t)
-                    ? trim((string)($t['tag_code'] ?? $t['qr_code'] ?? ''))
-                    : trim((string)$t);
-                if ($trimmed && !in_array($trimmed, $variantTagsMap[$vid])) {
-                    $variantTagsMap[$vid][] = $trimmed;
-                }
-            }
-        }
-
-        $damageCases = Database::fetchAll(
-            "SELECT variant_id, tag_code
-             FROM shop_damages
-             WHERE shop_id = ? AND status <> 'RESTOCKED' AND tag_code IS NOT NULL AND tag_code <> ''",
-            [$shopId]
-        );
-        $damagedTagsMap = [];
-        foreach ($damageCases as $damageCase) {
-            foreach (ShopDamage::resolvePieceTags($damageCase) as $damageTag) {
-                $damagedTagsMap[(int)$damageCase['variant_id']][strtoupper($damageTag)] = $damageTag;
-            }
-        }
-
         $categories = [];
+        $pieceDetails = [];
         foreach ($inventory as &$item) {
             $item['image'] = !empty($item['variant_image']) ? $item['variant_image'] : ($item['product_image'] ?? null);
             $vid = (int)$item['variant_id'];
-            $item['piece_tags'] = $variantTagsMap[$vid] ?? [];
-            $item['damaged_piece_tags'] = array_values($damagedTagsMap[$vid] ?? []);
+            if (!array_key_exists($vid, $pieceDetails)) {
+                $pieceDetails[$vid] = ShopService::getShopInventoryItem($shopId, $vid);
+            }
+            $pieces = $pieceDetails[$vid]['individual_pieces'] ?? [];
+            $item['piece_tags'] = [];
+            $item['damaged_piece_tags'] = [];
+            foreach ($pieces as $piece) {
+                $tag = trim((string)($piece['tag_code'] ?? ''));
+                if ($tag === '') {
+                    continue;
+                }
+                if (strtoupper((string)($piece['status'] ?? '')) === 'IN STOCK') {
+                    $item['piece_tags'][] = $tag;
+                } elseif (strtoupper((string)($piece['status'] ?? '')) === 'DAMAGED') {
+                    $item['damaged_piece_tags'][] = $tag;
+                }
+            }
 
             // Group categories for filter pills
             $catName = $item['category_name'] ?? 'General';
@@ -4170,6 +4144,7 @@ class ShopController {
 
         $rawCode = trim($_REQUEST['code'] ?? $_REQUEST['query'] ?? $_REQUEST['search'] ?? '');
         $isReturnLookup = ($_REQUEST['purpose'] ?? '') === 'return';
+        $returnStockState = strtoupper(trim((string)($_REQUEST['stock_state'] ?? 'AVAILABLE')));
         $shop = ShopService::getActiveShop();
         $shopId = (int)($shop['id'] ?? 1);
 
@@ -4536,6 +4511,32 @@ class ShopController {
                     exit;
                 }
             }
+            $isAggregateProductCode = ($isSeries || $isComplementary) && in_array(
+                strtoupper(trim((string)$matchedTagCode)),
+                array_map('strtoupper', array_filter([
+                    trim((string)($foundVariant['sku'] ?? '')),
+                    trim((string)($foundVariant['qr_code'] ?? '')),
+                    trim((string)($foundVariant['product_code'] ?? '')),
+                ])),
+                true
+            );
+            if ($isReturnLookup && !$isAggregateProductCode) {
+                $expectedStatus = $returnStockState === 'DAMAGED' ? 'DAMAGED' : 'IN STOCK';
+                $pieceStatus = $this->getShopPieceStatus(
+                    (int)$foundVariant['id'],
+                    $shopId,
+                    $matchedTagCode
+                );
+                if ($pieceStatus !== $expectedStatus) {
+                    echo json_encode([
+                        'success' => false,
+                        'message' => $expectedStatus === 'DAMAGED'
+                            ? 'This QR is not an active damaged piece in the selected shop.'
+                            : 'This QR is not an available shop piece. Sold or exchanged pieces cannot be returned.',
+                    ]);
+                    exit;
+                }
+            }
 
             if (!$isReturnLookup && (float)($foundVariant['available_qty'] ?? 0) <= 0) {
                 echo json_encode([
@@ -4584,6 +4585,17 @@ class ShopController {
         foreach ($inventoryItem['individual_pieces'] ?? [] as $piece) {
             if (strcasecmp(trim((string)($piece['tag_code'] ?? '')), trim($tagCode)) === 0) {
                 return strcasecmp(trim((string)($piece['status'] ?? '')), 'In Stock') === 0;
+            }
+        }
+
+        return null;
+    }
+
+    private function getShopPieceStatus(int $variantId, int $shopId, string $tagCode): ?string {
+        $inventoryItem = ShopService::getShopInventoryItem($shopId, $variantId);
+        foreach ($inventoryItem['individual_pieces'] ?? [] as $piece) {
+            if (strcasecmp(trim((string)($piece['tag_code'] ?? '')), trim($tagCode)) === 0) {
+                return strtoupper(trim((string)($piece['status'] ?? '')));
             }
         }
 
@@ -4716,16 +4728,61 @@ class ShopController {
         };
 
         foreach ($codes as $code) {
+            $qcItem = Database::fetchOne(
+                "SELECT variant_id, tag_code
+                 FROM qc_items
+                 WHERE UPPER(TRIM(tag_code)) = UPPER(TRIM(?)) AND variant_id IS NOT NULL
+                 ORDER BY id DESC LIMIT 1",
+                [$code]
+            );
+            if ($qcItem) {
+                return $loadVariant((int)$qcItem['variant_id'], (string)$qcItem['tag_code']);
+            }
+
+            $warehouseQr = Database::fetchOne(
+                "SELECT variant_id, qr_code
+                 FROM warehouse_qr_codes
+                 WHERE UPPER(TRIM(qr_code)) = UPPER(TRIM(?)) AND variant_id IS NOT NULL
+                 ORDER BY id DESC LIMIT 1",
+                [$code]
+            );
+            if ($warehouseQr) {
+                return $loadVariant((int)$warehouseQr['variant_id'], (string)$warehouseQr['qr_code']);
+            }
+
+            $batchItems = Database::fetchAll(
+                "SELECT variant_id, piece_tags, received_qr_codes
+                 FROM production_batch_items
+                 WHERE piece_tags LIKE ? OR received_qr_codes LIKE ?
+                 ORDER BY id DESC",
+                ['%' . $code . '%', '%' . $code . '%']
+            );
+            foreach ($batchItems as $batchItem) {
+                $matchedCode = $matchesCode((string)($batchItem['piece_tags'] ?? ''))
+                    ?? $matchesCode((string)($batchItem['received_qr_codes'] ?? ''));
+                if ($matchedCode !== null) {
+                    return $loadVariant((int)$batchItem['variant_id'], $matchedCode);
+                }
+            }
+
+            $adjustmentVariantId = ShopStockAdjustment::findApprovedIncreaseQrVariant($shopId, $code);
+            if ($adjustmentVariantId) {
+                return $loadVariant($adjustmentVariantId, $code);
+            }
+        }
+
+        foreach ($codes as $code) {
             $allocationItems = Database::fetchAll(
-                "SELECT ai.variant_id, ai.selected_qr_codes
+                "SELECT ai.variant_id, ai.selected_qr_codes, ai.received_qr_codes
                  FROM allocation_items ai
                  JOIN warehouse_allocations wa ON wa.id = ai.allocation_id
                  WHERE ((wa.destination_type = 'SHOP' AND wa.destination_id = ?) OR wa.shop_id = ?)
-                   AND ai.selected_qr_codes LIKE ?",
-                [$shopId, $shopId, '%' . $code . '%']
+                   AND (ai.selected_qr_codes LIKE ? OR ai.received_qr_codes LIKE ?)",
+                [$shopId, $shopId, '%' . $code . '%', '%' . $code . '%']
             );
             foreach ($allocationItems as $allocationItem) {
-                $matchedCode = $matchesCode((string)$allocationItem['selected_qr_codes']);
+                $matchedCode = $matchesCode((string)($allocationItem['selected_qr_codes'] ?? ''))
+                    ?? $matchesCode((string)($allocationItem['received_qr_codes'] ?? ''));
                 if ($matchedCode !== null) {
                     return $loadVariant((int)$allocationItem['variant_id'], $matchedCode);
                 }

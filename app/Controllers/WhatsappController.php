@@ -5783,7 +5783,6 @@ class WhatsappController {
             $vid = (int)$item['variant_id'];
             $pieceRes = $this->resolveChannelPieceTags($chanId, $vid, $chanIds, 'WHATSAPP');
             $item['piece_tags'] = ($item['stock_state'] === 'DAMAGED') ? $pieceRes['damaged'] : $pieceRes['available'];
-            $item['piece_tags_all'] = $pieceRes['all'];
 
             $catName = $item['category_name'] ?? 'General';
             if (!in_array($catName, $categories)) {
@@ -6162,6 +6161,32 @@ class WhatsappController {
                 if (count($scannedQrCodes) > $qty || array_filter($scannedQrCodes, static fn(string $qr): bool => strlen($qr) > 255)) {
                     throw new InvalidArgumentException('Scanned product QR tags do not match the selected return quantity.');
                 }
+                $pieceTags = $this->resolveChannelPieceTags($channelId, $variantId, $this->getWhatsappChannelIds(), 'WHATSAPP');
+                $eligibleTags = array_fill_keys(array_map(
+                    'strtoupper',
+                    $stockState === 'DAMAGED' ? $pieceTags['damaged'] : $pieceTags['available']
+                ), true);
+                $variantCodes = Database::fetchOne(
+                    "SELECT pv.sku, pv.qr_code, p.code as product_code
+                     FROM product_variants pv
+                     JOIN products p ON p.id = pv.product_id
+                     WHERE pv.id = ?",
+                    [$variantId]
+                ) ?: [];
+                $aggregateCodes = array_fill_keys(array_map('strtoupper', array_filter([
+                    trim((string)($variantCodes['sku'] ?? '')),
+                    trim((string)($variantCodes['qr_code'] ?? '')),
+                    trim((string)($variantCodes['product_code'] ?? '')),
+                ])), true);
+                if (!$allowsMultiple && count($scannedQrCodes) !== $qty) {
+                    throw new RuntimeException('Scan the exact available or damaged QR tag for each normal product piece.');
+                }
+                foreach ($scannedQrCodes as $scannedTag) {
+                    if (!isset($eligibleTags[strtoupper($scannedTag)])
+                        && !($allowsMultiple && isset($aggregateCodes[strtoupper($scannedTag)]))) {
+                        throw new RuntimeException("Piece QR '{$scannedTag}' is not currently eligible in the selected {$stockState} WhatsApp stock pool. Sold or exchanged pieces cannot be returned.");
+                    }
+                }
 
                 $goodQty = ($classification === 'GOOD') ? $qty : 0;
                 $damQty  = ($classification === 'DAMAGED') ? $qty : 0;
@@ -6512,10 +6537,10 @@ class WhatsappController {
                     $damagedTags[] = $t;
                 }
             }
-            foreach ($returnedCustomerDamagedTags as $returnedTag) {
-                if (!in_array($returnedTag, $damagedTags, true)) {
-                    $damagedTags[] = $returnedTag;
-                }
+        }
+        foreach ($returnedCustomerDamagedTags as $returnedTag) {
+            if (!in_array($returnedTag, $damagedTags, true)) {
+                $damagedTags[] = $returnedTag;
             }
         }
         // 6. Returned to Warehouse piece tags

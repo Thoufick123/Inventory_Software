@@ -13,14 +13,22 @@ $labelTitle = 'WHATSAPP RETURNED PRODUCT';
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
         body { background: #f1f5f9; color: #0f172a; }
-        .return-label { width: 430px; min-height: 260px; margin: 8vh auto 20px; padding: 18px; border: 2px solid #166534; border-radius: 12px; background: #fff; }
-        .qr-box { width: 112px; height: 112px; }
-        .returned-stamp { border: 1px solid #d97706; color: #92400e; background: #fffbeb; }
+        .return-label { box-sizing: border-box; width: 40mm; height: 22mm; margin: 20px auto; padding: 1mm; border: 1px solid #166534; background: #fff; overflow: hidden; }
+        .label-heading { box-sizing: border-box; display: flex; flex: 0 0 2.5mm; justify-content: space-between; align-items: center; height: 2.5mm; padding-bottom: .4mm; border-bottom: .3mm solid #166534; font-size: 5.5pt; font-weight: 700; line-height: 1; }
+        .returned-stamp { border: .2mm solid #d97706; color: #92400e; background: #fffbeb; padding: .3mm .7mm; font-size: 4.5pt; line-height: 1; }
+        .label-content { box-sizing: border-box; display: flex; flex: 1; align-items: center; gap: 1mm; min-height: 17mm; padding: .5mm 0; }
+        .qr-box { flex: 0 0 13mm; width: 13mm; height: 13mm; display: flex; align-items: center; justify-content: center; }
+        .qr-box img, .qr-box canvas { display: block; width: 13mm !important; height: 13mm !important; }
+        .label-info { min-width: 0; flex: 1; overflow: hidden; font-size: 5pt; line-height: 1.1; }
+        .returned-tag { color: #166534; font-size: 7pt; font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; }
+        .product-name { max-height: 2.2em; margin-top: .3mm; overflow: hidden; font-size: 5.5pt; font-weight: 700; line-height: 1.1; }
+        .product-meta { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #475569; }
         @media print {
-            @page { size: 100mm 70mm; margin: 3mm; }
-            body { background: #fff; }
-            .no-print { display: none !important; }
-            .return-label { width: 94mm; min-height: 62mm; margin: 0; padding: 4mm; border: 1px solid #166534; border-radius: 2mm; box-shadow: none !important; }
+            @page { size: 40mm 22mm; margin: 0; }
+            html, body { width: 40mm !important; height: 22mm !important; margin: 0 !important; padding: 0 !important; background: #fff !important; overflow: hidden !important; }
+            body > *:not(.return-label):not(#printStatusForm):not(script) { display: none !important; }
+            .no-print, #printStatusForm { display: none !important; }
+            .return-label { width: 40mm; height: 22mm; margin: 0; padding: 1mm; border: 0; border-radius: 0; box-shadow: none !important; page-break-inside: avoid; break-inside: avoid; }
         }
     </style>
 </head>
@@ -33,27 +41,18 @@ $labelTitle = 'WHATSAPP RETURNED PRODUCT';
         </span>
     </div>
     <main class="return-label shadow-sm">
-        <header class="d-flex justify-content-between align-items-start border-bottom border-success pb-2 mb-3">
-            <div>
-                <div class="fw-bold text-success" style="letter-spacing:.7px;">GRM INVENTORY</div>
-                <div class="small fw-bold"><?= htmlspecialchars($labelTitle) ?></div>
-            </div>
-            <span class="badge returned-stamp">QUARANTINE</span>
+        <header class="label-heading">
+            <span>GRM · WHATSAPP RETURN</span>
+            <span class="returned-stamp">RETURNED</span>
         </header>
-        <div class="d-flex gap-3 align-items-center">
-            <div class="qr-box border rounded p-1 d-flex align-items-center justify-content-center" id="returnedQr"></div>
-            <div class="flex-grow-1">
-                <div class="fw-bold fs-5 font-monospace text-success text-break"><?= htmlspecialchars($product['returned_tag']) ?></div>
-                <div class="fw-semibold mt-1"><?= htmlspecialchars($product['product_name']) ?></div>
-                <div class="small text-muted">SKU: <span class="font-monospace"><?= htmlspecialchars($product['sku']) ?></span></div>
-                <div class="small text-muted"><?= htmlspecialchars(($product['size_name'] ?? 'Free Size') . ' / ' . ($product['color_name'] ?? 'Standard')) ?></div>
-                <div class="small mt-1">Condition: <strong><?= htmlspecialchars($product['item_condition']) ?></strong></div>
+        <div class="label-content">
+            <div class="qr-box" id="returnedQr"></div>
+            <div class="label-info">
+                <div class="returned-tag font-monospace"><?= htmlspecialchars($product['returned_tag']) ?></div>
+                <div class="product-name"><?= htmlspecialchars($product['product_name']) ?></div>
+                <div class="product-meta"><?= htmlspecialchars(($product['size_name'] ?? 'Free Size') . ' / ' . ($product['color_name'] ?? 'Standard')) ?> · <?= htmlspecialchars($product['item_condition']) ?></div>
             </div>
         </div>
-        <footer class="d-flex justify-content-between border-top mt-3 pt-2 small text-muted">
-            <span>Return: <?= htmlspecialchars($product['return_number'] ?? '-') ?></span>
-            <span>Original tag: <?= htmlspecialchars($product['original_piece_tag'] ?: 'SKU-generated') ?></span>
-        </footer>
     </main>
     <form id="printStatusForm" class="d-none">
         <?= CSRF::field() ?>

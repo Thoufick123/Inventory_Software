@@ -2087,13 +2087,27 @@ class ShopService {
 
             // Fetch warehouse return consignments
             $whReturnRecords = Database::fetchAll(
-                "SELECT wri.returned_qty, wr.return_number, wr.reason, wr.status, wr.created_at
+                "SELECT wri.returned_qty, wri.scanned_qr_codes, wr.return_number, wr.reason, wr.status, wr.created_at
                  FROM warehouse_return_items wri
                  JOIN warehouse_returns wr ON wri.warehouse_return_id = wr.id
                  WHERE wri.variant_id = ? AND wr.source_type = 'SHOP' AND wr.source_id = ?
+                   AND wr.status <> 'CANCELLED'
                  ORDER BY wr.id DESC",
                 [$variantId, $shopId]
             );
+            $warehouseReturnedTagsMap = [];
+            foreach ($whReturnRecords as $warehouseReturn) {
+                $returnedQrCodes = json_decode((string)($warehouseReturn['scanned_qr_codes'] ?? ''), true);
+                if (!is_array($returnedQrCodes)) {
+                    continue;
+                }
+                foreach ($returnedQrCodes as $returnedQrCode) {
+                    $returnedTag = strtoupper(trim((string)$returnedQrCode));
+                    if ($returnedTag !== '') {
+                        $warehouseReturnedTagsMap[$returnedTag] = true;
+                    }
+                }
+            }
 
             $returnedProducts = ShopReturnedProduct::getForVariant($variantId, $shopId);
             $reissuedSourceTags = [];
@@ -2101,6 +2115,9 @@ class ShopService {
                 $originalTag = strtoupper(trim((string)($returnedProduct['original_piece_tag'] ?? '')));
                 if ($originalTag !== '') {
                     $reissuedSourceTags[$originalTag] = $returnedProduct;
+                    if (!$isSingleQrProduct) {
+                        unset($savedTagsByKey[$originalTag]);
+                    }
                 }
 
                 if (empty($returnedProduct['printed_at'])) {
@@ -2146,7 +2163,9 @@ class ShopService {
                 $returnInfo = null;
                 $exchangeInfo = null;
 
-                if (isset($damagedTagsMap[$tag])) {
+                if (!$isSingleQrProduct && isset($warehouseReturnedTagsMap[strtoupper((string)$tag)])) {
+                    $pieceStatus = 'Out of Stock';
+                } elseif (isset($damagedTagsMap[$tag])) {
                     $isDamaged = true;
                     $damageInfo = $damagedTagsMap[$tag];
                     $pieceStatus = 'Damaged';
@@ -2622,37 +2641,61 @@ class ShopService {
                 Database::execute(
                     "INSERT INTO return_items (return_id, sale_item_id, variant_id, quantity, item_condition, destination)
                      VALUES (?, ?, ?, ?, ?, ?)",
-                    [$returnId, $it['sale_item_id'], $variantId, $qty, $condition, $condition === 'GOOD' ? 'AVAILABLE' : 'DAMAGE']
+                    [$returnId, $it['sale_item_id'], $variantId, $qty, $condition, 'REWORK']
                 );
 
-                // If GOOD condition, restore stock into AVAILABLE shop inventory
-                if ($condition === 'GOOD') {
-                    StockService::increase(
-                        $variantId,
-                        'SHOP',
-                        $shopId,
-                        'AVAILABLE',
-                        (float)$qty,
-                        'RETURN_GOOD',
-                        'returns',
-                        $returnId,
-                        $userId,
-                        "Return Restock: $returnNumber"
-                    );
-                } else {
-                    // Route to DAMAGED state
-                    StockService::increase(
-                        $variantId,
-                        'SHOP',
-                        $shopId,
-                        'DAMAGED',
-                        (float)$qty,
-                        'RETURN_DAMAGED',
-                        'returns',
-                        $returnId,
-                        $userId,
-                        "Damaged Return: $returnNumber"
-                    );
+                $saleTagsRow = !empty($it['sale_item_id'])
+                    ? Database::fetchOne(
+                        "SELECT scanned_qr_codes, qr_code FROM sale_items WHERE id = ?",
+                        [(int)$it['sale_item_id']]
+                    )
+                    : null;
+                $decodedSaleTags = json_decode((string)($saleTagsRow['scanned_qr_codes'] ?? ''), true);
+                $saleTags = is_array($decodedSaleTags)
+                    ? $decodedSaleTags
+                    : (preg_split('/[,|]/', (string)($saleTagsRow['scanned_qr_codes'] ?? '')) ?: []);
+                if (!empty($saleTagsRow['qr_code'])) {
+                    $saleTags[] = $saleTagsRow['qr_code'];
+                }
+                $usedSourceTags = array_fill_keys(
+                    ShopReturnedProduct::getReturnedSourceTags((int)($it['sale_item_id'] ?? 0)),
+                    true
+                );
+                $tagCandidates = [];
+                foreach ($saleTags as $saleTag) {
+                    if (is_array($saleTag)) {
+                        $saleTag = $saleTag['tag_code'] ?? $saleTag['qr_code'] ?? '';
+                    }
+                    $saleTag = trim((string)$saleTag, " \t\n\r\0\x0B\"'");
+                    if ($saleTag !== '' && !isset($usedSourceTags[strtoupper($saleTag)])) {
+                        $tagCandidates[strtoupper($saleTag)] = $saleTag;
+                    }
+                }
+                $skuRow = Database::fetchOne("SELECT sku FROM product_variants WHERE id = ?", [$variantId]);
+                $tagCandidates = array_values($tagCandidates);
+                for ($pieceIndex = 0; $pieceIndex < $qty; $pieceIndex++) {
+                    $originalTag = $tagCandidates[$pieceIndex] ?? '';
+                    $baseTag = $originalTag !== ''
+                        ? 'R' . $originalTag
+                        : 'R' . preg_replace('/[^A-Za-z0-9_-]/', '', (string)($skuRow['sku'] ?? 'ITEM'))
+                            . '-' . $returnNumber . '-' . ($pieceIndex + 1);
+                    $returnedTag = $baseTag;
+                    $collision = 1;
+                    while (ShopReturnedProduct::tagExists($returnedTag)) {
+                        $returnedTag = $baseTag . '-' . $returnId . '-' . $collision++;
+                    }
+                    ShopReturnedProduct::create([
+                        'shop_id' => $shopId,
+                        'return_id' => $returnId,
+                        'sale_item_id' => $it['sale_item_id'] ?? null,
+                        'variant_id' => $variantId,
+                        'original_piece_tag' => $originalTag,
+                        'returned_tag' => $returnedTag,
+                        'item_condition' => $condition,
+                    ]);
+                    if ($originalTag !== '') {
+                        $usedSourceTags[strtoupper($originalTag)] = true;
+                    }
                 }
 
                 // If Same-Product Exchange: deduct replacement variant stock
@@ -3923,7 +3966,7 @@ class ShopService {
                 $variantType = Database::fetchOne(
                     "SELECT COALESCE(wc.category_type, 'NORMAL') as category_type,
                             COALESCE(pv.is_complementary, 0) as is_complementary,
-                            pv.qr_type, pv.pack_quantity
+                            pv.qr_type, pv.pack_quantity, pv.sku, pv.qr_code, p.code as product_code
                      FROM product_variants pv
                      JOIN products p ON pv.product_id = p.id
                      LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
@@ -3952,32 +3995,38 @@ class ShopService {
                 if (!is_array($pieceTags)) {
                     $pieceTags = preg_split('/[,|]/', (string)$pieceTags) ?: [];
                 }
-                if (!empty($pieceTags)) {
-                    $damageCases = Database::fetchAll(
-                        "SELECT tag_code
-                         FROM shop_damages
-                         WHERE shop_id = ? AND variant_id = ? AND status <> 'RESTOCKED'
-                           AND tag_code IS NOT NULL AND tag_code <> ''",
-                        [$shopId, $variantId]
-                    );
-                    $damagedTagSet = [];
-                    foreach ($damageCases as $damageCase) {
-                        foreach (ShopDamage::resolvePieceTags($damageCase) as $damageTag) {
-                            $damagedTagSet[strtoupper(trim($damageTag))] = true;
+                $pieceTags = array_values(array_unique(array_filter(array_map(
+                    static fn($tag): string => strtoupper(trim((string)$tag, " \t\n\r\0\x0B\"'")),
+                    $pieceTags
+                ), static fn(string $tag): bool => $tag !== '')));
+                if (count($pieceTags) > $qty) {
+                    throw new InvalidArgumentException("Scanned piece QR tags do not match the selected return quantity.");
+                }
+
+                $inventoryItem = self::getShopInventoryItem($shopId, $variantId);
+                $eligibleStatuses = $stockState === 'DAMAGED' ? ['DAMAGED'] : ['IN STOCK', 'AVAILABLE'];
+                $eligibleTags = [];
+                foreach (($inventoryItem['individual_pieces'] ?? []) as $piece) {
+                    if (in_array(strtoupper((string)($piece['status'] ?? '')), $eligibleStatuses, true)) {
+                        $tag = strtoupper(trim((string)($piece['tag_code'] ?? '')));
+                        if ($tag !== '') {
+                            $eligibleTags[$tag] = true;
                         }
                     }
+                }
+                $aggregateTags = array_fill_keys(array_map('strtoupper', array_filter([
+                    trim((string)($variantType['sku'] ?? '')),
+                    trim((string)($variantType['qr_code'] ?? '')),
+                    trim((string)($variantType['product_code'] ?? '')),
+                ])), true);
 
-                    foreach ($pieceTags as $pieceTag) {
-                        $normalizedPieceTag = strtoupper(trim((string)$pieceTag, " \t\n\r\0\x0B\"'"));
-                        if ($normalizedPieceTag === '') {
-                            continue;
-                        }
-                        if ($stockState === 'DAMAGED' && empty($damagedTagSet[$normalizedPieceTag])) {
-                            throw new RuntimeException("Piece QR '{$pieceTag}' is not allocated to Damage Management for this product.");
-                        }
-                        if ($stockState === 'AVAILABLE' && !empty($damagedTagSet[$normalizedPieceTag])) {
-                            throw new RuntimeException("Piece QR '{$pieceTag}' is assigned to Damage Management and cannot be returned from Available Stock.");
-                        }
+                if (!$allowsMultiple && count($pieceTags) !== $qty) {
+                    throw new RuntimeException("Scan the exact available or damaged QR tag for each normal product piece.");
+                }
+                foreach ($pieceTags as $pieceTag) {
+                    if (!isset($eligibleTags[$pieceTag])
+                        && !($allowsMultiple && isset($aggregateTags[$pieceTag]))) {
+                        throw new RuntimeException("Piece QR '{$pieceTag}' is not currently eligible in the selected {$stockState} stock pool. Sold or exchanged pieces cannot be returned.");
                     }
                 }
 
@@ -3987,9 +4036,9 @@ class ShopService {
                 $defQty  = ($classification === 'DEFECTIVE') ? $qty : 0;
 
                 Database::execute(
-                    "INSERT INTO warehouse_return_items (warehouse_return_id, variant_id, returned_qty, good_qty, damaged_qty, defective_qty, classification)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    [$returnId, $variantId, $qty, $goodQty, $damQty, $defQty, $classification]
+                    "INSERT INTO warehouse_return_items (warehouse_return_id, variant_id, returned_qty, good_qty, damaged_qty, defective_qty, classification, scanned_qr_codes)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    [$returnId, $variantId, $qty, $goodQty, $damQty, $defQty, $classification, json_encode($pieceTags)]
                 );
 
                 // Deduct stock from Shop Inventory
