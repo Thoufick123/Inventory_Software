@@ -159,6 +159,9 @@
                                         <a href="<?= url('production/batches/label/' . $b['id']) ?>" target="_blank" class="btn btn-sm btn-outline-secondary" title="Print Carton QR Label">
                                             <i class="bi bi-qr-code me-1"></i> QR Sticker
                                         </a>
+                                        <button type="button" class="btn btn-sm btn-outline-primary" onclick='openEditBatchModal(<?= json_encode($b, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)' title="Edit Batch Details">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
                                         <?php if ($b['status'] === 'PREPARING' && hasPermission('batches', 'approve')): ?>
                                             <form method="POST" action="<?= url('production/batches/approve/' . $b['id']) ?>" class="d-inline" onsubmit="return confirm('Approve this batch for outward dispatch?');">
                                                 <?= CSRF::field() ?>
@@ -293,7 +296,150 @@
     </div>
 </div>
 
+<!-- Modal: Edit Finished Production Batch -->
+<div class="modal fade" id="editBatchModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0">
+            <div class="modal-header bg-primary text-white py-3">
+                <h5 class="modal-title fw-bold">
+                    <i class="bi bi-pencil-square me-2"></i>Edit Finished Production Batch
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" id="editBatchForm" action="">
+                <?= CSRF::field() ?>
+                <div class="modal-body p-4">
+                    <div class="d-flex justify-content-between align-items-center p-3 rounded-3 bg-light border mb-4 flex-wrap gap-2">
+                        <div>
+                            <span class="text-uppercase small text-muted fw-bold d-block">Batch Number</span>
+                            <span class="fs-5 fw-bold text-primary font-monospace" id="editBatchNumberBadge">—</span>
+                        </div>
+                        <div>
+                            <span class="small text-muted d-block fw-bold text-uppercase">Program &amp; Product</span>
+                            <span class="fw-semibold text-dark" id="editBatchProgramProduct">—</span>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Destination Warehouse <span class="text-danger">*</span></label>
+                            <select name="destination_warehouse_id" id="editBatchWarehouse" class="form-select fw-semibold" required>
+                                <option value="">Select Destination Warehouse</option>
+                                <?php foreach ($warehouses as $w): ?>
+                                    <option value="<?= (int)$w['id'] ?>"><?= e($w['name']) ?> (<?= e($w['code'] ?? 'WH') ?>)</option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <label class="form-label small fw-bold text-dark">Total Boxes <span class="text-danger">*</span></label>
+                            <input type="number" name="box_count" id="editBatchBoxCount" class="form-control fw-bold" min="1" required>
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <label class="form-label small fw-bold text-dark">Batch Status</label>
+                            <select name="status" id="editBatchStatus" class="form-select fw-semibold">
+                                <option value="PREPARING">PREPARING</option>
+                                <option value="APPROVED">APPROVED</option>
+                                <option value="DISPATCHED">DISPATCHED</option>
+                                <option value="RECEIVED">RECEIVED</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small fw-bold text-dark">Packing Notes / Special Instructions</label>
+                            <textarea name="notes" id="editBatchNotes" class="form-control" rows="2" placeholder="e.g. Box labeling details, barcode stickers attached, destination instructions..."></textarea>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h6 class="fw-bold mb-2"><i class="bi bi-layers-fill text-primary me-1"></i> Packed Variant Items Breakdown</h6>
+                        <div class="table-responsive border rounded-3">
+                            <table class="table table-sm table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 40px;">#</th>
+                                        <th>SKU / Variant</th>
+                                        <th>Size</th>
+                                        <th>Color</th>
+                                        <th class="text-end">Quantity (pcs)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="editBatchItemsTbody">
+                                    <tr>
+                                        <td colspan="5" class="text-center py-2 text-muted small">Loading items...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary fw-semibold"><i class="bi bi-check-circle me-1"></i>Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
+function openEditBatchModal(batch) {
+    if (!batch) return;
+    const form = document.getElementById('editBatchForm');
+    if (form) {
+        form.action = '<?= url('production/batches/update') ?>/' + batch.id;
+    }
+    document.getElementById('editBatchNumberBadge').textContent = batch.batch_number || ('#' + batch.id);
+    document.getElementById('editBatchProgramProduct').textContent = (batch.program_number ? batch.program_number + ' — ' : '') + (batch.product_name || 'Finished Goods');
+
+    const whSelect = document.getElementById('editBatchWarehouse');
+    if (whSelect) {
+        whSelect.value = batch.destination_warehouse_id || '';
+    }
+    const boxInput = document.getElementById('editBatchBoxCount');
+    if (boxInput) {
+        boxInput.value = batch.box_count || 1;
+    }
+    const statusSelect = document.getElementById('editBatchStatus');
+    if (statusSelect) {
+        statusSelect.value = batch.status || 'PREPARING';
+    }
+    const notesInput = document.getElementById('editBatchNotes');
+    if (notesInput) {
+        notesInput.value = batch.notes || '';
+    }
+
+    const itemsTbody = document.getElementById('editBatchItemsTbody');
+    if (itemsTbody) {
+        itemsTbody.innerHTML = '<tr><td colspan="5" class="text-center py-2 text-muted small"><div class="spinner-border spinner-border-sm me-1"></div>Loading items...</td></tr>';
+        fetch('<?= url('production/batches/view-ajax') ?>/' + batch.id)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && data.items && data.items.length) {
+                    let html = '';
+                    data.items.forEach((it, idx) => {
+                        html += `<tr>
+                            <td class="small text-muted">${idx + 1}</td>
+                            <td class="fw-semibold small">${escapeHtml(it.sku || it.product_name || 'Variant')}</td>
+                            <td class="small"><span class="badge bg-light text-dark border">${escapeHtml(it.size_name || 'STD')}</span></td>
+                            <td class="small">${escapeHtml(it.color_name || 'Standard')}</td>
+                            <td class="text-end fw-bold text-success">${parseInt(it.quantity || 0)} pcs</td>
+                        </tr>`;
+                    });
+                    itemsTbody.innerHTML = html;
+                } else {
+                    itemsTbody.innerHTML = '<tr><td colspan="5" class="text-center py-2 text-muted small">No variant items found</td></tr>';
+                }
+            })
+            .catch(() => {
+                itemsTbody.innerHTML = '<tr><td colspan="5" class="text-center py-2 text-danger small">Error loading items</td></tr>';
+            });
+    }
+
+    const modalEl = document.getElementById('editBatchModal');
+    if (modalEl) {
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+    }
+}
 function escapeHtml(text) {
     if (text === null || text === undefined) return '';
     const div = document.createElement('div');

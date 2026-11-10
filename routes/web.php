@@ -497,10 +497,12 @@ class Router {
         $this->post('production/batches/approve/{id}', 'ProductionController', 'approveBatch', ['AuthMiddleware', ['PermissionMiddleware', 'batches', 'approve']]);
         $this->get('production/batches/label/{id}', 'ProductionController', 'printBatchQRLabel', ['AuthMiddleware', ['PermissionMiddleware', 'batches', 'print']]);
         $this->get('production/batches/view-ajax/{id}', 'ProductionController', 'batchDetailsAjax', ['AuthMiddleware', ['PermissionMiddleware', 'batches', 'view']]);
+        $this->post('production/batches/update/{id}', 'ProductionController', 'updateBatch', ['AuthMiddleware', ['PermissionMiddleware', 'batches', 'edit']]);
         $this->get('production/outward', 'ProductionController', 'outwardList', ['AuthMiddleware', ['PermissionMiddleware', 'outward', 'view']]);
         $this->post('production/outward/store', 'ProductionController', 'storeOutward', ['AuthMiddleware', ['PermissionMiddleware', 'outward', 'create']]);
         $this->post('production/outward/dispatch/{id}', 'ProductionController', 'dispatchOutward', ['AuthMiddleware', ['PermissionMiddleware', 'outward', 'create']]);
         $this->get('production/outward/view-ajax/{id}', 'ProductionController', 'outwardDetailsAjax', ['AuthMiddleware', ['PermissionMiddleware', 'outward', 'view']]);
+        $this->post('production/outward/update/{id}', 'ProductionController', 'updateOutward', ['AuthMiddleware', ['PermissionMiddleware', 'outward', 'edit']]);
 
         // Rework from Warehouse
         $this->get('production/warehouse-rework', 'ProductionController', 'warehouseReworkList', ['AuthMiddleware', ['PermissionMiddleware', 'warehouse_rework', 'view']]);

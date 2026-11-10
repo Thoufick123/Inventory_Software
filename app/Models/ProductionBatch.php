@@ -449,6 +449,26 @@ class ProductionBatch {
     }
 
     /**
+     * Update production batch fields.
+     */
+    public static function update(int $id, array $data): bool {
+        $allowed = ['destination_warehouse_id', 'box_count', 'status', 'notes', 'total_qty', 'quantity', 'prepared_by', 'cost_per_piece', 'total_cost'];
+        $fields = [];
+        $params = [];
+        foreach ($allowed as $f) {
+            if (array_key_exists($f, $data)) {
+                $fields[] = "`$f` = ?";
+                $params[] = $data[$f];
+            }
+        }
+        if (empty($fields)) {
+            return false;
+        }
+        $params[] = $id;
+        return Database::execute("UPDATE production_batches SET " . implode(', ', $fields) . " WHERE id = ?", $params) >= 0;
+    }
+
+    /**
      * Get variant items for this production batch.
      */
     public static function getItems(int $batchId): array {

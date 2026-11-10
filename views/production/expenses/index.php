@@ -1036,13 +1036,33 @@ function cancelExpenseEntry() {
 }
 
 document.getElementById('recordExpenseForm')?.addEventListener('submit', function(event) {
+    const directItemNameInput = this.querySelector('[name="item_name"]');
+    const directAmountInput = this.querySelector('[name="amount"]');
+    if (directItemNameInput && directAmountInput) {
+        const itemVal = directItemNameInput.value.trim();
+        const amtVal = parseFloat(directAmountInput.value);
+        if (!itemVal) {
+            event.preventDefault();
+            alert('Please enter Particulars / Item Description.');
+            directItemNameInput.focus();
+            return;
+        }
+        if (isNaN(amtVal) || amtVal <= 0) {
+            event.preventDefault();
+            alert('Please enter a valid expense amount greater than zero.');
+            directAmountInput.focus();
+            return;
+        }
+        // Direct single-expense form is valid; allow submit!
+        return;
+    }
+
     const itemName = document.getElementById('newItemName')?.value.trim();
-    if (itemName) {
-        // Auto-add active inputs before submitting so single or final item is captured
+    if (itemName && typeof addExpenseItemToList === 'function') {
         addExpenseItemToList();
     }
 
-    if (stagedExpenseItems.length === 0) {
+    if (typeof stagedExpenseItems !== 'undefined' && stagedExpenseItems.length === 0) {
         event.preventDefault();
         alert('Please enter and add at least one expense item.');
         document.getElementById('newItemName')?.focus();

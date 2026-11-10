@@ -231,4 +231,24 @@ class ProductionOutward {
         );
         return (int)Database::lastInsertId();
     }
+
+    /**
+     * Update outward record fields.
+     */
+    public static function update(int $id, array $data): bool {
+        $allowed = ['warehouse_id', 'vehicle_number', 'driver_name', 'driver_contact', 'transporter_name', 'lr_number', 'total_boxes', 'quantity', 'total_quantity', 'dispatch_date', 'notes', 'status'];
+        $fields = [];
+        $params = [];
+        foreach ($allowed as $f) {
+            if (array_key_exists($f, $data)) {
+                $fields[] = "`$f` = ?";
+                $params[] = $data[$f];
+            }
+        }
+        if (empty($fields)) {
+            return false;
+        }
+        $params[] = $id;
+        return Database::execute("UPDATE production_outwards SET " . implode(', ', $fields) . " WHERE id = ?", $params) >= 0;
+    }
 }

@@ -8147,12 +8147,18 @@ class ProductionController {
              ORDER BY pb.created_at DESC"
         );
 
+        $warehouses = Database::fetchAll("SELECT * FROM warehouses WHERE is_active = 1 ORDER BY name ASC");
+        if (empty($warehouses)) {
+            $warehouses = Database::fetchAll("SELECT * FROM warehouses ORDER BY name ASC");
+        }
+
         Response::view('production.outward.index', [
             'pageTitle'       => 'Production Outward & Dispatch',
             'activeModule'    => 'production',
             'activeMenu'      => 'outward',
             'outwards'        => $outwards,
             'approvedBatches' => $approvedBatches,
+            'warehouses'      => $warehouses,
             'search'          => $search,
             'scopedUnitId'    => $scopedUnitId,
             'breadcrumb'      => [
@@ -8270,6 +8276,55 @@ class ProductionController {
         ]);
     }
 
+    public function updateBatch(string $id): void {
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::back();
+            return;
+        }
+
+        $batchId = (int)$id;
+        $batch = ProductionBatch::find($batchId);
+        if (!$batch) {
+            Session::flash('error', 'Production batch not found.');
+            Response::back();
+            return;
+        }
+
+        $warehouseId = !empty($_POST['destination_warehouse_id']) ? (int)$_POST['destination_warehouse_id'] : (int)$batch['destination_warehouse_id'];
+        $boxCount = isset($_POST['box_count']) ? (int)$_POST['box_count'] : (int)($batch['box_count'] ?? 0);
+        $status = !empty($_POST['status']) ? trim($_POST['status']) : ($batch['status'] ?? 'PREPARING');
+        $notes = trim($_POST['notes'] ?? '');
+
+        $updateData = [
+            'destination_warehouse_id' => $warehouseId,
+            'box_count'                => max(1, $boxCount),
+            'status'                   => $status,
+            'notes'                    => $notes,
+        ];
+
+        if (!empty($_POST['item_qty']) && is_array($_POST['item_qty'])) {
+            $newTotal = 0;
+            foreach ($_POST['item_qty'] as $itemId => $qty) {
+                $qty = max(0, (int)$qty);
+                Database::execute("UPDATE production_batch_items SET quantity = ? WHERE id = ? AND production_batch_id = ?", [$qty, (int)$itemId, $batchId]);
+                $newTotal += $qty;
+            }
+            if ($newTotal > 0) {
+                $updateData['total_qty'] = $newTotal;
+                $updateData['quantity'] = $newTotal;
+            }
+        }
+
+        ProductionBatch::update($batchId, $updateData);
+
+        // Keep outward in sync if destination warehouse changed
+        Database::execute("UPDATE production_outwards SET warehouse_id = ?, total_boxes = ? WHERE production_batch_id = ?", [$warehouseId, max(1, $boxCount), $batchId]);
+
+        Session::flash('success', 'Production Batch ' . ($batch['batch_number'] ?? ('#' . $batchId)) . ' updated successfully.');
+        Response::redirect(url('production/batches'));
+    }
+
     public function outwardDetailsAjax(string $id): void {
         $outwardId = (int)$id;
         $outward = ProductionOutward::find($outwardId);
@@ -8318,6 +8373,55 @@ class ProductionController {
             'is_multi_batch' => count($batches) > 1,
             'total_batches'  => count($batches),
         ]);
+    }
+
+    public function updateOutward(string $id): void {
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::back();
+            return;
+        }
+
+        $outwardId = (int)$id;
+        $outward = ProductionOutward::find($outwardId);
+        if (!$outward) {
+            Session::flash('error', 'Outward record not found.');
+            Response::back();
+            return;
+        }
+
+        $warehouseId = !empty($_POST['warehouse_id']) ? (int)$_POST['warehouse_id'] : (int)($outward['warehouse_id'] ?? 0);
+        $vehicleNumber = trim($_POST['vehicle_number'] ?? '');
+        $driverName = trim($_POST['driver_name'] ?? '');
+        $driverContact = trim($_POST['driver_contact'] ?? '');
+        $transporterName = trim($_POST['transporter_name'] ?? '');
+        $lrNumber = trim($_POST['lr_number'] ?? '');
+        $totalBoxes = isset($_POST['total_boxes']) ? (int)$_POST['total_boxes'] : (int)($outward['total_boxes'] ?? 0);
+        $notes = trim($_POST['notes'] ?? '');
+        $dispatchDate = !empty($_POST['dispatch_date']) ? date('Y-m-d H:i:s', strtotime($_POST['dispatch_date'])) : ($outward['dispatch_date'] ?? date('Y-m-d H:i:s'));
+
+        $updateData = [
+            'vehicle_number'   => $vehicleNumber ?: null,
+            'driver_name'      => $driverName ?: null,
+            'driver_contact'   => $driverContact ?: null,
+            'transporter_name' => $transporterName ?: null,
+            'lr_number'        => $lrNumber ?: null,
+            'total_boxes'      => max(1, $totalBoxes),
+            'notes'            => $notes ?: null,
+            'dispatch_date'    => $dispatchDate,
+        ];
+
+        if ($warehouseId > 0) {
+            $updateData['warehouse_id'] = $warehouseId;
+            if (!empty($outward['production_batch_id'])) {
+                Database::execute("UPDATE production_batches SET destination_warehouse_id = ? WHERE id = ?", [$warehouseId, (int)$outward['production_batch_id']]);
+            }
+        }
+
+        ProductionOutward::update($outwardId, $updateData);
+
+        Session::flash('success', 'Outward Dispatch ' . ($outward['outward_number'] ?? ('#' . $outwardId)) . ' updated successfully.');
+        Response::redirect(url('production/outward'));
     }
 
     // =========================================================================
@@ -11603,7 +11707,8 @@ class ProductionController {
         }
 
         // Generate sequential expense number e.g. EXP-2026-0001
-        $userId = (int)(Session::get('user_id') ?? 1);
+        $user = Session::get('user');
+        $userId = (int)($user['id'] ?? Session::get('user_id') ?? 1);
 
         // Handle photo / receipt / bill image upload
         $photoUrl = null;
@@ -11632,12 +11737,16 @@ class ProductionController {
             if (!Database::beginTransaction()) {
                 throw new \RuntimeException('Could not start expense transaction.');
             }
-            $count = Database::fetchOne("SELECT COUNT(*) as cnt FROM production_expenses");
-            $nextSeq = (int)($count['cnt'] ?? 0) + 1;
+            $count = Database::fetchOne("SELECT MAX(id) as max_id, COUNT(*) as cnt FROM production_expenses");
+            $nextSeq = max((int)($count['max_id'] ?? 0), (int)($count['cnt'] ?? 0)) + 1;
             $expenseNumbers = [];
 
             foreach ($expenseLines as $line) {
                 $expenseNumber = 'EXP-' . date('Y') . '-' . sprintf("%04d", $nextSeq++);
+                while (Database::fetchOne("SELECT id FROM production_expenses WHERE expense_number = ?", [$expenseNumber])) {
+                    $nextSeq++;
+                    $expenseNumber = 'EXP-' . date('Y') . '-' . sprintf("%04d", $nextSeq);
+                }
                 $lineTotal = (float)$line['total_cost'];
                 $paidAmt = ($paymentStatus === 'PAID') ? $lineTotal : 0.00;
 

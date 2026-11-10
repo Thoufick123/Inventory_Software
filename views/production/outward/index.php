@@ -184,9 +184,14 @@
                                 <td><?= formatDateTime($o['dispatch_date']) ?></td>
                                 <td><span class="badge bg-success px-2 py-1"><i class="bi bi-check-all me-1"></i>DISPATCHED</span></td>
                                 <td class="text-end">
-                                    <button type="button" class="btn btn-sm btn-outline-primary fw-semibold" onclick="viewOutwardDispatchDetails(<?= $o['id'] ?>)" title="View Outward & Product Breakdown">
-                                        <i class="bi bi-eye me-1"></i> View
-                                    </button>
+                                    <div class="d-inline-flex gap-1">
+                                        <button type="button" class="btn btn-sm btn-outline-primary fw-semibold" onclick="viewOutwardDispatchDetails(<?= $o['id'] ?>)" title="View Outward & Product Breakdown">
+                                            <i class="bi bi-eye me-1"></i> View
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary fw-semibold" onclick='openEditOutwardModal(<?= json_encode($o, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)' title="Edit Outward Dispatch">
+                                            <i class="bi bi-pencil me-1"></i> Edit
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -360,7 +365,154 @@
     </div>
 </div>
 
+<!-- Modal: Edit Production Outward Dispatch -->
+<div class="modal fade" id="editOutwardModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0">
+            <div class="modal-header bg-primary text-white py-3">
+                <h5 class="modal-title fw-bold">
+                    <i class="bi bi-pencil-square me-2"></i>Edit Outward Dispatch
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" id="editOutwardForm" action="">
+                <?= CSRF::field() ?>
+                <div class="modal-body p-4">
+                    <div class="d-flex justify-content-between align-items-center p-3 rounded-3 bg-light border mb-4 flex-wrap gap-2">
+                        <div>
+                            <span class="text-uppercase small text-muted fw-bold d-block">Outward Document #</span>
+                            <span class="fs-5 fw-bold text-primary font-monospace" id="editOutwardNumberBadge">—</span>
+                        </div>
+                        <div>
+                            <span class="small text-muted d-block fw-bold text-uppercase">Batch &amp; Product</span>
+                            <span class="badge bg-dark font-monospace me-1" id="editOutwardBatchBadge">—</span>
+                            <span class="fw-semibold text-dark" id="editOutwardProduct">—</span>
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Destination Warehouse <span class="text-danger">*</span></label>
+                            <select name="warehouse_id" id="editOutwardWarehouse" class="form-select fw-semibold" required>
+                                <option value="">Select Warehouse</option>
+                                <?php if (!empty($warehouses)): ?>
+                                    <?php foreach ($warehouses as $wh): ?>
+                                        <option value="<?= (int)$wh['id'] ?>"><?= e($wh['name']) ?> (<?= e($wh['code'] ?? 'WH') ?>)</option>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </select>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Vehicle / Transport Number <span class="text-danger">*</span></label>
+                            <input type="text" name="vehicle_number" id="editOutwardVehicle" class="form-control text-uppercase fw-semibold" placeholder="e.g. TN-38-AB-1234 or Handover" required>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-dark">Driver Name</label>
+                            <input type="text" name="driver_name" id="editOutwardDriverName" class="form-control" placeholder="e.g. Ramesh Kumar">
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-dark">Driver Contact / Phone</label>
+                            <input type="text" name="driver_contact" id="editOutwardDriverContact" class="form-control" placeholder="e.g. 9840123456">
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-dark">Total Boxes</label>
+                            <input type="number" name="total_boxes" id="editOutwardBoxes" class="form-control fw-bold" min="1" required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Transporter / Logistics</label>
+                            <input type="text" name="transporter_name" id="editOutwardTransporter" class="form-control" placeholder="e.g. VRL Logistics, Delhivery">
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">LR / Consignment / Bill #</label>
+                            <input type="text" name="lr_number" id="editOutwardLrNumber" class="form-control" placeholder="e.g. LR-987654">
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Dispatch Date &amp; Time</label>
+                            <input type="datetime-local" name="dispatch_date" id="editOutwardDispatchDate" class="form-control">
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-dark">Dispatch Notes / Gate Pass</label>
+                            <textarea name="notes" id="editOutwardNotes" class="form-control" rows="2" placeholder="Gate pass #, delivery instructions, driver details..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary fw-semibold"><i class="bi bi-check-circle me-1"></i>Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
+function openEditOutwardModal(outward) {
+    if (!outward) return;
+    const form = document.getElementById('editOutwardForm');
+    if (form) {
+        form.action = '<?= url('production/outward/update') ?>/' + outward.id;
+    }
+    document.getElementById('editOutwardNumberBadge').textContent = outward.outward_number || ('#' + outward.id);
+    document.getElementById('editOutwardBatchBadge').textContent = outward.all_batch_numbers || outward.batch_number || '—';
+    document.getElementById('editOutwardProduct').textContent = outward.product_name || 'Finished Product';
+
+    const whSelect = document.getElementById('editOutwardWarehouse');
+    if (whSelect) {
+        whSelect.value = outward.warehouse_id || '';
+    }
+    const vehicleInput = document.getElementById('editOutwardVehicle');
+    if (vehicleInput) {
+        vehicleInput.value = outward.vehicle_number || '';
+    }
+    const driverInput = document.getElementById('editOutwardDriverName');
+    if (driverInput) {
+        driverInput.value = outward.driver_name || '';
+    }
+    const contactInput = document.getElementById('editOutwardDriverContact');
+    if (contactInput) {
+        contactInput.value = outward.driver_contact || '';
+    }
+    const transporterInput = document.getElementById('editOutwardTransporter');
+    if (transporterInput) {
+        transporterInput.value = outward.transporter_name || '';
+    }
+    const lrInput = document.getElementById('editOutwardLrNumber');
+    if (lrInput) {
+        lrInput.value = outward.lr_number || '';
+    }
+    const boxesInput = document.getElementById('editOutwardBoxes');
+    if (boxesInput) {
+        boxesInput.value = outward.total_boxes || outward.box_count || 1;
+    }
+    const dateInput = document.getElementById('editOutwardDispatchDate');
+    if (dateInput) {
+        if (outward.dispatch_date) {
+            const dt = new Date(outward.dispatch_date.replace(' ', 'T'));
+            if (!isNaN(dt.getTime())) {
+                const pad = (n) => String(n).padStart(2, '0');
+                dateInput.value = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+            }
+        }
+    }
+    const notesInput = document.getElementById('editOutwardNotes');
+    if (notesInput) {
+        notesInput.value = outward.notes || '';
+    }
+
+    const modalEl = document.getElementById('editOutwardModal');
+    if (modalEl) {
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+    }
+}
 window.approvedBatchesData = <?= json_encode($approvedBatches) ?>;
 
 function openDispatchModal(batchData) {
