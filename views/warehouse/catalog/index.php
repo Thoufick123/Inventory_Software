@@ -3370,4 +3370,42 @@ function onEditCatHsnChange() {
 .cat-table-row td { vertical-align:middle; }
 .view-summary-stat { min-height: 82px; }
 .btn-xs { padding: 0.15rem 0.5rem; font-size: 0.72rem; line-height: 1.3; border-radius: 4px; }
+
+/* Modal horizontal scrollbars & responsive overflow */
+#modalUnifiedEditCategory .modal-body,
+#modalUnifiedCategory .modal-body,
+#modalConfigAttributes .modal-body {
+    overflow-x: auto !important;
+}
+#modalUnifiedEditCategory .table-responsive,
+#modalUnifiedCategory .table-responsive,
+#modalConfigAttributes .table-responsive {
+    overflow-x: auto !important;
+    scrollbar-width: thin;
+}
+#modalUnifiedEditCategory .table-responsive::-webkit-scrollbar,
+#modalUnifiedEditCategory .modal-body::-webkit-scrollbar,
+#modalUnifiedCategory .table-responsive::-webkit-scrollbar,
+#modalConfigAttributes .table-responsive::-webkit-scrollbar {
+    height: 8px;
+    width: 8px;
+}
+#modalUnifiedEditCategory .table-responsive::-webkit-scrollbar-track,
+#modalUnifiedEditCategory .modal-body::-webkit-scrollbar-track,
+#modalUnifiedCategory .table-responsive::-webkit-scrollbar-track,
+#modalConfigAttributes .table-responsive::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 4px;
+}
+#modalUnifiedEditCategory .table-responsive::-webkit-scrollbar-thumb,
+#modalUnifiedEditCategory .modal-body::-webkit-scrollbar-thumb,
+#modalUnifiedCategory .table-responsive::-webkit-scrollbar-thumb,
+#modalConfigAttributes .table-responsive::-webkit-scrollbar-thumb {
+    background: #94a3b8;
+    border-radius: 4px;
+}
+#modalUnifiedEditCategory .table-responsive::-webkit-scrollbar-thumb:hover,
+#modalUnifiedEditCategory .modal-body::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+}
 </style>

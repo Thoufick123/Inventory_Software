@@ -602,7 +602,7 @@ class ProductionController {
         $items = Database::fetchAll(
             "SELECT item_type, item_name, quantity, unit, weight_kg, unit_price, total_price,
                     tax_input_type, gst_type, sgst_value, cgst_value, igst_value,
-                    sgst_amount, cgst_amount, igst_amount, roll_number, color, design_name
+                    sgst_amount, cgst_amount, igst_amount, roll_number, color, design_name, hsn_code
              FROM production_purchase_items
              WHERE purchase_id = ?
              ORDER BY id",
@@ -860,6 +860,7 @@ class ProductionController {
                 $photoUrl = null;
             }
 
+            $hsnCode = trim((string)($submitted['hsn_code'] ?? $oldItem['hsn_code'] ?? ''));
             $sgstAmount = in_array($gstType, ['SGST', 'BOTH'], true) ? $calculateTaxAmount($baseAmount, $taxMode, $taxValue) : 0.0;
             $cgstAmount = $gstType === 'CGST'
                 ? $calculateTaxAmount($baseAmount, $taxMode, $taxValue)
@@ -870,6 +871,7 @@ class ProductionController {
                 'quantity' => $quantity, 'unit' => $unit, 'unit_price' => $unitPrice,
                 'base_amount' => $baseAmount, 'weight' => $weight, 'roll_number' => $rollNumber,
                 'color' => $color, 'design_name' => $design, 'design_count' => $designCount,
+                'hsn_code' => $hsnCode !== '' ? mb_strtoupper($hsnCode) : null,
                 'gst_type' => $gstType, 'tax_mode' => $taxMode, 'tax_value' => $taxValue,
                 'cgst_tax_value' => $cgstTaxValue, 'sgst_amount' => $sgstAmount,
                 'cgst_amount' => $cgstAmount, 'igst_amount' => $igstAmount,
@@ -938,22 +940,22 @@ class ProductionController {
                          SET item_name = ?, quantity = ?, unit = ?, weight_kg = ?, unit_price = ?, total_price = ?,
                              gst_type = ?, tax_input_type = ?, sgst_value = ?, cgst_value = ?, igst_value = ?,
                              sgst_amount = ?, cgst_amount = ?, igst_amount = ?, roll_number = ?, color = ?,
-                             design_name = ?, design_count = ?
+                             design_name = ?, design_count = ?, hsn_code = ?
                          WHERE id = ? AND purchase_id = ?",
                         [$item['item_name'], $item['quantity'], $item['unit'], $item['weight'], $item['unit_price'], $item['total'],
                             $item['gst_type'], $item['tax_mode'], in_array($item['gst_type'], ['SGST', 'BOTH'], true) ? $item['tax_value'] : 0,
                             $item['gst_type'] === 'CGST' ? $item['tax_value'] : $item['cgst_tax_value'],
                             $item['gst_type'] === 'IGST' ? $item['tax_value'] : 0,
                             $item['sgst_amount'], $item['cgst_amount'], $item['igst_amount'], $item['roll_number'], $item['color'],
-                            $item['design_name'], $item['design_count'], $item['id'], $purchaseId]
+                            $item['design_name'], $item['design_count'], $item['hsn_code'], $item['id'], $purchaseId]
                     );
                     if ($item['type'] === 'FABRIC_ROLL' && $item['seller_roll_id'] > 0) {
                         Database::execute(
                             "UPDATE seller_rolls SET roll_number = ?, color = ?, design_name = ?, design_count = ?,
-                                     quantity = ?, weight = ?, price = ?, material_type = ?, photo_url = ?
+                                     quantity = ?, weight = ?, price = ?, material_type = ?, photo_url = ?, hsn_code = ?
                              WHERE id = ?",
                             [$item['roll_number'], $item['color'], $item['design_name'], $item['design_count'],
-                                $item['quantity'], $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'], $item['seller_roll_id']]
+                                $item['quantity'], $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'], $item['hsn_code'], $item['seller_roll_id']]
                         );
                     }
                     continue;
@@ -962,14 +964,14 @@ class ProductionController {
                     "INSERT INTO production_purchase_items
                         (purchase_id, item_type, item_name, quantity, unit, unit_price, total_price,
                          gst_type, tax_input_type, sgst_value, cgst_value, igst_value,
-                         sgst_amount, cgst_amount, igst_amount)
-                     VALUES (?, 'GENERAL_SUPPLY', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         sgst_amount, cgst_amount, igst_amount, hsn_code)
+                     VALUES (?, 'GENERAL_SUPPLY', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     [$purchaseId, $item['item_name'], $item['quantity'], $item['unit'], $item['unit_price'], $item['total'],
                         $item['gst_type'], $item['tax_mode'],
                         in_array($item['gst_type'], ['SGST', 'BOTH'], true) ? $item['tax_value'] : 0,
                         $item['gst_type'] === 'CGST' ? $item['tax_value'] : $item['cgst_tax_value'],
                         $item['gst_type'] === 'IGST' ? $item['tax_value'] : 0,
-                        $item['sgst_amount'], $item['cgst_amount'], $item['igst_amount']]
+                        $item['sgst_amount'], $item['cgst_amount'], $item['igst_amount'], $item['hsn_code']]
                 );
             }
             $this->refreshSupplierRollTotals((int)$purchase['seller_id']);
@@ -1145,6 +1147,7 @@ class ProductionController {
 
             if ($type === 'FABRIC_ROLL') {
                 $rollNumber = mb_strtoupper(trim((string)($submitted['roll_number'] ?? '')));
+                $hsnCode = trim((string)($submitted['hsn_code'] ?? ''));
                 $color = mb_strtoupper(trim((string)($submitted['color'] ?? '')));
                 $design = mb_strtoupper(trim((string)($submitted['design_name'] ?? '')));
                 $designCount = (int)($submitted['design_count'] ?? 0);
@@ -1171,6 +1174,7 @@ class ProductionController {
                 $items[] = [
                     'type' => $type, 'item_name' => $fabricDescription, 'quantity' => $quantity,
                     'unit' => 'PCS', 'weight' => $weight, 'unit_price' => $unitPrice,
+                    'hsn_code' => $hsnCode !== '' ? mb_strtoupper($hsnCode) : null,
                     'gst_type' => $gstType, 'tax_mode' => $taxMode, 'tax_value' => $taxValue,
                     'cgst_tax_value' => $cgstTaxValue,
                     'tax_amount' => $taxAmount,
@@ -1189,6 +1193,7 @@ class ProductionController {
             }
 
             $itemName = trim((string)($submitted['item_name'] ?? ''));
+            $hsnCode = trim((string)($submitted['hsn_code'] ?? ''));
             $unit = strtoupper(trim((string)($submitted['unit'] ?? '')));
             if ($unit === 'OTHER') {
                 $unit = strtoupper(trim((string)($submitted['custom_unit'] ?? '')));
@@ -1210,6 +1215,7 @@ class ProductionController {
             $items[] = [
                 'type' => $type, 'item_name' => mb_strtoupper($itemName), 'quantity' => $quantity,
                 'unit' => $unit, 'weight' => null, 'unit_price' => $unitPrice,
+                'hsn_code' => $hsnCode !== '' ? mb_strtoupper($hsnCode) : null,
                 'gst_type' => $gstType, 'tax_mode' => $taxMode, 'tax_value' => $taxValue,
                 'cgst_tax_value' => $cgstTaxValue,
                 'tax_amount' => $taxAmount,
@@ -1304,11 +1310,11 @@ class ProductionController {
                     Database::execute(
                         "INSERT INTO seller_rolls
                             (seller_id, roll_number, color, design_name, design_count, quantity, weight, price,
-                             material_type, photo_url, start_seq, end_seq, start_code, end_code, qr_code)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                             material_type, photo_url, start_seq, end_seq, start_code, end_code, qr_code, hsn_code)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         [$sellerId, $item['roll_number'], $item['color'], $item['design_name'], $item['design_count'],
                             $item['quantity'], $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'],
-                            $sequence['start_seq'], $sequence['end_seq'], $sequence['start_code'], $sequence['end_code'], $rollQrCode]
+                            $sequence['start_seq'], $sequence['end_seq'], $sequence['start_code'], $sequence['end_code'], $rollQrCode, $item['hsn_code']]
                     );
                     $sellerRollId = (int)Database::lastInsertId();
                 }
@@ -1318,14 +1324,14 @@ class ProductionController {
                         (purchase_id, item_type, item_name, quantity, unit, weight_kg, unit_price, total_price,
                          gst_type, tax_input_type, sgst_value, cgst_value, igst_value,
                          sgst_amount, cgst_amount, igst_amount,
-                         roll_number, color, design_name, design_count, seller_roll_id)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         roll_number, color, design_name, design_count, seller_roll_id, hsn_code)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     [$purchaseId, $item['type'], $item['item_name'], $item['quantity'], $item['unit'], $item['weight'],
                         $item['unit_price'], $item['line_total'], $item['gst_type'], $item['tax_mode'],
                         $item['sgst_value'], $item['cgst_value'], $item['igst_value'],
                         $item['sgst_amount'], $item['cgst_amount'], $item['igst_amount'],
                         $item['roll_number'], $item['color'],
-                        $item['design_name'], $item['design_count'], $sellerRollId]
+                        $item['design_name'], $item['design_count'], $sellerRollId, $item['hsn_code']]
                 );
             }
 
