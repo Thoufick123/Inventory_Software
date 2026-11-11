@@ -452,7 +452,7 @@ class ProductionBatch {
      * Update production batch fields.
      */
     public static function update(int $id, array $data): bool {
-        $allowed = ['batch_number', 'destination_warehouse_id', 'box_count', 'status', 'notes', 'total_qty', 'quantity', 'prepared_by', 'cost_per_piece', 'total_cost'];
+        $allowed = ['batch_number', 'destination_warehouse_id', 'box_count', 'status', 'notes', 'total_qty', 'quantity', 'prepared_by', 'cost_per_piece', 'total_cost', 'additional_qc_batch_ids', 'is_multi_qc'];
         $fields = [];
         $params = [];
         foreach ($allowed as $f) {

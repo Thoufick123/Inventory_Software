@@ -8425,13 +8425,24 @@ class ProductionController {
         $items = ProductionBatch::getItems($batchId);
         $outward = ProductionOutward::findByBatchId($batchId);
 
+        $qcBatch = null;
+        if (!empty($batch['qc_batch_id'])) {
+            $qcBatch = QCBatch::find((int)$batch['qc_batch_id']);
+            if ($qcBatch) {
+                $qcProg = Database::fetchOne("SELECT program_number FROM production_programs WHERE id = ?", [(int)$qcBatch['program_id']]);
+                $qcBatch['program_number'] = $qcProg['program_number'] ?? ('PRG #' . $qcBatch['program_id']);
+            }
+        }
+
         $multiQCBatches = [];
+        $existingAddIds = [];
         if (!empty($batch['additional_qc_batch_ids'])) {
             $addIds = json_decode((string)$batch['additional_qc_batch_ids'], true);
             if (!is_array($addIds)) {
                 $addIds = explode(',', (string)$batch['additional_qc_batch_ids']);
             }
-            foreach ($addIds as $aid) {
+            $existingAddIds = array_values(array_filter(array_map('intval', $addIds)));
+            foreach ($existingAddIds as $aid) {
                 $aq = QCBatch::find((int)$aid);
                 if ($aq) {
                     $aqProg = Database::fetchOne("SELECT program_number FROM production_programs WHERE id = ?", [(int)$aq['program_id']]);
@@ -8441,12 +8452,31 @@ class ProductionController {
             }
         }
 
+        $eligibleQCBatches = [];
+        if (!empty($batch['program_id'])) {
+            $eligibleQCBatches = Database::fetchAll(
+                "SELECT qb.id, qb.program_id, qb.passed_qty, qb.status,
+                        pp.program_number, COALESCE(p.name, pp.name, 'General Apparel') as product_name,
+                        COALESCE((SELECT SUM(passed_qty) FROM qc_items WHERE qc_batch_id = qb.id), qb.passed_qty, 0) as total_qc_passed,
+                        COALESCE((SELECT SUM(rework_qty) FROM qc_items WHERE qc_batch_id = qb.id), qb.rework_qty, 0) as rework_completed_qty
+                 FROM qc_batches qb
+                 JOIN production_programs pp ON qb.program_id = pp.id
+                 LEFT JOIN products p ON pp.product_id = p.id
+                 WHERE qb.program_id = ? AND qb.id != ?
+                 ORDER BY qb.id DESC",
+                [(int)$batch['program_id'], (int)($batch['qc_batch_id'] ?? 0)]
+            );
+        }
+
         Response::json([
-            'success'          => true,
-            'batch'            => $batch,
-            'items'            => $items,
-            'outward'          => $outward,
-            'multi_qc_batches' => $multiQCBatches,
+            'success'             => true,
+            'batch'               => $batch,
+            'qc_batch'            => $qcBatch,
+            'items'               => $items,
+            'outward'             => $outward,
+            'multi_qc_batches'    => $multiQCBatches,
+            'eligible_qc_batches' => $eligibleQCBatches,
+            'additional_qc_ids'   => $existingAddIds,
         ]);
     }
 
@@ -8478,6 +8508,15 @@ class ProductionController {
             'status'                   => $status,
             'notes'                    => $notes,
         ];
+
+        if (isset($_POST['additional_qc_batch_ids'])) {
+            $addIds = is_array($_POST['additional_qc_batch_ids']) 
+                ? $_POST['additional_qc_batch_ids'] 
+                : explode(',', (string)$_POST['additional_qc_batch_ids']);
+            $addIds = array_values(array_filter(array_map('intval', $addIds), fn($v) => $v > 0 && $v !== (int)($batch['qc_batch_id'] ?? 0)));
+            $updateData['additional_qc_batch_ids'] = !empty($addIds) ? json_encode($addIds) : null;
+            $updateData['is_multi_qc'] = !empty($addIds) ? 1 : 0;
+        }
 
         if (!empty($_POST['item_qty']) && is_array($_POST['item_qty'])) {
             $newTotal = 0;
