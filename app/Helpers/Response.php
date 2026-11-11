@@ -141,13 +141,18 @@ function url(string $path = ''): string {
             $scriptDir = substr($scriptDir, 0, -strlen('/public'));
         }
 
+        $configuredHost = parse_url($configuredUrl, PHP_URL_HOST);
+        $isSameHost = empty($configuredHost) || strtolower($configuredHost) === strtolower($host);
+
         if (!empty($scriptDir) && $scriptDir !== '/') {
             $pathPrefix = $scriptDir;
-        } else {
-            $pathPrefix = parse_url($configuredUrl, PHP_URL_PATH);
+        } elseif ($isSameHost && !empty($configuredUrl)) {
+            $pathPrefix = parse_url($configuredUrl, PHP_URL_PATH) ?? '';
             if (empty($pathPrefix) || $pathPrefix === '/') {
                 $pathPrefix = '';
             }
+        } else {
+            $pathPrefix = '';
         }
         $baseUrl = $protocol . '://' . $host . rtrim($pathPrefix, '/');
     } else {
