@@ -2828,6 +2828,37 @@ class WarehouseController {
                     Response::back();
                     return;
                 }
+
+                // Check if already outwarded / purchased by a customer
+                $soldCheck = Database::fetchOne(
+                    "SELECT s.invoice_number, COALESCE(c.name, 'Customer') as customer_name
+                     FROM sale_items si
+                     JOIN sales s ON s.id = si.sale_id
+                     LEFT JOIN customers c ON s.customer_id = c.id
+                     WHERE (si.qr_code = ? OR FIND_IN_SET(?, REPLACE(si.scanned_qr_codes, ', ', ',')) > 0)
+                       AND s.status NOT IN ('CANCELLED', 'RETURNED')
+                     LIMIT 1",
+                    [$pieceTag, $pieceTag]
+                );
+                if ($soldCheck) {
+                    Session::flash('error', "QR code '{$pieceTag}' has ALREADY been outwarded / purchased by customer '{$soldCheck['customer_name']}' (Invoice #{$soldCheck['invoice_number']})! It cannot be logged as warehouse damage.");
+                    Response::back();
+                    return;
+                }
+
+                $prodBillCheck = Database::fetchOne(
+                    "SELECT pb.bill_number, COALESCE(pb.customer_name, pb.company_name, 'Customer') as customer_name
+                     FROM production_bill_item_tags pbit
+                     JOIN production_bills pb ON pb.id = pbit.bill_id
+                     WHERE pbit.tag_code = ?
+                     LIMIT 1",
+                    [$pieceTag]
+                );
+                if ($prodBillCheck) {
+                    Session::flash('error', "QR code '{$pieceTag}' has ALREADY been purchased / billed to customer '{$prodBillCheck['customer_name']}' under Bill #{$prodBillCheck['bill_number']}! It cannot be logged as warehouse damage.");
+                    Response::back();
+                    return;
+                }
             }
         }
 
@@ -3292,6 +3323,124 @@ class WarehouseController {
                     'sku'                => $dmgCheck['sku'],
                     'tag_code'           => $scannedPieceTag,
                     'message'            => "Piece Tag '{$scannedPieceTag}' has ALREADY been logged as damaged in Case #{$dmgCheck['damage_number']} ({$dmgCheck['status']}) - Reason: {$dmgCheck['damage_reason']}! The same piece cannot be damaged twice."
+                ]);
+                exit;
+            }
+        }
+
+        // Guardrail: Check if this piece tag or candidate code has ALREADY been purchased / outwarded by a customer
+        foreach (array_unique(array_merge([$extractedTag], $candidateCodes)) as $codeToCheck) {
+            if (empty($codeToCheck) || strlen($codeToCheck) < 3) continue;
+
+            // 1. Check Sales & Retail / Channel Billing (sale_items & sales)
+            $soldItem = Database::fetchOne(
+                "SELECT si.id, s.id as sale_id, s.invoice_number, s.sale_type, s.created_at, s.status,
+                        COALESCE(c.name, 'Customer') as customer_name, c.phone as customer_phone,
+                        p.name as product_name, pv.sku, pv.id as variant_id
+                 FROM sale_items si
+                 JOIN sales s ON s.id = si.sale_id
+                 JOIN product_variants pv ON si.variant_id = pv.id
+                 JOIN products p ON pv.product_id = p.id
+                 LEFT JOIN customers c ON s.customer_id = c.id
+                 WHERE (
+                     si.qr_code = ? 
+                     OR si.scanned_qr_codes = ?
+                     OR FIND_IN_SET(?, REPLACE(si.scanned_qr_codes, ', ', ',')) > 0
+                     OR si.scanned_qr_codes LIKE ?
+                     OR si.scanned_qr_codes LIKE ?
+                     OR si.scanned_qr_codes LIKE ?
+                 )
+                 AND s.status NOT IN ('CANCELLED', 'RETURNED')
+                 LIMIT 1",
+                [
+                    $codeToCheck, 
+                    $codeToCheck, 
+                    $codeToCheck, 
+                    $codeToCheck . ',%', 
+                    '%,' . $codeToCheck, 
+                    '%,' . $codeToCheck . ',%'
+                ]
+            );
+
+            if ($soldItem) {
+                // If it's a series or complementary product, check if there is still remaining available stock
+                $soldVar = Database::fetchOne(
+                    "SELECT pv.id, pv.qr_type, pv.pack_quantity,
+                            COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
+                            COALESCE(wc.category_type, 'NORMAL') as cat_type
+                     FROM product_variants pv 
+                     JOIN products p ON pv.product_id = p.id 
+                     LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+                     WHERE pv.id = ?",
+                    [$soldItem['variant_id']]
+                );
+                $isMasterOrComp = ($soldVar && (
+                    $soldVar['qr_type'] === 'SERIES_BATCH'
+                    || strtoupper($soldVar['cat_type'] ?? '') === 'SERIES'
+                    || strtoupper($soldVar['cat_type'] ?? '') === 'COMPLEMENTARY'
+                    || (int)($soldVar['pack_quantity'] ?? 0) > 1
+                    || !empty($soldVar['is_comp'])
+                ));
+
+                if ($isMasterOrComp) {
+                    $availStockRow = Database::fetchOne(
+                        "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                         WHERE variant_id = ? AND location_type = 'WAREHOUSE' " . ($warehouseId > 0 ? "AND location_id = {$warehouseId}" : "") . " AND stock_state = 'AVAILABLE'",
+                        [$soldItem['variant_id']]
+                    );
+                    $remStock = (float)($availStockRow['qty'] ?? 0);
+                    if ($remStock > 0) {
+                        continue;
+                    }
+                }
+
+                $inv = $soldItem['invoice_number'] ?: ('Sale #' . $soldItem['sale_id']);
+                $cust = $soldItem['customer_name'] ?: 'Customer';
+                $saleDate = date('d M Y', strtotime($soldItem['created_at']));
+                echo json_encode([
+                    'success'         => false,
+                    'is_already_sold' => true,
+                    'tag_code'        => $codeToCheck,
+                    'invoice_number'  => $inv,
+                    'customer_name'   => $cust,
+                    'sale_type'       => $soldItem['sale_type'],
+                    'sale_date'       => $saleDate,
+                    'product_name'    => $soldItem['product_name'],
+                    'sku'             => $soldItem['sku'],
+                    'message'         => "This QR code ({$codeToCheck}) has ALREADY been outwarded / purchased by customer '{$cust}' (Invoice #{$inv} on {$saleDate})! It cannot be logged as warehouse damage stock."
+                ]);
+                exit;
+            }
+
+            // 2. Check Direct Production / Wholesale Invoices (production_bills & production_bill_item_tags)
+            $prodBill = Database::fetchOne(
+                "SELECT pb.id as bill_id, pb.bill_number, pb.customer_name, pb.company_name, pb.created_at,
+                        p.name as product_name, pv.sku, pv.id as variant_id
+                 FROM production_bill_item_tags pbit
+                 JOIN production_bills pb ON pb.id = pbit.bill_id
+                 JOIN production_bill_items pbi ON pbi.id = pbit.bill_item_id
+                 JOIN product_variants pv ON pbi.variant_id = pv.id
+                 JOIN products p ON pv.product_id = p.id
+                 WHERE pbit.tag_code = ?
+                 LIMIT 1",
+                [$codeToCheck]
+            );
+
+            if ($prodBill) {
+                $cust = $prodBill['customer_name'] ?: ($prodBill['company_name'] ?: 'Customer');
+                $billNum = $prodBill['bill_number'] ?: ('Bill #' . $prodBill['bill_id']);
+                $billDate = date('d M Y', strtotime($prodBill['created_at']));
+                echo json_encode([
+                    'success'         => false,
+                    'is_already_sold' => true,
+                    'tag_code'        => $codeToCheck,
+                    'invoice_number'  => $billNum,
+                    'customer_name'   => $cust,
+                    'sale_type'       => 'DIRECT_BILLING',
+                    'sale_date'       => $billDate,
+                    'product_name'    => $prodBill['product_name'],
+                    'sku'             => $prodBill['sku'],
+                    'message'         => "This QR code ({$codeToCheck}) has ALREADY been purchased / billed to customer '{$cust}' under Bill #{$billNum} (Dated {$billDate})! It cannot be logged as warehouse damage stock."
                 ]);
                 exit;
             }
@@ -7696,6 +7845,124 @@ class WarehouseController {
                     'sku'           => $dmgCheck['sku'],
                     'tag_code'      => $scannedPieceTag,
                     'message'       => "This product is marked as DAMAGED! (Case #{$dmgCheck['damage_number']} - Reason: {$dmgCheck['damage_reason']}). Damaged products cannot be allocated!"
+                ]);
+                exit;
+            }
+        }
+
+        // Guardrail: Check if this piece tag or candidate code has ALREADY been purchased / outwarded by a customer
+        foreach (array_unique(array_merge([$extractedTag], $candidateCodes)) as $codeToCheck) {
+            if (empty($codeToCheck) || strlen($codeToCheck) < 3) continue;
+
+            // 1. Check Sales & Retail / Channel Billing (sale_items & sales)
+            $soldItem = Database::fetchOne(
+                "SELECT si.id, s.id as sale_id, s.invoice_number, s.sale_type, s.created_at, s.status,
+                        COALESCE(c.name, 'Customer') as customer_name, c.phone as customer_phone,
+                        p.name as product_name, pv.sku, pv.id as variant_id
+                 FROM sale_items si
+                 JOIN sales s ON s.id = si.sale_id
+                 JOIN product_variants pv ON si.variant_id = pv.id
+                 JOIN products p ON pv.product_id = p.id
+                 LEFT JOIN customers c ON s.customer_id = c.id
+                 WHERE (
+                     si.qr_code = ? 
+                     OR si.scanned_qr_codes = ?
+                     OR FIND_IN_SET(?, REPLACE(si.scanned_qr_codes, ', ', ',')) > 0
+                     OR si.scanned_qr_codes LIKE ?
+                     OR si.scanned_qr_codes LIKE ?
+                     OR si.scanned_qr_codes LIKE ?
+                 )
+                 AND s.status NOT IN ('CANCELLED', 'RETURNED')
+                 LIMIT 1",
+                [
+                    $codeToCheck, 
+                    $codeToCheck, 
+                    $codeToCheck, 
+                    $codeToCheck . ',%', 
+                    '%,' . $codeToCheck, 
+                    '%,' . $codeToCheck . ',%'
+                ]
+            );
+
+            if ($soldItem) {
+                // If it's a series or complementary product, check if there is still remaining available stock
+                $soldVar = Database::fetchOne(
+                    "SELECT pv.id, pv.qr_type, pv.pack_quantity,
+                            COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
+                            COALESCE(wc.category_type, 'NORMAL') as cat_type
+                     FROM product_variants pv 
+                     JOIN products p ON pv.product_id = p.id 
+                     LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+                     WHERE pv.id = ?",
+                    [$soldItem['variant_id']]
+                );
+                $isMasterOrComp = ($soldVar && (
+                    $soldVar['qr_type'] === 'SERIES_BATCH'
+                    || strtoupper($soldVar['cat_type'] ?? '') === 'SERIES'
+                    || strtoupper($soldVar['cat_type'] ?? '') === 'COMPLEMENTARY'
+                    || (int)($soldVar['pack_quantity'] ?? 0) > 1
+                    || !empty($soldVar['is_comp'])
+                ));
+
+                if ($isMasterOrComp) {
+                    $availStockRow = Database::fetchOne(
+                        "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                         WHERE variant_id = ? AND location_type = 'WAREHOUSE' " . ($warehouseId > 0 ? "AND location_id = {$warehouseId}" : "") . " AND stock_state = 'AVAILABLE'",
+                        [$soldItem['variant_id']]
+                    );
+                    $remStock = (float)($availStockRow['qty'] ?? 0);
+                    if ($remStock > 0) {
+                        continue;
+                    }
+                }
+
+                $inv = $soldItem['invoice_number'] ?: ('Sale #' . $soldItem['sale_id']);
+                $cust = $soldItem['customer_name'] ?: 'Customer';
+                $saleDate = date('d M Y', strtotime($soldItem['created_at']));
+                echo json_encode([
+                    'success'         => false,
+                    'is_already_sold' => true,
+                    'tag_code'        => $codeToCheck,
+                    'invoice_number'  => $inv,
+                    'customer_name'   => $cust,
+                    'sale_type'       => $soldItem['sale_type'],
+                    'sale_date'       => $saleDate,
+                    'product_name'    => $soldItem['product_name'],
+                    'sku'             => $soldItem['sku'],
+                    'message'         => "This QR code ({$codeToCheck}) has ALREADY been outwarded / purchased by customer '{$cust}' (Invoice #{$inv} on {$saleDate})! It cannot be logged as warehouse damage stock."
+                ]);
+                exit;
+            }
+
+            // 2. Check Direct Production / Wholesale Invoices (production_bills & production_bill_item_tags)
+            $prodBill = Database::fetchOne(
+                "SELECT pb.id as bill_id, pb.bill_number, pb.customer_name, pb.company_name, pb.created_at,
+                        p.name as product_name, pv.sku, pv.id as variant_id
+                 FROM production_bill_item_tags pbit
+                 JOIN production_bills pb ON pb.id = pbit.bill_id
+                 JOIN production_bill_items pbi ON pbi.id = pbit.bill_item_id
+                 JOIN product_variants pv ON pbi.variant_id = pv.id
+                 JOIN products p ON pv.product_id = p.id
+                 WHERE pbit.tag_code = ?
+                 LIMIT 1",
+                [$codeToCheck]
+            );
+
+            if ($prodBill) {
+                $cust = $prodBill['customer_name'] ?: ($prodBill['company_name'] ?: 'Customer');
+                $billNum = $prodBill['bill_number'] ?: ('Bill #' . $prodBill['bill_id']);
+                $billDate = date('d M Y', strtotime($prodBill['created_at']));
+                echo json_encode([
+                    'success'         => false,
+                    'is_already_sold' => true,
+                    'tag_code'        => $codeToCheck,
+                    'invoice_number'  => $billNum,
+                    'customer_name'   => $cust,
+                    'sale_type'       => 'DIRECT_BILLING',
+                    'sale_date'       => $billDate,
+                    'product_name'    => $prodBill['product_name'],
+                    'sku'             => $prodBill['sku'],
+                    'message'         => "This QR code ({$codeToCheck}) has ALREADY been purchased / billed to customer '{$cust}' under Bill #{$billNum} (Dated {$billDate})! It cannot be logged as warehouse damage stock."
                 ]);
                 exit;
             }
