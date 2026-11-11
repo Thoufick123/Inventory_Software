@@ -97,7 +97,7 @@ $taxValueForItem = static function (array $item, string $type): float {
             </div>
             <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2 flex-wrap gap-2">
                 <h6 class="fw-bold mb-0"><i class="bi bi-stack me-1 text-primary"></i>Individual Fabric Rolls (<span id="rollCountBadge"><?= count($fabricItems) ?></span>)</h6>
-                <span class="text-muted small">Roll RQ and QR ranges are kept fixed while editing.</span>
+                <span class="text-muted small">Edit roll details, quantity (RQ), and specifications.</span>
             </div>
             <div id="rollsContainer" class="d-flex flex-column gap-3 mb-4">
                 <?php foreach ($fabricItems as $index => $item): ?>
@@ -131,14 +131,16 @@ $taxValueForItem = static function (array $item, string $type): float {
                             <input type="hidden" name="items[<?= $key ?>][id]" value="<?= $key ?>">
                             <input type="hidden" name="items[<?= $key ?>][item_type]" value="FABRIC_ROLL">
                             <input type="hidden" name="items[<?= $key ?>][item_name]" class="roll-item-name" value="<?= e($item['item_name']) ?>">
-                            <input type="hidden" name="items[<?= $key ?>][quantity]" value="<?= e($item['quantity']) ?>">
                             <input type="hidden" name="items[<?= $key ?>][unit]" value="PCS">
                             <div class="row g-3">
                                 <div class="col-lg-2 col-md-4"><label class="form-label required">Roll No. / Code *</label><input name="items[<?= $key ?>][roll_number]" class="form-control roll-number text-uppercase" maxlength="50" value="<?= e($item['roll_number']) ?>" required></div>
                                 <div class="col-lg-2 col-md-4"><label class="form-label required">Color / Shade *</label><input name="items[<?= $key ?>][color]" class="form-control roll-color text-uppercase" maxlength="100" value="<?= e($item['color']) ?>" required></div>
                                 <div class="col-lg-2 col-md-4"><label class="form-label required">Design Name / Pattern *</label><input name="items[<?= $key ?>][design_name]" class="form-control roll-design text-uppercase" maxlength="150" value="<?= e($item['design_name']) ?>" required></div>
                                 <div class="col-lg-1 col-md-3"><label class="form-label required">Designs *</label><input type="number" min="1" step="1" name="items[<?= $key ?>][design_count]" class="form-control roll-design-count" value="<?= (int)$item['design_count'] ?>" required></div>
-                                <div class="col-lg-1 col-md-3"><label class="form-label">RQ *</label><input class="form-control" value="<?= number_format((float)$item['quantity'], 0) ?>" disabled></div>
+                                <div class="col-lg-1 col-md-3">
+                                    <label class="form-label required">RQ *</label>
+                                    <input type="number" min="1" step="1" name="items[<?= $key ?>][quantity]" class="form-control roll-quantity" value="<?= max(1, (int)$item['quantity']) ?>" required>
+                                </div>
                                 <div class="col-lg-2 col-md-3"><label class="form-label required">Weight (kg) *</label><div class="input-group"><input type="number" min="0.01" step="0.01" name="items[<?= $key ?>][weight_kg]" class="form-control roll-weight" value="<?= e($item['weight_kg']) ?>" required><span class="input-group-text">kg</span></div></div>
                                 <div class="col-lg-2 col-md-3"><label class="form-label required">Price (₹) *</label><div class="input-group"><span class="input-group-text">₹</span><input type="number" min="0" step="0.01" name="items[<?= $key ?>][unit_price]" class="roll-price form-control" value="<?= e($item['unit_price']) ?>" required></div></div>
                                 <div class="col-lg-2 col-md-3">
@@ -864,9 +866,25 @@ $taxValueForItem = static function (array $item, string $type): float {
             nameInput.value = document.getElementById('editFabricDescription').value.trim().toUpperCase();
             const price = Number(card.querySelector('.roll-price').value) || 0;
             const weight = Number(card.querySelector('.roll-weight').value) || 0;
-            const quantity = Number(card.querySelector(`[name="items[${key}][quantity]"]`).value) || 0;
+            const quantity = Number(card.querySelector('.roll-quantity')?.value) || Number(card.querySelector(`[name="items[${key}][quantity]"]`)?.value) || 0;
             const tax = calculateTax(card, price);
-            const startCode = card.querySelector('.roll-code-text').textContent.trim();
+
+            // Dynamically recalculate roll code range based on editable RQ
+            const seqStart = Number(card.dataset.sequenceStart) || 1;
+            const prefix = card.dataset.codePrefix || '';
+            const baseStartCode = card.dataset.startCode || '';
+            const endSeq = seqStart + Math.max(1, quantity) - 1;
+            let endCode = baseStartCode;
+            if (prefix && baseStartCode) {
+                const padLen = Math.max(2, baseStartCode.length - prefix.length);
+                endCode = prefix + String(endSeq).padStart(padLen, '0');
+            }
+            const codeBadgeText = (quantity > 1 && endCode !== baseStartCode) ? `${baseStartCode}–${endCode}` : baseStartCode;
+            const codeBadge = card.querySelector('.roll-code-text');
+            if (codeBadge) {
+                codeBadge.textContent = codeBadgeText;
+            }
+
             const photoFile = card.querySelector('.roll-photo').files[0];
             const photoUrl = card.dataset.photoUrl;
             const photoHtml = photoFile
@@ -882,7 +900,7 @@ $taxValueForItem = static function (array $item, string $type): float {
             const taxLabel = tax.type === 'BOTH' ? 'SGST + CGST' : tax.type;
             card.querySelector('.roll-title').textContent = `ROLL #${index + 1}`;
             const hsn = card.querySelector('.roll-hsn')?.value?.trim() || '—';
-            rollTableRows.push(`<tr><td class="text-center">${index + 1}</td><td>${photoHtml}</td><td><strong>${safe(card.querySelector('.roll-number').value)}</strong><small class="d-block font-monospace">${safe(startCode || '—')}</small></td><td><span class="badge bg-light text-dark border font-monospace">${safe(hsn)}</span></td><td>${safe(card.querySelector('.roll-color').value || '—')}</td><td>${safe(card.querySelector('.roll-design').value || '—')}</td><td class="text-center">${Number(card.querySelector('.roll-design-count').value) || 0}</td><td class="text-end">${quantity.toLocaleString('en-IN')} RQ</td><td class="text-end">${weight.toFixed(2)} kg</td><td class="text-end">${money(price)}</td><td>${taxLabel}</td><td class="text-end">${money(tax.amount)}</td><td class="text-end fw-bold text-success">${money(price + tax.amount)}</td><td class="text-center"><span class="badge bg-info-subtle text-info">Existing roll</span></td></tr>`);
+            rollTableRows.push(`<tr><td class="text-center">${index + 1}</td><td>${photoHtml}</td><td><strong>${safe(card.querySelector('.roll-number').value)}</strong><small class="d-block font-monospace">${safe(codeBadgeText || '—')}</small></td><td><span class="badge bg-light text-dark border font-monospace">${safe(hsn)}</span></td><td>${safe(card.querySelector('.roll-color').value || '—')}</td><td>${safe(card.querySelector('.roll-design').value || '—')}</td><td class="text-center">${Number(card.querySelector('.roll-design-count').value) || 0}</td><td class="text-end">${quantity.toLocaleString('en-IN')} RQ</td><td class="text-end">${weight.toFixed(2)} kg</td><td class="text-end">${money(price)}</td><td>${taxLabel}</td><td class="text-end">${money(tax.amount)}</td><td class="text-end fw-bold text-success">${money(price + tax.amount)}</td><td class="text-center"><span class="badge bg-info-subtle text-info">Existing roll</span></td></tr>`);
         });
         document.getElementById('rollCountBadge').textContent = rolls.length;
         document.getElementById('tableRollCountBadge').textContent = `${rolls.length} ${rolls.length === 1 ? 'Roll' : 'Rolls'}`;

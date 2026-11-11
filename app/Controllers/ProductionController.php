@@ -874,9 +874,9 @@ class ProductionController {
             $cgstTaxValue = $gstType === 'BOTH' ? (float)$cgstValueInput : 0.0;
 
             $itemName = trim((string)($submitted['item_name'] ?? $oldItem['item_name'] ?? ''));
-            $quantity = $oldItem && $oldItem['item_type'] === 'FABRIC_ROLL'
-                ? (float)$oldItem['quantity']
-                : (is_numeric($submitted['quantity'] ?? null) ? (float)$submitted['quantity'] : 0);
+            $quantity = is_numeric($submitted['quantity'] ?? null) && (float)$submitted['quantity'] > 0
+                ? (float)$submitted['quantity']
+                : ($oldItem ? (float)$oldItem['quantity'] : 0);
             $unitPrice = is_numeric($submitted['unit_price'] ?? null) ? (float)$submitted['unit_price'] : -1;
             $unit = strtoupper(trim((string)($submitted['unit'] ?? $oldItem['unit'] ?? '')));
             if ($unit === 'OTHER') {
@@ -1044,21 +1044,48 @@ class ProductionController {
                         );
                     }
                     if ($item['type'] === 'FABRIC_ROLL' && $item['seller_roll_id'] > 0) {
+                        $sellerRoll = Database::fetchOne("SELECT * FROM seller_rolls WHERE id = ?", [$item['seller_roll_id']]);
+                        $startSeq = (int)($sellerRoll['start_seq'] ?? 0);
+                        $startCode = (string)($sellerRoll['start_code'] ?? '');
+                        $prefix = '';
+                        $padLen = 2;
+                        if (!empty($startCode) && preg_match('/^([A-Za-z]{2}\d{4})(\d+)$/', $startCode, $m)) {
+                            $prefix = $m[1];
+                            $padLen = max(2, strlen($m[2]));
+                            if ($startSeq <= 0) $startSeq = (int)$m[2];
+                        } elseif (!empty($startCode) && preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $startCode, $m)) {
+                            $prefix = $m[1];
+                            $padLen = max(2, strlen($m[2]));
+                            if ($startSeq <= 0) $startSeq = (int)$m[2];
+                        } else {
+                            $prefix = 'FB' . date('my');
+                            $padLen = 2;
+                        }
+                        if ($startSeq <= 0) $startSeq = 1;
+                        $rollQty = max(1, (int)$item['quantity']);
+                        $endSeq = $startSeq + $rollQty - 1;
+                        $endCode = sprintf('%s%0' . $padLen . 'd', $prefix, $endSeq);
+                        $rollQrCode = $rollQty > 1 ? ($startCode . '-' . $endCode) : $startCode;
+
                         if ($hasRollHsn) {
                             Database::execute(
                                 "UPDATE seller_rolls SET roll_number = ?, color = ?, design_name = ?, design_count = ?,
-                                         quantity = ?, weight = ?, price = ?, material_type = ?, photo_url = ?, hsn_code = ?
+                                         quantity = ?, weight = ?, price = ?, material_type = ?, photo_url = ?, hsn_code = ?,
+                                         end_seq = ?, end_code = ?, qr_code = ?
                                  WHERE id = ?",
                                 [$item['roll_number'], $item['color'], $item['design_name'], $item['design_count'],
-                                    $item['quantity'], $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'], $item['hsn_code'], $item['seller_roll_id']]
+                                    $rollQty, $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'], $item['hsn_code'],
+                                    $endSeq, $endCode, $rollQrCode, $item['seller_roll_id']]
                             );
                         } else {
                             Database::execute(
                                 "UPDATE seller_rolls SET roll_number = ?, color = ?, design_name = ?, design_count = ?,
-                                         quantity = ?, weight = ?, price = ?, material_type = ?, photo_url = ?
+                                         quantity = ?, weight = ?, price = ?, material_type = ?, photo_url = ?,
+                                         end_seq = ?, end_code = ?, qr_code = ?
                                  WHERE id = ?",
                                 [$item['roll_number'], $item['color'], $item['design_name'], $item['design_count'],
-                                    $item['quantity'], $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'], $item['seller_roll_id']]
+                                    $rollQty, $item['weight'], $item['unit_price'], $item['item_name'], $item['photo_url'],
+                                    $endSeq, $endCode, $rollQrCode, $item['seller_roll_id']]
                             );
                         }
                     }

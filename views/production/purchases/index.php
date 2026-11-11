@@ -227,12 +227,9 @@ $totalInwardQty = (int)array_sum(array_map(fn($r) => max(1, (int)($r['quantity']
                                     </a>
                                 <?php endif; ?>
                                 <?php if (hasPermission('production_purchases', 'delete') || hasPermission('sellers', 'delete')): ?>
-                                    <form method="POST" action="<?= url('production/purchases/delete/' . $purchase['id']) ?>" class="d-inline mb-0" onsubmit="return confirm('Delete purchase <?= e(addslashes($purchase['purchase_number'])) ?>?');">
-                                        <?= CSRF::field() ?>
-                                        <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2" title="Delete Purchase">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                    </form>
+                                    <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2" title="Delete Purchase" onclick="confirmDeletePurchase('<?= url('production/purchases/delete/' . $purchase['id']) ?>', '<?= e(addslashes($purchase['purchase_number'])) ?>')">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
                                 <?php endif; ?>
                             </div>
                         </td>
@@ -386,4 +383,53 @@ document.addEventListener('DOMContentLoaded', function() {
         switchToDetailsTab();
     }
 });
+
+function confirmDeletePurchase(actionUrl, purchaseNumber) {
+    const modalEl = document.getElementById('modalConfirmDeletePurchase');
+    const formEl = document.getElementById('deletePurchaseForm');
+    const numEl = document.getElementById('deletePurchaseNumber');
+    if (formEl) formEl.action = actionUrl;
+    if (numEl) numEl.textContent = purchaseNumber;
+    if (modalEl) {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+    }
+}
 </script>
+
+<!-- Modal: Modern Confirmation Popup for Deleting Purchases -->
+<div class="modal fade" id="modalConfirmDeletePurchase" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width: 460px;">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-body p-4 text-center">
+                <div class="mb-3 d-inline-flex align-items-center justify-content-center rounded-circle bg-danger-subtle text-danger" style="width: 68px; height: 68px;">
+                    <i class="bi bi-trash3-fill fs-2"></i>
+                </div>
+                <h5 class="fw-bold text-dark mb-2">Delete Purchase</h5>
+                <p class="text-secondary small mb-3">
+                    Are you sure you want to delete purchase <strong class="text-dark" id="deletePurchaseNumber"></strong>?
+                </p>
+                <div class="alert alert-danger border-0 bg-danger-subtle text-start p-3 rounded-3 small mb-4">
+                    <div class="d-flex align-items-start gap-2">
+                        <i class="bi bi-exclamation-triangle-fill text-danger fs-5 flex-shrink-0 mt-n1"></i>
+                        <div>
+                            <strong class="text-danger">Warning:</strong>
+                            <div class="text-secondary mt-1">
+                                This will permanently delete this purchase record and its associated inward items. This action cannot be undone.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <form method="POST" id="deletePurchaseForm" action="">
+                    <?= CSRF::field() ?>
+                    <div class="d-flex gap-2 justify-content-center">
+                        <button type="button" class="btn btn-light px-4 fw-semibold border" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-danger px-4 fw-semibold shadow-sm d-flex align-items-center gap-1">
+                            <i class="bi bi-trash me-1"></i> Delete
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
