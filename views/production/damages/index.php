@@ -395,7 +395,7 @@
                                     <strong>Scanned labels</strong>
                                     <span id="damageScannedCount" class="badge bg-secondary">0 pieces</span>
                                 </div>
-                                <div id="damageScannedLabels" class="list-group small">
+                                <div id="damageScannedLabels" class="list-group small" style="max-height: none; overflow: visible;">
                                     <div class="list-group-item text-muted" id="damageScannedEmpty">No labels scanned yet.</div>
                                 </div>
                             </div>
