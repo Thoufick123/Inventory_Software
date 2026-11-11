@@ -506,7 +506,15 @@ $displayNotes = trim(preg_replace('/\[Split Payment:.*?\]\r?\n?/', '', $po['note
                                         </div>
                                     </td>
                                     <td class="text-center">
-                                        <input type="text" name="hsn_code[]" class="form-control form-control-sm hsn-input font-monospace" value="<?= e($hsnCode) ?>" maxlength="20" aria-label="HSN code">
+                                        <select name="hsn_code[]" class="form-select form-select-sm hsn-select font-monospace" aria-label="HSN code" style="min-width:100px; font-size:12px;">
+                                            <option value="">-- HSN --</option>
+                                            <?php foreach (($hsnCodes ?? []) as $h): ?>
+                                                <option value="<?= htmlspecialchars($h['hsn_code']) ?>" data-gst="<?= (float)($h['gst_rate'] ?? 5) ?>" <?= (isset($hsnCode) && $hsnCode === $h['hsn_code']) ? 'selected' : '' ?>><?= htmlspecialchars($h['hsn_code']) ?> &bull; <?= htmlspecialchars($h['description'] ?? '') ?></option>
+                                            <?php endforeach; ?>
+                                            <?php if (!empty($hsnCode) && !in_array($hsnCode, array_column($hsnCodes ?? [], 'hsn_code'))): ?>
+                                                <option value="<?= e($hsnCode) ?>" selected><?= e($hsnCode) ?></option>
+                                            <?php endif; ?>
+                                        </select>
                                     </td>
                                     <td class="text-end fw-semibold text-secondary font-monospace base-price-cell" style="font-size: 12.5px;">
                                         <span class="base-price-display">₹<?= number_format($lineTaxable, 2) ?></span>
@@ -702,6 +710,7 @@ if (typeof QRCode === 'undefined') {
 <script>
 const VARIANTS_LIST = <?= json_encode($variants) ?>;
 const CUSTOMERS_LIST = <?= json_encode($customers ?? []) ?>;
+const HSN_CODES_LIST = <?= json_encode($hsnCodes ?? []) ?>;
 let activeSearchIndex = -1;
 let searchDebounceTimer = null;
 
@@ -1294,7 +1303,7 @@ function onVariantChange(selectEl, customTags = null) {
     const priceInput = row.querySelector('.price-input');
     const mrpInput = row.querySelector('.mrp-input');
     const gstInput = row.querySelector('.gst-input');
-    const hsnInput = row.querySelector('.hsn-input');
+    const hsnSelect = row.querySelector('.hsn-select');
 
     if (opt && opt.value) {
         const name = opt.getAttribute('data-name') || opt.text.split('|')[0].trim();
@@ -1309,7 +1318,17 @@ function onVariantChange(selectEl, customTags = null) {
         const gstRate = isComp ? 0 : (opt.hasAttribute('data-gst') ? parseFloat(opt.getAttribute('data-gst')) : 5.0);
         const defaultQr = opt.getAttribute('data-qr') || sku;
 
-        if (hsnInput) hsnInput.value = opt.getAttribute('data-hsn') || '';
+        const resolvedHsn = (opt.getAttribute('data-hsn') || '').trim();
+        if (hsnSelect) {
+            hsnSelect.value = resolvedHsn;
+            if (hsnSelect.value !== resolvedHsn && resolvedHsn) {
+                const newOpt = document.createElement('option');
+                newOpt.value = resolvedHsn;
+                newOpt.textContent = resolvedHsn;
+                hsnSelect.appendChild(newOpt);
+                hsnSelect.value = resolvedHsn;
+            }
+        }
         if (mrpInput) mrpInput.value = mrp.toFixed(2);
         if (priceInput) {
             priceInput.value = price.toFixed(2);
@@ -1407,6 +1426,7 @@ function onVariantChange(selectEl, customTags = null) {
     }
     if (priceInput) onRowPriceChange(priceInput);
     else calculateTotals();
+    updateRemainingStockDisplays();
 }
 
 function onRowPriceChange(priceEl) {
@@ -1597,7 +1617,11 @@ function addItemRow(selectedVariantId = null, initialQr = null) {
             </div>
         </td>
         <td class="text-center">
-            <input type="text" name="hsn_code[]" class="form-control form-control-sm hsn-input font-monospace" value="${escapeHtml(initHsn)}" maxlength="20" aria-label="HSN code">
+            <select name="hsn_code[]" class="form-select form-select-sm hsn-select font-monospace" aria-label="HSN code" style="min-width:100px; font-size:12px;">
+                <option value="">-- HSN --</option>
+                ${HSN_CODES_LIST.map(h => `<option value="${escapeHtml(h.hsn_code)}" data-gst="${parseFloat(h.gst_rate || 5)}" ${(h.hsn_code === initHsn) ? 'selected' : ''}>${escapeHtml(h.hsn_code)} &bull; ${escapeHtml(h.description || '')}</option>`).join('')}
+                ${(initHsn && !HSN_CODES_LIST.find(h => h.hsn_code === initHsn)) ? `<option value="${escapeHtml(initHsn)}" selected>${escapeHtml(initHsn)}</option>` : ''}
+            </select>
         </td>
         <td class="text-end fw-semibold text-secondary font-monospace base-price-cell" style="font-size: 12.5px;">
             <span class="base-price-display">₹${initTaxable.toFixed(2)}</span>
@@ -1645,6 +1669,7 @@ function removeItemRow(btn) {
         btn.closest('tr').remove();
         updateItemCount();
         calculateTotals();
+        updateRemainingStockDisplays();
     } else {
         alert('Purchase order must contain at least one product line item.');
     }
@@ -1660,6 +1685,53 @@ function updateItemCount() {
     if (badge) badge.textContent = `${rows.length} item${rows.length > 1 ? 's' : ''}`;
     const cartBadge = document.getElementById('cartItemCountBadge');
     if (cartBadge) cartBadge.innerHTML = `<i class="bi bi-bag-check-fill"></i> ${rows.length} ${rows.length === 1 ? 'Item' : 'Items'} Scanned`;
+    updateRemainingStockDisplays();
+}
+
+/**
+ * Dynamically update stock badges in every row to show REMAINING stock
+ * (total warehouse stock minus how many pieces of that variant are already in the table).
+ */
+function updateRemainingStockDisplays() {
+    const rows = document.querySelectorAll('#itemsTableBody tr.item-row');
+    const qtyPerVariant = {};
+    rows.forEach(r => {
+        const sel = r.querySelector('.variant-select');
+        const vid = sel ? sel.value : '';
+        if (!vid) return;
+        const q = parseInt(r.querySelector('.qty-input')?.value || 1) || 1;
+        qtyPerVariant[vid] = (qtyPerVariant[vid] || 0) + q;
+    });
+
+    const cumulativePerVariant = {};
+    rows.forEach(r => {
+        const sel = r.querySelector('.variant-select');
+        const vid = sel ? sel.value : '';
+        if (!vid) return;
+
+        const opt = sel.options[sel.selectedIndex];
+        const totalStock = parseInt(opt?.getAttribute('data-stock') || 0) || 0;
+        const totalBilled = qtyPerVariant[vid] || 0;
+        const rowQty = parseInt(r.querySelector('.qty-input')?.value || 1) || 1;
+        cumulativePerVariant[vid] = (cumulativePerVariant[vid] || 0) + rowQty;
+
+        const remaining = Math.max(0, totalStock - totalBilled);
+        const stockBadge = r.querySelector('.stock-badge');
+        if (stockBadge) {
+            const catType = (opt?.getAttribute('data-cat-type') || 'NORMAL').toUpperCase();
+            const isSeriesOrComp = catType === 'SERIES' || catType === 'COMPLEMENTARY'
+                || opt?.getAttribute('data-is-comp') === '1' || opt?.getAttribute('data-is-series') === '1';
+            if (isSeriesOrComp) {
+                stockBadge.innerHTML = `<i class="bi bi-boxes me-1"></i>${cumulativePerVariant[vid]} of ${totalStock} scanned &bull; <strong>${remaining} left</strong>`;
+            } else {
+                stockBadge.textContent = `Stock: ${remaining} of ${totalStock} pcs`;
+            }
+            stockBadge.className = remaining <= 0
+                ? 'badge bg-danger-subtle text-danger border border-danger-subtle stock-badge'
+                : 'badge bg-success-subtle text-success border border-success-subtle stock-badge';
+            stockBadge.style.fontSize = '10px';
+        }
+    });
 }
 
 // =========================================================================
@@ -2013,15 +2085,17 @@ function applyVariantToTable(matched, tagLabel = '') {
 
     if (feedbackBox) {
         feedbackBox.className = 'mt-2 small alert alert-success py-1 px-2.5 mb-0 d-block shadow-sm';
+        const remaining = Math.max(0, maxAvailable - (currentVariantTotalQty + 1));
         if (pieceTagValue) {
-            feedbackBox.innerHTML = `✅ Scanned Piece QR <strong>${escapeHtml(pieceTagValue)}</strong> (${escapeHtml(matched.product_name)} - ${escapeHtml(matched.sku)}). [${currentVariantTotalQty + 1} of ${maxAvailable} pcs in warehouse]`;
+            feedbackBox.innerHTML = `✅ Scanned Piece QR <strong>${escapeHtml(pieceTagValue)}</strong> (${escapeHtml(matched.product_name)} - ${escapeHtml(matched.sku)}). [${currentVariantTotalQty + 1} of ${maxAvailable} scanned &bull; <strong>${remaining} remaining</strong>]`;
         } else {
-            feedbackBox.innerHTML = `✅ Added <strong>${escapeHtml(matched.product_name)} (${escapeHtml(matched.sku)})</strong>. [${currentVariantTotalQty + 1} of ${maxAvailable} pcs in warehouse]`;
+            feedbackBox.innerHTML = `✅ Added <strong>${escapeHtml(matched.product_name)} (${escapeHtml(matched.sku)})</strong>. [${currentVariantTotalQty + 1} of ${maxAvailable} scanned &bull; <strong>${remaining} remaining</strong>]`;
         }
     }
 
     updateItemCount();
     calculateTotals();
+    updateRemainingStockDisplays();
 }
 
 function calculateTotals() {
