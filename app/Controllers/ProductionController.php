@@ -8481,6 +8481,12 @@ class ProductionController {
     }
 
     public function updateBatch(string $id): void {
+        if (!hasPermission('batches', 'edit')) {
+            Session::flash('error', 'Access denied: You do not have permission to edit packaging batches.');
+            Response::redirect(url('production/batches'));
+            return;
+        }
+
         if (!CSRF::validateRequest()) {
             Session::flash('error', 'Invalid security token. Please try again.');
             Response::back();
