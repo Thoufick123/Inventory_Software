@@ -110,14 +110,15 @@
             <thead class="table-light">
                 <tr>
                     <th style="width: 4%;">#</th>
-                    <th style="width: 32%;">Product Description</th>
-                    <th class="text-center" style="width: 14%;">Size / Color</th>
-                    <th class="text-center" style="width: 8%;">Qty</th>
+                    <th style="width: 24%;">Product Description</th>
+                    <th class="text-center" style="width: 12%;">Size / Color</th>
+                    <th class="text-center" style="width: 9%;">HSN Code</th>
+                    <th class="text-center" style="width: 6%;">Qty</th>
                     <th class="text-end col-amount" style="width: 10%;">Rate (₹)</th>
                     <th class="text-end col-amount" style="width: 8%;">Disc (₹)</th>
-                    <th class="text-end col-amount" style="width: 11%;">Taxable (₹)</th>
-                    <th class="text-center col-amount" style="width: 5%;">GST %</th>
-                    <th class="text-end col-amount" style="width: 12%;">Amount (₹)</th>
+                    <th class="text-end col-amount" style="width: 10%;">Taxable (₹)</th>
+                    <th class="text-center col-amount" style="width: 6%;">GST %</th>
+                    <th class="text-end col-amount" style="width: 11%;">Amount (₹)</th>
                 </tr>
             </thead>
             <tbody>
@@ -157,6 +158,7 @@
                         <td class="text-center small text-secondary">
                             <?= e($item['size_name'] ?? 'Free') ?> / <?= e($item['color_name'] ?? 'Std') ?>
                         </td>
+                        <td class="text-center font-monospace"><?= e($item['resolved_hsn_code'] ?? '') ?: '-' ?></td>
                         <td class="text-center fw-bold fs-6"><?= number_format($qty) ?></td>
                         <td class="text-end font-monospace col-amount">₹<?= number_format($billedRate, 2) ?></td>
                         <td class="text-end font-monospace text-danger col-amount"><?= $lineDisc > 0 ? '-₹' . number_format($lineDisc, 2) : '-' ?></td>

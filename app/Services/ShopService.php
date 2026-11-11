@@ -18,6 +18,18 @@ require_once BASE_PATH . '/app/Models/ShopStockAdjustment.php';
 require_once BASE_PATH . '/app/Models/ShopReturnedProduct.php';
 
 class ShopService {
+    private static bool $saleItemHsnColumnEnsured = false;
+
+    public static function ensureSaleItemHsnColumn(): void {
+        if (self::$saleItemHsnColumnEnsured) {
+            return;
+        }
+
+        if (!Database::fetchOne("SHOW COLUMNS FROM sale_items LIKE 'hsn_code'")) {
+            Database::execute("ALTER TABLE sale_items ADD COLUMN hsn_code VARCHAR(20) DEFAULT NULL AFTER gst_percentage");
+        }
+        self::$saleItemHsnColumnEnsured = true;
+    }
 
     /**
      * Get the active primary shop record (auto-creates if missing).
@@ -727,6 +739,7 @@ class ShopService {
 
         // 3. Direct SKU / QR Code / Product Code lookup across all candidates
         $baseSql = "SELECT pv.*, p.name as product_name, p.code as product_code, p.gst_percentage,
+                           COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), '') as resolved_hsn_code,
                            p.image_url as product_image, pv.image_url as variant_image,
                            s.name as size_name, c.name as color_name, b.name as brand_name,
                            cat.name as category_name,
@@ -949,6 +962,7 @@ class ShopService {
      * Process POS Retail Sale and generate invoice.
      */
     public static function processPOSSale(array $payload, int $userId): array {
+        self::ensureSaleItemHsnColumn();
         $shopId = (int)($payload['shop_id'] ?? 1);
         $items = $payload['items'] ?? [];
         $paymentMode = $payload['payment_mode'] ?? 'CASH';
@@ -1071,7 +1085,8 @@ class ShopService {
                 if ($qty <= 0) continue;
 
                 $vRow = Database::fetchOne(
-                    "SELECT pv.*, p.is_complementary as p_is_comp, wc.category_type as warehouse_category_type
+                    "SELECT pv.*, p.is_complementary as p_is_comp, wc.category_type as warehouse_category_type,
+                            COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), '') as resolved_hsn_code
                      FROM product_variants pv
                      JOIN products p ON pv.product_id = p.id
                      LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
@@ -1080,6 +1095,12 @@ class ShopService {
                 );
                 $isComp = $vRow && ((isset($vRow['warehouse_category_type']) && $vRow['warehouse_category_type'] === 'COMPLEMENTARY') || !empty($vRow['is_complementary']) || !empty($vRow['p_is_comp']));
                 $isSeries = $vRow && ((isset($vRow['warehouse_category_type']) && $vRow['warehouse_category_type'] === 'SERIES') || ($vRow['qr_type'] ?? '') === 'SERIES_BATCH' || (int)($vRow['pack_quantity'] ?? 1) > 1);
+                $hsnCode = array_key_exists('hsn_code', $item)
+                    ? trim((string)$item['hsn_code'])
+                    : trim((string)($vRow['resolved_hsn_code'] ?? ''));
+                if (strlen($hsnCode) > 20) {
+                    throw new RuntimeException('HSN code cannot exceed 20 characters.');
+                }
 
                 $mrp = max(0.0, (float)($item['mrp'] ?? $item['original_price'] ?? $item['unit_price'] ?? 0));
                 $originalUnitPrice = $mrp;
@@ -1170,6 +1191,7 @@ class ShopService {
                     'discount_percent'  => $discountPercent,
                     'discount_amount'   => $itemDiscount,
                     'gst_percentage'    => $gstRate,
+                    'hsn_code'          => $hsnCode,
                     'cgst_amount'       => $cgst,
                     'sgst_amount'       => $sgst,
                     'igst_amount'       => 0.00,
@@ -1212,8 +1234,8 @@ class ShopService {
             // 5. Insert `sale_items` & Deduct Central Stock via StockService
             foreach ($processedItems as $pItem) {
                 Database::execute(
-                    "INSERT INTO sale_items (sale_id, variant_id, quantity, unit_price, mrp, discount_percent, discount_amount, gst_percentage, cgst_amount, sgst_amount, igst_amount, total_amount, scanned_qr_codes)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO sale_items (sale_id, variant_id, quantity, unit_price, mrp, discount_percent, discount_amount, gst_percentage, hsn_code, cgst_amount, sgst_amount, igst_amount, total_amount, scanned_qr_codes)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     [
                         $saleId,
                         $pItem['variant_id'],
@@ -1223,6 +1245,7 @@ class ShopService {
                         $pItem['discount_percent'],
                         $pItem['discount_amount'],
                         $pItem['gst_percentage'],
+                        $pItem['hsn_code'],
                         $pItem['cgst_amount'],
                         $pItem['sgst_amount'],
                         $pItem['igst_amount'],
@@ -1383,6 +1406,7 @@ class ShopService {
      * Get Complete Invoice Details for Printing.
      */
     public static function getInvoiceDetails(int $saleId): ?array {
+        self::ensureSaleItemHsnColumn();
         $sale = Database::fetchOne(
             "SELECT s.*, c.name as customer_name, c.phone as customer_phone, 
                     COALESCE(s.customer_address, c.address) as customer_address, 
@@ -1404,7 +1428,10 @@ class ShopService {
 
         $items = Database::fetchAll(
             "SELECT si.*, pv.sku, pv.qr_code, pv.mrp, pv.selling_price, p.name as product_name, 
-                    p.code as product_code, p.hsn_code, p.gst_percentage,
+                    p.code as product_code,
+                    CASE WHEN si.hsn_code IS NOT NULL THEN si.hsn_code
+                         ELSE COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), '') END as resolved_hsn_code,
+                    p.gst_percentage,
                     sz.name as size_name, cl.name as color_name
              FROM sale_items si
              JOIN product_variants pv ON si.variant_id = pv.id
