@@ -50,17 +50,21 @@
                         <i class="bi bi-2-circle-fill text-success me-1"></i>
                         Products &amp; Variants for Brand: <span id="activeBrandLabel" class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1 ms-1"></span>
                     </h6>
+                    <?php if (hasPermission('wh_sellers', 'create')): ?>
                     <a href="<?= url('warehouse/catalog/create?seller_id=' . $seller['id']) ?>" class="btn btn-sm btn-primary fw-semibold shadow-sm">
                         <i class="bi bi-plus-circle me-1"></i> Add New Product Style
                     </a>
+                    <?php endif; ?>
                 </div>
                 <div id="variantCardsGrid" class="row g-3"></div>
                 <div id="noVariantsMsg" style="display:none;" class="text-center py-4 text-muted">
                     <i class="bi bi-journal-plus fs-1 d-block mb-2"></i>
                     <p>No catalog products found for this brand/supplier yet.</p>
+                    <?php if (hasPermission('wh_sellers', 'create')): ?>
                     <a href="<?= url('warehouse/catalog/create?seller_id=' . $seller['id']) ?>" class="btn btn-primary btn-sm">
                         <i class="bi bi-plus-circle me-1"></i> Create First Product Style
                     </a>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -279,7 +283,9 @@
                                             <th class="text-center">Warehouse Stock</th>
                                             <th class="text-end">Cost Rate (₹)</th>
                                             <th class="text-end">MRP / Selling</th>
-                                            <th class="text-center" style="width: 80px;">Action</th>
+                                            <?php if (hasPermission('wh_sellers', 'edit')): ?>
+                                                <th class="text-center" style="width: 80px;">Action</th>
+                                            <?php endif; ?>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -364,11 +370,13 @@
                                                     <div class="text-secondary small view-sp-mrp">MRP: ₹<?= number_format($prod['mrp'], 2) ?></div>
                                                     <div class="fw-bold text-success fs-7 view-sp-selling">Selling: ₹<?= number_format($prod['selling_price'] ?: $prod['mrp'], 2) ?></div>
                                                 </td>
+                                                <?php if (hasPermission('wh_sellers', 'edit')): ?>
                                                 <td class="text-center">
                                                     <button type="button" class="btn btn-xs btn-outline-primary py-1 px-2 fw-semibold shadow-xs" onclick='openEditSupplierProductModal(<?= htmlspecialchars(json_encode($editPayload, JSON_UNESCAPED_UNICODE), ENT_QUOTES, "UTF-8") ?>)' title="Edit Product Details &amp; Pricing">
                                                         <i class="bi bi-pencil-square me-1"></i>Edit
                                                     </button>
                                                 </td>
+                                                <?php endif; ?>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -726,6 +734,8 @@ function openInwardModal(po) {
 // DYNAMIC ADD PRODUCTS PANEL (Brand → Variant Loader)
 // =====================================================================
 const SELLER_ID = <?= (int)$seller['id'] ?>;
+const CAN_EDIT_SUPPLIER_PRODUCT = <?= json_encode(hasPermission('wh_sellers', 'edit')) ?>;
+const CAN_CREATE_CATALOG = <?= json_encode(hasPermission('wh_sellers', 'create')) ?>;
 const API_SELLER_CATALOG = '<?= url('api/warehouse/seller-catalog') ?>';
 const CATALOG_CREATE_URL = '<?= url('warehouse/catalog/create') ?>';
 const CATALOG_EDIT_URL   = '<?= url('warehouse/catalog/edit') ?>';
@@ -771,9 +781,10 @@ function loadBrandPills() {
             if (!_brandsList.length) {
                 container.innerHTML = `<div class="alert alert-info mb-0 w-100 py-2">
                     <i class="bi bi-info-circle me-2"></i>No catalog brands found for this supplier yet.
+                    ${CAN_CREATE_CATALOG ? `
                     <a href="${CATALOG_CREATE_URL}?seller_id=${SELLER_ID}" class="btn btn-sm btn-primary ms-3">
                         <i class="bi bi-plus-circle me-1"></i> Add First Product
-                    </a>
+                    </a>` : ''}
                 </div>`;
                 return;
             }
@@ -890,9 +901,10 @@ function renderVariantCards(products, brandName) {
                         ${variantBadges}
                     </div>
                     <div class="d-flex gap-1 mt-2">
+                        ${CAN_EDIT_SUPPLIER_PRODUCT ? `
                         <a href="${CATALOG_EDIT_URL}/${prod.product_id}" class="btn btn-sm btn-outline-primary flex-fill fw-semibold py-1" style="font-size:0.75rem;">
                             <i class="bi bi-pencil me-1"></i> Edit
-                        </a>
+                        </a>` : ''}
                         <a href="${QR_LABELS_URL}?source_type=tp_purchase&seller_id=${SELLER_ID}" class="btn btn-sm btn-outline-success flex-fill fw-semibold py-1" style="font-size:0.75rem;">
                             <i class="bi bi-qr-code me-1"></i> Labels
                         </a>
@@ -909,6 +921,10 @@ function renderVariantCards(products, brandName) {
 // =========================================================================
 let viewEditSpModalInstance = null;
 function openEditSupplierProductModal(prod) {
+    if (!CAN_EDIT_SUPPLIER_PRODUCT) {
+        alert('Action restricted: You do not have permission to edit supplier products.');
+        return;
+    }
     if (!prod) return;
     document.getElementById('editSpProductId').value = prod.product_id || 0;
     document.getElementById('editSpVariantId').value = prod.variant_id || 0;
@@ -1013,6 +1029,7 @@ function submitEditSupplierProduct(e) {
 }
 </script>
 
+<?php if (hasPermission('wh_sellers', 'edit')): ?>
 <!-- MODAL: EDIT EXISTING SUPPLIER PRODUCT -->
 <div class="modal fade" id="modalEditSupplierProduct" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
     <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -1126,3 +1143,4 @@ function submitEditSupplierProduct(e) {
         </div>
     </div>
 </div>
+<?php endif; ?>
