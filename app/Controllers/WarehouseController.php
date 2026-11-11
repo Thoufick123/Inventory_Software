@@ -2735,13 +2735,7 @@ class WarehouseController {
             "SELECT pv.id, pv.sku, pv.qr_code as barcode, pv.mrp, pv.selling_price, pv.purchase_price,
                     pv.qr_type, pv.pack_quantity, pv.series_start_code, pv.series_end_code,
                     GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary, p.is_complementary as prod_is_comp,
-                    CASE
-                        WHEN GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) = 1 THEN 'COMPLEMENTARY'
-                        WHEN UPPER(COALESCE(wc.category_type, '')) = 'COMPLEMENTARY' THEN 'COMPLEMENTARY'
-                        WHEN UPPER(COALESCE(pv.qr_type, '')) = 'SERIES_BATCH' THEN 'SERIES'
-                        WHEN UPPER(COALESCE(wc.category_type, '')) IN ('SERIES', 'NORMAL') THEN UPPER(wc.category_type)
-                        ELSE 'NORMAL'
-                    END as category_type,
+                    UPPER(COALESCE(wc.category_type, 'NORMAL')) as category_type,
                     p.id as product_id, p.name as product_name, p.code as product_code, p.category_id, p.subcategory_id, p.sub_subcategory_id,
                     sz.name as size_name, c.name as color_name,
                     COALESCE(wc.name, cat.name) as category_name, subcat.name as subcategory_name, subsub.name as sub_subcategory_name,
@@ -6649,13 +6643,7 @@ class WarehouseController {
             "SELECT pv.id, pv.sku, pv.qr_code as barcode, pv.mrp, pv.selling_price, pv.purchase_price,
                     pv.qr_type, pv.pack_quantity, pv.series_start_code, pv.series_end_code,
                     GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary, p.is_complementary as prod_is_comp,
-                    CASE
-                        WHEN GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) = 1 THEN 'COMPLEMENTARY'
-                        WHEN UPPER(COALESCE(wc.category_type, '')) = 'COMPLEMENTARY' THEN 'COMPLEMENTARY'
-                        WHEN UPPER(COALESCE(pv.qr_type, '')) = 'SERIES_BATCH' THEN 'SERIES'
-                        WHEN UPPER(COALESCE(wc.category_type, '')) IN ('SERIES', 'NORMAL') THEN UPPER(wc.category_type)
-                        ELSE 'NORMAL'
-                    END as category_type,
+                    UPPER(COALESCE(wc.category_type, 'NORMAL')) as category_type,
                     p.id as product_id, p.name as product_name, p.category_id, p.subcategory_id, p.sub_subcategory_id,
                     sz.name as size_name, c.name as color_name,
                     COALESCE(wc.name, cat.name) as category_name, subcat.name as subcategory_name, subsub.name as sub_subcategory_name,
@@ -6799,6 +6787,25 @@ class WarehouseController {
                 Response::redirect(url('warehouse/allocation/create'));
                 return;
             }
+
+            $allocationVariant = Database::fetchOne(
+                "SELECT pv.*, p.name as product_name,
+                        UPPER(COALESCE(wc.category_type, 'NORMAL')) as category_type
+                 FROM product_variants pv
+                 JOIN products p ON p.id = pv.product_id
+                 LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+                 WHERE pv.id = ?",
+                [$vIdInt]
+            );
+            if ($allocationVariant && strtoupper($allocationVariant['category_type']) === 'NORMAL') {
+                $eligiblePieces = $this->generateVariantQrPieces($allocationVariant, PHP_INT_MAX, $warehouseId, true);
+                if ($totalReqQty > count($eligiblePieces)) {
+                    $skuName = $allocationVariant['sku'] ?? "Variant #$vIdInt";
+                    Session::flash('error', "Cannot allocate SKU {$skuName}: requested quantity ({$totalReqQty}) exceeds the count of available, inwarded, undamaged, unbilled pieces (" . count($eligiblePieces) . ').');
+                    Response::redirect(url('warehouse/allocation/create'));
+                    return;
+                }
+            }
         }
 
         // Server-side validation 2: prevent double-allocating piece QR tags (both across system and within this submission)
@@ -6806,10 +6813,36 @@ class WarehouseController {
         foreach ($variantIds as $idx => $vId) {
             $qrCodesStr = trim($selectedQrCodes[$idx] ?? '');
             if (!empty($qrCodesStr)) {
+                $allocationVariant = Database::fetchOne(
+                    "SELECT pv.*, p.code as product_code,
+                            GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
+                            UPPER(COALESCE(wc.category_type, 'NORMAL')) as category_type
+                     FROM product_variants pv
+                     JOIN products p ON pv.product_id = p.id
+                     LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+                     WHERE pv.id = ?",
+                    [(int)$vId]
+                );
+                $eligibleQrCodes = [];
+                if ($allocationVariant) {
+                    foreach ($this->generateVariantQrPieces($allocationVariant, PHP_INT_MAX, $warehouseId, true) as $piece) {
+                        $eligibleQrCodes[strtoupper(trim((string)$piece['qr_code']))] = true;
+                    }
+                }
                 $submittedTags = array_filter(array_map('trim', explode(',', $qrCodesStr)));
                 foreach ($submittedTags as $stag) {
                     if (empty($stag) || strlen($stag) < 3) continue;
                     $stagUpper = strtoupper($stag);
+
+                    if (
+                        !$allocationVariant
+                        || (!$this->isAllocationVariantIdentifier($allocationVariant, $stag)
+                            && !isset($eligibleQrCodes[$stagUpper]))
+                    ) {
+                        Session::flash('error', "Cannot save: QR code '{$stag}' is not a verified inwarded tag or product code for this warehouse.");
+                        Response::redirect(url('warehouse/allocation/create'));
+                        return;
+                    }
 
                     $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag($stag);
                     if ($exchangedReplacement) {
@@ -6830,12 +6863,7 @@ class WarehouseController {
                              WHERE pv.id = ?",
                             [(int)$vId]
                         );
-                        $isMasterOrComp = ($vCheck && (
-                            $vCheck['qr_type'] === 'SERIES_BATCH'
-                            || strtoupper($vCheck['cat_type'] ?? '') === 'SERIES'
-                            || (int)($vCheck['pack_quantity'] ?? 0) > 1
-                            || !empty($vCheck['is_comp'])
-                        ));
+                        $isMasterOrComp = $vCheck && in_array(strtoupper($vCheck['cat_type'] ?? ''), ['SERIES', 'COMPLEMENTARY'], true);
                         if (!$isMasterOrComp) {
                             Session::flash('error', "Cannot save: Piece Tag '{$stagUpper}' was added multiple times in this requisition.");
                             Response::redirect(url('warehouse/allocation/create'));
@@ -6867,12 +6895,7 @@ class WarehouseController {
                              WHERE pv.id = ?",
                             [(int)$vId]
                         );
-                        $isMasterOrComp = ($vCheck && (
-                            $vCheck['qr_type'] === 'SERIES_BATCH'
-                            || strtoupper($vCheck['cat_type'] ?? '') === 'SERIES'
-                            || (int)($vCheck['pack_quantity'] ?? 0) > 1
-                            || !empty($vCheck['is_comp'])
-                        ));
+                        $isMasterOrComp = $vCheck && in_array(strtoupper($vCheck['cat_type'] ?? ''), ['SERIES', 'COMPLEMENTARY'], true);
 
                         $availStockRow = Database::fetchOne(
                             "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
@@ -6950,10 +6973,14 @@ class WarehouseController {
                 "SELECT pv.id, pv.sku, pv.mrp, pv.selling_price, p.name as product_name, p.code as product_code, 
                         p.qr_code_prefix, p.category_code, p.subcategory_code, p.sub_subcategory_code,
                         p.category_id, p.subcategory_id, p.sub_subcategory_id,
+                        pv.qr_type, pv.pack_quantity, pv.series_start_code, pv.series_end_code,
+                        GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
+                        UPPER(COALESCE(wc.category_type, 'NORMAL')) as category_type,
                         c.name as color_name, sz.name as size_name,
                         cat.name as category_name, subcat.name as subcategory_name, subsub.name as sub_subcategory_name
                  FROM product_variants pv
                  JOIN products p ON pv.product_id = p.id
+                 LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
                  LEFT JOIN categories cat ON p.category_id = cat.id
                  LEFT JOIN subcategories subcat ON p.subcategory_id = subcat.id
                  LEFT JOIN sub_subcategories subsub ON p.sub_subcategory_id = subsub.id
@@ -6996,7 +7023,7 @@ class WarehouseController {
             $reservedStock  = (float)($res['qty'] ?? 0);
             $totalStock     = $availableStock + $reservedStock;
 
-            $qrPieces = $this->generateVariantQrPieces($variant, (int)$availableStock, $warehouseId > 0 ? $warehouseId : null);
+            $qrPieces = $this->generateVariantQrPieces($variant, (int)$availableStock, $warehouseId > 0 ? $warehouseId : null, true);
 
             Response::json([
                 'success'              => true,
@@ -7024,13 +7051,7 @@ class WarehouseController {
         if ($warehouseId > 0) {
             $sql = "SELECT pv.id, pv.sku, pv.qr_type, pv.pack_quantity,
                            GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
-                           CASE
-                               WHEN GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) = 1 THEN 'COMPLEMENTARY'
-                               WHEN UPPER(COALESCE(wc.category_type, '')) = 'COMPLEMENTARY' THEN 'COMPLEMENTARY'
-                               WHEN UPPER(COALESCE(pv.qr_type, '')) = 'SERIES_BATCH' THEN 'SERIES'
-                               WHEN UPPER(COALESCE(wc.category_type, '')) IN ('SERIES', 'NORMAL') THEN UPPER(wc.category_type)
-                               ELSE 'NORMAL'
-                           END as category_type,
+                           UPPER(COALESCE(wc.category_type, 'NORMAL')) as category_type,
                            p.name as product_name, p.category_id, p.subcategory_id, p.sub_subcategory_id,
                            c.name as color_name, sz.name as size_name,
                            cat.name as category_name, subcat.name as subcategory_name, subsub.name as sub_subcategory_name,
@@ -7049,13 +7070,7 @@ class WarehouseController {
         } else {
             $sql = "SELECT pv.id, pv.sku, pv.qr_type, pv.pack_quantity,
                            GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
-                           CASE
-                               WHEN GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) = 1 THEN 'COMPLEMENTARY'
-                               WHEN UPPER(COALESCE(wc.category_type, '')) = 'COMPLEMENTARY' THEN 'COMPLEMENTARY'
-                               WHEN UPPER(COALESCE(pv.qr_type, '')) = 'SERIES_BATCH' THEN 'SERIES'
-                               WHEN UPPER(COALESCE(wc.category_type, '')) IN ('SERIES', 'NORMAL') THEN UPPER(wc.category_type)
-                               ELSE 'NORMAL'
-                           END as category_type,
+                           UPPER(COALESCE(wc.category_type, 'NORMAL')) as category_type,
                            p.name as product_name, p.category_id, p.subcategory_id, p.sub_subcategory_id,
                            c.name as color_name, sz.name as size_name,
                            cat.name as category_name, subcat.name as subcategory_name, subsub.name as sub_subcategory_name,
@@ -7095,13 +7110,90 @@ class WarehouseController {
         ]);
     }
 
-    private function generateVariantQrPieces(array $variant, int $count, ?int $warehouseId = null): array {
+    private function isAllocationVariantIdentifier(array $variant, string $code): bool {
+        $normalizedCode = strtoupper(trim($code));
+        if ($normalizedCode === '') {
+            return false;
+        }
+
+        foreach (['sku', 'barcode', 'qr_code', 'product_code'] as $field) {
+            if (!empty($variant[$field]) && strtoupper(trim((string)$variant[$field])) === $normalizedCode) {
+                return true;
+            }
+        }
+
+        if (
+            in_array(strtoupper((string)($variant['category_type'] ?? 'NORMAL')), ['SERIES', 'COMPLEMENTARY'], true)
+            && !empty($variant['series_start_code'])
+            && !empty($variant['series_end_code'])
+        ) {
+            $rangeCode = strtoupper(trim($variant['series_start_code']) . ' - ' . trim($variant['series_end_code']));
+            return $rangeCode === $normalizedCode;
+        }
+
+        return false;
+    }
+
+    private function getAllocationBilledQrCodeSet(int $variantId): array {
+        $sql = "SELECT si.scanned_qr_codes, si.qr_code, NULL as billed_notes
+                FROM sale_items si
+                JOIN sales s ON s.id = si.sale_id
+                WHERE si.variant_id = ?
+                  AND s.status NOT IN ('CANCELLED', 'DRAFT', 'RETURNED')
+                UNION ALL
+                SELECT pi.batch_lot_no as scanned_qr_codes, NULL as qr_code, pi.notes as billed_notes
+                FROM purchase_items pi
+                JOIN purchase_orders po ON po.id = pi.purchase_order_id
+                WHERE pi.variant_id = ? AND po.customer_id IS NOT NULL
+                  AND po.status NOT IN ('CANCELLED', 'VOID', 'DRAFT')";
+        $billedCodes = [];
+        foreach (Database::fetchAll($sql, [$variantId, $variantId]) as $row) {
+            $codes = [];
+            $singleCode = trim((string)($row['qr_code'] ?? ''));
+            if ($singleCode !== '') {
+                $codes[] = $singleCode;
+            }
+
+            $storedCodes = trim((string)($row['scanned_qr_codes'] ?? ''));
+            if ($storedCodes !== '') {
+                $decodedCodes = json_decode($storedCodes, true);
+                if (is_array($decodedCodes)) {
+                    foreach ($decodedCodes as $entry) {
+                        $codes[] = is_array($entry)
+                            ? (string)($entry['tag_code'] ?? $entry['qr_code'] ?? $entry['tag'] ?? $entry['code'] ?? '')
+                            : (is_scalar($entry) ? (string)$entry : '');
+                    }
+                } else {
+                    $codes = array_merge($codes, preg_split('/[,|]/', $storedCodes) ?: []);
+                }
+            }
+            $billedNotes = trim((string)($row['billed_notes'] ?? ''));
+            if ($billedNotes !== '') {
+                $codes = array_merge($codes, preg_split('/[,;|\s]+/', $billedNotes) ?: []);
+            }
+
+            foreach ($codes as $code) {
+                $code = strtoupper(trim((string)$code, " \t\n\r\0\x0B\"'"));
+                if ($code !== '') {
+                    $billedCodes[$code] = true;
+                }
+            }
+        }
+
+        return $billedCodes;
+    }
+
+    private function generateVariantQrPieces(array $variant, int $count, ?int $warehouseId = null, bool $allocationOnly = false): array {
         if ($count <= 0) return [];
 
         $sku = $variant['sku'] ?? 'SKU';
         $pName = $variant['product_name'] ?? '';
-        $isSeries = (($variant['qr_type'] ?? '') === 'SERIES_BATCH');
-        $isComp = (!empty($variant['is_complementary']) || !empty($variant['prod_is_comp']));
+        $isSeries = $allocationOnly
+            ? strtoupper((string)($variant['category_type'] ?? 'NORMAL')) === 'SERIES'
+            : (($variant['qr_type'] ?? '') === 'SERIES_BATCH');
+        $isComp = $allocationOnly
+            ? strtoupper((string)($variant['category_type'] ?? 'NORMAL')) === 'COMPLEMENTARY'
+            : (!empty($variant['is_complementary']) || !empty($variant['prod_is_comp']));
         $removedQrCodes = StockAdjustment::getRemovedQrCodes((int)($variant['id'] ?? 0), $warehouseId);
         $removedQrCodeSet = array_fill_keys($removedQrCodes, true);
 
@@ -7115,7 +7207,7 @@ class WarehouseController {
             }
             $tagCode = "{$startCode} - {$endCode}";
 
-            return [[
+            $aggregatePieces = [[
                 'piece_no'          => 1,
                 'total_count'       => 1,
                 'qr_code'           => $tagCode,
@@ -7130,6 +7222,85 @@ class WarehouseController {
                 'is_complementary'  => $isComp,
                 'pack_quantity'     => $packQty,
             ]];
+
+            if ($allocationOnly) {
+                $unavailableCodes = $removedQrCodeSet + $this->getAllocationBilledQrCodeSet((int)($variant['id'] ?? 0));
+                $variantId = (int)($variant['id'] ?? 0);
+                foreach (Database::fetchAll(
+                    "SELECT tag_code FROM warehouse_damages
+                     WHERE variant_id = ?
+                       AND status NOT IN ('REPAIRED', 'RESTOCKED', 'SALVAGED', 'WRITTEN_OFF')",
+                    [$variantId]
+                ) as $damageRow) {
+                    foreach (preg_split('/[,;\s|]+/', (string)($damageRow['tag_code'] ?? '')) as $code) {
+                        $code = strtoupper(trim($code));
+                        if ($code !== '') {
+                            $unavailableCodes[$code] = true;
+                        }
+                    }
+                }
+
+                $batchRows = Database::fetchAll(
+                    "SELECT pbi.received_qr_codes, pbi.damaged_qr_codes
+                     FROM production_batch_items pbi
+                     JOIN production_batches pb ON pb.id = pbi.production_batch_id
+                     LEFT JOIN production_outwards po ON (pb.production_outward_id = po.id OR po.production_batch_id = pb.id)
+                     WHERE pbi.variant_id = ? AND pb.status = 'RECEIVED'
+                       AND (? IS NULL OR COALESCE(po.warehouse_id, pb.destination_warehouse_id) = ?)",
+                    [$variantId, $warehouseId, $warehouseId]
+                );
+                foreach ($batchRows as $batchRow) {
+                    foreach (explode(',', (string)($batchRow['damaged_qr_codes'] ?? '')) as $code) {
+                        $code = strtoupper(trim($code));
+                        if ($code !== '') {
+                            $unavailableCodes[$code] = true;
+                        }
+                    }
+                }
+
+                $seenCodes = [];
+                $inwardedCodes = [];
+                foreach (Database::fetchAll(
+                    "SELECT qr_code FROM warehouse_qr_codes
+                     WHERE variant_id = ? AND inwarded_at IS NOT NULL
+                       AND (? IS NULL OR warehouse_id = ?)
+                     ORDER BY id ASC",
+                    [$variantId, $warehouseId, $warehouseId]
+                ) as $warehouseQr) {
+                    $inwardedCodes[] = (string)($warehouseQr['qr_code'] ?? '');
+                }
+                foreach ($batchRows as $batchRow) {
+                    foreach (explode(',', (string)($batchRow['received_qr_codes'] ?? '')) as $code) {
+                        $inwardedCodes[] = $code;
+                    }
+                }
+
+                foreach ($inwardedCodes as $code) {
+                    $code = strtoupper(trim($code));
+                    if ($code === '' || isset($unavailableCodes[$code]) || isset($seenCodes[$code])) {
+                        continue;
+                    }
+                    $seenCodes[$code] = true;
+                    $aggregatePieces[] = [
+                        'piece_no' => count($aggregatePieces) + 1,
+                        'qr_code' => $code,
+                        'sku' => $sku,
+                        'size' => $variant['size_name'] ?? 'Free',
+                        'color' => $variant['color_name'] ?? '',
+                        'product' => $pName,
+                        'mrp' => (float)($variant['mrp'] ?? 0),
+                        'selling_price' => (float)($variant['selling_price'] ?? 0),
+                        'is_series' => $isSeries,
+                        'is_complementary' => $isComp,
+                        'pack_quantity' => $packQty,
+                    ];
+                    if (count($aggregatePieces) > $count) {
+                        break;
+                    }
+                }
+            }
+
+            return $aggregatePieces;
         }
         
         $c1 = !empty($variant['category_name']) ? trim($variant['category_name']) : (!empty($variant['category_code']) ? trim($variant['category_code']) : '');
@@ -7184,12 +7355,74 @@ class WarehouseController {
         // Check if there are real production inward QR codes for this variant
         $variantId = (int)($variant['id'] ?? 0);
         if ($variantId > 0) {
+            if ($allocationOnly) {
+                foreach ($this->getAllocationBilledQrCodeSet($variantId) as $code => $_) {
+                    $unavailableQrCodes[$code] = true;
+                }
+                foreach (Database::fetchAll(
+                    "SELECT tag_code FROM warehouse_damages
+                     WHERE variant_id = ?
+                       AND status NOT IN ('REPAIRED', 'RESTOCKED', 'SALVAGED', 'WRITTEN_OFF')",
+                    [$variantId]
+                ) as $damageRow) {
+                    foreach (preg_split('/[,;\s|]+/', (string)($damageRow['tag_code'] ?? '')) as $code) {
+                        $code = strtoupper(trim($code));
+                        if ($code !== '') {
+                            $unavailableQrCodes[$code] = true;
+                        }
+                    }
+                }
+                foreach (Database::fetchAll(
+                    "SELECT pbi.damaged_qr_codes
+                     FROM production_batch_items pbi
+                     JOIN production_batches pb ON pb.id = pbi.production_batch_id
+                     LEFT JOIN production_outwards po ON (pb.production_outward_id = po.id OR po.production_batch_id = pb.id)
+                     WHERE pbi.variant_id = ? AND pb.status IN ('RECEIVED', 'DISPATCHED')
+                       AND (? IS NULL OR COALESCE(po.warehouse_id, pb.destination_warehouse_id) = ?)",
+                    [$variantId, $warehouseId, $warehouseId]
+                ) as $damageRow) {
+                    foreach (explode(',', (string)($damageRow['damaged_qr_codes'] ?? '')) as $code) {
+                        $code = strtoupper(trim($code));
+                        if ($code !== '') {
+                            $unavailableQrCodes[$code] = true;
+                        }
+                    }
+                }
+
+                foreach (Database::fetchAll(
+                    "SELECT qr_code FROM warehouse_qr_codes
+                     WHERE variant_id = ? AND inwarded_at IS NOT NULL
+                       AND (? IS NULL OR warehouse_id = ?)
+                     ORDER BY id ASC",
+                    [$variantId, $warehouseId, $warehouseId]
+                ) as $warehouseQr) {
+                    $code = strtoupper(trim((string)($warehouseQr['qr_code'] ?? '')));
+                    if ($code !== '' && !isset($unavailableQrCodes[$code]) && !isset($seenProductionCodes[$code])) {
+                        $seenProductionCodes[$code] = true;
+                        $pieces[] = [
+                            'piece_no' => count($pieces) + 1,
+                            'qr_code' => $code,
+                            'sku' => $sku,
+                            'size' => $variant['size_name'] ?? 'Free',
+                            'color' => $variant['color_name'] ?? '',
+                            'product' => $pName,
+                            'mrp' => (float)($variant['mrp'] ?? 0),
+                            'selling_price' => (float)($variant['selling_price'] ?? 0),
+                        ];
+                        if (!$allocationOnly && count($pieces) >= $count) {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            $batchStatusFilter = $allocationOnly ? "pb.status = 'RECEIVED'" : "pb.status IN ('RECEIVED', 'DISPATCHED')";
             $batchPieceRows = Database::fetchAll(
-                "SELECT pbi.received_qr_codes, pbi.quantity, pbi.received_qty, pb.id as batch_id
+                "SELECT pbi.received_qr_codes, pbi.damaged_qr_codes, pbi.quantity, pbi.received_qty, pb.id as batch_id
                  FROM production_batch_items pbi
                  JOIN production_batches pb ON pb.id = pbi.production_batch_id
                  LEFT JOIN production_outwards po ON (pb.production_outward_id = po.id OR po.production_batch_id = pb.id)
-                 WHERE pbi.variant_id = ? AND pb.status IN ('RECEIVED', 'DISPATCHED')
+                 WHERE pbi.variant_id = ? AND {$batchStatusFilter}
                    AND (? IS NULL OR COALESCE(po.warehouse_id, pb.destination_warehouse_id) = ?)
                  ORDER BY pb.id ASC",
                 [$variantId, $warehouseId, $warehouseId]
@@ -7197,6 +7430,14 @@ class WarehouseController {
 
             foreach ($batchPieceRows as $bpr) {
                 if (count($pieces) >= $count) break;
+                if ($allocationOnly && !empty($bpr['damaged_qr_codes'])) {
+                    foreach (explode(',', $bpr['damaged_qr_codes']) as $damagedCode) {
+                        $damagedCode = strtoupper(trim($damagedCode));
+                        if ($damagedCode !== '') {
+                            $unavailableQrCodes[$damagedCode] = true;
+                        }
+                    }
+                }
                 if (!empty($bpr['received_qr_codes'])) {
                     foreach (explode(',', $bpr['received_qr_codes']) as $t) {
                         if (count($pieces) >= $count) break;
@@ -7217,6 +7458,10 @@ class WarehouseController {
                     }
                 }
             }
+        }
+
+        if ($allocationOnly) {
+            return $pieces;
         }
 
         // Fill remaining with sequence if needed
@@ -7394,13 +7639,7 @@ class WarehouseController {
                      WHERE pv.id = ?",
                     [$dmgCheck['variant_id']]
                 );
-                $isMasterOrComp = ($dmgVar && (
-                    $dmgVar['qr_type'] === 'SERIES_BATCH'
-                    || strtoupper($dmgVar['cat_type'] ?? '') === 'SERIES'
-                    || strtoupper($dmgVar['cat_type'] ?? '') === 'COMPLEMENTARY'
-                    || (int)($dmgVar['pack_quantity'] ?? 0) > 1
-                    || !empty($dmgVar['is_comp'])
-                ));
+                $isMasterOrComp = $dmgVar && in_array(strtoupper($dmgVar['cat_type'] ?? ''), ['SERIES', 'COMPLEMENTARY'], true);
 
                 if ($isMasterOrComp) {
                     $availStockRow = Database::fetchOne(
@@ -7468,12 +7707,7 @@ class WarehouseController {
                      WHERE pv.id = ?",
                     [$alreadyAlloc['variant_id']]
                 );
-                $isMasterOrComp = ($allocVar && (
-                    $allocVar['qr_type'] === 'SERIES_BATCH'
-                    || strtoupper($allocVar['cat_type'] ?? '') === 'SERIES'
-                    || (int)($allocVar['pack_quantity'] ?? 0) > 1
-                    || !empty($allocVar['is_comp'])
-                ));
+                $isMasterOrComp = $allocVar && in_array(strtoupper($allocVar['cat_type'] ?? ''), ['SERIES', 'COMPLEMENTARY'], true);
 
                 if ($isMasterOrComp) {
                     $availStockRow = Database::fetchOne(
@@ -7511,13 +7745,7 @@ class WarehouseController {
                    GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
                    p.qr_code_prefix, p.category_code, p.subcategory_code, p.sub_subcategory_code,
                    p.category_id, p.subcategory_id, p.sub_subcategory_id,
-                   CASE
-                       WHEN GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) = 1 THEN 'COMPLEMENTARY'
-                       WHEN UPPER(COALESCE(wc.category_type, '')) = 'COMPLEMENTARY' THEN 'COMPLEMENTARY'
-                       WHEN UPPER(COALESCE(pv.qr_type, '')) = 'SERIES_BATCH' THEN 'SERIES'
-                       WHEN UPPER(COALESCE(wc.category_type, '')) IN ('SERIES', 'NORMAL') THEN UPPER(wc.category_type)
-                       ELSE 'NORMAL'
-                   END as category_type,
+                   UPPER(COALESCE(wc.category_type, 'NORMAL')) as category_type,
                    s.name as size_name, s.code as size_code,
                    col.name as color_name, col.hex_code as color_hex,
                    COALESCE(wc.name, cat.name) as category_name,
@@ -8055,12 +8283,10 @@ class WarehouseController {
              LIMIT 1",
             [(int)$variant['id']]
         );
-        $isSeriesOrComp = (
-            strtoupper($variant['category_type'] ?? '') === 'SERIES'
-            || strtoupper($variant['category_type'] ?? '') === 'COMPLEMENTARY'
-            || ($variant['qr_type'] ?? '') === 'SERIES_BATCH'
-            || (int)($variant['pack_quantity'] ?? 0) > 1
-            || !empty($variant['is_complementary'])
+        $isSeriesOrComp = in_array(
+            strtoupper(trim((string)($variant['category_type'] ?? 'NORMAL'))),
+            ['SERIES', 'COMPLEMENTARY'],
+            true
         );
         if ($activeDmgVariant) {
             $variantDmgQty = (float)($activeDmgVariant['damaged_qty'] ?? 0);
@@ -8086,7 +8312,7 @@ class WarehouseController {
             exit;
         }
 
-        if ($warehouseId > 0 && $availableStock <= 0) {
+        if ($availableStock <= 0) {
             echo json_encode([
                 'success'     => false,
                 'is_no_stock' => true,
@@ -8096,18 +8322,34 @@ class WarehouseController {
         }
 
         // Fetch/generate piece QR items for this variant
-        $qrPieces = $this->generateVariantQrPieces($variant, (int)$availableStock, $warehouseId > 0 ? $warehouseId : null);
-
-        // Ensure scanned tag is present in piece list if valid format
+        $categoryType = strtoupper(trim((string)($variant['category_type'] ?? 'NORMAL')));
+        $qrPieces = $this->generateVariantQrPieces($variant, (int)$availableStock, $warehouseId > 0 ? $warehouseId : null, true);
         $tagExistsInPieces = false;
-        foreach ($qrPieces as $qp) {
-            if ($qp['qr_code'] === $extractedTag) {
-                $tagExistsInPieces = true;
-                break;
+        $isKnownVariantCode = false;
+        foreach (array_unique(array_merge([(string)$extractedTag], $candidateCodes)) as $candidateTag) {
+            foreach ($qrPieces as $qp) {
+                if (strcasecmp((string)$qp['qr_code'], (string)$candidateTag) === 0) {
+                    $extractedTag = (string)$candidateTag;
+                    $tagExistsInPieces = true;
+                    break 2;
+                }
             }
         }
+        if (!$tagExistsInPieces) {
+            $isKnownVariantCode = $this->isAllocationVariantIdentifier($variant, (string)$extractedTag);
+        }
 
-        if (!$tagExistsInPieces && !empty($extractedTag) && $extractedTag !== $variant['sku']) {
+        if (!$isKnownVariantCode && !$tagExistsInPieces) {
+            echo json_encode([
+                'success' => false,
+                'is_no_stock' => true,
+                'message' => "QR code '{$extractedTag}' is not a verified, available inwarded tag for {$warehouseName}."
+            ]);
+            exit;
+        }
+
+        // Ensure scanned tag is present in piece list if valid format
+        if (!$tagExistsInPieces && !$isKnownVariantCode && !empty($extractedTag)) {
             array_unshift($qrPieces, [
                 'piece_no'      => 1,
                 'qr_code'       => $extractedTag,
@@ -8122,8 +8364,7 @@ class WarehouseController {
 
         $catHierarchy = trim(($variant['category_name'] ?? '') . ' > ' . ($variant['subcategory_name'] ?? '') . ($variant['sub_subcategory_name'] ? ' > ' . $variant['sub_subcategory_name'] : ''), ' >');
 
-        $categoryType = strtoupper(trim((string)($variant['category_type'] ?? 'NORMAL')));
-        $isSeries = ($categoryType === 'SERIES' || strtoupper($variant['qr_type'] ?? '') === 'SERIES_BATCH');
+        $isSeries = ($categoryType === 'SERIES');
         $isComplementary = ($categoryType === 'COMPLEMENTARY');
         $packQty = (int)(!empty($variant['pack_quantity']) ? $variant['pack_quantity'] : ($isSeries || $isComplementary ? $availableStock : 1));
         if ($packQty <= 0) $packQty = 1;

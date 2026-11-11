@@ -82,7 +82,7 @@ $displayMis = $batch['status'] === 'RECEIVED' ? (int) ($totalMissing ?? ($batch[
 $displayPct = $totalExpected > 0 ? round(($displayRec / $totalExpected) * 100) : ($batch['status'] === 'RECEIVED' ? 100 : 0);
 
 // Can scan or edit only if user has inward verify or create permission AND batch is not fully received
-$canVerify = hasPermission('inward', 'verify');
+$canVerify = hasPermission('inward', 'verify') || hasPermission('inward', 'create') || hasPermission('inward', 'edit');
 $isFullyReceived = ($batch['status'] === 'RECEIVED' && $displayMis === 0 && ($displayRec + $displayDmg) >= $totalExpected);
 $canScanOrEdit = $canVerify && ($batch['status'] === 'DISPATCHED' || !$isFullyReceived);
 ?>
