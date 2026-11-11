@@ -404,9 +404,11 @@
                                         <td><span class="badge bg-secondary"><?= e($inw['warehouse_name']) ?></span></td>
                                         <td><span class="badge bg-primary fs-6"><?= number_format($inw['total_qty']) ?> pcs</span></td>
                                         <td>
-                                            <?php if (hasPermission('inward', 'view')): ?>
-                                                <a href="<?= url('warehouse/inward/view/' . $inw['id']) ?>" class="btn btn-sm <?= hasPermission('inward', 'verify') ? 'btn-success' : 'btn-outline-primary' ?>">
-                                                    <i class="bi <?= hasPermission('inward', 'verify') ? 'bi-check2-circle' : 'bi-eye' ?> me-1"></i><?= hasPermission('inward', 'verify') ? 'Verify' : 'View' ?>
+                                            <?php if (hasPermission('inward', 'view')): 
+                                                $canInwVerify = hasPermission('inward', 'verify') || hasPermission('inward', 'create') || hasPermission('inward', 'edit');
+                                            ?>
+                                                <a href="<?= url('warehouse/inward/view/' . $inw['id']) ?>" class="btn btn-sm <?= $canInwVerify ? 'btn-success' : 'btn-outline-primary' ?>">
+                                                    <i class="bi <?= $canInwVerify ? 'bi-check2-circle' : 'bi-eye' ?> me-1"></i><?= $canInwVerify ? 'Verify' : 'View' ?>
                                                 </a>
                                             <?php endif; ?>
                                         </td>
