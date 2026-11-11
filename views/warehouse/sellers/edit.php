@@ -21,30 +21,35 @@
                         <div class="col-12">
                             <label class="form-label small fw-semibold">Contact Person / Supplier Name <span class="text-danger">*</span></label>
                             <input type="text" name="name" id="supplierNameInput" class="form-control text-uppercase" value="<?= e($seller['name']) ?>" required minlength="2" maxlength="150" autocomplete="off">
-                            <div class="invalid-feedback">Supplier name is required (min 2 characters).</div>
+                            <div class="invalid-feedback" id="supplierNameFeedback">Supplier name is required (min 2 characters).</div>
+                            <div class="valid-feedback d-none" id="supplierNameValidFeedback">Supplier name is available.</div>
                         </div>
 
                         <div class="col-12">
                             <label class="form-label small fw-semibold">Company / Brand Name</label>
                             <input type="text" name="company" id="supplierCompanyInput" class="form-control text-uppercase" value="<?= e($seller['company'] ?? '') ?>" placeholder="e.g. RK Apparels Pvt Ltd" maxlength="200">
+                            <div class="invalid-feedback d-none" id="supplierCompanyFeedback">Company name already registered.</div>
+                            <div class="valid-feedback d-none" id="supplierCompanyValidFeedback">Company name is available.</div>
                         </div>
 
                         <div class="col-md-6">
                             <label class="form-label small fw-semibold">Mobile Number <span class="text-danger">*</span></label>
-                            <input type="tel" name="phone" class="form-control" value="<?= e($seller['phone']) ?>" required pattern="[0-9]{10}" maxlength="10">
-                            <div class="invalid-feedback">Must be a valid 10-digit mobile number.</div>
+                            <input type="tel" name="phone" id="supplierPhoneInput" class="form-control" value="<?= e($seller['phone']) ?>" required pattern="[0-9]{10}" maxlength="10">
+                            <div class="invalid-feedback" id="supplierPhoneFeedback">Must be a valid 10-digit mobile number starting with 6-9.</div>
+                            <div class="valid-feedback d-none" id="supplierPhoneValidFeedback">Phone number is valid &amp; available.</div>
                         </div>
 
                         <div class="col-md-6">
                             <label class="form-label small fw-semibold">Email Address</label>
-                            <input type="email" name="email" class="form-control" value="<?= e($seller['email'] ?? '') ?>" placeholder="vendor@company.com" maxlength="255">
-                            <div class="invalid-feedback">Please enter a valid email address.</div>
+                            <input type="email" name="email" id="supplierEmailInput" class="form-control" value="<?= e($seller['email'] ?? '') ?>" placeholder="vendor@company.com" maxlength="255">
+                            <div class="invalid-feedback" id="supplierEmailFeedback">Please enter a valid email address.</div>
                         </div>
 
                         <div class="col-md-6">
                             <label class="form-label small fw-semibold">GSTIN (15 Digits)</label>
-                            <input type="text" name="gst_number" class="form-control font-monospace" value="<?= e($seller['gst_number'] ?? '') ?>" placeholder="33AAAAA0000A1Z5" maxlength="15" style="text-transform: uppercase;">
-                            <div class="invalid-feedback">Invalid GSTIN format (15 characters).</div>
+                            <input type="text" name="gst_number" id="supplierGstInput" class="form-control font-monospace" value="<?= e($seller['gst_number'] ?? '') ?>" placeholder="33AAAAA0000A1Z5" maxlength="15" style="text-transform: uppercase;">
+                            <div class="invalid-feedback" id="supplierGstFeedback">Invalid GSTIN format (15 characters).</div>
+                            <div class="valid-feedback d-none" id="supplierGstValidFeedback">GSTIN is valid &amp; available.</div>
                         </div>
 
                         <div class="col-md-6">
@@ -377,4 +382,7 @@
 }
 </style>
 
+<script>
+window.currentWarehouseSupplierId = <?= (int)$seller['id'] ?>;
+</script>
 <script src="<?= asset('js/warehouse_supplier_edit.js') ?>"></script>

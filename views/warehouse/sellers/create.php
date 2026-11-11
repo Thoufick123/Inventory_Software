@@ -133,6 +133,8 @@ $isEditMode = (!empty($_GET['mode']) && $_GET['mode'] === 'edit');
                                         <i class="bi bi-arrow-return-left me-1"></i> Pick Existing
                                     </button>
                                 </div>
+                                <div class="invalid-feedback d-none" id="newSupplierNameFeedback">Contact name is required (min 2 characters).</div>
+                                <div class="valid-feedback d-none" id="newSupplierNameValidFeedback">Contact name is available.</div>
                                 <div class="form-text text-success fs-8 mt-1">
                                     <i class="bi bi-plus-circle me-1"></i>Registering a new supplier. Enter their commercial credentials below.
                                 </div>
@@ -162,6 +164,8 @@ $isEditMode = (!empty($_GET['mode']) && $_GET['mode'] === 'edit');
                                 <i class="bi bi-building me-1 text-primary"></i>Company Name
                             </label>
                             <input type="text" name="company" id="supplierCompany" class="form-control text-uppercase" placeholder="e.g. RK Apparels Pvt Ltd" maxlength="200">
+                            <div class="invalid-feedback d-none" id="supplierCompanyFeedback">Company name already registered.</div>
+                            <div class="valid-feedback d-none" id="supplierCompanyValidFeedback">Company name is available.</div>
                         </div>
 
                         <!-- 2. Brand Name Field (Dropdown + New Brand Creation) -->
@@ -194,6 +198,7 @@ $isEditMode = (!empty($_GET['mode']) && $_GET['mode'] === 'edit');
                                         <i class="bi bi-arrow-return-left"></i>
                                     </button>
                                 </div>
+                                <div class="invalid-feedback d-none" id="newBrandFeedback">Brand name is required (min 2 characters).</div>
                                 <div class="form-text text-muted" style="font-size: 0.72rem;">
                                     <i class="bi bi-info-circle me-1 text-primary"></i>Will be newly created in catalog brands.
                                 </div>
@@ -206,16 +211,21 @@ $isEditMode = (!empty($_GET['mode']) && $_GET['mode'] === 'edit');
                                 <span class="input-group-text bg-light">+91</span>
                                 <input type="tel" name="phone" id="supplierPhone" class="form-control" placeholder="9876543210" inputmode="numeric" pattern="[6-9][0-9]{9}" maxlength="10" title="Enter a valid 10-digit Indian mobile number">
                             </div>
+                            <div class="invalid-feedback d-none" id="supplierPhoneFeedback">Enter a valid 10-digit Indian mobile number.</div>
+                            <div class="valid-feedback d-none" id="supplierPhoneValidFeedback">Phone number is valid &amp; available.</div>
                         </div>
 
                         <div class="col-md-6">
                             <label class="form-label small fw-semibold">Email Address</label>
                             <input type="email" name="email" id="supplierEmail" class="form-control form-control-sm" placeholder="vendor@company.com" maxlength="255">
+                            <div class="invalid-feedback d-none" id="supplierEmailFeedback">Enter a valid email address.</div>
                         </div>
 
                         <div class="col-md-6">
                             <label class="form-label small fw-semibold">GSTIN (15 Characters)</label>
                             <input type="text" name="gst_number" id="supplierGst" class="form-control form-control-sm font-monospace" placeholder="33AAAAA0000A1Z5" maxlength="15" pattern="[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z][1-9A-Za-z][Zz][0-9A-Za-z]" title="Enter a valid 15-character GSTIN" style="text-transform: uppercase;">
+                            <div class="invalid-feedback d-none" id="supplierGstFeedback">Enter a valid 15-character GSTIN.</div>
+                            <div class="valid-feedback d-none" id="supplierGstValidFeedback">GSTIN is valid &amp; available.</div>
                         </div>
 
                         <div class="col-12">

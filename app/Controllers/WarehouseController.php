@@ -18061,4 +18061,128 @@ class WarehouseController {
             Response::json(['success' => false, 'message' => 'Error updating hierarchy: ' . $e->getMessage()], 500);
         }
     }
+
+    /**
+     * Real-time duplicate & validation check for Warehouse Supplier creation/editing.
+     */
+    public function ajaxCheckSupplierDuplicate(): void {
+        $field = trim((string)($_GET['field'] ?? ''));
+        $value = trim((string)($_GET['value'] ?? ''));
+        $exceptId = !empty($_GET['except_id']) ? (int)$_GET['except_id'] : null;
+
+        if ($field === '' || $value === '') {
+            Response::json(['valid' => true, 'available' => true, 'message' => '']);
+            return;
+        }
+
+        if ($field === 'phone') {
+            $clean = preg_replace('/\D+/', '', $value);
+            if (strlen($clean) === 12 && substr($clean, 0, 2) === '91') $clean = substr($clean, 2);
+            if (strlen($clean) !== 10) {
+                Response::json(['valid' => false, 'available' => false, 'message' => 'Phone number must be exactly 10 digits.']);
+                return;
+            }
+            if (!in_array($clean[0], ['6','7','8','9'])) {
+                Response::json(['valid' => false, 'available' => false, 'message' => 'Indian mobile numbers must start with 6, 7, 8, or 9.']);
+                return;
+            }
+
+            // Check warehouse_suppliers
+            $sql = "SELECT id, name, company FROM warehouse_suppliers WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') LIKE ?";
+            $params = ['%' . $clean];
+            if ($exceptId !== null) {
+                $sql .= " AND id != ?";
+                $params[] = $exceptId;
+            }
+            $existing = Database::fetchOne($sql, $params);
+            if ($existing) {
+                $name = !empty($existing['company']) ? $existing['company'] . ' (' . $existing['name'] . ')' : $existing['name'];
+                Response::json([
+                    'valid' => true,
+                    'available' => false,
+                    'message' => "This phone number is already registered to supplier '{$name}'."
+                ]);
+                return;
+            }
+            Response::json(['valid' => true, 'available' => true, 'message' => 'Phone number is available.']);
+            return;
+        }
+
+        if ($field === 'gst_number') {
+            $gst = strtoupper($value);
+            if (!preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/', $gst)) {
+                Response::json(['valid' => false, 'available' => false, 'message' => 'Invalid GSTIN format (15 characters alphanumeric).']);
+                return;
+            }
+            $sql = "SELECT id, name, company FROM warehouse_suppliers WHERE UPPER(gst_number) = ?";
+            $params = [$gst];
+            if ($exceptId !== null) {
+                $sql .= " AND id != ?";
+                $params[] = $exceptId;
+            }
+            $existing = Database::fetchOne($sql, $params);
+            if ($existing) {
+                $name = !empty($existing['company']) ? $existing['company'] . ' (' . $existing['name'] . ')' : $existing['name'];
+                Response::json([
+                    'valid' => true,
+                    'available' => false,
+                    'message' => "GSTIN is already registered to supplier '{$name}'."
+                ]);
+                return;
+            }
+            Response::json(['valid' => true, 'available' => true, 'message' => 'GSTIN is valid and available.']);
+            return;
+        }
+
+        if ($field === 'name' || $field === 'company') {
+            if (mb_strlen($value) < 2) {
+                Response::json(['valid' => false, 'available' => false, 'message' => ucfirst($field) . ' must be at least 2 characters.']);
+                return;
+            }
+            $col = ($field === 'company') ? 'company' : 'name';
+            $sql = "SELECT id, name, company FROM warehouse_suppliers WHERE LOWER({$col}) = LOWER(?)";
+            $params = [$value];
+            if ($exceptId !== null) {
+                $sql .= " AND id != ?";
+                $params[] = $exceptId;
+            }
+            $existing = Database::fetchOne($sql, $params);
+            if ($existing) {
+                Response::json([
+                    'valid' => true,
+                    'available' => false,
+                    'message' => "A supplier with this " . ($field === 'company' ? 'company' : 'contact') . " name already exists ('{$existing['name']}')."
+                ]);
+                return;
+            }
+            Response::json(['valid' => true, 'available' => true, 'message' => ucfirst($field) . ' is available.']);
+            return;
+        }
+
+        if ($field === 'sku') {
+            if (mb_strlen($value) < 2) {
+                Response::json(['valid' => false, 'available' => false, 'message' => 'SKU must be at least 2 characters.']);
+                return;
+            }
+            $sql = "SELECT pv.id, pv.sku, p.name as product_name FROM product_variants pv JOIN products p ON pv.product_id = p.id WHERE LOWER(pv.sku) = LOWER(?)";
+            $params = [$value];
+            if ($exceptId !== null) {
+                $sql .= " AND pv.id != ?";
+                $params[] = $exceptId;
+            }
+            $existing = Database::fetchOne($sql, $params);
+            if ($existing) {
+                Response::json([
+                    'valid' => true,
+                    'available' => false,
+                    'message' => "SKU '{$existing['sku']}' is already in use by product '{$existing['product_name']}'."
+                ]);
+                return;
+            }
+            Response::json(['valid' => true, 'available' => true, 'message' => 'SKU is available.']);
+            return;
+        }
+
+        Response::json(['valid' => true, 'available' => true, 'message' => '']);
+    }
 }

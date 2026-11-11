@@ -418,7 +418,8 @@
                 </div>
                 <div class="col-xl-1 col-lg-1 col-md-2 col-6">
                     <label class="form-label fs-8 text-muted mb-1 fw-bold">Weight (kg):</label>
-                    <input type="number" step="0.001" min="0" class="form-control form-control-sm text-end font-monospace" id="qfWeight" placeholder="">
+                    <input type="number" step="0.001" min="0" class="form-control form-control-sm text-end font-monospace" id="qfWeight" placeholder="" oninput="validateQuickFillPricing()">
+                    <div id="qfWeightWarn" class="text-danger fs-8 fw-bold mt-1 d-none"></div>
                 </div>
                 <div class="col-xl-1 col-lg-1 col-md-3 col-6">
                     <label class="form-label fs-8 text-muted mb-1 fw-bold">Base MRP (₹):</label>
@@ -426,6 +427,7 @@
                         <span class="input-group-text bg-white px-1.5 fs-8">₹</span>
                         <input type="number" step="0.01" min="0" class="form-control form-control-sm text-end text-success fw-bold" id="qfMrp" placeholder="" oninput="validateQuickFillPricing()">
                     </div>
+                    <div id="qfMrpWarn" class="text-danger fs-8 fw-bold mt-1 d-none"></div>
                 </div>
                 <div class="col-xl-1 col-lg-1 col-md-3 col-6">
                     <label class="form-label fs-8 text-muted mb-1 fw-bold">Selling Price (₹):</label>
@@ -441,10 +443,12 @@
                         <span class="input-group-text bg-white px-1.5 fs-8">₹</span>
                         <input type="number" step="0.01" min="0" class="form-control form-control-sm text-end text-dark fw-bold" id="qfCost" placeholder="" oninput="validateQuickFillPricing()">
                     </div>
+                    <div id="qfCostWarn" class="text-danger fs-8 fw-bold mt-1 d-none"></div>
                 </div>
                 <div class="col-xl-1 col-lg-1 col-md-3 col-6">
                     <label class="form-label fs-8 text-muted mb-1 fw-bold">Qty / Var:</label>
-                    <input type="number" min="0" step="1" class="form-control form-control-sm text-center fw-bold fs-7" id="qfQty" placeholder="" oninput="handleQfQtyInput(this.value)">
+                    <input type="number" min="0" step="1" class="form-control form-control-sm text-center fw-bold fs-7" id="qfQty" placeholder="" oninput="handleQfQtyInput(this.value); validateQuickFillPricing();">
+                    <div id="qfQtyWarn" class="text-danger fs-8 fw-bold mt-1 d-none"></div>
                 </div>
             </div>
             <div id="quickFillSuccessNotice" class="alert alert-success alert-dismissible fade show py-1.5 px-3 mb-0 mt-2 fs-8 fw-semibold d-none" role="alert">
@@ -536,6 +540,9 @@
                 </a>
             </div>
             <div class="d-flex align-items-center gap-2">
+                <div id="saveProductsValidationNotice" class="text-danger small fw-bold d-none me-2">
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i>Please fix highlighted field errors or duplicate lines before saving.
+                </div>
                 <button type="button" class="btn btn-primary px-5 py-2.5 fw-bold shadow" id="btnSaveAllProducts" onclick="submitFinalProducts()" disabled>
                     <i class="bi bi-qr-code me-1"></i> Save Products &amp; Generate QR Labels &rarr;
                 </button>
@@ -603,6 +610,7 @@ let HSN_OPTIONS = <?= json_encode(array_values(array_map(function($h) {
         'gst_rate'    => (float)($h['gst_rate'] ?? 5.00),
     ];
 }, $hsnCodes ?? [])), JSON_UNESCAPED_UNICODE) ?>;
+const EXISTING_SUPPLIER_PRODUCTS = <?= json_encode($existingSupplierProducts ?? [], JSON_UNESCAPED_UNICODE) ?>;
 
 // Array of active inward products
 let addedProductsList = [];
@@ -1399,12 +1407,14 @@ function renderAddedProductsTable() {
                             value="${escapeHtml(item.product_name || '')}" 
                             placeholder=""
                             oninput="this.value=this.value.toUpperCase();updateItemField(${item.id}, 'product_name', this.value)">
+                    <div id="nameWarn_${item.id}" class="text-danger fs-8 fw-bold mt-0.5 d-none"></div>
                 </td>
                 <td>
                     <select class="form-select form-select-sm font-monospace fw-bold" id="hsn_${item.id}"
                             onchange="handleRowHsnChange(${item.id}, this)">
                         ${hsnOptionsHtml}
                     </select>
+                    <div id="hsnWarn_${item.id}" class="text-danger fs-8 fw-bold mt-0.5 d-none"></div>
                 </td>
                 <td>
                     <div class="input-group input-group-sm">
@@ -1422,11 +1432,13 @@ function renderAddedProductsTable() {
                             value="${(item.weight && parseFloat(item.weight) > 0) ? parseFloat(item.weight).toFixed(3) : ''}" 
                             placeholder=""
                             oninput="updateItemField(${item.id}, 'weight', this.value)">
+                    <div id="wtWarn_${item.id}" class="text-danger fs-8 fw-bold mt-0.5 d-none"></div>
                 </td>
                 <td class="text-center">
                     <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace px-2 py-1 fw-bold">
                         ${escapeHtml(item.variant_display || item.size_name || 'Standard')}
                     </span>
+                    <div id="dupWarn_${item.id}"></div>
                 </td>
                 <td>
                     <div class="input-group input-group-sm">
@@ -1437,6 +1449,7 @@ function renderAddedProductsTable() {
                                placeholder=""
                                oninput="updateItemField(${item.id}, 'mrp', this.value)">
                     </div>
+                    <div id="mrpWarn_${item.id}" class="text-danger fs-8 fw-bold mt-0.5 d-none"></div>
                 </td>
                 <td>
                     <div class="input-group input-group-sm">
@@ -1460,6 +1473,7 @@ function renderAddedProductsTable() {
                                placeholder=""
                                oninput="updateItemField(${item.id}, 'purchase_price', this.value)">
                     </div>
+                    <div id="costWarn_${item.id}" class="text-danger fs-8 fw-bold mt-0.5 d-none"></div>
                 </td>
                 <td>
                     <input type="number" min="0" step="1" id="qty_${item.id}"
@@ -1467,6 +1481,7 @@ function renderAddedProductsTable() {
                            value="${(item.quantity && parseInt(item.quantity) > 0) ? item.quantity : ''}" 
                            placeholder=""
                            oninput="updateItemField(${item.id}, 'quantity', this.value)">
+                    <div id="qtyWarn_${item.id}" class="text-danger fs-8 fw-bold mt-0.5 d-none"></div>
                 </td>
                 <td class="text-end fw-bold text-primary fs-7" id="lineTotal_${item.id}">
                     ${(parseFloat(item.selling_price) > 0 && parseInt(item.quantity) > 0) ? `
@@ -1486,8 +1501,8 @@ function renderAddedProductsTable() {
     });
 
     tbody.innerHTML = html;
-    if (btnSubmit) btnSubmit.disabled = false;
     recalculateAllTotals();
+    checkAllRowValidationsAndDuplicates();
 }
 
 function handleRowHsnChange(itemId, selectEl) {
@@ -1642,6 +1657,7 @@ function updateItemField(itemId, fieldName, value) {
     }
 
     recalculateAllTotals();
+    checkAllRowValidationsAndDuplicates();
 }
 
 // -----------------------------------------------------------------------------
@@ -1651,21 +1667,48 @@ function validateQuickFillPricing() {
     const mrp = parseFloat(document.getElementById('qfMrp')?.value) || 0;
     const sp = parseFloat(document.getElementById('qfSp')?.value) || 0;
     const cost = parseFloat(document.getElementById('qfCost')?.value) || 0;
+    const wtVal = document.getElementById('qfWeight')?.value;
+    const qtyVal = document.getElementById('qfQty')?.value;
 
     const spInput = document.getElementById('qfSp');
     const mrpInput = document.getElementById('qfMrp');
     const costInput = document.getElementById('qfCost');
+    const wtInput = document.getElementById('qfWeight');
+    const qtyInput = document.getElementById('qfQty');
+
     const warn = document.getElementById('qfPriceWarn');
+    const costWarn = document.getElementById('qfCostWarn');
+    const mrpWarn = document.getElementById('qfMrpWarn');
+    const wtWarn = document.getElementById('qfWeightWarn');
+    const qtyWarn = document.getElementById('qfQtyWarn');
 
     let warnMsg = '';
     let isSpInvalid = false;
+    let isCostInvalid = false;
+    let isMrpInvalid = false;
 
     if (sp > 0 && cost > 0 && sp <= cost) {
         warnMsg = `<i class="bi bi-exclamation-triangle-fill"></i> Selling must be &gt; Cost (₹${cost.toFixed(2)})`;
         isSpInvalid = true;
-    } else if (sp > 0 && mrp > 0 && sp >= mrp) {
+        isCostInvalid = true;
+        if (costWarn) {
+            costWarn.innerHTML = `<i class="bi bi-exclamation-triangle-fill"></i> Must be &lt; Selling (₹${sp.toFixed(2)})`;
+            costWarn.classList.remove('d-none');
+        }
+    } else {
+        if (costWarn) { costWarn.classList.add('d-none'); costWarn.innerHTML = ''; }
+    }
+
+    if (sp > 0 && mrp > 0 && sp >= mrp) {
         warnMsg = `<i class="bi bi-exclamation-triangle-fill"></i> Selling must be &lt; MRP (₹${mrp.toFixed(2)})`;
         isSpInvalid = true;
+        isMrpInvalid = true;
+        if (mrpWarn) {
+            mrpWarn.innerHTML = `<i class="bi bi-exclamation-triangle-fill"></i> Must be &gt; Selling (₹${sp.toFixed(2)})`;
+            mrpWarn.classList.remove('d-none');
+        }
+    } else {
+        if (mrpWarn) { mrpWarn.classList.add('d-none'); mrpWarn.innerHTML = ''; }
     }
 
     if (spInput) {
@@ -1673,14 +1716,12 @@ function validateQuickFillPricing() {
         spInput.classList.toggle('border-danger', isSpInvalid);
     }
     if (mrpInput) {
-        const isMrpBad = (sp > 0 && mrp > 0 && sp >= mrp);
-        mrpInput.classList.toggle('is-invalid', isMrpBad);
-        mrpInput.classList.toggle('border-danger', isMrpBad);
+        mrpInput.classList.toggle('is-invalid', isMrpInvalid);
+        mrpInput.classList.toggle('border-danger', isMrpInvalid);
     }
     if (costInput) {
-        const isCostBad = (sp > 0 && cost > 0 && sp <= cost);
-        costInput.classList.toggle('is-invalid', isCostBad);
-        costInput.classList.toggle('border-danger', isCostBad);
+        costInput.classList.toggle('is-invalid', isCostInvalid);
+        costInput.classList.toggle('border-danger', isCostInvalid);
     }
 
     if (warn) {
@@ -1692,7 +1733,236 @@ function validateQuickFillPricing() {
             warn.innerHTML = '';
         }
     }
-    return !isSpInvalid;
+
+    if (wtInput && wtVal !== undefined && wtVal !== '') {
+        const wtNum = parseFloat(wtVal);
+        if (isNaN(wtNum) || wtNum <= 0) {
+            wtInput.classList.add('is-invalid', 'border-danger');
+            if (wtWarn) { wtWarn.textContent = 'Weight must be > 0'; wtWarn.classList.remove('d-none'); }
+        } else {
+            wtInput.classList.remove('is-invalid', 'border-danger');
+            if (wtWarn) wtWarn.classList.add('d-none');
+        }
+    }
+
+    if (qtyInput && qtyVal !== undefined && qtyVal !== '') {
+        const qtyNum = parseInt(qtyVal, 10);
+        if (isNaN(qtyNum) || qtyNum < 1) {
+            qtyInput.classList.add('is-invalid', 'border-danger');
+            if (qtyWarn) { qtyWarn.textContent = 'Qty must be >= 1'; qtyWarn.classList.remove('d-none'); }
+        } else {
+            qtyInput.classList.remove('is-invalid', 'border-danger');
+            if (qtyWarn) qtyWarn.classList.add('d-none');
+        }
+    }
+
+    return !isSpInvalid && !isCostInvalid;
+}
+
+/**
+ * Real-time Inline & Duplication Validation for all inward product rows.
+ */
+function checkAllRowValidationsAndDuplicates() {
+    if (addedProductsList.length === 0) {
+        const btnSubmit = document.getElementById('btnSaveAllProducts');
+        const notice = document.getElementById('saveProductsValidationNotice');
+        if (btnSubmit) btnSubmit.disabled = true;
+        if (notice) notice.classList.add('d-none');
+        return true;
+    }
+
+    let hasErrors = false;
+    const variantMap = new Map();
+
+    // 1. Identify duplicates inside the added inward list
+    addedProductsList.forEach(item => {
+        const pName = (item.product_name || '').trim().toUpperCase();
+        const vDisplay = (item.variant_display || item.size_name || 'Standard').trim().toUpperCase();
+        const key = pName + '|||' + vDisplay;
+        if (!variantMap.has(key)) {
+            variantMap.set(key, []);
+        }
+        variantMap.get(key).push(item.id);
+    });
+
+    const duplicateItemIds = new Set();
+    variantMap.forEach((ids, key) => {
+        if (ids.length > 1 && !key.startsWith('|||')) {
+            ids.forEach(id => duplicateItemIds.add(id));
+        }
+    });
+
+    // 2. Validate every row
+    addedProductsList.forEach((item) => {
+        const rowEl = document.getElementById(`row_${item.id}`);
+        const nameInput = document.getElementById(`name_${item.id}`);
+        const hsnInput = document.getElementById(`hsn_${item.id}`);
+        const wtInput = document.getElementById(`wt_${item.id}`);
+        const mrpInput = document.getElementById(`mrp_${item.id}`);
+        const spInput = document.getElementById(`sp_${item.id}`);
+        const costInput = document.getElementById(`cost_${item.id}`);
+        const qtyInput = document.getElementById(`qty_${item.id}`);
+
+        const nameWarn = document.getElementById(`nameWarn_${item.id}`);
+        const hsnWarn = document.getElementById(`hsnWarn_${item.id}`);
+        const wtWarn = document.getElementById(`wtWarn_${item.id}`);
+        const mrpWarn = document.getElementById(`mrpWarn_${item.id}`);
+        const valWarn = document.getElementById(`valWarn_${item.id}`);
+        const costWarn = document.getElementById(`costWarn_${item.id}`);
+        const qtyWarn = document.getElementById(`qtyWarn_${item.id}`);
+        const dupWarn = document.getElementById(`dupWarn_${item.id}`);
+
+        const pName = (item.product_name || '').trim();
+        const hsn = (item.hsn_code || '').trim();
+        const wt = parseFloat(item.weight) || 0;
+        const mrp = parseFloat(item.mrp) || 0;
+        const sp = parseFloat(item.selling_price) || 0;
+        const cost = parseFloat(item.purchase_price) || 0;
+        const qty = parseInt(item.quantity, 10) || 0;
+
+        let rowHasError = false;
+
+        // Name
+        if (!pName || pName.length < 2) {
+            if (nameInput) nameInput.classList.add('is-invalid', 'border-danger');
+            if (nameWarn) { nameWarn.textContent = 'Name required (min 2 chars)'; nameWarn.classList.remove('d-none'); }
+            rowHasError = true;
+        } else {
+            if (nameInput) nameInput.classList.remove('is-invalid', 'border-danger');
+            if (nameWarn) nameWarn.classList.add('d-none');
+        }
+
+        // HSN
+        if (!hsn) {
+            if (hsnInput) hsnInput.classList.add('is-invalid', 'border-danger');
+            if (hsnWarn) { hsnWarn.textContent = 'HSN required'; hsnWarn.classList.remove('d-none'); }
+            rowHasError = true;
+        } else {
+            if (hsnInput) hsnInput.classList.remove('is-invalid', 'border-danger');
+            if (hsnWarn) hsnWarn.classList.add('d-none');
+        }
+
+        // Weight
+        if (wt <= 0) {
+            if (wtInput) wtInput.classList.add('is-invalid', 'border-danger');
+            if (wtWarn) { wtWarn.textContent = 'Weight must be > 0'; wtWarn.classList.remove('d-none'); }
+            rowHasError = true;
+        } else {
+            if (wtInput) wtInput.classList.remove('is-invalid', 'border-danger');
+            if (wtWarn) wtWarn.classList.add('d-none');
+        }
+
+        // Pricing: Cost < Selling Price < Base MRP
+        let isSpErr = false;
+        let isMrpErr = false;
+        let isCostErr = false;
+        let spErrMsg = '';
+
+        if (mrp <= 0) {
+            isMrpErr = true;
+            if (mrpWarn) { mrpWarn.textContent = 'MRP > 0 required'; mrpWarn.classList.remove('d-none'); }
+            rowHasError = true;
+        } else {
+            if (mrpWarn) mrpWarn.classList.add('d-none');
+        }
+
+        if (cost <= 0) {
+            isCostErr = true;
+            if (costWarn) { costWarn.textContent = 'Cost > 0 required'; costWarn.classList.remove('d-none'); }
+            rowHasError = true;
+        } else {
+            if (costWarn) costWarn.classList.add('d-none');
+        }
+
+        if (sp <= 0) {
+            isSpErr = true;
+            spErrMsg = '<i class="bi bi-exclamation-triangle-fill"></i> Selling price > 0 required';
+            rowHasError = true;
+        } else if (cost > 0 && sp <= cost) {
+            isSpErr = true;
+            isCostErr = true;
+            spErrMsg = `<i class="bi bi-exclamation-triangle-fill"></i> Selling must be &gt; Cost (₹${cost.toFixed(2)})!`;
+            if (costWarn) { costWarn.textContent = `Cost must be < Selling Price (₹${sp.toFixed(2)})`; costWarn.classList.remove('d-none'); }
+            rowHasError = true;
+        } else if (mrp > 0 && sp >= mrp) {
+            isSpErr = true;
+            isMrpErr = true;
+            spErrMsg = `<i class="bi bi-exclamation-triangle-fill"></i> Selling must be &lt; MRP (₹${mrp.toFixed(2)})!`;
+            if (mrpWarn) { mrpWarn.textContent = `MRP must be > Selling Price (₹${sp.toFixed(2)})`; mrpWarn.classList.remove('d-none'); }
+            rowHasError = true;
+        }
+
+        if (spInput) {
+            spInput.classList.toggle('is-invalid', isSpErr);
+            spInput.classList.toggle('border-danger', isSpErr);
+        }
+        if (mrpInput) {
+            mrpInput.classList.toggle('is-invalid', isMrpErr);
+            mrpInput.classList.toggle('border-danger', isMrpErr);
+        }
+        if (costInput) {
+            costInput.classList.toggle('is-invalid', isCostErr);
+            costInput.classList.toggle('border-danger', isCostErr);
+        }
+        if (valWarn) {
+            if (spErrMsg) {
+                valWarn.innerHTML = spErrMsg;
+                valWarn.classList.remove('d-none');
+            } else {
+                valWarn.classList.add('d-none');
+            }
+        }
+
+        // Qty
+        if (qty < 1) {
+            if (qtyInput) qtyInput.classList.add('is-invalid', 'border-danger');
+            if (qtyWarn) { qtyWarn.textContent = 'Qty >= 1 required'; qtyWarn.classList.remove('d-none'); }
+            rowHasError = true;
+        } else {
+            if (qtyInput) qtyInput.classList.remove('is-invalid', 'border-danger');
+            if (qtyWarn) qtyWarn.classList.add('d-none');
+        }
+
+        // Inward list duplicate
+        let dupHtml = '';
+        if (duplicateItemIds.has(item.id)) {
+            dupHtml += `<span class="badge bg-danger text-white py-0.5 px-1 fs-8 d-block mt-1 shadow-xs"><i class="bi bi-copy me-1"></i>Duplicate Variant Line</span>`;
+            rowHasError = true;
+        }
+
+        // Catalog duplicate
+        if (typeof EXISTING_SUPPLIER_PRODUCTS !== 'undefined' && Array.isArray(EXISTING_SUPPLIER_PRODUCTS)) {
+            const vDisplay = (item.variant_display || item.size_name || '').trim().toUpperCase();
+            const existsInCat = EXISTING_SUPPLIER_PRODUCTS.some(ep => {
+                const epName = (ep.product_name || ep.name || '').trim().toUpperCase();
+                const epSize = (ep.size_name || ep.variant_name || '').trim().toUpperCase();
+                return epName && pName && epName === pName.toUpperCase() && (!vDisplay || epSize === vDisplay);
+            });
+            if (existsInCat) {
+                dupHtml += `<span class="badge bg-warning-subtle text-dark border border-warning py-0.5 px-1 fs-8 d-block mt-1" title="Variant already exists in supplier's catalog"><i class="bi bi-exclamation-triangle me-1"></i>In Supplier Catalog</span>`;
+            }
+        }
+
+        if (dupWarn) dupWarn.innerHTML = dupHtml;
+
+        if (rowEl) {
+            rowEl.classList.toggle('table-danger', duplicateItemIds.has(item.id));
+        }
+
+        if (rowHasError) hasErrors = true;
+    });
+
+    const btnSubmit = document.getElementById('btnSaveAllProducts');
+    const notice = document.getElementById('saveProductsValidationNotice');
+
+    if (btnSubmit) {
+        btnSubmit.disabled = hasErrors || addedProductsList.length === 0;
+    }
+    if (notice) {
+        notice.classList.toggle('d-none', !hasErrors || addedProductsList.length === 0);
+    }
+
+    return !hasErrors;
 }
 
 function handleQfCategoryTypeChange(typeVal) {
@@ -1767,6 +2037,19 @@ function applyQuickFillToAll() {
         alert(`Validation Error: Selling Price (₹${spNum.toFixed(2)}) must be less than Base MRP (₹${mrpNum.toFixed(2)}).`);
         const spEl = document.getElementById('qfSp');
         if (spEl) spEl.focus();
+        return;
+    }
+
+    if (weightVal !== undefined && weightVal !== '' && parseFloat(weightVal) <= 0) {
+        alert('Validation Error: Weight (kg) must be greater than 0.');
+        const wtEl = document.getElementById('qfWeight');
+        if (wtEl) wtEl.focus();
+        return;
+    }
+    if (qtyVal !== undefined && qtyVal !== '' && parseInt(qtyVal, 10) < 1) {
+        alert('Validation Error: Quantity must be at least 1.');
+        const qtyEl = document.getElementById('qfQty');
+        if (qtyEl) qtyEl.focus();
         return;
     }
 

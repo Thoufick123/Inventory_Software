@@ -73,6 +73,8 @@ document.addEventListener('DOMContentLoaded', function () {
     } else {
         setSupplierMode('new');
     }
+
+    setupInlineSupplierValidation();
 });
 
 function setSupplierMode(mode) {
@@ -751,4 +753,244 @@ function escapeHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+}
+
+/**
+ * Real-time inline typing validation & duplicate check for Warehouse Supplier creation.
+ */
+function setupInlineSupplierValidation() {
+    const phoneInput = document.getElementById('supplierPhone');
+    const phoneFeedback = document.getElementById('supplierPhoneFeedback');
+    const phoneValidFeedback = document.getElementById('supplierPhoneValidFeedback');
+
+    const gstInput = document.getElementById('supplierGst');
+    const gstFeedback = document.getElementById('supplierGstFeedback');
+    const gstValidFeedback = document.getElementById('supplierGstValidFeedback');
+
+    const nameInput = document.getElementById('newSupplierNameInput');
+    const nameFeedback = document.getElementById('newSupplierNameFeedback');
+    const nameValidFeedback = document.getElementById('newSupplierNameValidFeedback');
+
+    const companyInput = document.getElementById('supplierCompany');
+    const companyFeedback = document.getElementById('supplierCompanyFeedback');
+    const companyValidFeedback = document.getElementById('supplierCompanyValidFeedback');
+
+    const emailInput = document.getElementById('supplierEmail');
+    const emailFeedback = document.getElementById('supplierEmailFeedback');
+
+    const brandInput = document.getElementById('newBrandNameInput');
+    const brandFeedback = document.getElementById('newBrandFeedback');
+
+    let phoneTimer = null;
+    let gstTimer = null;
+    let companyTimer = null;
+
+    if (phoneInput) {
+        function checkPhoneInline() {
+            phoneInput.value = phoneInput.value.replace(/\D/g, '').slice(0, 10);
+            const val = phoneInput.value.trim();
+            const existingId = Number(document.getElementById('existingSupplierId')?.value || 0);
+
+            if (!val) {
+                phoneInput.classList.remove('is-invalid', 'is-valid');
+                if (phoneFeedback) phoneFeedback.classList.add('d-none');
+                if (phoneValidFeedback) phoneValidFeedback.classList.add('d-none');
+                return;
+            }
+
+            if (val.length !== 10) {
+                phoneInput.classList.remove('is-valid');
+                phoneInput.classList.add('is-invalid');
+                if (phoneFeedback) {
+                    phoneFeedback.textContent = `Phone must be exactly 10 digits (currently ${val.length}).`;
+                    phoneFeedback.classList.remove('d-none');
+                }
+                if (phoneValidFeedback) phoneValidFeedback.classList.add('d-none');
+                return;
+            }
+
+            if (!['6','7','8','9'].includes(val[0])) {
+                phoneInput.classList.remove('is-valid');
+                phoneInput.classList.add('is-invalid');
+                if (phoneFeedback) {
+                    phoneFeedback.textContent = 'Indian mobile number must start with 6, 7, 8, or 9.';
+                    phoneFeedback.classList.remove('d-none');
+                }
+                if (phoneValidFeedback) phoneValidFeedback.classList.add('d-none');
+                return;
+            }
+
+            clearTimeout(phoneTimer);
+            phoneTimer = setTimeout(() => {
+                fetch(`/api/warehouse/sellers/check-duplicate?field=phone&value=${encodeURIComponent(val)}&except_id=${existingId}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (!data.valid) {
+                            phoneInput.classList.remove('is-valid');
+                            phoneInput.classList.add('is-invalid');
+                            if (phoneFeedback) { phoneFeedback.textContent = data.message; phoneFeedback.classList.remove('d-none'); }
+                            if (phoneValidFeedback) phoneValidFeedback.classList.add('d-none');
+                        } else if (!data.available) {
+                            phoneInput.classList.remove('is-valid');
+                            phoneInput.classList.add('is-invalid');
+                            if (phoneFeedback) { phoneFeedback.textContent = `⚠️ Duplicate: ${data.message}`; phoneFeedback.classList.remove('d-none'); }
+                            if (phoneValidFeedback) phoneValidFeedback.classList.add('d-none');
+                        } else {
+                            phoneInput.classList.remove('is-invalid');
+                            phoneInput.classList.add('is-valid');
+                            if (phoneFeedback) phoneFeedback.classList.add('d-none');
+                            if (phoneValidFeedback) { phoneValidFeedback.textContent = '✓ Phone number is valid & available.'; phoneValidFeedback.classList.remove('d-none'); }
+                        }
+                    }).catch(() => {});
+            }, 300);
+        }
+
+        phoneInput.addEventListener('input', checkPhoneInline);
+        phoneInput.addEventListener('blur', checkPhoneInline);
+    }
+
+    if (gstInput) {
+        function checkGstInline() {
+            gstInput.value = gstInput.value.toUpperCase().trim();
+            const val = gstInput.value;
+            const existingId = Number(document.getElementById('existingSupplierId')?.value || 0);
+
+            if (!val) {
+                gstInput.classList.remove('is-invalid', 'is-valid');
+                if (gstFeedback) gstFeedback.classList.add('d-none');
+                if (gstValidFeedback) gstValidFeedback.classList.add('d-none');
+                return;
+            }
+
+            if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(val)) {
+                gstInput.classList.remove('is-valid');
+                gstInput.classList.add('is-invalid');
+                if (gstFeedback) {
+                    gstFeedback.textContent = 'Invalid GSTIN format (15 characters alphanumeric, e.g. 33AAAAA0000A1Z5).';
+                    gstFeedback.classList.remove('d-none');
+                }
+                if (gstValidFeedback) gstValidFeedback.classList.add('d-none');
+                return;
+            }
+
+            clearTimeout(gstTimer);
+            gstTimer = setTimeout(() => {
+                fetch(`/api/warehouse/sellers/check-duplicate?field=gst_number&value=${encodeURIComponent(val)}&except_id=${existingId}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (!data.valid) {
+                            gstInput.classList.remove('is-valid');
+                            gstInput.classList.add('is-invalid');
+                            if (gstFeedback) { gstFeedback.textContent = data.message; gstFeedback.classList.remove('d-none'); }
+                            if (gstValidFeedback) gstValidFeedback.classList.add('d-none');
+                        } else if (!data.available) {
+                            gstInput.classList.remove('is-valid');
+                            gstInput.classList.add('is-invalid');
+                            if (gstFeedback) { gstFeedback.textContent = `⚠️ Duplicate: ${data.message}`; gstFeedback.classList.remove('d-none'); }
+                            if (gstValidFeedback) gstValidFeedback.classList.add('d-none');
+                        } else {
+                            gstInput.classList.remove('is-invalid');
+                            gstInput.classList.add('is-valid');
+                            if (gstFeedback) gstFeedback.classList.add('d-none');
+                            if (gstValidFeedback) { gstValidFeedback.textContent = '✓ GSTIN is valid & available.'; gstValidFeedback.classList.remove('d-none'); }
+                        }
+                    }).catch(() => {});
+            }, 300);
+        }
+
+        gstInput.addEventListener('input', checkGstInline);
+        gstInput.addEventListener('blur', checkGstInline);
+    }
+
+    if (nameInput) {
+        function checkNameInline() {
+            const val = nameInput.value.trim();
+            if (currentSupplierMode !== 'new') return;
+
+            if (val.length < 2) {
+                nameInput.classList.remove('is-valid');
+                nameInput.classList.add('is-invalid');
+                if (nameFeedback) { nameFeedback.textContent = 'Contact person / supplier name is required (min 2 chars).'; nameFeedback.classList.remove('d-none'); }
+                if (nameValidFeedback) nameValidFeedback.classList.add('d-none');
+            } else {
+                nameInput.classList.remove('is-invalid');
+                nameInput.classList.add('is-valid');
+                if (nameFeedback) nameFeedback.classList.add('d-none');
+                if (nameValidFeedback) { nameValidFeedback.textContent = '✓ Name is valid.'; nameValidFeedback.classList.remove('d-none'); }
+            }
+        }
+        nameInput.addEventListener('input', checkNameInline);
+        nameInput.addEventListener('blur', checkNameInline);
+    }
+
+    if (companyInput) {
+        function checkCompanyInline() {
+            const val = companyInput.value.trim();
+            const existingId = Number(document.getElementById('existingSupplierId')?.value || 0);
+
+            if (!val) {
+                companyInput.classList.remove('is-invalid', 'is-valid');
+                if (companyFeedback) companyFeedback.classList.add('d-none');
+                if (companyValidFeedback) companyValidFeedback.classList.add('d-none');
+                return;
+            }
+
+            clearTimeout(companyTimer);
+            companyTimer = setTimeout(() => {
+                fetch(`/api/warehouse/sellers/check-duplicate?field=company&value=${encodeURIComponent(val)}&except_id=${existingId}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (!data.available) {
+                            companyInput.classList.remove('is-valid');
+                            companyInput.classList.add('is-invalid');
+                            if (companyFeedback) { companyFeedback.textContent = `⚠️ Duplicate: ${data.message}`; companyFeedback.classList.remove('d-none'); }
+                            if (companyValidFeedback) companyValidFeedback.classList.add('d-none');
+                        } else {
+                            companyInput.classList.remove('is-invalid');
+                            companyInput.classList.add('is-valid');
+                            if (companyFeedback) companyFeedback.classList.add('d-none');
+                            if (companyValidFeedback) { companyValidFeedback.textContent = '✓ Company name is available.'; companyValidFeedback.classList.remove('d-none'); }
+                        }
+                    }).catch(() => {});
+            }, 350);
+        }
+        companyInput.addEventListener('input', checkCompanyInline);
+        companyInput.addEventListener('blur', checkCompanyInline);
+    }
+
+    if (emailInput) {
+        function checkEmailInline() {
+            const val = emailInput.value.trim();
+            if (!val) {
+                emailInput.classList.remove('is-invalid');
+                if (emailFeedback) emailFeedback.classList.add('d-none');
+                return;
+            }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
+                emailInput.classList.add('is-invalid');
+                if (emailFeedback) { emailFeedback.textContent = 'Please enter a valid email address.'; emailFeedback.classList.remove('d-none'); }
+            } else {
+                emailInput.classList.remove('is-invalid');
+                if (emailFeedback) emailFeedback.classList.add('d-none');
+            }
+        }
+        emailInput.addEventListener('input', checkEmailInline);
+        emailInput.addEventListener('blur', checkEmailInline);
+    }
+
+    if (brandInput) {
+        function checkBrandInline() {
+            const val = brandInput.value.trim();
+            if (currentBrandMode !== 'new') return;
+            if (val.length < 2) {
+                brandInput.classList.add('is-invalid');
+                if (brandFeedback) { brandFeedback.textContent = 'Brand name must be at least 2 characters.'; brandFeedback.classList.remove('d-none'); }
+            } else {
+                brandInput.classList.remove('is-invalid');
+                if (brandFeedback) brandFeedback.classList.add('d-none');
+            }
+        }
+        brandInput.addEventListener('input', checkBrandInline);
+        brandInput.addEventListener('blur', checkBrandInline);
+    }
 }

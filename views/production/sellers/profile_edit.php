@@ -10,24 +10,32 @@
         <div class="row g-3">
             <div class="col-md-6">
                 <label class="form-label required">Contact Person / Supplier Name *</label>
-                <input name="name" class="form-control text-uppercase" required minlength="2" maxlength="200" value="<?= e($seller['name']) ?>">
+                <input name="name" id="supplierNameInput" class="form-control text-uppercase" required minlength="2" maxlength="200" value="<?= e($seller['name']) ?>" placeholder="e.g. Ramesh Kumar">
+                <div class="invalid-feedback" id="nameFeedback">Contact person name is required (min 2 characters).</div>
+                <div class="valid-feedback" id="nameValidFeedback">Name is available.</div>
             </div>
             <div class="col-md-6">
                 <label class="form-label required">Company / Mill / Business Name *</label>
-                <input name="company" class="form-control text-uppercase" required minlength="2" maxlength="300" value="<?= e($seller['company']) ?>">
+                <input name="company" id="supplierCompanyInput" class="form-control text-uppercase" required minlength="2" maxlength="300" value="<?= e($seller['company']) ?>" placeholder="e.g. RK Apparels Pvt Ltd">
+                <div class="invalid-feedback" id="companyFeedback">Company name is required.</div>
+                <div class="valid-feedback" id="companyValidFeedback">Company name is available.</div>
             </div>
             <div class="col-md-6">
                 <label class="form-label required">Phone Number *</label>
                 <input type="tel" name="phone" id="supplierPhone" class="form-control" required pattern="[0-9]{10}" maxlength="10" inputmode="numeric" value="<?= e($seller['phone']) ?>" placeholder="10-digit mobile number" autocomplete="tel">
-                <div class="invalid-feedback" id="phoneFeedback">Phone number must be exactly 10 digits.</div>
+                <div class="invalid-feedback" id="phoneFeedback">Phone number must be exactly 10 digits starting with 6-9.</div>
+                <div class="valid-feedback" id="phoneValidFeedback">Phone number is valid &amp; available.</div>
             </div>
             <div class="col-md-6">
                 <label class="form-label">Email Address (Optional)</label>
-                <input type="email" name="email" class="form-control" maxlength="255" value="<?= e($seller['email']) ?>">
+                <input type="email" name="email" id="supplierEmailInput" class="form-control" maxlength="255" value="<?= e($seller['email']) ?>" placeholder="vendor@domain.com">
+                <div class="invalid-feedback" id="emailFeedback">Please enter a valid email address.</div>
             </div>
             <div class="col-md-6">
                 <label class="form-label">GSTIN / Tax ID</label>
-                <input name="gst_number" class="form-control text-uppercase" maxlength="15" value="<?= e($seller['gst_number']) ?>">
+                <input name="gst_number" id="supplierGstInput" class="form-control text-uppercase font-monospace" maxlength="15" value="<?= e($seller['gst_number']) ?>" placeholder="33AAAAA0000A1Z5">
+                <div class="invalid-feedback" id="gstFeedback">Enter a valid 15-character GSTIN.</div>
+                <div class="valid-feedback" id="gstValidFeedback">GSTIN is valid &amp; available.</div>
             </div>
             <div class="col-md-6">
                 <label class="form-label required">City / District *</label>
@@ -121,13 +129,37 @@
 
 <script>
 (function() {
+    const currentSupplierId = <?= (int)$seller['id'] ?>;
     const cityInput = document.getElementById('supplierCity');
     const stateInput = document.getElementById('supplierState');
     const phoneInput = document.getElementById('supplierPhone');
     const phoneFeedback = document.getElementById('phoneFeedback');
+    const phoneValidFeedback = document.getElementById('phoneValidFeedback');
+    const nameInput = document.getElementById('supplierNameInput');
+    const nameFeedback = document.getElementById('nameFeedback');
+    const nameValidFeedback = document.getElementById('nameValidFeedback');
+    const companyInput = document.getElementById('supplierCompanyInput');
+    const companyFeedback = document.getElementById('companyFeedback');
+    const companyValidFeedback = document.getElementById('companyValidFeedback');
+    const gstInput = document.getElementById('supplierGstInput');
+    const gstFeedback = document.getElementById('gstFeedback');
+    const gstValidFeedback = document.getElementById('gstValidFeedback');
+    const emailInput = document.getElementById('supplierEmailInput');
+    const emailFeedback = document.getElementById('emailFeedback');
     const alertContainer = document.getElementById('cityStateAlertContainer');
     const alertText = document.getElementById('cityStateAlertText');
     const form = document.getElementById('supplierEditForm');
+    const btnSave = document.getElementById('btnUpdateSupplier');
+
+    let phoneTimer = null;
+    let gstTimer = null;
+    let nameTimer = null;
+    let companyTimer = null;
+
+    let isPhoneValid = true;
+    let isGstValid = true;
+    let isNameValid = true;
+    let isCompanyValid = true;
 
     function checkPhone() {
         if (!phoneInput) return true;
@@ -138,6 +170,8 @@
             phoneInput.classList.remove('is-valid');
             phoneInput.classList.add('is-invalid');
             if (phoneFeedback) phoneFeedback.textContent = 'Phone number is required (10 digits).';
+            isPhoneValid = false;
+            updateSubmitStatus();
             return false;
         }
 
@@ -145,17 +179,212 @@
             phoneInput.classList.remove('is-valid');
             phoneInput.classList.add('is-invalid');
             if (phoneFeedback) phoneFeedback.textContent = `Phone number must be exactly 10 digits (currently ${val.length} digits).`;
+            isPhoneValid = false;
+            updateSubmitStatus();
             return false;
         }
 
-        phoneInput.classList.remove('is-invalid');
-        phoneInput.classList.add('is-valid');
+        if (!['6', '7', '8', '9'].includes(val[0])) {
+            phoneInput.classList.remove('is-valid');
+            phoneInput.classList.add('is-invalid');
+            if (phoneFeedback) phoneFeedback.textContent = 'Indian mobile number must start with 6, 7, 8, or 9.';
+            isPhoneValid = false;
+            updateSubmitStatus();
+            return false;
+        }
+
+        clearTimeout(phoneTimer);
+        phoneTimer = setTimeout(() => {
+            fetch(`<?= url('api/production/sellers/check-duplicate') ?>?field=phone&value=${encodeURIComponent(val)}&except_id=${currentSupplierId}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.valid) {
+                        phoneInput.classList.remove('is-valid');
+                        phoneInput.classList.add('is-invalid');
+                        if (phoneFeedback) phoneFeedback.textContent = data.message;
+                        isPhoneValid = false;
+                    } else if (!data.available) {
+                        phoneInput.classList.remove('is-valid');
+                        phoneInput.classList.add('is-invalid');
+                        if (phoneFeedback) phoneFeedback.textContent = `⚠️ Duplicate: ${data.message}`;
+                        isPhoneValid = false;
+                    } else {
+                        phoneInput.classList.remove('is-invalid');
+                        phoneInput.classList.add('is-valid');
+                        if (phoneValidFeedback) phoneValidFeedback.textContent = '✓ Phone number is valid & available.';
+                        isPhoneValid = true;
+                    }
+                    updateSubmitStatus();
+                }).catch(() => {
+                    phoneInput.classList.remove('is-invalid');
+                    phoneInput.classList.add('is-valid');
+                    isPhoneValid = true;
+                    updateSubmitStatus();
+                });
+        }, 300);
+
         return true;
+    }
+
+    function checkGst() {
+        if (!gstInput) return true;
+        gstInput.value = gstInput.value.toUpperCase().trim();
+        const val = gstInput.value;
+
+        if (val.length === 0) {
+            gstInput.classList.remove('is-invalid', 'is-valid');
+            if (gstFeedback) gstFeedback.textContent = '';
+            isGstValid = true;
+            updateSubmitStatus();
+            return true;
+        }
+
+        if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(val)) {
+            gstInput.classList.remove('is-valid');
+            gstInput.classList.add('is-invalid');
+            if (gstFeedback) gstFeedback.textContent = 'Invalid GSTIN format (15 characters alphanumeric, e.g. 33AAAAA0000A1Z5).';
+            isGstValid = false;
+            updateSubmitStatus();
+            return false;
+        }
+
+        clearTimeout(gstTimer);
+        gstTimer = setTimeout(() => {
+            fetch(`<?= url('api/production/sellers/check-duplicate') ?>?field=gst_number&value=${encodeURIComponent(val)}&except_id=${currentSupplierId}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.valid) {
+                        gstInput.classList.remove('is-valid');
+                        gstInput.classList.add('is-invalid');
+                        if (gstFeedback) gstFeedback.textContent = data.message;
+                        isGstValid = false;
+                    } else if (!data.available) {
+                        gstInput.classList.remove('is-valid');
+                        gstInput.classList.add('is-invalid');
+                        if (gstFeedback) gstFeedback.textContent = `⚠️ Duplicate: ${data.message}`;
+                        isGstValid = false;
+                    } else {
+                        gstInput.classList.remove('is-invalid');
+                        gstInput.classList.add('is-valid');
+                        if (gstValidFeedback) gstValidFeedback.textContent = '✓ GSTIN is valid & available.';
+                        isGstValid = true;
+                    }
+                    updateSubmitStatus();
+                }).catch(() => {
+                    gstInput.classList.remove('is-invalid');
+                    gstInput.classList.add('is-valid');
+                    isGstValid = true;
+                    updateSubmitStatus();
+                });
+        }, 300);
+
+        return true;
+    }
+
+    function checkName() {
+        if (!nameInput) return true;
+        nameInput.value = nameInput.value.toUpperCase();
+        const val = nameInput.value.trim();
+
+        if (val.length < 2) {
+            nameInput.classList.remove('is-valid');
+            nameInput.classList.add('is-invalid');
+            if (nameFeedback) nameFeedback.textContent = 'Supplier / Contact name is required (at least 2 characters).';
+            isNameValid = false;
+            updateSubmitStatus();
+            return false;
+        }
+
+        nameInput.classList.remove('is-invalid');
+        nameInput.classList.add('is-valid');
+        isNameValid = true;
+        updateSubmitStatus();
+        return true;
+    }
+
+    function checkCompany() {
+        if (!companyInput) return true;
+        companyInput.value = companyInput.value.toUpperCase();
+        const val = companyInput.value.trim();
+
+        if (val.length < 2) {
+            companyInput.classList.remove('is-valid');
+            companyInput.classList.add('is-invalid');
+            if (companyFeedback) companyFeedback.textContent = 'Company / Mill / Business Name is required (at least 2 characters).';
+            isCompanyValid = false;
+            updateSubmitStatus();
+            return false;
+        }
+
+        clearTimeout(companyTimer);
+        companyTimer = setTimeout(() => {
+            fetch(`<?= url('api/production/sellers/check-duplicate') ?>?field=company&value=${encodeURIComponent(val)}&except_id=${currentSupplierId}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.available) {
+                        companyInput.classList.remove('is-valid');
+                        companyInput.classList.add('is-invalid');
+                        if (companyFeedback) companyFeedback.textContent = `⚠️ Duplicate: ${data.message}`;
+                        isCompanyValid = false;
+                    } else {
+                        companyInput.classList.remove('is-invalid');
+                        companyInput.classList.add('is-valid');
+                        if (companyValidFeedback) companyValidFeedback.textContent = '✓ Company name is available.';
+                        isCompanyValid = true;
+                    }
+                    updateSubmitStatus();
+                }).catch(() => {
+                    companyInput.classList.remove('is-invalid');
+                    companyInput.classList.add('is-valid');
+                    isCompanyValid = true;
+                    updateSubmitStatus();
+                });
+        }, 350);
+
+        return true;
+    }
+
+    function checkEmail() {
+        if (!emailInput) return true;
+        const val = emailInput.value.trim();
+        if (val.length === 0) {
+            emailInput.classList.remove('is-invalid');
+            return true;
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
+            emailInput.classList.add('is-invalid');
+            if (emailFeedback) emailFeedback.textContent = 'Please enter a valid email address.';
+            return false;
+        }
+        emailInput.classList.remove('is-invalid');
+        return true;
+    }
+
+    function updateSubmitStatus() {
+        if (!btnSave) return;
+        const hasErr = form && form.querySelectorAll('.is-invalid').length > 0;
+        btnSave.disabled = hasErr;
     }
 
     if (phoneInput) {
         phoneInput.addEventListener('input', checkPhone);
         phoneInput.addEventListener('blur', checkPhone);
+    }
+    if (gstInput) {
+        gstInput.addEventListener('input', checkGst);
+        gstInput.addEventListener('blur', checkGst);
+    }
+    if (nameInput) {
+        nameInput.addEventListener('input', checkName);
+        nameInput.addEventListener('blur', checkName);
+    }
+    if (companyInput) {
+        companyInput.addEventListener('input', checkCompany);
+        companyInput.addEventListener('blur', checkCompany);
+    }
+    if (emailInput) {
+        emailInput.addEventListener('input', checkEmail);
+        emailInput.addEventListener('blur', checkEmail);
     }
 
     const tnCities = [

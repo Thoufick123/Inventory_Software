@@ -1613,4 +1613,123 @@ class AdminController {
             ], 404);
         }
     }
+
+    /**
+     * Real-time duplicate & validation check for Production Unit creation/editing.
+     */
+    public function ajaxCheckProductionUnitDuplicate(): void {
+        $field = trim((string)($_GET['field'] ?? ''));
+        $value = trim((string)($_GET['value'] ?? ''));
+        $exceptId = !empty($_GET['except_id']) ? (int)$_GET['except_id'] : null;
+
+        if ($field === '' || $value === '') {
+            Response::json(['valid' => true, 'available' => true, 'message' => '']);
+            return;
+        }
+
+        if ($field === 'name') {
+            if (mb_strlen($value) < 2) {
+                Response::json(['valid' => false, 'available' => false, 'message' => 'Unit Name must be at least 2 characters.']);
+                return;
+            }
+            $sql = "SELECT id, name FROM production_units WHERE LOWER(name) = LOWER(?)";
+            $params = [$value];
+            if ($exceptId !== null) {
+                $sql .= " AND id != ?";
+                $params[] = $exceptId;
+            }
+            $existing = Database::fetchOne($sql, $params);
+            if ($existing) {
+                Response::json([
+                    'valid' => true,
+                    'available' => false,
+                    'message' => "Production unit name '{$existing['name']}' is already in use."
+                ]);
+                return;
+            }
+            Response::json(['valid' => true, 'available' => true, 'message' => 'Unit name is available.']);
+            return;
+        }
+
+        if ($field === 'code') {
+            if (mb_strlen($value) < 2) {
+                Response::json(['valid' => false, 'available' => false, 'message' => 'Unit Code must be at least 2 characters.']);
+                return;
+            }
+            $sql = "SELECT id, code FROM production_units WHERE LOWER(code) = LOWER(?)";
+            $params = [$value];
+            if ($exceptId !== null) {
+                $sql .= " AND id != ?";
+                $params[] = $exceptId;
+            }
+            $existing = Database::fetchOne($sql, $params);
+            if ($existing) {
+                Response::json([
+                    'valid' => true,
+                    'available' => false,
+                    'message' => "Unit code '{$existing['code']}' is already assigned to another unit."
+                ]);
+                return;
+            }
+            Response::json(['valid' => true, 'available' => true, 'message' => 'Unit code is available.']);
+            return;
+        }
+
+        if ($field === 'phone') {
+            $clean = preg_replace('/\D+/', '', $value);
+            if (strlen($clean) === 12 && substr($clean, 0, 2) === '91') $clean = substr($clean, 2);
+            if (strlen($clean) !== 10) {
+                Response::json(['valid' => false, 'available' => false, 'message' => 'Phone number must be exactly 10 digits.']);
+                return;
+            }
+            if (!in_array($clean[0], ['6','7','8','9'])) {
+                Response::json(['valid' => false, 'available' => false, 'message' => 'Indian mobile number must start with 6, 7, 8, or 9.']);
+                return;
+            }
+            $sql = "SELECT id, name FROM production_units WHERE phone = ?";
+            $params = [$clean];
+            if ($exceptId !== null) {
+                $sql .= " AND id != ?";
+                $params[] = $exceptId;
+            }
+            $existing = Database::fetchOne($sql, $params);
+            if ($existing) {
+                Response::json([
+                    'valid' => true,
+                    'available' => false,
+                    'message' => "Phone number is already associated with production unit '{$existing['name']}'."
+                ]);
+                return;
+            }
+            Response::json(['valid' => true, 'available' => true, 'message' => 'Phone number is available.']);
+            return;
+        }
+
+        if ($field === 'gst_number') {
+            $gst = strtoupper($value);
+            if (!preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/', $gst)) {
+                Response::json(['valid' => false, 'available' => false, 'message' => 'Invalid GSTIN format (15 characters alphanumeric).']);
+                return;
+            }
+            $sql = "SELECT id, name FROM production_units WHERE UPPER(gst_number) = ?";
+            $params = [$gst];
+            if ($exceptId !== null) {
+                $sql .= " AND id != ?";
+                $params[] = $exceptId;
+            }
+            $existing = Database::fetchOne($sql, $params);
+            if ($existing) {
+                Response::json([
+                    'valid' => true,
+                    'available' => false,
+                    'message' => "GSTIN is already registered to production unit '{$existing['name']}'."
+                ]);
+                return;
+            }
+            Response::json(['valid' => true, 'available' => true, 'message' => 'GSTIN is valid and available.']);
+            return;
+        }
+
+        Response::json(['valid' => true, 'available' => true, 'message' => '']);
+    }
 }

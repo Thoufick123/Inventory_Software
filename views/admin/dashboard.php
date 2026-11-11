@@ -756,31 +756,36 @@
                     <div class="mb-3">
                         <label class="form-label fw-600">Unit Name <span class="text-danger">*</span></label>
                         <input type="text" name="name" id="unit_name" class="form-control" placeholder="e.g. Tirupur Main Unit 1" required>
-                        <div class="invalid-feedback">Unit Name is required.</div>
+                        <div class="invalid-feedback" id="unitNameFeedback">Unit Name is required (min 2 characters).</div>
+                        <div class="valid-feedback d-none" id="unitNameValidFeedback">Unit name is available.</div>
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-md-6">
                             <label class="form-label fw-600">Unit Code</label>
                             <input type="text" name="code" id="unit_code" class="form-control font-monospace" placeholder="Auto-generated e.g. PU-01">
+                            <div class="invalid-feedback d-none" id="unitCodeFeedback">Unit code is already in use.</div>
+                            <div class="valid-feedback d-none" id="unitCodeValidFeedback">Unit code is available.</div>
                             <small class="text-muted">Leave blank for auto-generation</small>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-600">Unit Manager</label>
                             <input type="text" name="manager_name" id="unit_manager_name" class="form-control" placeholder="e.g. Ramesh Kumar" pattern="[A-Za-z\s]+" title="Only alphabetic characters and spaces are allowed" oninput="this.value = this.value.replace(/[^a-zA-Z\s]/g, '')">
-                            <div class="invalid-feedback">Please enter a valid manager name.</div>
+                            <div class="invalid-feedback" id="unitManagerFeedback">Please enter a valid manager name.</div>
                             <small class="text-muted">Alphabets only</small>
                         </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-600">Contact Phone</label>
                         <input type="tel" name="phone" id="unit_phone" class="form-control" placeholder="10-digit number (e.g. 9876543210)" maxlength="10" pattern="[0-9]{10}" title="Must be exactly 10 digits" oninput="this.value = this.value.replace(/\D/g, '').slice(0, 10)">
-                        <div class="invalid-feedback">Please enter a valid 10-digit phone number.</div>
+                        <div class="invalid-feedback" id="unitPhoneFeedback">Please enter a valid 10-digit phone number starting with 6-9.</div>
+                        <div class="valid-feedback d-none" id="unitPhoneValidFeedback">Phone number is valid &amp; available.</div>
                         <small class="text-muted">10-digit mobile number</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-600">GST Number</label>
                         <input type="text" name="gst_number" id="unit_gst_number" class="form-control font-monospace text-uppercase" placeholder="33AAAAA0000A1Z5" maxlength="15" pattern="[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]" title="Enter a valid 15-character GSTIN" oninput="this.value = this.value.toUpperCase()">
-                        <div class="invalid-feedback">Enter a valid 15-character GSTIN.</div>
+                        <div class="invalid-feedback" id="unitGstFeedback">Enter a valid 15-character GSTIN.</div>
+                        <div class="valid-feedback d-none" id="unitGstValidFeedback">GSTIN is valid &amp; available.</div>
                         <small class="text-muted">Optional 15-character GSTIN</small>
                     </div>
                     <div class="mb-3">
@@ -1128,7 +1133,20 @@ function getNextSequentialCode(prefix, existingList) {
 }
 
 // Production Unit Modal Helpers
+window.currentEditingUnitId = null;
+
+function clearUnitValidationStates() {
+    const form = document.getElementById('formProductionUnit');
+    if (!form) return;
+    form.querySelectorAll('.is-invalid, .is-valid').forEach(el => el.classList.remove('is-invalid', 'is-valid'));
+    form.querySelectorAll('.valid-feedback, .invalid-feedback').forEach(el => el.classList.add('d-none'));
+    const btn = document.getElementById('btnSubmitUnit');
+    if (btn) btn.disabled = false;
+}
+
 function resetUnitModal() {
+    window.currentEditingUnitId = null;
+    clearUnitValidationStates();
     document.getElementById('formProductionUnit').classList.remove('was-validated');
     document.getElementById('modalProductionUnitLabel').innerHTML = '<i class="bi bi-gear-wide-connected me-2"></i>Add Production Unit';
     document.getElementById('formProductionUnit').action = '<?= url("admin/production-units/store") ?>';
@@ -1144,6 +1162,8 @@ function resetUnitModal() {
 }
 
 function editUnit(unit) {
+    window.currentEditingUnitId = unit.id;
+    clearUnitValidationStates();
     document.getElementById('formProductionUnit').classList.remove('was-validated');
     document.getElementById('modalProductionUnitLabel').innerHTML = '<i class="bi bi-pencil-square me-2"></i>Edit Production Unit';
     document.getElementById('formProductionUnit').action = '<?= url("admin/production-units/update/") ?>' + unit.id;
@@ -1157,6 +1177,195 @@ function editUnit(unit) {
     const modal = new bootstrap.Modal(document.getElementById('modalProductionUnit'));
     modal.show();
 }
+
+// Inline Typing & Duplication Validation for Production Unit Modal
+(function setupProductionUnitInlineValidation() {
+    let nameTimer = null;
+    let codeTimer = null;
+    let phoneTimer = null;
+    let gstTimer = null;
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const nameInp = document.getElementById('unit_name');
+        const codeInp = document.getElementById('unit_code');
+        const phoneInp = document.getElementById('unit_phone');
+        const gstInp = document.getElementById('unit_gst_number');
+        const form = document.getElementById('formProductionUnit');
+        const btnSubmit = document.getElementById('btnSubmitUnit');
+
+        const nameFeedback = document.getElementById('unitNameFeedback');
+        const nameValidFeedback = document.getElementById('unitNameValidFeedback');
+        const codeFeedback = document.getElementById('unitCodeFeedback');
+        const codeValidFeedback = document.getElementById('unitCodeValidFeedback');
+        const phoneFeedback = document.getElementById('unitPhoneFeedback');
+        const phoneValidFeedback = document.getElementById('unitPhoneValidFeedback');
+        const gstFeedback = document.getElementById('unitGstFeedback');
+        const gstValidFeedback = document.getElementById('unitGstValidFeedback');
+
+        if (nameInp) {
+            nameInp.addEventListener('input', function () {
+                const val = nameInp.value.trim();
+                const exceptId = window.currentEditingUnitId || '';
+
+                if (val.length < 2) {
+                    nameInp.classList.remove('is-valid');
+                    nameInp.classList.add('is-invalid');
+                    if (nameFeedback) { nameFeedback.textContent = 'Unit Name is required (min 2 characters).'; nameFeedback.classList.remove('d-none'); }
+                    if (nameValidFeedback) nameValidFeedback.classList.add('d-none');
+                    return;
+                }
+
+                clearTimeout(nameTimer);
+                nameTimer = setTimeout(() => {
+                    fetch(`/api/admin/production-units/check-duplicate?field=name&value=${encodeURIComponent(val)}&except_id=${exceptId}`)
+                        .then(r => r.json())
+                        .then(data => {
+                            if (!data.available) {
+                                nameInp.classList.remove('is-valid');
+                                nameInp.classList.add('is-invalid');
+                                if (nameFeedback) { nameFeedback.textContent = `⚠️ Duplicate: ${data.message}`; nameFeedback.classList.remove('d-none'); }
+                                if (nameValidFeedback) nameValidFeedback.classList.add('d-none');
+                            } else {
+                                nameInp.classList.remove('is-invalid');
+                                nameInp.classList.add('is-valid');
+                                if (nameFeedback) nameFeedback.classList.add('d-none');
+                                if (nameValidFeedback) { nameValidFeedback.textContent = '✓ Unit name is available.'; nameValidFeedback.classList.remove('d-none'); }
+                            }
+                        }).catch(() => {});
+                }, 300);
+            });
+        }
+
+        if (codeInp) {
+            codeInp.addEventListener('input', function () {
+                codeInp.value = codeInp.value.toUpperCase();
+                const val = codeInp.value.trim();
+                const exceptId = window.currentEditingUnitId || '';
+
+                if (!val) {
+                    codeInp.classList.remove('is-invalid', 'is-valid');
+                    if (codeFeedback) codeFeedback.classList.add('d-none');
+                    if (codeValidFeedback) codeValidFeedback.classList.add('d-none');
+                    return;
+                }
+
+                clearTimeout(codeTimer);
+                codeTimer = setTimeout(() => {
+                    fetch(`/api/admin/production-units/check-duplicate?field=code&value=${encodeURIComponent(val)}&except_id=${exceptId}`)
+                        .then(r => r.json())
+                        .then(data => {
+                            if (!data.available) {
+                                codeInp.classList.remove('is-valid');
+                                codeInp.classList.add('is-invalid');
+                                if (codeFeedback) { codeFeedback.textContent = `⚠️ Duplicate: ${data.message}`; codeFeedback.classList.remove('d-none'); }
+                                if (codeValidFeedback) codeValidFeedback.classList.add('d-none');
+                            } else {
+                                codeInp.classList.remove('is-invalid');
+                                codeInp.classList.add('is-valid');
+                                if (codeFeedback) codeFeedback.classList.add('d-none');
+                                if (codeValidFeedback) { codeValidFeedback.textContent = '✓ Unit code is available.'; codeValidFeedback.classList.remove('d-none'); }
+                            }
+                        }).catch(() => {});
+                }, 300);
+            });
+        }
+
+        if (phoneInp) {
+            phoneInp.addEventListener('input', function () {
+                phoneInp.value = phoneInp.value.replace(/\D/g, '').slice(0, 10);
+                const val = phoneInp.value.trim();
+                const exceptId = window.currentEditingUnitId || '';
+
+                if (!val) {
+                    phoneInp.classList.remove('is-invalid', 'is-valid');
+                    if (phoneFeedback) phoneFeedback.classList.add('d-none');
+                    if (phoneValidFeedback) phoneValidFeedback.classList.add('d-none');
+                    return;
+                }
+
+                if (val.length !== 10 || !['6','7','8','9'].includes(val[0])) {
+                    phoneInp.classList.remove('is-valid');
+                    phoneInp.classList.add('is-invalid');
+                    if (phoneFeedback) { phoneFeedback.textContent = 'Must be exactly 10 digits starting with 6-9.'; phoneFeedback.classList.remove('d-none'); }
+                    if (phoneValidFeedback) phoneValidFeedback.classList.add('d-none');
+                    return;
+                }
+
+                clearTimeout(phoneTimer);
+                phoneTimer = setTimeout(() => {
+                    fetch(`/api/admin/production-units/check-duplicate?field=phone&value=${encodeURIComponent(val)}&except_id=${exceptId}`)
+                        .then(r => r.json())
+                        .then(data => {
+                            if (!data.available) {
+                                phoneInp.classList.remove('is-valid');
+                                phoneInp.classList.add('is-invalid');
+                                if (phoneFeedback) { phoneFeedback.textContent = `⚠️ Duplicate: ${data.message}`; phoneFeedback.classList.remove('d-none'); }
+                                if (phoneValidFeedback) phoneValidFeedback.classList.add('d-none');
+                            } else {
+                                phoneInp.classList.remove('is-invalid');
+                                phoneInp.classList.add('is-valid');
+                                if (phoneFeedback) phoneFeedback.classList.add('d-none');
+                                if (phoneValidFeedback) { phoneValidFeedback.textContent = '✓ Phone is available.'; phoneValidFeedback.classList.remove('d-none'); }
+                            }
+                        }).catch(() => {});
+                }, 300);
+            });
+        }
+
+        if (gstInp) {
+            gstInp.addEventListener('input', function () {
+                gstInp.value = gstInp.value.toUpperCase().trim();
+                const val = gstInp.value;
+                const exceptId = window.currentEditingUnitId || '';
+
+                if (!val) {
+                    gstInp.classList.remove('is-invalid', 'is-valid');
+                    if (gstFeedback) gstFeedback.classList.add('d-none');
+                    if (gstValidFeedback) gstValidFeedback.classList.add('d-none');
+                    return;
+                }
+
+                if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(val)) {
+                    gstInp.classList.remove('is-valid');
+                    gstInp.classList.add('is-invalid');
+                    if (gstFeedback) { gstFeedback.textContent = 'Enter a valid 15-character GSTIN.'; gstFeedback.classList.remove('d-none'); }
+                    if (gstValidFeedback) gstValidFeedback.classList.add('d-none');
+                    return;
+                }
+
+                clearTimeout(gstTimer);
+                gstTimer = setTimeout(() => {
+                    fetch(`/api/admin/production-units/check-duplicate?field=gst_number&value=${encodeURIComponent(val)}&except_id=${exceptId}`)
+                        .then(r => r.json())
+                        .then(data => {
+                            if (!data.available) {
+                                gstInp.classList.remove('is-valid');
+                                gstInp.classList.add('is-invalid');
+                                if (gstFeedback) { gstFeedback.textContent = `⚠️ Duplicate: ${data.message}`; gstFeedback.classList.remove('d-none'); }
+                                if (gstValidFeedback) gstValidFeedback.classList.add('d-none');
+                            } else {
+                                gstInp.classList.remove('is-invalid');
+                                gstInp.classList.add('is-valid');
+                                if (gstFeedback) gstFeedback.classList.add('d-none');
+                                if (gstValidFeedback) { gstValidFeedback.textContent = '✓ GSTIN is valid & available.'; gstValidFeedback.classList.remove('d-none'); }
+                            }
+                        }).catch(() => {});
+                }, 300);
+            });
+        }
+
+        if (form) {
+            form.addEventListener('submit', function (e) {
+                if (form.querySelectorAll('.is-invalid').length > 0) {
+                    e.preventDefault();
+                    const firstErr = form.querySelector('.is-invalid');
+                    if (firstErr) firstErr.focus();
+                    return false;
+                }
+            });
+        }
+    });
+})();
 
 // Warehouse Modal Helpers
 function resetWarehouseModal() {

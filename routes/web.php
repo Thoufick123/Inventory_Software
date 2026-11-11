@@ -151,6 +151,7 @@ class Router {
         $this->post('admin/production-units/delete/{id}', 'AdminController', 'deleteProductionUnit', ['AuthMiddleware']);
         $this->post('admin/production-units/toggle/{id}', 'AdminController', 'toggleProductionUnit', ['AuthMiddleware']);
         $this->post('api/admin/production-units/quick-add', 'AdminController', 'ajaxAddProductionUnit', ['AuthMiddleware']);
+        $this->get('api/admin/production-units/check-duplicate', 'AdminController', 'ajaxCheckProductionUnitDuplicate', ['AuthMiddleware']);
         $this->get('api/qr/status-finder', 'AdminController', 'ajaxQrStatusFinder', ['AuthMiddleware']);
 
         // Warehouses Management
@@ -353,6 +354,7 @@ class Router {
         $this->get('api/sellers/{id}/roll-labels-ajax', 'ProductionController', 'ajaxSellerRollLabels', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
         $this->get('api/sellers/next-roll-codes', 'ProductionController', 'ajaxNextFabricRollCodes', ['AuthMiddleware']);
         $this->get('api/sellers/{id}/rolls', 'ProductionController', 'ajaxSellerRolls', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
+        $this->get('api/production/sellers/check-duplicate', 'ProductionController', 'ajaxCheckSupplierDuplicate', ['AuthMiddleware']);
 
         // Production Purchases (supplier-linked fabric rolls and general supplies)
         $this->get('production/purchases', 'ProductionController', 'productionPurchaseList', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'view']]);
@@ -616,6 +618,7 @@ class Router {
         $this->post('warehouse/sellers/inward-bill/{id}', 'WarehouseController', 'inwardSellerBill', ['AuthMiddleware', ['PermissionMiddleware', 'purchases', 'receive']]);
         $this->post('api/warehouse/sellers/quick-add', 'WarehouseController', 'ajaxQuickAddSeller', ['AuthMiddleware', ['PermissionMiddleware', 'wh_sellers', 'create']]);
         $this->get('api/warehouse/seller-catalog', 'WarehouseController', 'ajaxSellerCatalog', ['AuthMiddleware', ['PermissionMiddleware', 'wh_sellers', 'view']]);
+        $this->get('api/warehouse/sellers/check-duplicate', 'WarehouseController', 'ajaxCheckSupplierDuplicate', ['AuthMiddleware']);
 
         // Direct Customer Purchases & Customer Orders
         $this->get('warehouse/purchases', 'WarehouseController', 'purchaseList', ['AuthMiddleware', ['PermissionMiddleware', 'purchases', 'view']]);
