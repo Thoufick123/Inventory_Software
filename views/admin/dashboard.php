@@ -224,6 +224,28 @@
     </div>
 
     <div class="card-body p-0">
+        <?php
+        // Role-based permission controls for Organization & Infrastructure Management
+        $canCreateFacilities = hasPermission('dashboard', 'create');
+        $canEditFacilities   = hasPermission('dashboard', 'edit');
+        $canDeleteFacilities = hasPermission('dashboard', 'delete');
+
+        $canCreateUnit = $canCreateFacilities || hasPermission('production', 'create');
+        $canEditUnit   = $canEditFacilities   || hasPermission('production', 'edit');
+        $canDeleteUnit = $canDeleteFacilities || hasPermission('production', 'delete');
+
+        $canCreateWarehouse = $canCreateFacilities || hasPermission('warehouse', 'create');
+        $canEditWarehouse   = $canEditFacilities   || hasPermission('warehouse', 'edit');
+        $canDeleteWarehouse = $canDeleteFacilities || hasPermission('warehouse', 'delete');
+
+        $canCreateShop = $canCreateFacilities || hasPermission('shop', 'create');
+        $canEditShop   = $canEditFacilities   || hasPermission('shop', 'edit');
+        $canDeleteShop = $canDeleteFacilities || hasPermission('shop', 'delete');
+
+        $canCreateChannel = $canCreateFacilities || hasPermission('sales_channels', 'create') || hasPermission('whatsapp_dashboard', 'create');
+        $canEditChannel   = $canEditFacilities   || hasPermission('sales_channels', 'edit')   || hasPermission('whatsapp_dashboard', 'edit');
+        $canDeleteChannel = $canDeleteFacilities || hasPermission('sales_channels', 'delete') || hasPermission('whatsapp_dashboard', 'delete');
+        ?>
         <div class="tab-content" id="orgTabsContent">
             
             <!-- ========================================================================= -->
@@ -234,9 +256,11 @@
                     <div class="text-secondary small">
                         <strong><?= count($productionUnits ?? []) ?></strong> production facilities configured for cutting, stitching, and assembly.
                     </div>
+                    <?php if ($canCreateUnit): ?>
                     <button class="btn btn-sm btn-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#modalProductionUnit" onclick="resetUnitModal()">
                         <i class="bi bi-plus-lg me-1"></i> Add Production Unit
                     </button>
+                    <?php endif; ?>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">

@@ -2,7 +2,7 @@
     <div>
         <h2 class="mb-1"><i class="bi bi-bag-check me-2 text-primary"></i>Production Purchases</h2>
     </div>
-    <?php if (hasPermission('sellers', 'create')): ?>
+    <?php if (hasPermission('production_purchases', 'create') || hasPermission('sellers', 'create')): ?>
         <a href="<?= url('production/purchases/create') ?>" class="btn btn-primary shadow-sm">
             <i class="bi bi-plus-circle me-1"></i> Record Purchase
         </a>
@@ -174,7 +174,7 @@ $totalInwardQty = (int)array_sum(array_map(fn($r) => max(1, (int)($r['quantity']
                         </td>
                         <td class="text-center">
                             <div class="d-inline-flex gap-1 align-items-center">
-                                <?php if (hasPermission('sellers', 'view')): ?>
+                                <?php if (hasPermission('production_purchases', 'view') || hasPermission('sellers', 'view')): ?>
                                     <a class="btn btn-sm btn-outline-secondary py-1 px-2" href="<?= url('production/purchases/view/' . $purchase['id']) ?>" title="View PO Details">
                                         <i class="bi bi-eye"></i>
                                     </a>
@@ -185,12 +185,12 @@ $totalInwardQty = (int)array_sum(array_map(fn($r) => max(1, (int)($r['quantity']
                                         <i class="bi bi-qr-code text-warning"></i>
                                     </a>
                                 <?php endif; ?>
-                                <?php if (hasPermission('sellers', 'edit')): ?>
+                                <?php if (hasPermission('production_purchases', 'edit') || hasPermission('sellers', 'edit')): ?>
                                     <a class="btn btn-sm btn-outline-primary py-1 px-2" href="<?= url('production/purchases/edit/' . $purchase['id']) ?>" title="Edit Purchase">
                                         <i class="bi bi-pencil"></i>
                                     </a>
                                 <?php endif; ?>
-                                <?php if (hasPermission('sellers', 'delete')): ?>
+                                <?php if (hasPermission('production_purchases', 'delete') || hasPermission('sellers', 'delete')): ?>
                                     <form method="POST" action="<?= url('production/purchases/delete/' . $purchase['id']) ?>" class="d-inline mb-0" onsubmit="return confirm('Delete purchase <?= e(addslashes($purchase['purchase_number'])) ?>?');">
                                         <?= CSRF::field() ?>
                                         <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2" title="Delete Purchase">

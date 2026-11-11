@@ -20,18 +20,20 @@ class Role {
      */
     public const DEPT_MODULE_MAP = [
         'PRODUCTION' => [
-            'production', 'sellers', 'damages', 'catalog', 'programs', 'cutting', 'wastage',
-            'stitching', 'stitching_wastage', 'production_expenses', 'labels', 'qc', 'inventory',
-            'batches', 'outward', 'warehouse_rework', 'reports_production'
+            'production', 'sellers', 'production_purchases', 'damages', 'catalog', 'programs', 'cutting', 'wastage',
+            'stitching', 'stitching_wastage', 'labels', 'qc', 'inventory', 'production_expenses',
+            'production_billing', 'production_returns', 'batches', 'outward', 'production_stock_requests',
+            'warehouse_rework', 'reports_production'
         ],
         'WAREHOUSE'  => [
             'warehouse', 'inward', 'stock', 'wh_sellers', 'wh_catalog', 'wh_labels', 'purchases', 'purchases_returns', 'allocation',
-            'wh_batches', 'allocation_outward', 'damage', 'returns', 'shop_requests',
+            'allocation_outward', 'damage', 'returns', 'shop_requests',
             'warehouse_expenses', 'sales_channels',
             'reports_warehouse', 'reports_purchase', 'reports_inventory'
         ],
         'WHATSAPP'   => [
-            'whatsapp_dashboard', 'whatsapp_orders', 'whatsapp_inward', 'whatsapp_inventory', 'whatsapp_damage', 'whatsapp_returns', 'whatsapp_return_to_wh', 'whatsapp_customers', 'whatsapp_expenses',
+            'whatsapp_dashboard', 'whatsapp_inward', 'whatsapp_inventory', 'whatsapp_returned_products',
+            'whatsapp_orders', 'whatsapp_damage', 'whatsapp_returns', 'whatsapp_return_to_wh', 'whatsapp_expenses',
             'reports_whatsapp', 'reports_online'
         ],
         'WEBSITE'    => [
@@ -243,9 +245,7 @@ class Role {
         $permsMap = [];
         foreach ($allPerms as $p) {
             if (
-                ($p['module'] === 'whatsapp_orders' && in_array($p['action'], ['edit', 'delete'], true))
-                || ($p['module'] === 'whatsapp_damage' && $p['action'] === 'delete')
-                || ($p['module'] === 'website_orders' && in_array($p['action'], ['edit', 'delete'], true))
+                ($p['module'] === 'website_orders' && in_array($p['action'], ['edit', 'delete'], true))
                 || ($p['module'] === 'website_inward' && $p['action'] === 'create')
                 || ($p['module'] === 'website_inventory' && $p['action'] === 'edit')
                 || ($p['module'] === 'website_damage' && $p['action'] === 'delete')
@@ -276,22 +276,26 @@ class Role {
                 'badge'      => 'bg-indigo-subtle text-indigo border-indigo',
                 'department' => 'PRODUCTION',
                 'submodules' => [
-                    'production'          => ['name' => 'Dashboard', 'icon' => 'bi-speedometer', 'desc' => 'Plant overview, line throughput, and live tracking', 'department' => 'PRODUCTION'],
-                    'sellers'             => ['name' => 'Sellers', 'icon' => 'bi-person-badge', 'desc' => 'Job worker directory, vendor ledgers, and contract rates', 'department' => 'PRODUCTION'],
-                    'damages'             => ['name' => 'Damages', 'icon' => 'bi-exclamation-octagon', 'desc' => 'Defective fabric, floor damages, and scrap recovery logs', 'department' => 'PRODUCTION'],
-                    'catalog'             => ['name' => 'Catalog', 'icon' => 'bi-journal-bookmark', 'desc' => 'Design catalogs, style codes, and Bill of Materials (BOM)', 'department' => 'PRODUCTION'],
-                    'programs'            => ['name' => 'Programs', 'icon' => 'bi-calendar-check', 'desc' => 'Cutting programs, size breakdowns, and work order releases', 'department' => 'PRODUCTION'],
-                    'cutting'             => ['name' => 'Cutting', 'icon' => 'bi-scissors', 'desc' => 'Roll laying, table cuts, cut piece counts, and bundle creation', 'department' => 'PRODUCTION'],
-                    'wastage'             => ['name' => 'Wastage Selling', 'icon' => 'bi-recycle', 'desc' => 'Fabric scrap selling tickets, scrap weights, and scrap invoices', 'department' => 'PRODUCTION'],
-                    'stitching'           => ['name' => 'Stitching', 'icon' => 'bi-bounding-box', 'desc' => 'Line allocation, tailor piece-rate tracking, and bundle stitching', 'department' => 'PRODUCTION'],
-                    'stitching_wastage'   => ['name' => 'Stitching Wastage', 'icon' => 'bi-trash3', 'desc' => 'Thread/trimming scrap, defect logs, and floor disposal', 'department' => 'PRODUCTION'],
-                    'production_expenses' => ['name' => 'Expenses', 'icon' => 'bi-currency-rupee', 'desc' => 'Machine maintenance, repair costs, threads, needles, and daily floor expenses', 'department' => 'PRODUCTION'],
-                    'labels'              => ['name' => 'Labels', 'icon' => 'bi-tag', 'desc' => 'Brand tags, care labels, barcode sticker print batches', 'department' => 'PRODUCTION'],
-                    'qc'                  => ['name' => 'QC', 'icon' => 'bi-shield-check', 'desc' => 'AQL inspections, passed/failed piece audits, and rework queues', 'department' => 'PRODUCTION'],
-                    'inventory'           => ['name' => 'Inventory', 'icon' => 'bi-boxes', 'desc' => 'Unassigned lot staging bays and finished goods floor storage', 'department' => 'PRODUCTION'],
-                    'batches'             => ['name' => 'Batches', 'icon' => 'bi-box-seam', 'desc' => 'Carton packing, SKU bundles, and master box packaging', 'department' => 'PRODUCTION'],
-                    'outward'             => ['name' => 'Outward', 'icon' => 'bi-truck', 'desc' => 'Delivery challans and outward dispatch to Central Warehouses', 'department' => 'PRODUCTION'],
-                    'warehouse_rework'    => ['name' => 'Warehouse Rework', 'icon' => 'bi-tools', 'desc' => 'Repair and dispatch damaged warehouse goods', 'department' => 'PRODUCTION'],
+                    'production'                => ['name' => 'Dashboard', 'icon' => 'bi-speedometer', 'desc' => 'Plant overview, line throughput, and live tracking', 'department' => 'PRODUCTION'],
+                    'sellers'                   => ['name' => 'Sellers', 'icon' => 'bi-person-badge', 'desc' => 'Job worker directory, vendor ledgers, and contract rates', 'department' => 'PRODUCTION'],
+                    'production_purchases'      => ['name' => 'Purchases', 'icon' => 'bi-cart-check', 'desc' => 'Production fabric, yarn, raw material purchases and supplier invoices', 'department' => 'PRODUCTION'],
+                    'damages'                   => ['name' => 'Damages', 'icon' => 'bi-exclamation-octagon', 'desc' => 'Defective fabric, floor damages, and scrap recovery logs', 'department' => 'PRODUCTION'],
+                    'catalog'                   => ['name' => 'Catalog', 'icon' => 'bi-journal-bookmark', 'desc' => 'Design catalogs, style codes, and Bill of Materials (BOM)', 'department' => 'PRODUCTION'],
+                    'programs'                  => ['name' => 'Programs', 'icon' => 'bi-calendar-check', 'desc' => 'Cutting programs, size breakdowns, and work order releases', 'department' => 'PRODUCTION'],
+                    'cutting'                   => ['name' => 'Cutting', 'icon' => 'bi-scissors', 'desc' => 'Roll laying, table cuts, cut piece counts, and bundle creation', 'department' => 'PRODUCTION'],
+                    'wastage'                   => ['name' => 'Wastage Selling', 'icon' => 'bi-recycle', 'desc' => 'Fabric scrap selling tickets, scrap weights, and scrap invoices', 'department' => 'PRODUCTION'],
+                    'stitching'                 => ['name' => 'Stitching', 'icon' => 'bi-bounding-box', 'desc' => 'Line allocation, tailor piece-rate tracking, and bundle stitching', 'department' => 'PRODUCTION'],
+                    'stitching_wastage'         => ['name' => 'Stitching Wastage', 'icon' => 'bi-trash3', 'desc' => 'Thread/trimming scrap, defect logs, and floor disposal', 'department' => 'PRODUCTION'],
+                    'labels'                    => ['name' => 'Labels', 'icon' => 'bi-tag', 'desc' => 'Brand tags, care labels, barcode sticker print batches', 'department' => 'PRODUCTION'],
+                    'qc'                        => ['name' => 'QC', 'icon' => 'bi-shield-check', 'desc' => 'AQL inspections, passed/failed piece audits, and rework queues', 'department' => 'PRODUCTION'],
+                    'inventory'                 => ['name' => 'Inventory', 'icon' => 'bi-boxes', 'desc' => 'Unassigned lot staging bays and finished goods floor storage', 'department' => 'PRODUCTION'],
+                    'production_expenses'       => ['name' => 'Expenses', 'icon' => 'bi-currency-rupee', 'desc' => 'Machine maintenance, repair costs, threads, needles, and daily floor expenses', 'department' => 'PRODUCTION'],
+                    'production_billing'        => ['name' => 'Billing', 'icon' => 'bi-receipt-cutoff', 'desc' => 'Production client orders, sales bills, GST invoicing, and payment receipts', 'department' => 'PRODUCTION'],
+                    'production_returns'        => ['name' => 'Returns & Exchanges', 'icon' => 'bi-arrow-left-right', 'desc' => 'Production client customer returns, piece exchanges, and credit notes', 'department' => 'PRODUCTION'],
+                    'batches'                   => ['name' => 'Batches', 'icon' => 'bi-box-seam', 'desc' => 'Carton packing, SKU bundles, and master box packaging', 'department' => 'PRODUCTION'],
+                    'outward'                   => ['name' => 'Outward', 'icon' => 'bi-truck', 'desc' => 'Delivery challans and outward dispatch to Central Warehouses', 'department' => 'PRODUCTION'],
+                    'production_stock_requests' => ['name' => 'Stock Requests', 'icon' => 'bi-inbox', 'desc' => 'Warehouse stock requisitions and production fulfillment requests', 'department' => 'PRODUCTION'],
+                    'warehouse_rework'          => ['name' => 'Warehouse Rework', 'icon' => 'bi-tools', 'desc' => 'Repair and dispatch damaged warehouse goods', 'department' => 'PRODUCTION'],
                 ]
             ],
             'warehouse' => [
@@ -309,7 +313,6 @@ class Role {
                     'purchases'          => ['name' => 'Direct Purchases', 'icon' => 'bi-cart-check', 'desc' => 'Purchase orders, seller invoices, and procurement bills', 'department' => 'WAREHOUSE'],
                     'purchases_returns'  => ['name' => 'Purchases Returns & Exchanges', 'icon' => 'bi-arrow-left-right', 'desc' => 'Direct customer purchase returns, exchanges, invoice credit notes, and restock', 'department' => 'WAREHOUSE'],
                     'allocation'         => ['name' => 'Allocation', 'icon' => 'bi-diagram-3', 'desc' => 'Shop demand planning, box picking, and stock distribution', 'department' => 'WAREHOUSE'],
-                    'wh_batches'         => ['name' => 'Batches', 'icon' => 'bi-boxes', 'desc' => 'Carton packing manifests, QR barcodes, and lot consolidation', 'department' => 'WAREHOUSE'],
                     'allocation_outward' => ['name' => 'Outward', 'icon' => 'bi-truck', 'desc' => 'Vehicle loading manifests, transport LR notes, shop deliveries', 'department' => 'WAREHOUSE'],
                     'damage'             => ['name' => 'Damage', 'icon' => 'bi-shield-slash', 'desc' => 'Transit damage, water defect write-offs, and salvage storage', 'department' => 'WAREHOUSE'],
                     'returns'            => ['name' => 'Returns', 'icon' => 'bi-arrow-return-left', 'desc' => 'Shop return packages, restocking evaluation, and RTO parcels', 'department' => 'WAREHOUSE'],
@@ -324,15 +327,15 @@ class Role {
                 'badge'      => 'bg-success-subtle text-success border-success',
                 'department' => 'WHATSAPP',
                 'submodules' => [
-                    'whatsapp_dashboard' => ['name' => 'Dashboard', 'icon' => 'bi-speedometer2', 'desc' => 'WhatsApp B2B sales throughput, orders summary, and channel KPIs', 'department' => 'WHATSAPP'],
-                    'whatsapp_inward'    => ['name' => 'Inward / GRN', 'icon' => 'bi-box-arrow-in-down', 'desc' => 'Direct stock receipts, batch manifests, and inbound goods confirmation', 'department' => 'WHATSAPP'],
-                    'whatsapp_inventory' => ['name' => 'Inventory', 'icon' => 'bi-boxes', 'desc' => 'Dedicated channel inventory allocations, SKU balances, and bin stock', 'department' => 'WHATSAPP'],
-                    'whatsapp_orders'    => ['name' => 'Orders History', 'icon' => 'bi-clock-history', 'desc' => 'WhatsApp B2B customer orders, order processing, and packing queues', 'department' => 'WHATSAPP'],
-                    'whatsapp_damage'    => ['name' => 'Damage Management', 'icon' => 'bi-exclamation-octagon', 'desc' => 'Defective parcels, transit damages, salvage logs, and gate passes', 'department' => 'WHATSAPP'],
-                    'whatsapp_returns'   => ['name' => 'Returns & Exchanges', 'icon' => 'bi-arrow-left-right', 'desc' => 'Customer returns, exchanges, restocking inspections, and credit notes', 'department' => 'WHATSAPP'],
-                    'whatsapp_return_to_wh' => ['name' => 'Return to Warehouse', 'icon' => 'bi-box-arrow-up-right', 'desc' => 'Return WhatsApp channel products to the warehouse', 'department' => 'WHATSAPP'],
-                    'whatsapp_customers' => ['name' => 'Customers', 'icon' => 'bi-people', 'desc' => 'WhatsApp channel customer directory and order history', 'department' => 'WHATSAPP'],
-                    'whatsapp_expenses'  => ['name' => 'Channel Expenses', 'icon' => 'bi-cash-stack', 'desc' => 'Channel packaging costs, courier freight, petty cash, and payment vouchers', 'department' => 'WHATSAPP'],
+                    'whatsapp_dashboard'         => ['name' => 'Dashboard', 'icon' => 'bi-speedometer2', 'desc' => 'WhatsApp B2B sales throughput, orders summary, and channel KPIs', 'department' => 'WHATSAPP'],
+                    'whatsapp_inward'            => ['name' => 'Inward / GRN', 'icon' => 'bi-box-arrow-in-down', 'desc' => 'Direct stock receipts, batch manifests, and inbound goods confirmation', 'department' => 'WHATSAPP'],
+                    'whatsapp_inventory'         => ['name' => 'Inventory', 'icon' => 'bi-boxes', 'desc' => 'Dedicated channel inventory allocations, SKU balances, and bin stock', 'department' => 'WHATSAPP'],
+                    'whatsapp_returned_products' => ['name' => 'Returned Products', 'icon' => 'bi-arrow-repeat', 'desc' => 'WhatsApp returned pieces, QC inspection, and re-shelving evaluation', 'department' => 'WHATSAPP'],
+                    'whatsapp_orders'            => ['name' => 'Orders History', 'icon' => 'bi-clock-history', 'desc' => 'WhatsApp B2B customer orders, order processing, and packing queues', 'department' => 'WHATSAPP'],
+                    'whatsapp_damage'            => ['name' => 'Damage Management', 'icon' => 'bi-exclamation-octagon', 'desc' => 'Defective parcels, transit damages, salvage logs, and gate passes', 'department' => 'WHATSAPP'],
+                    'whatsapp_returns'           => ['name' => 'Returns & Exchanges', 'icon' => 'bi-arrow-left-right', 'desc' => 'Customer returns, exchanges, restocking inspections, and credit notes', 'department' => 'WHATSAPP'],
+                    'whatsapp_return_to_wh'      => ['name' => 'Return to Warehouse', 'icon' => 'bi-box-arrow-up-right', 'desc' => 'Return WhatsApp channel products to the warehouse', 'department' => 'WHATSAPP'],
+                    'whatsapp_expenses'          => ['name' => 'Channel Expenses', 'icon' => 'bi-cash-stack', 'desc' => 'Channel packaging costs, courier freight, petty cash, and payment vouchers', 'department' => 'WHATSAPP'],
                 ]
             ],
             'website' => [
@@ -376,31 +379,12 @@ class Role {
                 'badge'      => 'bg-warning-subtle text-warning border-warning',
                 'department' => 'ALL',
                 'submodules' => [
-                    'assets'            => ['name' => 'Overview & Dashboard', 'icon' => 'bi-bar-chart-fill', 'desc' => 'Machinery & equipment registry, live valuation, and depreciation', 'department' => 'ALL'],
-                    'asset_scanner'     => ['name' => 'QR & Tag Scanner', 'icon' => 'bi-qr-code-scan', 'desc' => 'Live hardware gun inspection, QR tag decoder, history lookup', 'department' => 'ALL'],
-                    'asset_transfers'   => ['name' => 'Inter-Unit Transfers', 'icon' => 'bi-arrow-left-right', 'desc' => 'Movement audit trails between Production, Warehouses, and Shops', 'department' => 'ALL'],
-                    'asset_maintenance' => ['name' => 'Maintenance & AMC', 'icon' => 'bi-wrench-adjustable', 'desc' => 'Service tickets, breakdown repairs, AMC logs, technician costs', 'department' => 'ALL'],
-                    'asset_bulk_labels' => ['name' => 'Bulk QR Labels', 'icon' => 'bi-qr-code', 'desc' => 'Multi-tag asset sticker printing studio with barcodes', 'department' => 'ALL'],
-                ]
-            ],
-            'reports' => [
-                'title'      => 'Reports',
-                'icon'       => 'bi-bar-chart-line',
-                'badge'      => 'bg-danger-subtle text-danger border-danger',
-                'department' => 'ALL',
-                'submodules' => [
-                    'reports_overview'      => ['name' => 'Overview & P&L', 'icon' => 'bi-pie-chart', 'desc' => 'Executive summary, revenue, gross profit, expenditure, and net profitability', 'department' => 'ALL'],
-                    'reports_profitability' => ['name' => 'Revenue & Loss', 'icon' => 'bi-cash-coin', 'desc' => 'Cost of goods sold (COGS), margins, revenue breakdown, and financial health', 'department' => 'ALL'],
-                    'reports_sales'         => ['name' => 'Multi-Channel Sales', 'icon' => 'bi-cart-check', 'desc' => 'Combined sales analytics across POS Counter, WhatsApp, and Website', 'department' => 'ALL'],
-                    'reports_online'       => ['name' => 'Online & Digital Reports', 'icon' => 'bi-broadcast', 'desc' => 'Consolidated Website and WhatsApp channel sales, orders, payments, and performance', 'department' => 'WHATSAPP,WEBSITE'],
-                    'reports_website'       => ['name' => 'Website Reports', 'icon' => 'bi-globe2', 'desc' => 'Online visitor conversion, sales volume, courier delivery rate, and returns', 'department' => 'WEBSITE'],
-                    'reports_whatsapp'      => ['name' => 'WhatsApp Reports', 'icon' => 'bi-whatsapp', 'desc' => 'WhatsApp B2B sales throughput, top buyers, channel revenue, and growth', 'department' => 'WHATSAPP'],
-                    'reports_production'    => ['name' => 'Production Reports', 'icon' => 'bi-gear', 'desc' => 'Floor cutting yields, tailor piece-rates, sewing output, and scrap wastage', 'department' => 'PRODUCTION'],
-                    'reports_warehouse'     => ['name' => 'Warehouse Reports', 'icon' => 'bi-buildings', 'desc' => 'Storage utilization, inbound receipts, dispatch turnaround, and stock turnover', 'department' => 'WAREHOUSE'],
-                    'reports_purchase'      => ['name' => 'Purchase Reports', 'icon' => 'bi-truck', 'desc' => 'Supplier procurement volume, vendor purchase bills, returns, and payment dues', 'department' => 'WAREHOUSE'],
-                    'reports_shop'          => ['name' => 'Shop Reports', 'icon' => 'bi-shop', 'desc' => 'Store sales receipts, cashier performance, daily cash register, and customer CRM', 'department' => 'SHOP'],
-                    'reports_inventory'     => ['name' => 'Inventory Reports', 'icon' => 'bi-boxes', 'desc' => 'Real-time stock valuation across all units, slow-moving items, and dead stock', 'department' => 'WAREHOUSE'],
-                    'reports'               => ['name' => 'General Reports', 'icon' => 'bi-file-earmark-bar-graph', 'desc' => 'Access the general production reports page', 'department' => 'ALL'],
+                    'asset_dashboard'   => ['name' => 'Overview', 'icon' => 'bi-bar-chart-fill', 'desc' => 'High-level machinery & equipment KPIs, live valuation, and asset statistics', 'department' => 'ALL'],
+                    'asset_register'    => ['name' => 'Asset Register', 'icon' => 'bi-table', 'desc' => 'Machinery registry, serial codes, depreciation schedules, and maintenance history', 'department' => 'ALL'],
+                    'asset_scanner'     => ['name' => 'Scan Assets', 'icon' => 'bi-qr-code-scan', 'desc' => 'Live hardware gun inspection, QR tag decoder, history lookup', 'department' => 'ALL'],
+                    'asset_transfers'   => ['name' => 'Transfers', 'icon' => 'bi-arrow-left-right', 'desc' => 'Movement audit trails between Production, Warehouses, and Shops', 'department' => 'ALL'],
+                    'asset_maintenance' => ['name' => 'Maintenance', 'icon' => 'bi-wrench-adjustable', 'desc' => 'Service tickets, breakdown repairs, AMC logs, technician costs', 'department' => 'ALL'],
+                    'asset_bulk_labels' => ['name' => 'Print QR Labels', 'icon' => 'bi-qr-code', 'desc' => 'Multi-tag asset sticker printing studio with barcodes', 'department' => 'ALL'],
                 ]
             ],
             'staff' => [
@@ -419,10 +403,9 @@ class Role {
                 'badge'      => 'bg-dark-subtle text-dark border-dark',
                 'department' => 'ALL',
                 'submodules' => [
-                    'audit'    => ['name' => 'Audit Logs', 'icon' => 'bi-journal-text', 'desc' => 'System activity log, user IP address, and change timestamps', 'department' => 'ALL'],
-                    'settings' => ['name' => 'Settings', 'icon' => 'bi-sliders', 'desc' => 'Company profile, invoice prefixes, tax rates, and configurations', 'department' => 'ALL'],
-                    'backup'   => ['name' => 'Backup', 'icon' => 'bi-database-down', 'desc' => 'Create SQL snapshots, download backups, and restore data', 'department' => 'ALL'],
-                    'master'   => ['name' => 'Master Data', 'icon' => 'bi-database', 'desc' => 'Manage shared master records', 'department' => 'ALL'],
+                    'audit'         => ['name' => 'Audit Logs', 'icon' => 'bi-journal-text', 'desc' => 'System activity log, user IP address, and change timestamps', 'department' => 'ALL'],
+                    'settings'      => ['name' => 'Settings', 'icon' => 'bi-sliders', 'desc' => 'Company profile, invoice prefixes, tax rates, and configurations', 'department' => 'ALL'],
+                    'backup'        => ['name' => 'Backup', 'icon' => 'bi-database-down', 'desc' => 'Create SQL snapshots, download backups, and restore data', 'department' => 'ALL'],
                     'notifications' => ['name' => 'Notifications', 'icon' => 'bi-bell', 'desc' => 'View, read, and clear system notifications', 'department' => 'ALL'],
                 ]
             ]

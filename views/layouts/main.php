@@ -183,7 +183,7 @@ if (!empty($authUser['shop_name'])) {
                             <?php if (hasPermission('sellers', 'view') || hasPermission('production', 'view')): ?>
                             <li><a href="<?= url('production/sellers') ?>" class="<?= ($activeMenu ?? '') === 'prod-sellers' ? 'active' : '' ?>">Sellers</a></li>
                             <?php endif; ?>
-                            <?php if (hasPermission('sellers', 'view') || hasPermission('purchases', 'view') || hasPermission('production', 'view')): ?>
+                            <?php if (hasPermission('production_purchases', 'view') || hasPermission('sellers', 'view') || hasPermission('purchases', 'view') || hasPermission('production', 'view')): ?>
                             <li><a href="<?= url('production/purchases') ?>" class="<?= ($activeMenu ?? '') === 'prod-purchases' ? 'active' : '' ?>">Purchases</a></li>
                             <?php endif; ?>
                             <?php if (hasPermission('damages', 'view') || hasPermission('production', 'view')): ?>
@@ -221,6 +221,8 @@ if (!empty($authUser['shop_name'])) {
                             <?php endif; ?>
                             <?php if (hasPermission('production_billing', 'view') || hasPermission('production', 'view')): ?>
                             <li><a href="<?= url('production/billing') ?>" class="<?= ($activeMenu ?? '') === 'prod-billing' ? 'active' : '' ?>">Billing</a></li>
+                            <?php endif; ?>
+                            <?php if (hasPermission('production_returns', 'view') || hasPermission('production_billing', 'view') || hasPermission('production', 'view')): ?>
                             <li><a href="<?= url('production/returns') ?>" class="<?= ($activeMenu ?? '') === 'prod-returns' ? 'active' : '' ?>">Returns &amp; Exchanges</a></li>
                             <?php endif; ?>
                             <?php if (hasPermission('batches', 'view') || hasPermission('production', 'view')): ?>
@@ -229,7 +231,7 @@ if (!empty($authUser['shop_name'])) {
                             <?php if (hasPermission('outward', 'view') || hasPermission('production', 'view')): ?>
                             <li><a href="<?= url('production/outward') ?>" class="<?= in_array($activeMenu ?? '', ['outward', 'prod-outward', 'batch-outward']) ? 'active' : '' ?>">Outward</a></li>
                             <?php endif; ?>
-                            <?php if (hasPermission('production', 'view') || hasPermission('stock', 'view')): ?>
+                            <?php if (hasPermission('production_stock_requests', 'view') || hasPermission('production', 'view') || hasPermission('stock', 'view')): ?>
                             <li><a href="<?= url('production/stock-requests') ?>" class="<?= ($activeMenu ?? '') === 'prod-stock-requests' ? 'active' : '' ?>">Stock Requests</a></li>
                             <?php endif; ?>
                             <?php if (hasPermission('warehouse_rework', 'view') || hasPermission('production', 'view')): ?>
@@ -250,7 +252,6 @@ if (!empty($authUser['shop_name'])) {
                         || hasPermission('purchases', 'view')
                         || hasPermission('purchases_returns', 'view')
                         || hasPermission('allocation', 'view')
-                        || hasPermission('wh_batches', 'view')
                         || hasPermission('allocation_outward', 'view')
                         || hasPermission('damage', 'view')
                         || hasPermission('returns', 'view')
@@ -317,11 +318,11 @@ if (!empty($authUser['shop_name'])) {
                         || hasPermission('whatsapp_orders', 'view')
                         || hasPermission('whatsapp_inward', 'view')
                         || hasPermission('whatsapp_inventory', 'view')
+                        || hasPermission('whatsapp_returned_products', 'view')
                         || hasPermission('whatsapp_damage', 'view')
                         || hasPermission('whatsapp_returns', 'view')
                         || hasPermission('whatsapp_return_to_wh', 'view')
-                        || hasPermission('whatsapp_expenses', 'view')
-                        || hasPermission('whatsapp_customers', 'view');
+                        || hasPermission('whatsapp_expenses', 'view');
                     ?>
                     <?php if ($canViewWhatsapp): ?>
                     <li class="nav-item has-submenu">
@@ -339,6 +340,8 @@ if (!empty($authUser['shop_name'])) {
                             <?php endif; ?>
                             <?php if (hasPermission('whatsapp_inventory', 'view')): ?>
                             <li><a href="<?= url('warehouse/whatsapp-orders/allocations') ?>" class="<?= in_array(($activeMenu ?? ''), ['wh-whatsapp-allocations', 'whatsapp-allocations']) ? 'active' : '' ?>">Inventory</a></li>
+                            <?php endif; ?>
+                            <?php if (hasPermission('whatsapp_returned_products', 'view') || hasPermission('whatsapp_inventory', 'view')): ?>
                             <li><a href="<?= url('warehouse/whatsapp-orders/returned-products') ?>" class="<?= ($activeMenu ?? '') === 'wh-whatsapp-returned-products' ? 'active' : '' ?>">Returned Products</a></li>
                             <?php endif; ?>
                             <?php if (hasPermission('whatsapp_orders', 'view')): ?>
@@ -469,7 +472,9 @@ if (!empty($authUser['shop_name'])) {
 
                     <!-- Assets -->
                     <?php 
-                    $canViewAssets = hasPermission('assets', 'view')
+                    $canViewAssets = hasPermission('asset_dashboard', 'view')
+                        || hasPermission('asset_register', 'view')
+                        || hasPermission('assets', 'view')
                         || hasPermission('asset_scanner', 'view')
                         || hasPermission('asset_transfers', 'view')
                         || hasPermission('asset_maintenance', 'view')
@@ -483,8 +488,10 @@ if (!empty($authUser['shop_name'])) {
                             <i class="bi bi-chevron-down submenu-arrow"></i>
                         </a>
                         <ul class="submenu <?= ($activeModule ?? '') === 'assets' ? 'show' : '' ?>">
-                            <?php if (hasPermission('assets', 'view')): ?>
+                            <?php if (hasPermission('asset_dashboard', 'view') || hasPermission('assets', 'view')): ?>
                             <li><a href="<?= url('asset/dashboard') ?>" class="<?= ($activeMenu ?? '') === 'asset-dashboard' ? 'active' : '' ?>"><i class="bi bi-bar-chart-fill me-1 text-primary"></i> Overview</a></li>
+                            <?php endif; ?>
+                            <?php if (hasPermission('asset_register', 'view') || hasPermission('assets', 'view')): ?>
                             <li><a href="<?= url('asset/list') ?>" class="<?= in_array(($activeMenu ?? ''), ['asset-list', 'asset-create']) ? 'active' : '' ?>"><i class="bi bi-table me-1 text-success"></i> Asset Register</a></li>
                             <?php endif; ?>
                             <?php if (hasPermission('asset_scanner', 'view')): ?>

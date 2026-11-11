@@ -350,15 +350,15 @@ class Router {
         $this->get('api/sellers/{id}/rolls', 'ProductionController', 'ajaxSellerRolls', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
 
         // Production Purchases (supplier-linked fabric rolls and general supplies)
-        $this->get('production/purchases', 'ProductionController', 'productionPurchaseList', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
-        $this->get('production/purchases/view/{id}', 'ProductionController', 'viewProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
-        $this->get('production/purchases/edit/{id}', 'ProductionController', 'editProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'edit']]);
-        $this->post('production/purchases/update/{id}', 'ProductionController', 'updateProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'edit']]);
-        $this->post('production/purchases/delete/{id}', 'ProductionController', 'deleteProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'delete']]);
-        $this->get('production/purchases/print/{id}', 'ProductionController', 'printProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
-        $this->get('production/purchases/roll-qr/{id}', 'ProductionController', 'productionPurchaseRollQr', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
-        $this->get('production/purchases/create', 'ProductionController', 'createProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'create']]);
-        $this->post('production/purchases/store', 'ProductionController', 'storeProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'create']]);
+        $this->get('production/purchases', 'ProductionController', 'productionPurchaseList', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'view']]);
+        $this->get('production/purchases/view/{id}', 'ProductionController', 'viewProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'view']]);
+        $this->get('production/purchases/edit/{id}', 'ProductionController', 'editProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'edit']]);
+        $this->post('production/purchases/update/{id}', 'ProductionController', 'updateProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'edit']]);
+        $this->post('production/purchases/delete/{id}', 'ProductionController', 'deleteProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'delete']]);
+        $this->get('production/purchases/print/{id}', 'ProductionController', 'printProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'view']]);
+        $this->get('production/purchases/roll-qr/{id}', 'ProductionController', 'productionPurchaseRollQr', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'view']]);
+        $this->get('production/purchases/create', 'ProductionController', 'createProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'create']]);
+        $this->post('production/purchases/store', 'ProductionController', 'storeProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'create']]);
 
         // Production Billing
         $this->get('production/billing', 'ProductionBillingController', 'billList', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'view']]);
@@ -368,23 +368,23 @@ class Router {
         $this->get('production/billing/edit/{id}', 'ProductionBillingController', 'editBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'edit']]);
         $this->post('production/billing/update/{id}', 'ProductionBillingController', 'updateBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'edit']]);
         $this->post('production/billing/delete/{id}', 'ProductionBillingController', 'deleteBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'delete']]);
-        $this->get('production/billing/print/{id}', 'ProductionBillingController', 'printBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'print']]);
+        $this->get('production/billing/print/{id}', 'ProductionBillingController', 'printBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'view']]);
                 $this->get('api/production/billing/search', 'ProductionBillingController', 'searchInventory', ['AuthMiddleware']);
 
         // Production Customer Returns & Exchanges
-        $this->get('production/returns', 'ProductionReturnController', 'index', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'view']]);
-        $this->get('production/returns/create', 'ProductionReturnController', 'create', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'create']]);
-        $this->get('production/returns/lookup', 'ProductionReturnController', 'ajaxLookupBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'view']]);
-        $this->post('production/returns/store', 'ProductionReturnController', 'store', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'create']]);
-        $this->get('production/returns/view/{id}', 'ProductionReturnController', 'view', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'view']]);
-        $this->get('production/returns/print/{id}', 'ProductionReturnController', 'print', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'print']]);
+        $this->get('production/returns', 'ProductionReturnController', 'index', ['AuthMiddleware', ['PermissionMiddleware', 'production_returns', 'view']]);
+        $this->get('production/returns/create', 'ProductionReturnController', 'create', ['AuthMiddleware', ['PermissionMiddleware', 'production_returns', 'create']]);
+        $this->get('production/returns/lookup', 'ProductionReturnController', 'ajaxLookupBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_returns', 'view']]);
+        $this->post('production/returns/store', 'ProductionReturnController', 'store', ['AuthMiddleware', ['PermissionMiddleware', 'production_returns', 'create']]);
+        $this->get('production/returns/view/{id}', 'ProductionReturnController', 'view', ['AuthMiddleware', ['PermissionMiddleware', 'production_returns', 'view']]);
+        $this->get('production/returns/print/{id}', 'ProductionReturnController', 'print', ['AuthMiddleware', ['PermissionMiddleware', 'production_returns', 'view']]);
 
         // Warehouse Stock Requisitions & Requests to Production
-        $this->get('production/stock-requests', 'ProductionStockRequestController', 'index', ['AuthMiddleware']);
-        $this->get('production/stock-requests/create', 'ProductionStockRequestController', 'create', ['AuthMiddleware']);
-        $this->post('production/stock-requests/store', 'ProductionStockRequestController', 'store', ['AuthMiddleware']);
-        $this->get('production/stock-requests/view/{id}', 'ProductionStockRequestController', 'view', ['AuthMiddleware']);
-        $this->post('production/stock-requests/update-status/{id}', 'ProductionStockRequestController', 'updateStatus', ['AuthMiddleware']);
+        $this->get('production/stock-requests', 'ProductionStockRequestController', 'index', ['AuthMiddleware', ['PermissionMiddleware', 'production_stock_requests', 'view']]);
+        $this->get('production/stock-requests/create', 'ProductionStockRequestController', 'create', ['AuthMiddleware', ['PermissionMiddleware', 'production_stock_requests', 'create']]);
+        $this->post('production/stock-requests/store', 'ProductionStockRequestController', 'store', ['AuthMiddleware', ['PermissionMiddleware', 'production_stock_requests', 'create']]);
+        $this->get('production/stock-requests/view/{id}', 'ProductionStockRequestController', 'view', ['AuthMiddleware', ['PermissionMiddleware', 'production_stock_requests', 'view']]);
+        $this->post('production/stock-requests/update-status/{id}', 'ProductionStockRequestController', 'updateStatus', ['AuthMiddleware', ['PermissionMiddleware', 'production_stock_requests', 'edit']]);
 
         // Production Reports & CSV / Excel Export
         $this->get('production/reports/export', 'ProductionController', 'exportReports', ['AuthMiddleware']);
@@ -656,9 +656,9 @@ class Router {
         $this->post('warehouse/whatsapp-orders/inward/receive/{id}', 'WhatsappController', 'receiveWhatsappInward', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inward', 'receive']]);
         $this->get('api/whatsapp/inward/batch-history/{id}', 'WhatsappController', 'ajaxBatchHistory', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inward', 'view']]);
         $this->get('warehouse/whatsapp-orders/allocations', 'WhatsappController', 'whatsappAllocations', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inventory', 'view']]);
-        $this->get('warehouse/whatsapp-orders/returned-products', 'WhatsappController', 'whatsappReturnedProducts', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inventory', 'view']]);
-        $this->get('warehouse/whatsapp-orders/returned-products/label/{id}', 'WhatsappController', 'whatsappReturnedProductLabel', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inventory', 'view']]);
-        $this->post('warehouse/whatsapp-orders/returned-products/printed/{id}', 'WhatsappController', 'markWhatsappReturnedProductPrinted', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inventory', 'view']]);
+        $this->get('warehouse/whatsapp-orders/returned-products', 'WhatsappController', 'whatsappReturnedProducts', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_returned_products', 'view']]);
+        $this->get('warehouse/whatsapp-orders/returned-products/label/{id}', 'WhatsappController', 'whatsappReturnedProductLabel', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_returned_products', 'view']]);
+        $this->post('warehouse/whatsapp-orders/returned-products/printed/{id}', 'WhatsappController', 'markWhatsappReturnedProductPrinted', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_returned_products', 'edit']]);
         $this->get('warehouse/whatsapp-orders/adjustments', 'WhatsappController', 'whatsappStockAdjustments', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inventory', 'view']]);
         $this->post('warehouse/whatsapp-orders/adjustments/store', 'WhatsappController', 'storeWhatsappStockAdjustment', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inventory', 'adjust']]);
         $this->post('warehouse/whatsapp-orders/adjustments/approve/{id}', 'WhatsappController', 'approveWhatsappStockAdjustment', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_inventory', 'adjust']]);
@@ -938,25 +938,25 @@ class Router {
         // ==========================================
         // ENTERPRISE ASSET MANAGEMENT ROUTES
         // ==========================================
-        $this->get('asset/dashboard', 'AssetController', 'dashboard', ['AuthMiddleware', ['PermissionMiddleware', 'assets', 'view']]);
-        $this->get('asset/list', 'AssetController', 'index', ['AuthMiddleware', ['PermissionMiddleware', 'assets', 'view']]);
+        $this->get('asset/dashboard', 'AssetController', 'dashboard', ['AuthMiddleware', ['PermissionMiddleware', 'asset_dashboard', 'view']]);
+        $this->get('asset/list', 'AssetController', 'index', ['AuthMiddleware', ['PermissionMiddleware', 'asset_register', 'view']]);
         $this->get('asset/scanner', 'AssetController', 'scanner', ['AuthMiddleware', ['PermissionMiddleware', 'asset_scanner', 'view']]);
-        $this->get('asset/create', 'AssetController', 'create', ['AuthMiddleware', ['PermissionMiddleware', 'assets', 'create']]);
-        $this->post('asset/store', 'AssetController', 'store', ['AuthMiddleware', ['PermissionMiddleware', 'assets', 'create']]);
-        $this->get('asset/view/{id}', 'AssetController', 'view', ['AuthMiddleware', ['PermissionMiddleware', 'assets', 'view']]);
-        $this->get('asset/edit/{id}', 'AssetController', 'edit', ['AuthMiddleware', ['PermissionMiddleware', 'assets', 'edit']]);
-        $this->post('asset/update/{id}', 'AssetController', 'update', ['AuthMiddleware', ['PermissionMiddleware', 'assets', 'edit']]);
-        $this->post('asset/delete/{id}', 'AssetController', 'delete', ['AuthMiddleware', ['PermissionMiddleware', 'assets', 'delete']]);
+        $this->get('asset/create', 'AssetController', 'create', ['AuthMiddleware', ['PermissionMiddleware', 'asset_register', 'create']]);
+        $this->post('asset/store', 'AssetController', 'store', ['AuthMiddleware', ['PermissionMiddleware', 'asset_register', 'create']]);
+        $this->get('asset/view/{id}', 'AssetController', 'view', ['AuthMiddleware', ['PermissionMiddleware', 'asset_register', 'view']]);
+        $this->get('asset/edit/{id}', 'AssetController', 'edit', ['AuthMiddleware', ['PermissionMiddleware', 'asset_register', 'edit']]);
+        $this->post('asset/update/{id}', 'AssetController', 'update', ['AuthMiddleware', ['PermissionMiddleware', 'asset_register', 'edit']]);
+        $this->post('asset/delete/{id}', 'AssetController', 'delete', ['AuthMiddleware', ['PermissionMiddleware', 'asset_register', 'delete']]);
         $this->get('asset/transfers', 'AssetController', 'transfers', ['AuthMiddleware', ['PermissionMiddleware', 'asset_transfers', 'view']]);
         $this->post('asset/transfers/store', 'AssetController', 'storeTransfer', ['AuthMiddleware', ['PermissionMiddleware', 'asset_transfers', 'create']]);
         $this->get('asset/maintenance', 'AssetController', 'maintenance', ['AuthMiddleware', ['PermissionMiddleware', 'asset_maintenance', 'view']]);
         $this->post('asset/maintenance/store', 'AssetController', 'storeMaintenance', ['AuthMiddleware', ['PermissionMiddleware', 'asset_maintenance', 'create']]);
-        $this->get('asset/label/{id}', 'AssetController', 'label', ['AuthMiddleware', ['PermissionMiddleware', 'assets', 'print']]);
+        $this->get('asset/label/{id}', 'AssetController', 'label', ['AuthMiddleware', ['PermissionMiddleware', 'asset_register', 'view']]);
         $this->get('asset/bulk-labels', 'AssetController', 'bulkLabels', ['AuthMiddleware', ['PermissionMiddleware', 'asset_bulk_labels', 'view']]);
         $this->get('api/asset/lookup', 'AssetController', 'ajaxLookup', ['AuthMiddleware', ['PermissionMiddleware', 'asset_scanner', 'view']]);
         $this->post('api/asset/lookup', 'AssetController', 'ajaxLookup', ['AuthMiddleware', ['PermissionMiddleware', 'asset_scanner', 'view']]);
-        $this->post('api/asset/category/create', 'AssetController', 'ajaxCreateCategory', ['AuthMiddleware', ['PermissionMiddleware', 'assets', 'create']]);
-        $this->post('api/asset/unit/create', 'AssetController', 'ajaxCreateUnit', ['AuthMiddleware', ['PermissionMiddleware', 'assets', 'create']]);
+        $this->post('api/asset/category/create', 'AssetController', 'ajaxCreateCategory', ['AuthMiddleware', ['PermissionMiddleware', 'asset_register', 'create']]);
+        $this->post('api/asset/unit/create', 'AssetController', 'ajaxCreateUnit', ['AuthMiddleware', ['PermissionMiddleware', 'asset_register', 'create']]);
 
         // ==========================================
         // SYSTEM ROUTES
