@@ -256,13 +256,14 @@
                 <thead>
                     <tr>
                         <th style="width: 5%;">#</th>
-                        <th style="width: 22%;">QR / SKU</th>
-                        <th style="width: 15%;">Category</th>
-                        <th style="width: 28%;">Product Name</th>
-                        <th style="width: 10%;">Size</th>
+                        <th style="width: 17%;">QR / SKU</th>
+                        <th style="width: 12%;">Category</th>
+                        <th style="width: 22%;">Product Name</th>
+                        <th style="width: 8%;">Size</th>
+                        <th style="width: 10%;">HSN Code</th>
                         <th style="width: 8%;" class="text-center">Quantity</th>
-                        <th style="width: 12%;" class="text-end">Unit Price</th>
-                        <th style="width: 12%;" class="text-end">Total Amount</th>
+                        <th style="width: 9%;" class="text-end">Unit Price</th>
+                        <th style="width: 9%;" class="text-end">Total Amount</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -292,14 +293,13 @@
                                     <?= htmlspecialchars($itm['category_name'] ?? 'Apparel') ?>
                                 </span>
                             </td>
-                            <td>
-                                <span class="fw-bold text-dark d-block"><?= htmlspecialchars($itm['product_name']) ?></span>
-                            </td>
+                            <td><span class="fw-bold text-dark d-block"><?= htmlspecialchars($itm['product_name']) ?></span></td>
                             <td>
                                 <span class="badge bg-success-subtle text-success border border-success-subtle fw-semibold">
                                     <?= htmlspecialchars($itm['size_name'] ?? 'Standard') ?>
                                 </span>
                             </td>
+                            <td class="font-monospace"><?= htmlspecialchars($itm['resolved_hsn_code'] ?? '') ?: '-' ?></td>
                             <td class="text-center">
                                 <span class="fw-bold fs-6 text-dark"><?= number_format($itm['quantity']) ?></span> <small class="text-muted">pcs</small>
                             </td>

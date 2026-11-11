@@ -662,7 +662,7 @@ class WarehouseService {
                 $totalIgst += $lineIgst;
                 $grandTotal += $lineTotal;
 
-                $processedItems[] = [
+                $processedItem = [
                     'variant_id'          => (int)$item['variant_id'],
                     'quantity'            => $qty,
                     'unit_price'          => $unitPrice,
@@ -678,6 +678,12 @@ class WarehouseService {
                     'igst_amount'         => $lineIgst,
                     'total_amount'        => $lineTotal,
                 ];
+                if (array_key_exists('hsn_code', $item)) {
+                    $processedItem['hsn_code'] = $item['hsn_code'] !== null
+                        ? trim((string)$item['hsn_code'])
+                        : (array_key_exists('resolved_hsn_code', $item) ? trim((string)$item['resolved_hsn_code']) : null);
+                }
+                $processedItems[] = $processedItem;
             }
 
             $poData['subtotal'] = $subtotal;
@@ -719,6 +725,7 @@ class WarehouseService {
      * Update Direct Customer Purchase Order.
      */
     public static function updatePurchaseOrder(int $id, array $poData, array $items, int $userId): bool {
+        PurchaseItem::ensureHsnCodeColumn();
         Database::beginTransaction();
         try {
             $existing = PurchaseOrder::find($id);
@@ -818,7 +825,7 @@ class WarehouseService {
                 $totalIgst += $lineIgst;
                 $grandTotal += $lineTotal;
 
-                $processedItems[] = [
+                $processedItem = [
                     'variant_id'          => (int)$item['variant_id'],
                     'quantity'            => $qty,
                     'unit_price'          => $unitPrice,
@@ -834,6 +841,12 @@ class WarehouseService {
                     'igst_amount'         => $lineIgst,
                     'total_amount'        => $lineTotal,
                 ];
+                if (array_key_exists('hsn_code', $item)) {
+                    $processedItem['hsn_code'] = $item['hsn_code'] !== null
+                        ? trim((string)$item['hsn_code'])
+                        : (array_key_exists('resolved_hsn_code', $item) ? trim((string)$item['resolved_hsn_code']) : null);
+                }
+                $processedItems[] = $processedItem;
             }
 
             $poData['subtotal'] = $subtotal;

@@ -204,7 +204,8 @@
                             <tr>
                                 <th class="ps-3 text-center" style="width: 38px;">#</th>
                                 <th>Item Details</th>
-                                <th class="text-end" style="width: 100px;">Base Price</th>
+                                <th class="text-center" style="width: 150px;">HSN CODE</th>
+                                <th class="text-end" style="width: 100px;">BASE PRICE</th>
                                 <th class="text-end" style="width: 110px;">GST %</th>
                                 <th class="text-end" style="width: 95px;">Discount</th>
                                 <th class="text-end" style="width: 130px;">Billed Price</th>
@@ -213,7 +214,7 @@
                         </thead>
                         <tbody id="cartBody">
                             <tr id="emptyCartRow">
-                                <td colspan="7" class="text-center py-5 text-muted">
+                                <td colspan="8" class="text-center py-5 text-muted">
                                     <div class="py-4">
                                         <div class="pos-empty-icon mb-3">
                                             <i class="bi bi-bag-plus text-primary"></i>
@@ -660,6 +661,7 @@ document.addEventListener('DOMContentLoaded', function() {
             gst_percentage: gstRate,
             quantity: 1, // Always 1
             available_stock: parseFloat(variant.available_stock) || 0,
+            hsn_code: variant.resolved_hsn_code || variant.hsn_code || '',
             scanned_tag: pieceTag,
             scanned_tags: pieceTag ? [pieceTag] : []
         });
@@ -818,6 +820,9 @@ document.addEventListener('DOMContentLoaded', function() {
                             </div>
                         </div>
                     </td>
+                    <td>
+                        <input type="text" class="form-control form-control-sm hsn-code-input font-monospace" data-cart-id="${item.cart_id}" value="${escapeHtml(item.hsn_code || '')}" maxlength="20" aria-label="HSN code">
+                    </td>
                     <td class="text-end fw-semibold text-secondary font-monospace item-base-price-cell" style="font-size: 12.5px;">
                         ₹${lineTaxable.toFixed(2)}
                     </td>
@@ -860,6 +865,13 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function attachCartRowEvents() {
+        document.querySelectorAll('.hsn-code-input').forEach(inp => {
+            inp.addEventListener('input', function() {
+                const item = cart.find(it => it.cart_id === this.dataset.cartId);
+                if (item) item.hsn_code = this.value;
+            });
+        });
+
         document.querySelectorAll('.item-gst-input').forEach(inp => {
             inp.addEventListener('input', function() {
                 const cartId = this.getAttribute('data-cart-id');

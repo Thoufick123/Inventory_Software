@@ -179,13 +179,9 @@ $purchasedAt = formatUtcDateTime($sale['created_at'] ?? null);
             padding: 2px 0;
             vertical-align: top;
         }
-        .item-name-row {
+        .item-name-cell {
             font-weight: 700;
-            padding-top: 3px;
             word-break: break-word;
-        }
-        .item-data-row td {
-            padding-bottom: 3px;
         }
         .item-tag-badge {
             font-size: 9.5px;
@@ -352,11 +348,12 @@ $purchasedAt = formatUtcDateTime($sale['created_at'] ?? null);
     <table class="items-table">
         <thead>
             <tr>
-                <th style="text-align: left; width: 40%;">Item</th>
-                <th style="text-align: center; width: 10%;">Qty</th>
-                <th style="text-align: right; width: 18%;">Price</th>
-                <th style="text-align: right; width: 16%;">Disc</th>
-                <th style="text-align: right; width: 16%;">Amount</th>
+                <th style="text-align: left; width: 30%;">Item</th>
+                <th style="text-align: center; width: 14%;">HSN</th>
+                <th style="text-align: center; width: 8%;">Qty</th>
+                <th style="text-align: right; width: 17%;">Price</th>
+                <th style="text-align: right; width: 14%;">Disc</th>
+                <th style="text-align: right; width: 17%;">Amount</th>
             </tr>
         </thead>
         <tbody>
@@ -367,8 +364,8 @@ $purchasedAt = formatUtcDateTime($sale['created_at'] ?? null);
                 $itemTotal = (float)$item['total_amount'];
                 $itemQty = (int)$item['quantity'];
             ?>
-                <tr class="item-name-row">
-                    <td colspan="5">
+                <tr>
+                    <td class="item-name-cell">
                         <?= e($item['product_name']) ?><?= !empty($item['size_name']) ? ' - ' . e($item['size_name']) : '' ?><?= !empty($item['color_name']) ? ' (' . e($item['color_name']) . ')' : '' ?>
                         <?php if (!empty($item['scanned_qr_codes'])): ?>
                             <span class="item-tag-badge">Tag: <?= e($item['scanned_qr_codes']) ?></span>
@@ -376,9 +373,7 @@ $purchasedAt = formatUtcDateTime($sale['created_at'] ?? null);
                             <span class="item-tag-badge">QR: <?= e($item['sku'] ?? 'QR-CODE') ?></span>
                         <?php endif; ?>
                     </td>
-                </tr>
-                <tr class="item-data-row">
-                    <td></td>
+                    <td style="text-align: center;"><?= e($item['resolved_hsn_code'] ?? '') ?: '-' ?></td>
                     <td style="text-align: center;"><?= $itemQty ?></td>
                     <td style="text-align: right;"><?= number_format($itemRate, 2) ?></td>
                     <td style="text-align: right; color: <?= $itemDisc > 0 ? '#b91c1c' : '#000' ?>;"><?= $itemDisc > 0 ? '-' . number_format($itemDisc, 2) : '0.00' ?></td>

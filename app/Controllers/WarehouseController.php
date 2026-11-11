@@ -4691,6 +4691,7 @@ class WarehouseController {
         $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $variants = Database::fetchAll(
             "SELECT pv.id, pv.sku, pv.qr_code, pv.qr_type, pv.series_start_code, pv.series_end_code, pv.pack_quantity,
+                    COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), '') as hsn_code,
                     pv.selling_price, pv.mrp, p.name as product_name, p.code as product_code, p.qr_code_prefix,
                     p.category_code, p.subcategory_code, p.sub_subcategory_code,
                     s.name as size_name, s.code as size_code, c.name as color_name,
@@ -4794,10 +4795,16 @@ class WarehouseController {
                     $gst = (float)$gstValue;
                     $scannedQr = !empty($_POST['scanned_qr_codes'][$idx]) ? trim($_POST['scanned_qr_codes'][$idx]) : null;
                     if ($vId && $qty > 0) {
+                        $hsnCode = trim((string)($_POST['hsn_code'][$idx] ?? ''));
+                        if (strlen($hsnCode) > 20) {
+                            Response::redirect(url('warehouse/purchases/create'), 'error', 'HSN code cannot exceed 20 characters.');
+                            return;
+                        }
                         $items[] = [
                             'variant_id'          => (int)$vId,
                             'quantity'            => $qty,
                             'unit_price'          => $price,
+                            'hsn_code'            => $hsnCode,
                             'discount_percentage' => $discountPct,
                             'gst_percentage'      => $gst,
                             'mrp'                 => $mrp,
@@ -4944,6 +4951,7 @@ class WarehouseController {
                 }
             }
 
+            PurchaseItem::ensureHsnCodeColumn();
             $poId = WarehouseService::createPurchaseOrder($poData, $items, $userId);
 
             // Save screenshot to purchase_orders after PO is created
@@ -4983,6 +4991,7 @@ class WarehouseController {
         $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $variants = Database::fetchAll(
             "SELECT pv.id, pv.sku, pv.qr_code, pv.qr_type, pv.series_start_code, pv.series_end_code, pv.pack_quantity,
+                    COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), '') as hsn_code,
                     pv.selling_price, pv.mrp, p.name as product_name, p.code as product_code, p.qr_code_prefix,
                     p.category_code, p.subcategory_code, p.sub_subcategory_code,
                     s.name as size_name, s.code as size_code, c.name as color_name,
@@ -5099,10 +5108,16 @@ class WarehouseController {
                     $gst = (float)$gstValue;
                     $scannedQr = !empty($_POST['scanned_qr_codes'][$idx]) ? trim($_POST['scanned_qr_codes'][$idx]) : null;
                     if ($vId && $qty > 0) {
+                        $hsnCode = trim((string)($_POST['hsn_code'][$idx] ?? ''));
+                        if (strlen($hsnCode) > 20) {
+                            Response::redirect(url('warehouse/purchases/edit/' . $poId), 'error', 'HSN code cannot exceed 20 characters.');
+                            return;
+                        }
                         $items[] = [
                             'variant_id'          => (int)$vId,
                             'quantity'            => $qty,
                             'unit_price'          => $price,
+                            'hsn_code'            => $hsnCode,
                             'discount_percentage' => $discountPct,
                             'gst_percentage'      => $gst,
                             'mrp'                 => $mrp,
@@ -5349,6 +5364,7 @@ class WarehouseController {
         $baseVariantSql = "
             SELECT pv.*, 
                    p.id as product_id, p.name as product_name, p.code as product_code, p.image_url as product_image,
+                   COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), '') as resolved_hsn_code,
                    COALESCE(NULLIF(p.gst_percentage, 0), 5.0) as gst_rate,
                    COALESCE(p.is_complementary, 0) as prod_is_comp,
                    COALESCE(pv.is_complementary, p.is_complementary, 0) as is_complementary,
