@@ -362,10 +362,10 @@ if (!function_exists('renderCategoryTypeBadge')) {
                 </button>
                 <?php endif; ?>
                 <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 fs-6">
-                    <i class="bi bi-boxes me-1"></i> <?= number_format($prodAvailableQty ?? 0) ?> pcs Available
+                    <i class="bi bi-boxes me-1"></i> <?= number_format($activeTabAvailableQty ?? $prodAvailableQty ?? 0) ?> pcs Available
                 </span>
                 <span class="badge bg-light text-dark border px-3 py-2 fs-6">
-                    Est. Valuation: ₹<?= number_format($prodValuation ?? 0, 2) ?>
+                    Est. Valuation: ₹<?= number_format($activeTabValuation ?? $prodValuation ?? 0, 2) ?>
                 </span>
                 <!-- <a href="<?= url('warehouse/inward') ?>" class="btn btn-sm btn-outline-success fw-semibold">
                     <i class="bi bi-plus-circle me-1"></i> Inward Batch GRN
@@ -373,7 +373,10 @@ if (!function_exists('renderCategoryTypeBadge')) {
             </div>
         </div>
         <div class="card-body p-0">
-            <?php if (empty($productionItems)): ?>
+            <?php 
+                $displayItems = $activeTabItems ?? $productionItems;
+                if (empty($displayItems)): 
+            ?>
                 <div class="text-center py-5">
                     <?php if ($currTab === 'returned'): ?>
                         <i class="bi bi-arrow-return-left fs-1 text-muted d-block mb-3"></i>
@@ -411,7 +414,7 @@ if (!function_exists('renderCategoryTypeBadge')) {
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($productionItems as $item): ?>
+                            <?php foreach ($displayItems as $item): ?>
                                 <tr id="stock-row-<?= $item['variant_id'] ?>" data-variant-qrs="<?= e(implode(' ', array_column($pieceQrsByVariant[(int)$item['variant_id']] ?? [], 'tag_code'))) ?>">
                                     <td class="price-checkbox-col text-center" style="display: none;">
                                         <input type="checkbox" class="form-check-input price-item-checkbox" 

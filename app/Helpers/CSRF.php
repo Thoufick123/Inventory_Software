@@ -37,10 +37,16 @@ class CSRF {
      */
     public static function validate(?string $token = null): bool {
         if ($token === null) {
-            $token = $_POST['_csrf_token'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
+            $token = $_POST['_csrf_token'] 
+                ?? $_POST['csrf_token'] 
+                ?? $_GET['_csrf_token']
+                ?? $_GET['csrf_token']
+                ?? $_SERVER['HTTP_X_CSRF_TOKEN'] 
+                ?? $_SERVER['HTTP_X_XSRF_TOKEN'] 
+                ?? null;
         }
         if (!$token) return false;
-        $sessionToken = Session::get('_csrf_token');
+        $sessionToken = Session::get('_csrf_token') ?? ($_SESSION['_csrf_token'] ?? null);
         if (!$sessionToken) return false;
         return hash_equals($sessionToken, $token);
     }

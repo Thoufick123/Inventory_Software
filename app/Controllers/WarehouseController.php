@@ -1187,25 +1187,32 @@ class WarehouseController {
             }
         }
 
-        if ($activeTab === 'returned') {
-            $prodAvailableQty = 0;
-            $prodValuation = 0.0;
-            foreach ($returnedItems as $returnedItem) {
-                if (($returnedItem['stock_state'] ?? '') === 'AVAILABLE') {
-                    $prodAvailableQty += (float)($returnedItem['quantity'] ?? 0);
-                    $prodValuation += (float)($returnedItem['valuation'] ?? 0);
-                }
-            }
-        }
+        $activeTabItems = $productionItems;
+        $activeTabAvailableQty = $prodAvailableQty;
+        $activeTabValuation = $prodValuation;
 
         if ($activeTab === 'series') {
-            $productionItems = $seriesItems;
-            $prodAvailableQty = $seriesAvailableQty;
-            $prodValuation = $seriesValuation;
-            $thirdPartyItems = [];
+            $activeTabItems = $seriesItems;
+            $activeTabAvailableQty = $seriesAvailableQty;
+            $activeTabValuation = $seriesValuation;
         } elseif ($activeTab === 'returned') {
-            $productionItems = $returnedItems;
-            $thirdPartyItems = [];
+            $activeTabItems = $returnedItems;
+            $activeTabAvailableQty = 0;
+            $activeTabValuation = 0.0;
+            foreach ($returnedItems as $returnedItem) {
+                if (($returnedItem['stock_state'] ?? '') === 'AVAILABLE') {
+                    $activeTabAvailableQty += (float)($returnedItem['quantity'] ?? 0);
+                    $activeTabValuation += (float)($returnedItem['valuation'] ?? 0);
+                }
+            }
+        } elseif ($activeTab === 'third_party') {
+            $activeTabItems = $thirdPartyItems;
+            $activeTabAvailableQty = $tpAvailableQty;
+            $activeTabValuation = $tpValuation;
+        } elseif ($activeTab === 'complementary') {
+            $activeTabItems = $complementaryItems;
+            $activeTabAvailableQty = $compAvailableQty;
+            $activeTabValuation = $compValuation;
         }
 
         // Complementary Sales (Realized sales from sale_items)
@@ -1252,6 +1259,9 @@ class WarehouseController {
             'activeModule'           => 'warehouse',
             'activeMenu'             => 'wh-stock',
             'stockItems'             => $stockItems,
+            'activeTabItems'         => $activeTabItems,
+            'activeTabAvailableQty'  => $activeTabAvailableQty,
+            'activeTabValuation'     => $activeTabValuation,
             'productionItems'        => $productionItems,
             'thirdPartyItems'        => $thirdPartyItems,
             'complementaryItems'     => $complementaryItems,
@@ -3305,9 +3315,15 @@ class WarehouseController {
             );
             if ($dmgCheck) {
                 $dmgVar = Database::fetchOne(
-                    "SELECT pv.id, pv.qr_type, pv.pack_quantity,
-                            COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
-                            COALESCE(wc.category_type, 'NORMAL') as cat_type
+                    "SELECT pv.*, p.name as product_name, p.code as product_code,
+                            p.category_code, p.subcategory_code, p.sub_subcategory_code,
+                            p.warehouse_category_id, p.category_id,
+                            GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
+                            p.is_complementary as prod_is_comp,
+                            pv.is_complementary as var_is_comp,
+                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as category_type,
+                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as cat_type,
+                            COALESCE(wc.name, cat.name, 'General') as category_name
                      FROM product_variants pv 
                      JOIN products p ON pv.product_id = p.id 
                      LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
@@ -3315,13 +3331,8 @@ class WarehouseController {
                      WHERE pv.id = ?",
                     [$dmgCheck['variant_id']]
                 );
-                $isMasterOrComp = ($dmgVar && (
-                    $dmgVar['qr_type'] === 'SERIES_BATCH'
-                    || strtoupper($dmgVar['cat_type'] ?? '') === 'SERIES'
-                    || strtoupper($dmgVar['cat_type'] ?? '') === 'COMPLEMENTARY'
-                    || (int)($dmgVar['pack_quantity'] ?? 0) > 1
-                    || !empty($dmgVar['is_comp'])
-                ));
+                $dmgAllocPType = $dmgVar ? self::determineAllocationProductType($dmgVar) : 'NORMAL';
+                $isMasterOrComp = in_array($dmgAllocPType, ['SERIES', 'COMPLEMENTARY'], true);
 
                 if ($isMasterOrComp) {
                     $availStockRow = Database::fetchOne(
@@ -3331,6 +3342,7 @@ class WarehouseController {
                     );
                     $remStock = (float)($availStockRow['qty'] ?? 0);
                     if ($remStock > 0) {
+                        $dmgCheck = null;
                         continue;
                     }
                 }
@@ -3386,12 +3398,19 @@ class WarehouseController {
             if ($soldItem) {
                 // If it's a series or complementary product, check if there is still remaining available stock
                 $soldVar = Database::fetchOne(
-                    "SELECT pv.id, pv.qr_type, pv.pack_quantity,
-                            COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
-                            COALESCE(wc.category_type, 'NORMAL') as cat_type
+                    "SELECT pv.*, p.name as product_name, p.code as product_code,
+                            p.category_code, p.subcategory_code, p.sub_subcategory_code,
+                            p.warehouse_category_id, p.category_id,
+                            GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
+                            p.is_complementary as prod_is_comp,
+                            pv.is_complementary as var_is_comp,
+                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as category_type,
+                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as cat_type,
+                            COALESCE(wc.name, cat.name, 'General') as category_name
                      FROM product_variants pv 
                      JOIN products p ON pv.product_id = p.id 
                      LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+                     LEFT JOIN categories cat ON p.category_id = cat.id
                      WHERE pv.id = ?",
                     [$soldItem['variant_id']]
                 );
@@ -3407,6 +3426,7 @@ class WarehouseController {
                     );
                     $remStock = (float)($availStockRow['qty'] ?? 0);
                     if ($remStock > 0) {
+                        $soldItem = null;
                         continue;
                     }
                 }
@@ -3444,6 +3464,39 @@ class WarehouseController {
             );
 
             if ($prodBill) {
+                $pbVar = Database::fetchOne(
+                    "SELECT pv.*, p.name as product_name, p.code as product_code,
+                            p.category_code, p.subcategory_code, p.sub_subcategory_code,
+                            p.warehouse_category_id, p.category_id,
+                            GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
+                            p.is_complementary as prod_is_comp,
+                            pv.is_complementary as var_is_comp,
+                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as category_type,
+                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as cat_type,
+                            COALESCE(wc.name, cat.name, 'General') as category_name
+                     FROM product_variants pv 
+                     JOIN products p ON pv.product_id = p.id 
+                     LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+                     LEFT JOIN categories cat ON p.category_id = cat.id
+                     WHERE pv.id = ?",
+                    [$prodBill['variant_id']]
+                );
+                $pbAllocPType = $pbVar ? self::determineAllocationProductType($pbVar) : 'NORMAL';
+                $isMasterOrComp = in_array($pbAllocPType, ['SERIES', 'COMPLEMENTARY'], true);
+
+                if ($isMasterOrComp) {
+                    $availStockRow = Database::fetchOne(
+                        "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                         WHERE variant_id = ? AND location_type = 'WAREHOUSE' " . ($warehouseId > 0 ? "AND location_id = {$warehouseId}" : "") . " AND stock_state = 'AVAILABLE'",
+                        [$prodBill['variant_id']]
+                    );
+                    $remStock = (float)($availStockRow['qty'] ?? 0);
+                    if ($remStock > 0) {
+                        $prodBill = null;
+                        continue;
+                    }
+                }
+
                 $cust = $prodBill['customer_name'] ?: ($prodBill['company_name'] ?: 'Customer');
                 $billNum = $prodBill['bill_number'] ?: ('Bill #' . $prodBill['bill_id']);
                 $billDate = date('d M Y', strtotime($prodBill['created_at']));
@@ -3574,9 +3627,15 @@ class WarehouseController {
 
             if ($alreadyAlloc) {
                 $allocVar = Database::fetchOne(
-                    "SELECT pv.id, pv.qr_type, pv.pack_quantity,
-                            COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
-                            COALESCE(wc.category_type, 'NORMAL') as cat_type
+                    "SELECT pv.*, p.name as product_name, p.code as product_code,
+                            p.category_code, p.subcategory_code, p.sub_subcategory_code,
+                            p.warehouse_category_id, p.category_id,
+                            GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
+                            p.is_complementary as prod_is_comp,
+                            pv.is_complementary as var_is_comp,
+                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as category_type,
+                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as cat_type,
+                            COALESCE(wc.name, cat.name, 'General') as category_name
                      FROM product_variants pv 
                      JOIN products p ON pv.product_id = p.id 
                      LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
@@ -3584,12 +3643,8 @@ class WarehouseController {
                      WHERE pv.id = ?",
                     [$alreadyAlloc['variant_id']]
                 );
-                $isMasterOrComp = ($allocVar && (
-                    $allocVar['qr_type'] === 'SERIES_BATCH'
-                    || strtoupper($allocVar['cat_type'] ?? '') === 'SERIES'
-                    || (int)($allocVar['pack_quantity'] ?? 0) > 1
-                    || !empty($allocVar['is_comp'])
-                ));
+                $allocAllocPType = $allocVar ? self::determineAllocationProductType($allocVar) : 'NORMAL';
+                $isMasterOrComp = in_array($allocAllocPType, ['SERIES', 'COMPLEMENTARY'], true);
 
                 if ($isMasterOrComp) {
                     $availStockRow = Database::fetchOne(
@@ -3599,6 +3654,7 @@ class WarehouseController {
                     );
                     $remStock = (float)($availStockRow['qty'] ?? 0);
                     if ($remStock > 0) {
+                        $alreadyAlloc = null;
                         continue;
                     }
                 }
@@ -7407,7 +7463,9 @@ class WarehouseController {
             || !empty($item['product_is_complementary'])
             || strtoupper(trim((string)($item['category_type'] ?? ''))) === 'COMPLEMENTARY'
             || strtoupper(trim((string)($item['warehouse_category_type'] ?? ''))) === 'COMPLEMENTARY'
-            || strtoupper(trim((string)($item['cat_type'] ?? ''))) === 'COMPLEMENTARY';
+            || strtoupper(trim((string)($item['cat_type'] ?? ''))) === 'COMPLEMENTARY'
+            || (stripos((string)($item['product_name'] ?? ''), 'COMPLEMENTARY') !== false)
+            || (stripos((string)($item['name'] ?? ''), 'COMPLEMENTARY') !== false);
         if ($isComp) {
             return 'COMPLEMENTARY';
         }
@@ -7426,7 +7484,9 @@ class WarehouseController {
             || $catTypeAlt === 'SERIES' 
             || $packQty > 1 
             || $hasSeriesStart 
-            || $isSeriesFlag) {
+            || $isSeriesFlag
+            || (stripos((string)($item['product_name'] ?? ''), 'SERIES') !== false)
+            || (stripos((string)($item['name'] ?? ''), 'SERIES') !== false)) {
             return 'SERIES';
         }
 
@@ -8067,12 +8127,19 @@ class WarehouseController {
             if ($soldItem) {
                 // If it's a series or complementary product, check if there is still remaining available stock
                 $soldVar = Database::fetchOne(
-                    "SELECT pv.id, pv.qr_type, pv.pack_quantity,
-                            COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
-                            COALESCE(wc.category_type, 'NORMAL') as cat_type
+                    "SELECT pv.*, p.name as product_name, p.code as product_code,
+                            p.category_code, p.subcategory_code, p.sub_subcategory_code,
+                            p.warehouse_category_id, p.category_id,
+                            GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
+                            p.is_complementary as prod_is_comp,
+                            pv.is_complementary as var_is_comp,
+                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as category_type,
+                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as cat_type,
+                            COALESCE(wc.name, cat.name, 'General') as category_name
                      FROM product_variants pv 
                      JOIN products p ON pv.product_id = p.id 
                      LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+                     LEFT JOIN categories cat ON p.category_id = cat.id
                      WHERE pv.id = ?",
                     [$soldItem['variant_id']]
                 );
@@ -8088,6 +8155,7 @@ class WarehouseController {
                     );
                     $remStock = (float)($availStockRow['qty'] ?? 0);
                     if ($remStock > 0) {
+                        $soldItem = null;
                         continue;
                     }
                 }
@@ -8125,6 +8193,39 @@ class WarehouseController {
             );
 
             if ($prodBill) {
+                $pbVar = Database::fetchOne(
+                    "SELECT pv.*, p.name as product_name, p.code as product_code,
+                            p.category_code, p.subcategory_code, p.sub_subcategory_code,
+                            p.warehouse_category_id, p.category_id,
+                            GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
+                            p.is_complementary as prod_is_comp,
+                            pv.is_complementary as var_is_comp,
+                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as category_type,
+                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as cat_type,
+                            COALESCE(wc.name, cat.name, 'General') as category_name
+                     FROM product_variants pv 
+                     JOIN products p ON pv.product_id = p.id 
+                     LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+                     LEFT JOIN categories cat ON p.category_id = cat.id
+                     WHERE pv.id = ?",
+                    [$prodBill['variant_id']]
+                );
+                $pbAllocPType = $pbVar ? self::determineAllocationProductType($pbVar) : 'NORMAL';
+                $isMasterOrComp = in_array($pbAllocPType, ['SERIES', 'COMPLEMENTARY'], true);
+
+                if ($isMasterOrComp) {
+                    $availStockRow = Database::fetchOne(
+                        "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                         WHERE variant_id = ? AND location_type = 'WAREHOUSE' " . ($warehouseId > 0 ? "AND location_id = {$warehouseId}" : "") . " AND stock_state = 'AVAILABLE'",
+                        [$prodBill['variant_id']]
+                    );
+                    $remStock = (float)($availStockRow['qty'] ?? 0);
+                    if ($remStock > 0) {
+                        $prodBill = null;
+                        continue;
+                    }
+                }
+
                 $cust = $prodBill['customer_name'] ?: ($prodBill['company_name'] ?: 'Customer');
                 $billNum = $prodBill['bill_number'] ?: ('Bill #' . $prodBill['bill_id']);
                 $billDate = date('d M Y', strtotime($prodBill['created_at']));
@@ -9104,6 +9205,251 @@ class WarehouseController {
             'pieceQRs'      => $pieceQRs,
             'breadcrumb'    => $breadcrumb,
         ]);
+    }
+
+    public function editAllocation(int $id): void {
+        if (!hasPermission('allocation', 'edit') && !hasPermission('warehouse', 'edit')) {
+            Session::flash('error', 'Access denied: You do not have permission to edit allocations.');
+            Response::redirect(url('warehouse/allocation'));
+            return;
+        }
+
+        $allocation = WarehouseAllocation::find($id);
+        if (!$allocation) {
+            Session::flash('error', 'Allocation not found.');
+            Response::redirect(url('warehouse/allocation'));
+            return;
+        }
+
+        $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $shops = function_exists('getScopedShops') ? getScopedShops() : Shop::getActive();
+        $salesChannels = Database::fetchAll("SELECT * FROM sales_channels WHERE is_active = 1 ORDER BY name ASC");
+
+        Response::view('warehouse.allocation.edit', [
+            'pageTitle'     => 'Edit Allocation #' . $allocation['allocation_number'],
+            'activeModule'  => 'warehouse',
+            'activeMenu'    => 'wh-allocations',
+            'allocation'    => $allocation,
+            'warehouses'    => $warehouses,
+            'shops'         => $shops,
+            'salesChannels' => $salesChannels,
+            'breadcrumb'    => [
+                ['label' => 'Warehouse', 'url' => url('warehouse/allocation')],
+                ['label' => 'Stock Allocations', 'url' => url('warehouse/allocation')],
+                ['label' => 'Edit #' . $allocation['allocation_number']],
+            ],
+        ]);
+    }
+
+    public function updateAllocation(int $id): void {
+        if (!hasPermission('allocation', 'edit') && !hasPermission('warehouse', 'edit')) {
+            Session::flash('error', 'Access denied: You do not have permission to edit allocations.');
+            Response::redirect(url('warehouse/allocation'));
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token.');
+            Response::redirect(url('warehouse/allocation/edit/' . $id));
+            return;
+        }
+
+        $allocation = WarehouseAllocation::find($id);
+        if (!$allocation) {
+            Session::flash('error', 'Allocation not found.');
+            Response::redirect(url('warehouse/allocation'));
+            return;
+        }
+
+        $destinationRaw = $_POST['destination_type'] ?? '';
+        $notes = trim($_POST['notes'] ?? '');
+        $requestedQty = $_POST['requested_qty'] ?? [];
+
+        $shopId = null;
+        $channelId = null;
+        $destWhId = null;
+
+        if (str_starts_with($destinationRaw, 'WAREHOUSE_')) {
+            $destWhId = (int)substr($destinationRaw, 10);
+            $destinationType = 'WAREHOUSE';
+            $destinationId = $destWhId;
+        } elseif (str_starts_with($destinationRaw, 'CHANNEL_')) {
+            $channelId = (int)substr($destinationRaw, 8);
+            $destinationType = 'CHANNEL';
+            $destinationId = $channelId;
+        } elseif (str_starts_with($destinationRaw, 'SHOP_')) {
+            $shopId = (int)substr($destinationRaw, 5);
+            $destinationType = 'SHOP';
+            $destinationId = $shopId;
+        } else {
+            $destinationType = $allocation['destination_type'];
+            $destinationId = $allocation['destination_id'];
+            $shopId = $allocation['shop_id'];
+            $channelId = $allocation['channel_id'];
+        }
+
+        Database::execute(
+            "UPDATE warehouse_allocations 
+             SET destination_type = ?, destination_id = ?, shop_id = ?, channel_id = ?, notes = ?, updated_at = NOW() 
+             WHERE id = ?",
+            [$destinationType, $destinationId, $shopId, $channelId, $notes, $id]
+        );
+
+        // Update requested quantities if editable (REQUESTED or APPROVED)
+        if (in_array($allocation['status'], ['REQUESTED', 'APPROVED']) && !empty($requestedQty)) {
+            foreach ($requestedQty as $itemId => $qty) {
+                $qty = (float)$qty;
+                if ($qty > 0) {
+                    Database::execute(
+                        "UPDATE allocation_items SET requested_qty = ?, approved_qty = ? WHERE id = ? AND allocation_id = ?",
+                        [$qty, $qty, (int)$itemId, $id]
+                    );
+                }
+            }
+        }
+
+        AuditService::log(
+            'warehouse',
+            'ALLOCATION_UPDATE',
+            'warehouse_allocations',
+            $id,
+            [
+                'destination_type' => $allocation['destination_type'],
+                'destination_id'   => $allocation['destination_id'],
+                'notes'            => $allocation['notes'],
+            ],
+            [
+                'destination_type' => $destinationType,
+                'destination_id'   => $destinationId,
+                'notes'            => $notes,
+            ]
+        );
+
+        Session::flash('success', "Allocation #{$allocation['allocation_number']} updated successfully!");
+        Response::redirect(url('warehouse/allocation/view/' . $id));
+    }
+
+    public function deleteAllocation(int $id): void {
+        if (!hasPermission('allocation', 'delete') && !hasPermission('warehouse', 'delete') && !hasPermission('allocation', 'edit')) {
+            Session::flash('error', 'Access denied: You do not have permission to delete allocations.');
+            Response::redirect(url('warehouse/allocation'));
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token.');
+            Response::redirect(url('warehouse/allocation'));
+            return;
+        }
+
+        $reason = trim($_POST['reason'] ?? '');
+        if (empty($reason)) {
+            Session::flash('error', 'Please provide a valid reason for deleting this allocation.');
+            Response::redirect(url('warehouse/allocation'));
+            return;
+        }
+
+        $allocation = WarehouseAllocation::find($id);
+        if (!$allocation) {
+            Session::flash('error', 'Allocation not found or already deleted.');
+            Response::redirect(url('warehouse/allocation'));
+            return;
+        }
+
+        $items = AllocationItem::getByAllocationId($id);
+        $userId = Session::get('user_id');
+        $warehouseId = (int)$allocation['warehouse_id'];
+
+        try {
+            // Restore stocks for inside scanned/allocated products back to available warehouse inventory
+            if ($allocation['status'] === 'DISPATCHED') {
+                foreach ($items as $item) {
+                    $qtyToRestore = (float)($item['dispatched_qty'] > 0 ? $item['dispatched_qty'] : ($item['packed_qty'] > 0 ? $item['packed_qty'] : $item['requested_qty']));
+                    if ($qtyToRestore > 0) {
+                        StockService::increase(
+                            variantId: (int)$item['variant_id'],
+                            locationType: 'WAREHOUSE',
+                            locationId: $warehouseId,
+                            stockState: 'AVAILABLE',
+                            quantity: $qtyToRestore,
+                            transactionType: 'ALLOCATION_CANCELLED',
+                            referenceType: 'warehouse_allocations',
+                            referenceId: $id,
+                            userId: $userId,
+                            notes: "Stock restored from deleted allocation #{$allocation['allocation_number']}. Reason: {$reason}"
+                        );
+                    }
+                }
+            } else {
+                // If in REQUESTED, APPROVED, PICKING, PACKING - check if any quantity was placed in RESERVED state
+                foreach ($items as $item) {
+                    $qty = (float)($item['packed_qty'] > 0 ? $item['packed_qty'] : ($item['picked_qty'] > 0 ? $item['picked_qty'] : $item['requested_qty']));
+                    $vId = (int)$item['variant_id'];
+                    $resBal = StockService::getBalance($vId, 'WAREHOUSE', $warehouseId, 'RESERVED');
+                    if ($resBal > 0) {
+                        $revertQty = min($resBal, $qty);
+                        StockService::move(
+                            variantId: $vId,
+                            fromLocationType: 'WAREHOUSE',
+                            fromLocationId: $warehouseId,
+                            fromStockState: 'RESERVED',
+                            toLocationType: 'WAREHOUSE',
+                            toLocationId: $warehouseId,
+                            toStockState: 'AVAILABLE',
+                            quantity: $revertQty,
+                            transactionType: 'ALLOCATION_CANCELLED',
+                            referenceType: 'warehouse_allocations',
+                            referenceId: $id,
+                            userId: $userId,
+                            notes: "Reserved stock reverted to available for deleted allocation #{$allocation['allocation_number']}. Reason: {$reason}"
+                        );
+                    }
+                }
+            }
+
+            // Remove associated outward manifests if any exist
+            Database::execute("DELETE FROM allocation_outwards WHERE allocation_id = ?", [$id]);
+
+            // Record comprehensive deletion details and reason in the Audit Log
+            AuditService::log(
+                'warehouse',
+                'ALLOCATION_DELETE',
+                'warehouse_allocations',
+                $id,
+                [
+                    'allocation_number' => $allocation['allocation_number'],
+                    'status'            => $allocation['status'],
+                    'warehouse_id'      => $allocation['warehouse_id'],
+                    'warehouse_name'    => $allocation['warehouse_name'] ?? '',
+                    'destination'       => $allocation['destination_name'] ?? '',
+                    'items_count'       => count($items),
+                    'items'             => array_map(function($it) {
+                        return [
+                            'item_id'           => $it['id'],
+                            'variant_id'        => $it['variant_id'],
+                            'sku'               => $it['sku'] ?? '',
+                            'requested_qty'     => $it['requested_qty'],
+                            'selected_qr_codes' => $it['selected_qr_codes'] ?? '',
+                        ];
+                    }, $items),
+                ],
+                [
+                    'deleted_at'        => date('Y-m-d H:i:s'),
+                    'deleted_by'        => $userId,
+                    'reason'            => $reason,
+                    'action'            => 'DELETED_AND_STOCK_RESTORED',
+                ],
+                $userId
+            );
+
+            // Delete allocation items and the allocation record itself
+            Database::execute("DELETE FROM allocation_items WHERE allocation_id = ?", [$id]);
+            Database::execute("DELETE FROM warehouse_allocations WHERE id = ?", [$id]);
+
+            Session::flash('success', "Allocation #{$allocation['allocation_number']} deleted successfully! Allocated products have been released and stock restored to warehouse available inventory.");
+        } catch (Exception $e) {
+            Session::flash('error', 'Error deleting allocation: ' . $e->getMessage());
+        }
+
+        Response::redirect(url('warehouse/allocation'));
     }
 
     public function approveAllocation(int $id): void {
@@ -13847,13 +14193,12 @@ class WarehouseController {
     public function createSeller(): void {
         $selectedSellerId = !empty($_GET['seller_id']) ? (int)$_GET['seller_id'] : 0;
         $isEditMode = (!empty($_GET['mode']) && $_GET['mode'] === 'edit');
-        if ($selectedSellerId > 0 && ($isEditMode || hasPermission('wh_sellers', 'edit'))) {
-            Response::redirect(url('warehouse/sellers/edit/' . $selectedSellerId));
-            return;
-        }
 
         $isEditModePost = (!empty($_POST['edit_supplier_mode']) && $_POST['edit_supplier_mode'] == '1') || !empty($_POST['existing_supplier_id']);
-        if (!hasPermission('wh_sellers', 'create') && !hasPermission('purchases', 'create') && !hasPermission('warehouse', 'create') && !hasPermission('wh_catalog', 'create') && !($isEditModePost && hasPermission('wh_sellers', 'edit'))) {
+        $hasCreatePerm = hasPermission('wh_sellers', 'create') || hasPermission('purchases', 'create') || hasPermission('warehouse', 'create') || hasPermission('wh_catalog', 'create');
+        $hasEditPerm = hasPermission('wh_sellers', 'edit');
+
+        if (!$hasCreatePerm && !(($isEditMode || $isEditModePost) && $hasEditPerm)) {
             Session::flash('error', 'Access denied.');
             Response::redirect(url('warehouse/sellers'));
             return;
@@ -13910,6 +14255,7 @@ class WarehouseController {
             'brands'            => $brands,
             'existingSuppliers' => $existingSuppliers,
             'selectedSellerId'  => $selectedSellerId,
+            'isEditMode'        => $isEditMode,
             'breadcrumb'        => [
                 ['label' => 'Warehouse', 'url' => url('warehouse/dashboard')],
                 ['label' => 'Sellers', 'url' => url('warehouse/sellers')],
@@ -14838,49 +15184,15 @@ class WarehouseController {
             Response::redirect(url('warehouse/sellers'));
             return;
         }
-        $seller = Database::fetchOne("SELECT * FROM warehouse_suppliers WHERE id = ?", [$id]);
+        $seller = Database::fetchOne("SELECT id FROM warehouse_suppliers WHERE id = ?", [$id]);
         if (!$seller) {
-            Session::flash('error', 'Seller not found.');
+            Session::flash('error', 'Supplier not found.');
             Response::redirect(url('warehouse/sellers'));
             return;
         }
 
-        // Get all products and variants associated with this supplier
-        $products = Database::fetchAll(
-            "SELECT p.id as product_id, p.name as product_name, p.code as product_code,
-                    pv.id as variant_id, pv.sku, pv.purchase_price, pv.mrp, pv.selling_price,
-                    pv.size_id, pv.color_id, pv.qr_type, pv.series_start_code, pv.series_end_code, pv.pack_quantity,
-                    sz.name as size_name, cl.name as color_name,
-                    COALESCE((
-                        SELECT SUM(sb.quantity) FROM stock_balances sb 
-                        WHERE sb.variant_id = pv.id AND sb.stock_state = 'AVAILABLE' AND sb.location_type = 'WAREHOUSE'
-                    ), 0) as current_stock,
-                    COALESCE((
-                        SELECT SUM(pi.quantity) FROM purchase_items pi
-                        JOIN purchase_orders po ON pi.purchase_order_id = po.id
-                        WHERE pi.variant_id = pv.id
-                    ), 0) as total_bought_qty
-             FROM products p
-             JOIN product_variants pv ON pv.product_id = p.id AND pv.is_active = 1
-             LEFT JOIN sizes sz ON pv.size_id = sz.id
-             LEFT JOIN colors cl ON pv.color_id = cl.id
-             WHERE (p.warehouse_supplier_id = ? OR p.seller_id = ?)
-             ORDER BY p.name ASC, pv.sku ASC",
-            [$id, $id]
-        );
-
-        Response::view('warehouse.sellers.edit', [
-            'pageTitle'    => 'Edit Seller: ' . $seller['name'],
-            'activeModule' => 'warehouse',
-            'activeMenu'   => 'wh-sellers',
-            'seller'       => $seller,
-            'products'     => $products,
-            'breadcrumb'   => [
-                ['label' => 'Warehouse', 'url' => url('warehouse/dashboard')],
-                ['label' => 'Sellers', 'url' => url('warehouse/sellers')],
-                ['label' => 'Edit ' . $seller['name']],
-            ],
-        ]);
+        // Direct users into the modern 2-Phase Wizard in edit mode (Image 2)
+        Response::redirect(url('warehouse/sellers/create?seller_id=' . $id . '&mode=edit'));
     }
 
     /**
@@ -14901,7 +15213,7 @@ class WarehouseController {
 
         $seller = Database::fetchOne("SELECT * FROM warehouse_suppliers WHERE id = ?", [$id]);
         if (!$seller) {
-            Session::flash('error', 'Seller not found.');
+            Session::flash('error', 'Supplier not found.');
             Response::redirect(url('warehouse/sellers'));
             return;
         }
@@ -14910,7 +15222,7 @@ class WarehouseController {
         $company = trim($_POST['company'] ?? '');
         $phone = trim($_POST['phone'] ?? '');
         $email = trim($_POST['email'] ?? '');
-        $gstNumber = trim($_POST['gst_number'] ?? '');
+        $gstNumber = strtoupper(trim($_POST['gst_number'] ?? ''));
         $address = trim($_POST['address'] ?? '');
         $city = trim($_POST['city'] ?? '');
         $state = trim($_POST['state'] ?? 'Tamil Nadu');
@@ -14922,7 +15234,7 @@ class WarehouseController {
 
         if (empty($name)) {
             Session::flash('error', 'Supplier name is required.');
-            Response::redirect(url("warehouse/sellers/edit/{$id}"));
+            Response::redirect(url("warehouse/sellers/create?seller_id={$id}&mode=edit"));
             return;
         }
 
@@ -14930,14 +15242,14 @@ class WarehouseController {
             $cityStateErr = $this->validateCityAndState($city, $state);
             if ($cityStateErr !== null) {
                 Session::flash('error', $cityStateErr);
-                Response::redirect(url("warehouse/sellers/edit/{$id}"));
+                Response::redirect(url("warehouse/sellers/create?seller_id={$id}&mode=edit"));
                 return;
             }
         }
 
         if ($address !== '' && (mb_strlen($address) < 6 || !preg_match('/[a-zA-Z]/', $address))) {
             Session::flash('error', 'Full Business Address must include valid street/door/area details (at least 6 characters).');
-            Response::redirect(url("warehouse/sellers/edit/{$id}"));
+            Response::redirect(url("warehouse/sellers/create?seller_id={$id}&mode=edit"));
             return;
         }
 
@@ -14959,192 +15271,23 @@ class WarehouseController {
                 [$name, $company ?: null, $phone, $email ?: null, $gstNumber ?: null, $address ?: null, $city ?: null, $state ?: null, $paymentTerms ?: null, $materialType ?: null, $sellerType, $documentUrl, $notes ?: null, $isActive, $id]
             );
 
-            // 1. Process Existing Product Variants Updates
-            $existingVariantIds = $_POST['existing_variant_id'] ?? [];
-            $existingProductNames = $_POST['existing_product_name'] ?? [];
-            $existingSkus = $_POST['existing_sku'] ?? [];
-            $existingColors = $_POST['existing_color'] ?? [];
-            $existingSizes = $_POST['existing_size'] ?? [];
-            $existingCosts = $_POST['existing_cost'] ?? [];
-            $existingMrps = $_POST['existing_mrp'] ?? [];
-            $existingSellPrices = $_POST['existing_selling_price'] ?? [];
-            $existingQrTypes = $_POST['existing_qr_type'] ?? [];
-            $existingPackQtys = $_POST['existing_pack_quantity'] ?? [];
-            $existingStartCodes = $_POST['existing_series_start_code'] ?? [];
-            $existingEndCodes = $_POST['existing_series_end_code'] ?? [];
-            $existingStocks = $_POST['existing_stock'] ?? [];
-
-            if (!empty($existingVariantIds) && is_array($existingVariantIds)) {
-                foreach ($existingVariantIds as $idx => $vId) {
-                    $vId = (int)$vId;
-                    if ($vId <= 0) continue;
-
-                    $pName = trim($existingProductNames[$idx] ?? '');
-                    $pSku = trim($existingSkus[$idx] ?? '');
-                    $pColor = trim($existingColors[$idx] ?? '');
-                    $pSize = trim($existingSizes[$idx] ?? '');
-                    $costVal = max(0.0, (float)($existingCosts[$idx] ?? 0.00));
-                    $mrpVal = max($costVal, (float)($existingMrps[$idx] ?? $costVal));
-                    $sellPriceVal = max(0.0, (float)($existingSellPrices[$idx] ?? $costVal));
-                    $qrType = ($existingQrTypes[$idx] ?? 'INDIVIDUAL') === 'SERIES_BATCH' ? 'SERIES_BATCH' : 'INDIVIDUAL';
-                    $packQty = max(1, (int)($existingPackQtys[$idx] ?? 1));
-                    $startCode = !empty($existingStartCodes[$idx]) ? trim($existingStartCodes[$idx]) : ($qrType === 'SERIES_BATCH' ? $pSku . '-001' : null);
-                    $endCode = !empty($existingEndCodes[$idx]) ? trim($existingEndCodes[$idx]) : ($qrType === 'SERIES_BATCH' ? $pSku . '-' . sprintf('%03d', $packQty) : null);
-
-                    $colorId = null;
-                    $sizeId = null;
-                    if (!empty($pColor)) {
-                        $cRow = Database::fetchOne("SELECT id FROM colors WHERE UPPER(name) = ? LIMIT 1", [strtoupper($pColor)]);
-                        if ($cRow) {
-                            $colorId = (int)$cRow['id'];
-                        } else {
-                            try {
-                                Database::execute("INSERT INTO colors (name, hex_code, is_active, created_at) VALUES (?, '#4f46e5', 1, NOW())", [strtoupper($pColor)]);
-                                $colorId = (int)Database::lastInsertId();
-                            } catch (\Throwable $e) {}
-                        }
-                    }
-                    if (!empty($pSize)) {
-                        $sRow = Database::fetchOne("SELECT id FROM sizes WHERE UPPER(name) = ? OR UPPER(code) = ? LIMIT 1", [strtoupper($pSize), strtoupper($pSize)]);
-                        if ($sRow) {
-                            $sizeId = (int)$sRow['id'];
-                        } else {
-                            try {
-                                $sCode = substr(preg_replace('/[^A-Z0-9]/', '', strtoupper($pSize)), 0, 10) ?: strtoupper($pSize);
-                                Database::execute("INSERT INTO sizes (name, code, is_active, created_at) VALUES (?, ?, 1, NOW())", [strtoupper($pSize), $sCode]);
-                                $sizeId = (int)Database::lastInsertId();
-                            } catch (\Throwable $e) {}
-                        }
-                    }
-
-                    Database::execute(
-                        "UPDATE product_variants 
-                         SET sku = ?, qr_code = ?, purchase_price = ?, production_cost = ?, mrp = ?, selling_price = ?, color_id = ?, size_id = ?, qr_type = ?, series_start_code = ?, series_end_code = ?, pack_quantity = ?, updated_at = NOW()
-                         WHERE id = ?",
-                        [$pSku, $pSku, $costVal, $costVal, $mrpVal, $sellPriceVal, $colorId, $sizeId, $qrType, $startCode, $endCode, $packQty, $vId]
-                    );
-
-                    if (!empty($pName)) {
-                        $vRow = Database::fetchOne("SELECT product_id FROM product_variants WHERE id = ?", [$vId]);
-                        if ($vRow && !empty($vRow['product_id'])) {
-                            Database::execute("UPDATE products SET name = ?, updated_at = NOW() WHERE id = ?", [$pName, $vRow['product_id']]);
-                        }
-                    }
-
-                    // Task 3: Update live warehouse stock level if entered
-                    if (isset($existingStocks[$idx]) && $existingStocks[$idx] !== '') {
-                        $targetStock = max(0.0, (float)$existingStocks[$idx]);
-                        $whId = function_exists('currentWarehouseId') && currentWarehouseId() ? currentWarehouseId() : 1;
-                        $currBalanceRow = Database::fetchOne(
-                            "SELECT quantity FROM stock_balances WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND location_id = ? AND stock_state = 'AVAILABLE'",
-                            [$vId, $whId]
-                        );
-                        $currentQty = (float)($currBalanceRow['quantity'] ?? 0);
-                        if ($targetStock != $currentQty) {
-                            Database::execute(
-                                "INSERT INTO stock_balances (variant_id, location_type, location_id, stock_state, quantity, last_updated, created_at)
-                                 VALUES (?, 'WAREHOUSE', ?, 'AVAILABLE', ?, NOW(), NOW())
-                                 ON DUPLICATE KEY UPDATE quantity = VALUES(quantity), last_updated = NOW()",
-                                [$vId, $whId, $targetStock]
-                            );
-                            $diff = $targetStock - $currentQty;
-                            try {
-                                StockTransaction::create([
-                                    'variant_id'       => $vId,
-                                    'location_type'    => 'WAREHOUSE',
-                                    'location_id'      => $whId,
-                                    'stock_state'      => 'AVAILABLE',
-                                    'transaction_type' => 'SUPPLIER_EDIT_STOCK_UPDATE',
-                                    'quantity'         => $diff,
-                                    'balance_after'    => $targetStock,
-                                    'reference_type'   => 'warehouse_suppliers',
-                                    'reference_id'     => $id,
-                                    'user_id'          => Session::get('user_id') ?? 1,
-                                    'notes'            => "Stock updated from supplier edit (was {$currentQty}, now {$targetStock})"
-                                ]);
-                            } catch (\Throwable $te) {}
-
-                            // Sync master product quantity
-                            $vProd = Database::fetchOne("SELECT product_id FROM product_variants WHERE id = ?", [$vId]);
-                            if ($vProd && !empty($vProd['product_id'])) {
-                                Database::execute(
-                                    "UPDATE products p
-                                     SET p.quantity = (
-                                         SELECT COALESCE(SUM(sb.quantity), 0)
-                                         FROM stock_balances sb
-                                         JOIN product_variants pv ON sb.variant_id = pv.id
-                                         WHERE pv.product_id = p.id AND sb.location_type = 'WAREHOUSE' AND sb.stock_state = 'AVAILABLE'
-                                     )
-                                     WHERE p.id = ?",
-                                    [$vProd['product_id']]
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 2. Process Newly Added Product Lines
-            $newProductNames = $_POST['new_product_name'] ?? [];
-            $newProductSkus = $_POST['new_product_sku'] ?? [];
-            $newProductColors = $_POST['new_product_color'] ?? [];
-            $newProductSizes = $_POST['new_product_size'] ?? [];
-            $newQuantities = $_POST['new_quantity'] ?? [];
-            $newUnitPrices = $_POST['new_unit_price'] ?? [];
-            $newQrTypes = $_POST['new_product_qr_type'] ?? [];
-            $newPackQtys = $_POST['new_pack_quantity'] ?? [];
-            $newStartCodes = $_POST['new_series_start_code'] ?? [];
-            $newEndCodes = $_POST['new_series_end_code'] ?? [];
-            $newIsComplementaryList = $_POST['new_is_complementary'] ?? [];
-
-            if (!empty($newProductNames) && is_array($newProductNames)) {
-                foreach ($newProductNames as $nIdx => $npName) {
-                    $npName = trim($npName);
-                    $npSku = trim($newProductSkus[$nIdx] ?? '');
-                    $npColor = trim($newProductColors[$nIdx] ?? '');
-                    $npSize = trim($newProductSizes[$nIdx] ?? '');
-                    $nQty = max(1, (int)($newQuantities[$nIdx] ?? 1));
-                    $nCostRate = max(0.0, (float)($newUnitPrices[$nIdx] ?? 0.00));
-
-                    if (empty($npName)) {
-                        if (!empty($npSku)) $npName = $npSku;
-                        elseif (!empty($npColor) || !empty($npSize) || $nCostRate > 0) $npName = 'TP Product ' . ($nIdx + 1);
-                        else continue;
-                    }
-                    if (empty($npSku)) {
-                        $npSku = 'TP-' . strtoupper(preg_replace('/[^A-Z0-9]/', '', substr($npName, 0, 6))) . '-' . rand(100, 999);
-                    }
-
-                    $nLineQrType = !empty($newQrTypes[$nIdx]) ? $newQrTypes[$nIdx] : 'INDIVIDUAL';
-                    $nLinePackQty = !empty($newPackQtys[$nIdx]) ? (int)$newPackQtys[$nIdx] : ($nLineQrType === 'SERIES_BATCH' ? $nQty : 1);
-                    $nLineStartCode = !empty($newStartCodes[$nIdx]) ? trim($newStartCodes[$nIdx]) : ($nLineQrType === 'SERIES_BATCH' ? $npSku . '-001' : null);
-                    $nLineEndCode = !empty($newEndCodes[$nIdx]) ? trim($newEndCodes[$nIdx]) : ($nLineQrType === 'SERIES_BATCH' ? $npSku . '-' . sprintf('%03d', $nQty) : null);
-
-                    $nLineIsComp = !empty($newIsComplementaryList[$nIdx]) ? 1 : 0;
-                    $this->resolveOrCreateProductVariant(
-                        $npName, $npSku, '', $npColor, $npSize, $nCostRate, $nCostRate, $nCostRate, $id,
-                        $nLineQrType, $nLinePackQty, $nLineStartCode, $nLineEndCode, $nLineIsComp
-                    );
-                }
-            }
-
             Database::commit();
 
             AuditService::log('WAREHOUSE', 'UPDATE_SELLER', 'warehouse_suppliers', $id, $seller, [
                 'name' => $name, 'phone' => $phone, 'company' => $company, 'is_active' => $isActive
             ]);
 
-            Session::flash('success', "Supplier '{$name}' and product catalog details updated successfully.");
+            Session::flash('success', "Supplier '{$name}' commercial details updated successfully.");
             Response::redirect(url('warehouse/sellers/view/' . $id));
         } catch (Exception $e) {
             Database::rollback();
             Session::flash('error', 'Failed to update supplier: ' . $e->getMessage());
-            Response::redirect(url('warehouse/sellers/edit/' . $id));
+            Response::redirect(url('warehouse/sellers/create?seller_id=' . $id . '&mode=edit'));
         }
     }
 
     /**
-     * Update individual supplier product / variant via AJAX modal
+     * Legacy modal AJAX product updater for view page (manual stock adjustments stripped).
      */
     public function updateSupplierProductAjax(): void {
         if (!CSRF::validateRequest()) {
@@ -15152,7 +15295,14 @@ class WarehouseController {
             return;
         }
 
-        if (!hasPermission('wh_sellers', 'edit')) {
+        $hasEditPerm = hasPermission('wh_sellers', 'edit') 
+            || hasPermission('wh_sellers', 'create') 
+            || hasPermission('purchases', 'create') 
+            || hasPermission('purchases', 'edit') 
+            || hasPermission('warehouse', 'edit')
+            || hasPermission('wh_catalog', 'edit');
+
+        if (!$hasEditPerm) {
             Response::json(['success' => false, 'message' => 'Access denied.'], 403);
             return;
         }
@@ -15286,62 +15436,7 @@ class WarehouseController {
                     Database::execute("UPDATE product_variants SET " . implode(', ', $vUpdates) . " WHERE id = ?", $vParams);
                 }
 
-                // 3. Stock adjustment validation:
-                // If product has NOT generated QR and has NOT been inwarded, stock cannot be manually edited!
-                if ($availableStock !== null) {
-                    $whId = function_exists('currentWarehouseId') && currentWarehouseId() ? currentWarehouseId() : 1;
-                    $currBalanceRow = Database::fetchOne(
-                        "SELECT quantity FROM stock_balances WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND location_id = ? AND stock_state = 'AVAILABLE'",
-                        [$variantId, $whId]
-                    );
-                    $currentQty = (float)($currBalanceRow['quantity'] ?? 0);
 
-                    // Check if QR generated and inward exists
-                    $qrCount = (int)(Database::fetchOne("SELECT COUNT(*) as c FROM warehouse_qr_codes WHERE variant_id = ?", [$variantId])['c'] ?? 0);
-                    $inwardCount = (int)(Database::fetchOne(
-                        "SELECT (
-                            (SELECT COUNT(*) FROM warehouse_qr_codes WHERE variant_id = ? AND inwarded_at IS NOT NULL) +
-                            (SELECT COUNT(*) FROM purchase_items pi JOIN purchase_orders po ON po.id = pi.purchase_order_id WHERE pi.variant_id = ? AND po.status = 'RECEIVED') +
-                            (SELECT COUNT(*) FROM stock_transactions st WHERE st.variant_id = ? AND st.location_type = 'WAREHOUSE' AND st.transaction_type LIKE '%INWARD%')
-                         ) as c",
-                        [$variantId, $variantId, $variantId]
-                    )['c'] ?? 0);
-
-                    $hasQr = ($qrCount > 0);
-                    $hasInward = ($inwardCount > 0 || ($currentQty > 0 && $hasQr));
-                    $canEditStock = ($hasQr && $hasInward);
-
-                    if (!$canEditStock && $availableStock != $currentQty) {
-                        Database::rollBack();
-                        Response::json([
-                            'success' => false,
-                            'message' => 'Stock cannot be manually edited for this product because QR codes have not been generated and the product has not been inwarded. Please generate QR codes and inward the products via Inward GRN.'
-                        ], 422);
-                        return;
-                    }
-
-                    if ($canEditStock && $availableStock != $currentQty) {
-                        Database::execute(
-                            "INSERT INTO stock_balances (variant_id, location_type, location_id, stock_state, quantity, last_updated, created_at)
-                             VALUES (?, 'WAREHOUSE', ?, 'AVAILABLE', ?, NOW(), NOW())
-                             ON DUPLICATE KEY UPDATE quantity = VALUES(quantity), last_updated = NOW()",
-                            [$variantId, $whId, $availableStock]
-                        );
-                        $diff = $availableStock - $currentQty;
-                        try {
-                            StockTransaction::create([
-                                'variant_id'       => $variantId,
-                                'location_type'    => 'WAREHOUSE',
-                                'location_id'      => $whId,
-                                'stock_state'      => 'AVAILABLE',
-                                'transaction_type' => 'SUPPLIER_PRODUCT_EDIT_STOCK',
-                                'quantity'         => $diff,
-                                'notes'            => 'Manual stock correction from supplier product edit',
-                                'created_by'       => Session::userId() ?? 1,
-                            ]);
-                        } catch (\Throwable $e) {}
-                    }
-                }
             }
 
             Database::commit();
