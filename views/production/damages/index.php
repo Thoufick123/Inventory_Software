@@ -362,9 +362,34 @@
                 <div class="modal-body p-4">
                     <div class="row g-3">
                         <div class="col-12">
-                            <label for="damageRollQrScan" class="form-label fw-bold">Scan Fabric Roll QR or Finished Product Tag</label>
-                            <input type="text" id="damageRollQrScan" class="form-control form-control-lg" placeholder="Scan a Roll QR or Garment Tag and press Enter; repeat for multiple items" autocomplete="off">
+                            <div class="p-3 bg-light rounded-3 border">
+                                <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+                                    <label for="damageRollQrScan" class="form-label fw-bold mb-0">
+                                        <i class="bi bi-upc-scan text-success me-1"></i>Scan Fabric Roll Barcode / QR Tag
+                                    </label>
+                                    <small class="text-muted">Hardware gun or camera scanner</small>
+                                </div>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-white text-success border-end-0">
+                                        <i class="bi bi-qr-code"></i>
+                                    </span>
+                                    <input type="text" id="damageRollQrScan" class="form-control border-start-0" placeholder="Scan a Roll QR or Finished Product Tag and press Enter" autocomplete="off">
+                                    <button type="button" class="btn btn-success fw-semibold px-3" onclick="scanDamageRollQr()">
+                                        <i class="bi bi-plus-circle me-1"></i>Scan / Add
+                                    </button>
+                                    <button type="button" id="damageCameraToggle" class="btn btn-outline-secondary px-3" onclick="toggleDamageCameraScanner()">
+                                        <i class="bi bi-camera-video me-1"></i><span id="damageCameraToggleLabel">Camera Scanner</span>
+                                    </button>
+                                </div>
+                            </div>
                             <div id="damageRollScanStatus" class="small mt-1" role="status" aria-live="polite"></div>
+                            <div id="damageCameraScannerContainer" class="mt-2 p-2 border rounded d-none">
+                                <div id="damageCameraScannerPreview" style="width: 100%; max-width: 420px; min-height: 220px; background: #000; border-radius: 8px; overflow: hidden; margin: 0 auto;"></div>
+                                <div class="d-flex justify-content-between align-items-center gap-2 mt-2">
+                                    <small id="damageCameraScannerStatus" class="text-muted" role="status" aria-live="polite">Position a QR label inside the camera frame.</small>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0" onclick="stopDamageCameraScanner()">Stop Camera</button>
+                                </div>
+                            </div>
                             <div class="border rounded mt-2 p-2">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
                                     <strong>Scanned labels</strong>
@@ -836,6 +861,11 @@
 let loadedEditRollsMap = {};
 let damageScannedLabels = [];
 let damageScanInProgress = false;
+let damageCameraScanner = null;
+let damageCameraRunning = false;
+let damageCameraStarting = false;
+let damageCameraRequestId = 0;
+let lastDamageCameraCode = '';
 const damageReasonOptions = <?= json_encode(array_values(array_column($damageReasons, 'damage_reason')), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 
 function setDamageRollScanStatus(message, isError = false) {
@@ -982,15 +1012,15 @@ function renderDamageScannedLabels() {
     if (lossHelp) lossHelp.textContent = `Estimated loss for ${damageScannedLabels.length} scanned item(s): ₹${totalLoss.toFixed(2)}`;
 }
 
-function scanDamageRollQr() {
+function scanDamageRollQr(scannedValue = null) {
     const scanInput = document.getElementById('damageRollQrScan');
-    const scannedCode = scanInput ? scanInput.value.trim() : '';
+    const scannedCode = (scannedValue !== null ? String(scannedValue) : (scanInput ? scanInput.value : '')).trim();
     if (!scannedCode || damageScanInProgress) return;
 
     const normalizedCode = scannedCode.split('|', 1)[0].trim().toUpperCase().replace(/^#/, '');
     if (damageScannedLabels.some(item => item.code === normalizedCode)) {
         setDamageRollScanStatus(`QR label ${normalizedCode} is already in this damage list.`, true);
-        scanInput.select();
+        if (scanInput && scannedValue === null) scanInput.select();
         return;
     }
 
@@ -1021,15 +1051,128 @@ function scanDamageRollQr() {
             renderDamageScannedLabels();
             const badgeType = isProd ? 'Finished Product' : 'Fabric Roll';
             setDamageRollScanStatus(`Added [${badgeType}] ${data.code} — ${data.roll_number}. Scan another label or submit.`);
-            scanInput.value = '';
-            scanInput.focus();
+            if (scanInput) {
+                scanInput.value = '';
+                if (!damageCameraRunning) scanInput.focus();
+            }
         })
         .catch(error => {
             setDamageRollScanStatus(error.message || 'Unable to scan this item.', true);
+            if (damageCameraRunning) setDamageCameraStatus(error.message || 'Unable to scan this item.', true);
         })
         .finally(() => {
             damageScanInProgress = false;
         });
+}
+
+function setDamageCameraStatus(message, isError = false) {
+    const status = document.getElementById('damageCameraScannerStatus');
+    if (!status) return;
+    status.textContent = message;
+    status.className = `small ${isError ? 'text-danger' : 'text-muted'}`;
+}
+
+function toggleDamageCameraScanner() {
+    if (damageCameraRunning || damageCameraStarting) {
+        stopDamageCameraScanner();
+        return;
+    }
+    startDamageCameraScanner();
+}
+
+async function startDamageCameraScanner() {
+    if (damageCameraRunning || damageCameraStarting) return;
+    const container = document.getElementById('damageCameraScannerContainer');
+    const toggleLabel = document.getElementById('damageCameraToggleLabel');
+    const requestId = ++damageCameraRequestId;
+    damageCameraStarting = true;
+    if (container) container.classList.remove('d-none');
+    setDamageCameraStatus('Starting camera…');
+    let scanner = null;
+
+    try {
+        if (typeof Html5Qrcode === 'undefined') {
+            throw new Error('Camera scanner library is not available. Please use the Scan / Add field.');
+        }
+        const cameras = await Html5Qrcode.getCameras();
+        if (requestId !== damageCameraRequestId) return;
+        if (!cameras || cameras.length === 0) {
+            throw new Error('No camera was found on this device.');
+        }
+
+        const camera = cameras.find(device => /back|rear|environment/i.test(device.label)) || cameras[0];
+        scanner = new Html5Qrcode('damageCameraScannerPreview');
+        damageCameraScanner = scanner;
+        await scanner.start(
+            camera.id,
+            { fps: 10, qrbox: { width: 220, height: 220 } },
+            decodedText => {
+                const normalizedCode = decodedText.split('|', 1)[0].trim().toUpperCase().replace(/^#/, '');
+                if (damageScanInProgress || !normalizedCode || damageScannedLabels.some(item => item.code === normalizedCode)) return;
+                if (normalizedCode === lastDamageCameraCode) return;
+                lastDamageCameraCode = normalizedCode;
+                setDamageCameraStatus(`Scanned ${normalizedCode}. Add the item's reason and photo below.`);
+                scanDamageRollQr(decodedText);
+            },
+            () => {}
+        );
+
+        if (requestId !== damageCameraRequestId) {
+            await scanner.stop();
+            scanner.clear();
+            return;
+        }
+        damageCameraRunning = true;
+        if (toggleLabel) toggleLabel.textContent = 'Stop Camera';
+        setDamageCameraStatus('Camera is ready. Point it at a QR label; scanned labels will be added automatically.');
+    } catch (error) {
+        if (scanner) {
+            if (damageCameraScanner === scanner) damageCameraScanner = null;
+            try {
+                scanner.clear();
+            } catch (clearError) {
+                console.warn('Unable to clear failed Production damage camera scanner:', clearError);
+            }
+        }
+        if (requestId === damageCameraRequestId) {
+            setDamageCameraStatus(error.message || 'Camera could not start. Check camera permission and try again.', true);
+            if (toggleLabel) toggleLabel.textContent = 'Camera Scanner';
+        }
+    } finally {
+        if (requestId === damageCameraRequestId) damageCameraStarting = false;
+    }
+}
+
+async function stopDamageCameraScanner() {
+    const wasStarting = damageCameraStarting;
+    const wasRunning = damageCameraRunning;
+    damageCameraRequestId++;
+    damageCameraStarting = false;
+    damageCameraRunning = false;
+    lastDamageCameraCode = '';
+    const scanner = damageCameraScanner;
+    damageCameraScanner = null;
+    const container = document.getElementById('damageCameraScannerContainer');
+    const toggleLabel = document.getElementById('damageCameraToggleLabel');
+    if (toggleLabel) toggleLabel.textContent = 'Camera Scanner';
+
+    if (scanner) {
+        if (wasRunning) {
+            try {
+                await scanner.stop();
+            } catch (error) {
+                console.warn('Unable to stop Production damage camera scanner:', error);
+            }
+        }
+        if (!wasStarting) {
+            try {
+                scanner.clear();
+            } catch (error) {
+                console.warn('Unable to clear Production damage camera scanner:', error);
+            }
+        }
+    }
+    if (container) container.classList.add('d-none');
 }
 
 function getRollMetrics(r) {
@@ -1560,6 +1703,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const damageModal = document.getElementById('reportDamageModal');
         damageModal.addEventListener('shown.bs.modal', () => scanInput.focus());
         damageModal.addEventListener('hidden.bs.modal', () => {
+            stopDamageCameraScanner();
             clearDamageRollSelection();
             scanInput.value = '';
             setDamageRollScanStatus('');
