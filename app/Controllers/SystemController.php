@@ -302,7 +302,8 @@ class SystemController {
         }
         try {
             BackupService::streamInstantSqlExport();
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
+            error_log("Direct SQL Export failed: " . $e->getMessage());
             Session::setFlash('error', 'Direct SQL Export failed: ' . $e->getMessage());
             Response::redirect(url('system/backup'));
         }
@@ -315,7 +316,8 @@ class SystemController {
         }
         try {
             BackupService::streamInstantZipExport();
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
+            error_log("Direct ZIP Export failed: " . $e->getMessage());
             Session::setFlash('error', 'Direct ZIP Export failed: ' . $e->getMessage());
             Response::redirect(url('system/backup'));
         }

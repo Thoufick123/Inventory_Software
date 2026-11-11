@@ -136,12 +136,11 @@ class BackupService {
     }
 
     /**
-     * Direct streaming download of complete SQL database export with automatic email dispatch.
+     * Direct streaming download of complete SQL database export with optional email dispatch.
      */
     public static function streamInstantSqlExport(?string $email = null): void {
-        $targetEmail = trim((string)($email ?: env('BACKUP_EMAIL', '')));
-        if ($targetEmail === '') $targetEmail = 'abiprasath6@gmail.com';
-        $tempSql = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'grm_export_' . date('Ymd_His') . '_' . uniqid() . '.sql';
+        $backupDir = self::getBackupDir();
+        $tempSql = $backupDir . 'grm_export_' . date('Ymd_His') . '_' . substr(md5(uniqid()), 0, 6) . '.sql';
         
         $success = self::exportMysqldump($tempSql, null);
         if (!$success || !file_exists($tempSql) || filesize($tempSql) === 0) {
@@ -153,45 +152,42 @@ class BackupService {
         }
 
         $downloadFilename = 'grm_database_export_' . date('Ymd_His') . '.sql';
+        $targetEmail = trim((string)($email ?: env('BACKUP_EMAIL', '')));
 
-        // Auto-send snapshot to recipient email upon export
+        // Graceful non-blocking email notification if target email configured
         if (!empty($targetEmail)) {
-            $filesizeFormatted = self::formatBytes(filesize($tempSql));
-            $dbName = env('DB_DATABASE', 'grm_inventory');
-            $timestamp = date('d M Y, h:i A');
-            $subject = "[GRM Inventory] Database Export (SQL) — " . date('Y-m-d H:i');
-            $htmlBody = "
-            <div style='font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;'>
-                <div style='background: #1e40af; color: #ffffff; padding: 18px 24px; border-radius: 8px 8px 0 0; text-align: center;'>
-                    <h2 style='margin: 0; font-size: 20px;'>GRM Database Export</h2>
-                    <p style='margin: 4px 0 0; font-size: 13px; opacity: 0.9;'>Automated Export Backup Trigger</p>
-                </div>
-                <div style='padding: 24px 8px;'>
-                    <p style='color: #334155; font-size: 14px;'>Hello Administrator,</p>
-                    <p style='color: #334155; font-size: 14px; line-height: 1.5;'>A database SQL export was initiated and is attached below.</p>
-                    <table style='width: 100%; border-collapse: collapse; margin: 18px 0; font-size: 13px;'>
-                        <tr style='border-bottom: 1px solid #e2e8f0;'><td style='padding: 8px; color: #64748b; width: 40%;'>Database:</td><td style='padding: 8px; font-weight: 600; color: #0f172a;'>{$dbName}</td></tr>
-                        <tr style='border-bottom: 1px solid #e2e8f0;'><td style='padding: 8px; color: #64748b;'>File:</td><td style='padding: 8px; font-family: monospace; font-weight: 600; color: #1e40af;'>{$downloadFilename}</td></tr>
-                        <tr style='border-bottom: 1px solid #e2e8f0;'><td style='padding: 8px; color: #64748b;'>Size:</td><td style='padding: 8px; font-weight: 600; color: #0f172a;'>{$filesizeFormatted}</td></tr>
-                        <tr><td style='padding: 8px; color: #64748b;'>Exported At:</td><td style='padding: 8px; font-weight: 600; color: #0f172a;'>{$timestamp}</td></tr>
-                    </table>
-                </div>
-                <div style='border-top: 1px solid #e2e8f0; padding-top: 14px; text-align: center; color: #94a3b8; font-size: 11px;'>
-                    Sent automatically upon Export button click. Zero files stored on server disk.
-                </div>
-            </div>";
+            try {
+                $filesizeFormatted = self::formatBytes(filesize($tempSql));
+                $dbName = env('DB_DATABASE', 'grm_inventory');
+                $timestamp = date('d M Y, h:i A');
+                $subject = "[GRM Inventory] Database Export (SQL) — " . date('Y-m-d H:i');
+                $htmlBody = "
+                <div style='font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;'>
+                    <div style='background: #1e40af; color: #ffffff; padding: 18px 24px; border-radius: 8px 8px 0 0; text-align: center;'>
+                        <h2 style='margin: 0; font-size: 20px;'>GRM Database Export</h2>
+                        <p style='margin: 4px 0 0; font-size: 13px; opacity: 0.9;'>Automated Export Backup Trigger</p>
+                    </div>
+                    <div style='padding: 24px 8px;'>
+                        <p style='color: #334155; font-size: 14px;'>Hello Administrator,</p>
+                        <p style='color: #334155; font-size: 14px; line-height: 1.5;'>A database SQL export was initiated and is attached below.</p>
+                        <table style='width: 100%; border-collapse: collapse; margin: 18px 0; font-size: 13px;'>
+                            <tr style='border-bottom: 1px solid #e2e8f0;'><td style='padding: 8px; color: #64748b; width: 40%;'>Database:</td><td style='padding: 8px; font-weight: 600; color: #0f172a;'>{$dbName}</td></tr>
+                            <tr style='border-bottom: 1px solid #e2e8f0;'><td style='padding: 8px; color: #64748b;'>File:</td><td style='padding: 8px; font-family: monospace; font-weight: 600; color: #1e40af;'>{$downloadFilename}</td></tr>
+                            <tr style='border-bottom: 1px solid #e2e8f0;'><td style='padding: 8px; color: #64748b;'>Size:</td><td style='padding: 8px; font-weight: 600; color: #0f172a;'>{$filesizeFormatted}</td></tr>
+                            <tr><td style='padding: 8px; color: #64748b;'>Exported At:</td><td style='padding: 8px; font-weight: 600; color: #0f172a;'>{$timestamp}</td></tr>
+                        </table>
+                    </div>
+                </div>";
 
-            $emailSent = MailService::sendWithAttachment($targetEmail, $subject, $htmlBody, $tempSql, $downloadFilename);
+                $emailSent = MailService::sendWithAttachment($targetEmail, $subject, $htmlBody, $tempSql, $downloadFilename);
 
-            AuditService::log('system_backup', 'EXPORT_AUTO_EMAIL', 'file', null, null, [
-                'recipient' => $targetEmail,
-                'filename'  => $downloadFilename,
-                'sent'      => $emailSent ? 'YES' : 'NO',
-            ]);
-            if (!$emailSent) {
-                $mailError = MailService::getLastError() ?: 'Email delivery failed. Check SMTP settings.';
-                @unlink($tempSql);
-                throw new RuntimeException("Database export could not be emailed to {$targetEmail}: {$mailError}");
+                AuditService::log('system_backup', 'EXPORT_AUTO_EMAIL', 'file', null, null, [
+                    'recipient' => $targetEmail,
+                    'filename'  => $downloadFilename,
+                    'sent'      => $emailSent ? 'YES' : 'NO',
+                ]);
+            } catch (\Throwable $mailEx) {
+                error_log("SQL export auto-email notification failed (continuing browser download): " . $mailEx->getMessage());
             }
         }
         
@@ -213,13 +209,13 @@ class BackupService {
     }
 
     /**
-     * Direct streaming download of complete ZIP compressed database export with automatic email dispatch.
+     * Direct streaming download of complete ZIP compressed database export (with automatic SQL fallback if ZipArchive unavailable).
      */
     public static function streamInstantZipExport(?string $email = null): void {
-        $targetEmail = trim((string)($email ?: env('BACKUP_EMAIL', '')));
-        if ($targetEmail === '') $targetEmail = 'abiprasath6@gmail.com';
-        $tempSql = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'grm_export_' . date('Ymd_His') . '_' . uniqid() . '.sql';
-        $tempZip = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'grm_export_' . date('Ymd_His') . '_' . uniqid() . '.zip';
+        $backupDir = self::getBackupDir();
+        $baseName = 'grm_export_' . date('Ymd_His') . '_' . substr(md5(uniqid()), 0, 6);
+        $tempSql = $backupDir . $baseName . '.sql';
+        $tempZip = $backupDir . $baseName . '.zip';
 
         $success = self::exportMysqldump($tempSql, null);
         if (!$success || !file_exists($tempSql) || filesize($tempSql) === 0) {
@@ -227,86 +223,95 @@ class BackupService {
         }
 
         if (!file_exists($tempSql) || filesize($tempSql) === 0) {
-            throw new RuntimeException("Failed to generate SQL export.");
+            throw new RuntimeException("Failed to generate database SQL export.");
         }
 
+        $isZip = false;
         if (class_exists('ZipArchive')) {
-            $zip = new ZipArchive();
-            if ($zip->open($tempZip, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true) {
-                $zip->addFile($tempSql, 'database_dump.sql');
-                $zip->addFromString('backup_info.json', json_encode([
-                    'export_date' => date('Y-m-d H:i:s'),
-                    'system'      => 'GRM Enterprise Inventory',
-                    'type'        => 'INSTANT_FULL_EXPORT',
-                ], JSON_PRETTY_PRINT));
-                $zip->close();
+            try {
+                $zip = new ZipArchive();
+                if ($zip->open($tempZip, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true) {
+                    $zip->addFile($tempSql, 'database_dump.sql');
+                    $zip->addFromString('backup_info.json', json_encode([
+                        'export_date' => date('Y-m-d H:i:s'),
+                        'system'      => 'GRM Enterprise Inventory',
+                        'type'        => 'INSTANT_FULL_EXPORT',
+                    ], JSON_PRETTY_PRINT));
+                    $zip->close();
+                    if (file_exists($tempZip) && filesize($tempZip) > 0) {
+                        $isZip = true;
+                    }
+                }
+            } catch (\Throwable $zipEx) {
+                error_log("Zip compression failed, falling back to raw SQL download: " . $zipEx->getMessage());
+                $isZip = false;
             }
         }
 
-        @unlink($tempSql);
-
-        $finalZip = file_exists($tempZip) ? $tempZip : null;
-        if (!$finalZip || filesize($finalZip) === 0) {
-            throw new RuntimeException("Failed to create export ZIP archive.");
+        if ($isZip) {
+            @unlink($tempSql);
+            $finalFile = $tempZip;
+            $downloadFilename = 'grm_database_export_' . date('Ymd_His') . '.zip';
+            $contentType = 'application/zip';
+        } else {
+            $finalFile = $tempSql;
+            $downloadFilename = 'grm_database_export_' . date('Ymd_His') . '.sql';
+            $contentType = 'application/sql; charset=utf-8';
         }
 
-        $downloadFilename = 'grm_database_export_' . date('Ymd_His') . '.zip';
+        $targetEmail = trim((string)($email ?: env('BACKUP_EMAIL', '')));
 
-        // Auto-send snapshot to recipient email upon export button click
+        // Graceful non-blocking email dispatch if configured
         if (!empty($targetEmail)) {
-            $filesizeFormatted = self::formatBytes(filesize($finalZip));
-            $dbName = env('DB_DATABASE', 'grm_inventory');
-            $timestamp = date('d M Y, h:i A');
-            $subject = "[GRM Inventory] Database Backup (.ZIP Export) — " . date('Y-m-d H:i');
-            $htmlBody = "
-            <div style='font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;'>
-                <div style='background: #1e40af; color: #ffffff; padding: 18px 24px; border-radius: 8px 8px 0 0; text-align: center;'>
-                    <h2 style='margin: 0; font-size: 20px;'>GRM Enterprise Database Backup</h2>
-                    <p style='margin: 4px 0 0; font-size: 13px; opacity: 0.9;'>Automated Export Backup Snapshot</p>
-                </div>
-                <div style='padding: 24px 8px;'>
-                    <p style='color: #334155; font-size: 14px;'>Hello Administrator,</p>
-                    <p style='color: #334155; font-size: 14px; line-height: 1.5;'>A database ZIP export was initiated from the system and has been automatically emailed to you for secure off-site disaster recovery.</p>
-                    <table style='width: 100%; border-collapse: collapse; margin: 18px 0; font-size: 13px;'>
-                        <tr style='border-bottom: 1px solid #e2e8f0;'><td style='padding: 8px; color: #64748b; width: 40%;'>Database:</td><td style='padding: 8px; font-weight: 600; color: #0f172a;'>{$dbName}</td></tr>
-                        <tr style='border-bottom: 1px solid #e2e8f0;'><td style='padding: 8px; color: #64748b;'>Archive:</td><td style='padding: 8px; font-family: monospace; font-weight: 600; color: #1e40af;'>{$downloadFilename}</td></tr>
-                        <tr style='border-bottom: 1px solid #e2e8f0;'><td style='padding: 8px; color: #64748b;'>Size:</td><td style='padding: 8px; font-weight: 600; color: #0f172a;'>{$filesizeFormatted}</td></tr>
-                        <tr><td style='padding: 8px; color: #64748b;'>Exported At:</td><td style='padding: 8px; font-weight: 600; color: #0f172a;'>{$timestamp}</td></tr>
-                    </table>
-                </div>
-                <div style='border-top: 1px solid #e2e8f0; padding-top: 14px; text-align: center; color: #94a3b8; font-size: 11px;'>
-                    Sent automatically upon Export button click. Zero files stored on server disk.
-                </div>
-            </div>";
+            try {
+                $filesizeFormatted = self::formatBytes(filesize($finalFile));
+                $dbName = env('DB_DATABASE', 'grm_inventory');
+                $timestamp = date('d M Y, h:i A');
+                $subject = "[GRM Inventory] Database Backup (" . ($isZip ? '.ZIP' : '.SQL') . " Export) — " . date('Y-m-d H:i');
+                $htmlBody = "
+                <div style='font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;'>
+                    <div style='background: #1e40af; color: #ffffff; padding: 18px 24px; border-radius: 8px 8px 0 0; text-align: center;'>
+                        <h2 style='margin: 0; font-size: 20px;'>GRM Enterprise Database Backup</h2>
+                        <p style='margin: 4px 0 0; font-size: 13px; opacity: 0.9;'>Automated Export Backup Snapshot</p>
+                    </div>
+                    <div style='padding: 24px 8px;'>
+                        <p style='color: #334155; font-size: 14px;'>Hello Administrator,</p>
+                        <p style='color: #334155; font-size: 14px; line-height: 1.5;'>A database export was initiated from the system and has been emailed to you for off-site backup.</p>
+                        <table style='width: 100%; border-collapse: collapse; margin: 18px 0; font-size: 13px;'>
+                            <tr style='border-bottom: 1px solid #e2e8f0;'><td style='padding: 8px; color: #64748b; width: 40%;'>Database:</td><td style='padding: 8px; font-weight: 600; color: #0f172a;'>{$dbName}</td></tr>
+                            <tr style='border-bottom: 1px solid #e2e8f0;'><td style='padding: 8px; color: #64748b;'>Archive:</td><td style='padding: 8px; font-family: monospace; font-weight: 600; color: #1e40af;'>{$downloadFilename}</td></tr>
+                            <tr style='border-bottom: 1px solid #e2e8f0;'><td style='padding: 8px; color: #64748b;'>Size:</td><td style='padding: 8px; font-weight: 600; color: #0f172a;'>{$filesizeFormatted}</td></tr>
+                            <tr><td style='padding: 8px; color: #64748b;'>Exported At:</td><td style='padding: 8px; font-weight: 600; color: #0f172a;'>{$timestamp}</td></tr>
+                        </table>
+                    </div>
+                </div>";
 
-            $emailSent = MailService::sendWithAttachment($targetEmail, $subject, $htmlBody, $finalZip, $downloadFilename);
+                $emailSent = MailService::sendWithAttachment($targetEmail, $subject, $htmlBody, $finalFile, $downloadFilename);
 
-            AuditService::log('system_backup', 'EXPORT_AUTO_EMAIL', 'file', null, null, [
-                'recipient' => $targetEmail,
-                'filename'  => $downloadFilename,
-                'sent'      => $emailSent ? 'YES' : 'NO',
-            ]);
-            if (!$emailSent) {
-                $mailError = MailService::getLastError() ?: 'Email delivery failed. Check SMTP settings.';
-                @unlink($finalZip);
-                throw new RuntimeException("Database export could not be emailed to {$targetEmail}: {$mailError}");
+                AuditService::log('system_backup', 'EXPORT_AUTO_EMAIL', 'file', null, null, [
+                    'recipient' => $targetEmail,
+                    'filename'  => $downloadFilename,
+                    'sent'      => $emailSent ? 'YES' : 'NO',
+                ]);
+            } catch (\Throwable $mailEx) {
+                error_log("ZIP export auto-email notification failed (continuing browser download): " . $mailEx->getMessage());
             }
         }
 
         header('Content-Description: File Transfer');
-        header('Content-Type: application/zip');
+        header('Content-Type: ' . $contentType);
         header('Content-Disposition: attachment; filename="' . $downloadFilename . '"');
         header('Expires: 0');
         header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
         header('Pragma: public');
-        header('Content-Length: ' . filesize($finalZip));
+        header('Content-Length: ' . filesize($finalFile));
 
         if (ob_get_level()) {
             ob_end_clean();
         }
 
-        readfile($finalZip);
-        @unlink($finalZip);
+        readfile($finalFile);
+        @unlink($finalFile);
         exit;
     }
 
