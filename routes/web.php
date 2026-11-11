@@ -618,16 +618,16 @@ class Router {
         $this->post('warehouse/purchases/store', 'WarehouseController', 'storePurchase', ['AuthMiddleware', ['PermissionMiddleware', 'purchases', 'create']]);
         $this->get('warehouse/purchases/edit/{id}', 'WarehouseController', 'editPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'purchases', 'edit']]);
         $this->post('warehouse/purchases/update/{id}', 'WarehouseController', 'updatePurchase', ['AuthMiddleware', ['PermissionMiddleware', 'purchases', 'edit']]);
-        $this->get('warehouse/purchases/receive/{id}', 'WarehouseController', 'receivePurchase', ['AuthMiddleware', ['PermissionMiddleware', 'purchases', 'receive']]);
-        $this->post('warehouse/purchases/receive/{id}', 'WarehouseController', 'storeReceivePurchase', ['AuthMiddleware', ['PermissionMiddleware', 'purchases', 'receive']]);
+        $this->get('warehouse/purchases/receive/{id}', 'WarehouseController', 'receivePurchase', ['AuthMiddleware', ['PermissionMiddleware', 'purchases', 'view']]);
+        $this->post('warehouse/purchases/receive/{id}', 'WarehouseController', 'storeReceivePurchase', ['AuthMiddleware', ['PermissionMiddleware', 'purchases', 'create']]);
         $this->post('warehouse/customers/ajax-add', 'WarehouseController', 'ajaxAddCustomer', ['AuthMiddleware', ['PermissionMiddleware', 'customers', 'create']]);
 
         // Direct Purchases Customer Returns & Exchanges
         $this->get('warehouse/purchases/returns', 'WarehouseController', 'purchaseReturnsIndex', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'view']]);
         $this->get('warehouse/purchases/returns/lookup', 'WarehouseController', 'purchaseReturnsLookup', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'view']]);
-        $this->post('warehouse/purchases/returns/process', 'WarehouseController', 'processPurchaseReturn', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'process']]);
+        $this->post('warehouse/purchases/returns/process', 'WarehouseController', 'processPurchaseReturn', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'create']]);
         $this->get('warehouse/purchases/returns/view/{id}', 'WarehouseController', 'purchaseReturnView', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'view']]);
-        $this->get('warehouse/purchases/returns/invoice/{id}', 'WarehouseController', 'purchaseReturnInvoice', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'print']]);
+        $this->get('warehouse/purchases/returns/invoice/{id}', 'WarehouseController', 'purchaseReturnInvoice', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'view']]);
 
         // Returns
         $this->get('warehouse/returns', 'WarehouseController', 'returnList', ['AuthMiddleware', ['PermissionMiddleware', 'returns', 'view']]);
@@ -973,21 +973,27 @@ class Router {
         $this->post('system/notifications/read-all', 'SystemController', 'markAllRead', ['AuthMiddleware']);
         $this->get('api/notifications/unread', 'SystemController', 'unreadNotifications', ['AuthMiddleware']);
 
-        $this->get('system/audit', 'SystemController', 'auditLogs', ['AuthMiddleware']);
-        $this->get('system/audit/export', 'SystemController', 'exportAuditLogs', ['AuthMiddleware']);
-        $this->get('system/settings', 'SystemController', 'settings', ['AuthMiddleware']);
-        $this->post('system/settings/update', 'SystemController', 'updateSettings', ['AuthMiddleware']);
-        $this->get('system/backup', 'SystemController', 'backupList', ['AuthMiddleware']);
-        $this->get('system/backup/export-sql', 'SystemController', 'exportSqlDirect', ['AuthMiddleware']);
-        $this->get('system/backup/export-zip', 'SystemController', 'exportZipDirect', ['AuthMiddleware']);
-        $this->post('system/backup/create', 'SystemController', 'createBackup', ['AuthMiddleware']);
-        $this->post('system/backup/import', 'SystemController', 'importBackup', ['AuthMiddleware']);
-        $this->get('system/backup/download/{id}', 'SystemController', 'downloadBackup', ['AuthMiddleware']);
-        $this->post('system/backup/restore', 'SystemController', 'restoreBackup', ['AuthMiddleware']);
-        $this->post('system/backup/delete/{id}', 'SystemController', 'deleteBackup', ['AuthMiddleware']);
-        $this->post('system/backup/wipe-test-data', 'SystemController', 'wipeTestData', ['AuthMiddleware']);
-        $this->post('system/backup/email-latest', 'SystemController', 'emailLatestBackup', ['AuthMiddleware']);
-        $this->get('system/backup/send-email/{id}', 'SystemController', 'emailSpecificBackup', ['AuthMiddleware']);
-        $this->post('system/backup/send-email/{id}', 'SystemController', 'emailSpecificBackup', ['AuthMiddleware']);
+        // System: Audit Logs (Role-Based Access)
+        $this->get('system/audit', 'SystemController', 'auditLogs', ['AuthMiddleware', ['PermissionMiddleware', 'audit', 'view']]);
+        $this->get('system/audit/export', 'SystemController', 'exportAuditLogs', ['AuthMiddleware', ['PermissionMiddleware', 'audit', 'create']]);
+        $this->post('system/audit/purge', 'SystemController', 'purgeAuditLogs', ['AuthMiddleware', ['PermissionMiddleware', 'audit', 'delete']]);
+
+        // System: Settings Hub (Role-Based Access)
+        $this->get('system/settings', 'SystemController', 'settings', ['AuthMiddleware', ['PermissionMiddleware', 'settings', 'view']]);
+        $this->post('system/settings/update', 'SystemController', 'updateSettings', ['AuthMiddleware', ['PermissionMiddleware', 'settings', 'edit']]);
+
+        // System: Backup & Recovery (Role-Based Access)
+        $this->get('system/backup', 'SystemController', 'backupList', ['AuthMiddleware', ['PermissionMiddleware', 'backup', 'view']]);
+        $this->get('system/backup/export-sql', 'SystemController', 'exportSqlDirect', ['AuthMiddleware', ['PermissionMiddleware', 'backup', 'create']]);
+        $this->get('system/backup/export-zip', 'SystemController', 'exportZipDirect', ['AuthMiddleware', ['PermissionMiddleware', 'backup', 'create']]);
+        $this->post('system/backup/create', 'SystemController', 'createBackup', ['AuthMiddleware', ['PermissionMiddleware', 'backup', 'create']]);
+        $this->post('system/backup/import', 'SystemController', 'importBackup', ['AuthMiddleware', ['PermissionMiddleware', 'backup', 'create']]);
+        $this->get('system/backup/download/{id}', 'SystemController', 'downloadBackup', ['AuthMiddleware', ['PermissionMiddleware', 'backup', 'view']]);
+        $this->post('system/backup/restore', 'SystemController', 'restoreBackup', ['AuthMiddleware', ['PermissionMiddleware', 'backup', 'edit']]);
+        $this->post('system/backup/delete/{id}', 'SystemController', 'deleteBackup', ['AuthMiddleware', ['PermissionMiddleware', 'backup', 'delete']]);
+        $this->post('system/backup/wipe-test-data', 'SystemController', 'wipeTestData', ['AuthMiddleware', ['PermissionMiddleware', 'backup', 'delete']]);
+        $this->post('system/backup/email-latest', 'SystemController', 'emailLatestBackup', ['AuthMiddleware', ['PermissionMiddleware', 'backup', 'create']]);
+        $this->get('system/backup/send-email/{id}', 'SystemController', 'emailSpecificBackup', ['AuthMiddleware', ['PermissionMiddleware', 'backup', 'create']]);
+        $this->post('system/backup/send-email/{id}', 'SystemController', 'emailSpecificBackup', ['AuthMiddleware', ['PermissionMiddleware', 'backup', 'create']]);
     }
 }
