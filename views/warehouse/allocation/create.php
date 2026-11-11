@@ -679,8 +679,15 @@ document.addEventListener('DOMContentLoaded', function() {
             || product.is_complementary === '1'
             || product.isComplementary === '1'
             || product.dataset?.isComplementary === '1';
+        // 1. COMPLEMENTARY takes highest priority
         if (isComplementary || categoryType === 'COMPLEMENTARY') return 'COMPLEMENTARY';
-        if (qrType === 'SERIES_BATCH' || categoryType === 'SERIES') return 'SERIES';
+        // 2. SERIES: check multiple indicators
+        const isSeries = product.is_series === true || product.is_series === 1 || product.is_series === '1'
+            || product.isSeries === true || product.isSeries === 1 || product.isSeries === '1'
+            || product.dataset?.isSeries === '1';
+        const packQty = parseInt(product.pack_quantity || product.packQuantity || product.dataset?.packQuantity || 1) || 1;
+        const hasSeriesStart = !!(product.series_start_code || product.seriesStartCode || product.dataset?.seriesStartCode);
+        if (qrType === 'SERIES_BATCH' || categoryType === 'SERIES' || isSeries || packQty > 1 || hasSeriesStart) return 'SERIES';
         return categoryType || 'NORMAL';
     }
 
