@@ -1291,6 +1291,7 @@ CREATE TABLE `production_program_rolls` (
   `roll_color` varchar(100) DEFAULT NULL,
   `roll_design` varchar(100) DEFAULT NULL,
   `allocated_qr_codes` text DEFAULT NULL,
+  `attributes` text DEFAULT NULL,
   `created_at` datetime DEFAULT current_timestamp(),
   `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `color` varchar(100) DEFAULT NULL,

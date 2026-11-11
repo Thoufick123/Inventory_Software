@@ -16,6 +16,7 @@ require_once BASE_PATH . '/app/Models/LabelBatch.php';
 class ProductionController {
 
     private static bool $schemaEnsured = false;
+    private static bool $programRollAttributesSchemaEnsured = false;
 
     /**
      * Ensure database table schema has required columns like hsn_code.
@@ -68,6 +69,20 @@ class ProductionController {
                  ) NOT NULL DEFAULT 'LOGGED'"
             );
         }
+    }
+
+    private static function ensureProgramRollAttributesSchema(): void {
+        if (self::$programRollAttributesSchemaEnsured) return;
+
+        $column = Database::fetchOne("SHOW COLUMNS FROM production_program_rolls LIKE 'attributes'");
+        if (!$column) {
+            Database::execute(
+                "ALTER TABLE production_program_rolls
+                 ADD COLUMN attributes TEXT DEFAULT NULL AFTER allocated_qr_codes"
+            );
+        }
+
+        self::$programRollAttributesSchemaEnsured = true;
     }
 
     /**
@@ -5985,7 +6000,73 @@ class ProductionController {
         return $rolls;
     }
 
+    private function validateProgramRollQrAllocations(array $submittedRolls, int $excludeProgramId = 0): ?string {
+        $hasQrAllocations = false;
+        foreach ($submittedRolls as $roll) {
+            if (is_array($roll) && trim((string)($roll['allocated_qr_codes'] ?? '')) !== '') {
+                $hasQrAllocations = true;
+                break;
+            }
+        }
+        if (!$hasQrAllocations) {
+            return null;
+        }
+
+        $availableCodesByRoll = [];
+        foreach ($this->getAvailableSellerRollsWithPieces($excludeProgramId) as $roll) {
+            $availableCodesByRoll[(int)$roll['id']] = array_fill_keys(
+                array_map('strtoupper', $roll['available_codes'] ?? []),
+                true
+            );
+        }
+
+        $seenCodes = [];
+        foreach ($submittedRolls as $index => $roll) {
+            if (!is_array($roll)) {
+                continue;
+            }
+
+            $rollId = (int)($roll['seller_roll_id'] ?? 0);
+            $rawCodes = trim((string)($roll['allocated_qr_codes'] ?? ''));
+            if ($rollId <= 0 || $rawCodes === '') {
+                continue;
+            }
+
+            $codes = array_values(array_filter(array_map(
+                static fn($code) => strtoupper(trim($code)),
+                explode(',', $rawCodes)
+            ), static fn($code) => $code !== ''));
+            $uniqueCodes = array_values(array_unique($codes));
+            if (count($codes) !== count($uniqueCodes)) {
+                return 'Roll row ' . ($index + 1) . ' contains duplicate QR labels.';
+            }
+
+            $quantity = max(0, (int)($roll['roll_qty'] ?? ($roll['quantity'] ?? 0)));
+            if ($quantity !== count($codes)) {
+                return 'Roll row ' . ($index + 1) . ' quantity must match the number of selected QR labels.';
+            }
+
+            if (!isset($availableCodesByRoll[$rollId])) {
+                return 'Roll row ' . ($index + 1) . ' is no longer available.';
+            }
+
+            foreach ($codes as $code) {
+                $key = $rollId . ':' . $code;
+                if (isset($seenCodes[$key])) {
+                    return 'A QR label cannot be assigned more than once to this program.';
+                }
+                if (!isset($availableCodesByRoll[$rollId][$code])) {
+                    return 'QR label ' . $code . ' is unavailable for the selected roll.';
+                }
+                $seenCodes[$key] = true;
+            }
+        }
+
+        return null;
+    }
+
     public function createProgram(): void {
+        self::ensureProgramRollAttributesSchema();
         $scopedUnitId = function_exists('currentProductionUnitId') ? currentProductionUnitId() : null;
         $units = function_exists('getScopedProductionUnits') ? getScopedProductionUnits() : Database::fetchAll("SELECT * FROM production_units WHERE is_active = 1 ORDER BY name ASC");
         $categories = Database::fetchAll(
@@ -6034,6 +6115,7 @@ class ProductionController {
             Session::flash('error', 'Invalid security token. Please try again.');
             Response::back();
         }
+        self::ensureProgramRollAttributesSchema();
 
         $scopedUnitId = function_exists('currentProductionUnitId') ? currentProductionUnitId() : null;
         if ($scopedUnitId !== null) {
@@ -6067,6 +6149,12 @@ class ProductionController {
 
         // Process multiple rolls from $_POST['rolls']
         $submittedRolls = !empty($_POST['rolls']) && is_array($_POST['rolls']) ? $_POST['rolls'] : [];
+        $qrAllocationError = $this->validateProgramRollQrAllocations($submittedRolls);
+        if ($qrAllocationError !== null) {
+            Session::flash('error', $qrAllocationError);
+            Response::back();
+            return;
+        }
         $validRolls = [];
         $totalRollWeight = 0.0;
         $totalRollPrice = 0.0;
@@ -6253,6 +6341,7 @@ class ProductionController {
     }
 
     public function editProgram(string $id): void {
+        self::ensureProgramRollAttributesSchema();
         $program = ProductionProgram::find((int)$id);
         if (!$program) {
             Response::error(404, 'Program not found.');
@@ -6346,6 +6435,7 @@ class ProductionController {
             Session::flash('error', 'Invalid security token. Please try again.');
             Response::back();
         }
+        self::ensureProgramRollAttributesSchema();
 
         $scopedUnitId = function_exists('currentProductionUnitId') ? currentProductionUnitId() : null;
         if ($scopedUnitId !== null) {
@@ -6379,6 +6469,12 @@ class ProductionController {
 
         // Process multiple rolls from $_POST['rolls']
         $submittedRolls = !empty($_POST['rolls']) && is_array($_POST['rolls']) ? $_POST['rolls'] : [];
+        $qrAllocationError = $this->validateProgramRollQrAllocations($submittedRolls, (int)$id);
+        if ($qrAllocationError !== null) {
+            Session::flash('error', $qrAllocationError);
+            Response::back();
+            return;
+        }
         $validRolls = [];
         $totalRollWeight = 0.0;
         $totalRollPrice = 0.0;

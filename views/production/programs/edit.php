@@ -703,6 +703,7 @@ function addProgramRollRow(rollData = null) {
 
     if (rollData) {
         const sel = rowDiv.querySelector('.roll-select');
+        if (sel) sel.dataset.previousRollId = String(sel.value || '');
         handleRollRowChange(sel, idx, false);
     }
 
@@ -754,14 +755,173 @@ function handleRollQtyInput(counterId) {
     renderRollPieces(counterId);
 }
 
+function getSelectedRollPieceCodes(counterId) {
+    const input = document.getElementById('roll_allocated_qrs_' + counterId);
+    if (!input || !input.value.trim()) return [];
+    return [...new Set(input.value.split(',').map(code => code.trim().toUpperCase()).filter(Boolean))];
+}
+
+function getOtherRollPieceCodes(counterId, rollId) {
+    const codes = new Set();
+    document.querySelectorAll('.program-roll-card').forEach(card => {
+        const match = card.id.match(/\d+$/);
+        const cardId = match ? parseInt(match[0], 10) : 0;
+        const select = card.querySelector('.roll-select');
+        if (cardId !== counterId && select && String(select.value) === String(rollId)) {
+            getSelectedRollPieceCodes(cardId).forEach(code => codes.add(code));
+        }
+    });
+    return codes;
+}
+
+function getRollRowRemainingStock(counterId, rollObj) {
+    const totalAvailable = Number.parseInt(rollObj.available_quantity ?? rollObj.quantity ?? 0, 10) || 0;
+    let otherRowsUsed = 0;
+    document.querySelectorAll('.program-roll-card').forEach(card => {
+        const match = card.id.match(/\d+$/);
+        const cardId = match ? parseInt(match[0], 10) : 0;
+        const select = card.querySelector('.roll-select');
+        const quantity = card.querySelector('.roll-qty-input');
+        if (cardId !== counterId && select && String(select.value) === String(rollObj.id)) {
+            otherRowsUsed += Number.parseInt(quantity?.value || '0', 10) || 0;
+        }
+    });
+    return Math.max(0, totalAvailable - otherRowsUsed);
+}
+
+function renderRollPieces(counterId) {
+    const card = document.getElementById('program_roll_card_' + counterId);
+    const container = document.getElementById('roll_pieces_container_' + counterId);
+    const badge = document.getElementById('roll_pieces_badge_' + counterId);
+    const select = card?.querySelector('.roll-select');
+    const rollObj = select?.value
+        ? availableSellerRolls.find(roll => String(roll.id) === String(select.value))
+        : null;
+
+    if (!container) return;
+    const selectedCodes = new Set(getSelectedRollPieceCodes(counterId));
+    const quantityInput = document.getElementById('roll_qty_' + counterId);
+    if (quantityInput) quantityInput.readOnly = selectedCodes.size > 0;
+    if (badge) badge.textContent = `${selectedCodes.size} Selected`;
+    if (!rollObj) {
+        container.innerHTML = '<span class="text-muted small fst-italic">Select a fabric roll to load piece QR codes...</span>';
+        return;
+    }
+
+    const pieces = Array.isArray(rollObj.pieces) ? rollObj.pieces : [];
+    if (!pieces.length) {
+        container.innerHTML = '<span class="text-muted small fst-italic">No individual piece QR codes are available for this roll.</span>';
+        return;
+    }
+
+    const codesInOtherRows = getOtherRollPieceCodes(counterId, rollObj.id);
+    container.innerHTML = pieces.map(piece => {
+        const code = String(piece.code || '').toUpperCase();
+        const isSelected = selectedCodes.has(code);
+        const isAvailable = piece.status === 'AVAILABLE' && !codesInOtherRows.has(code);
+        const disabled = !isSelected && !isAvailable;
+        const statusText = isAvailable ? '' : (piece.meta || piece.status || 'Unavailable');
+        return `
+            <label class="btn btn-sm ${isSelected ? 'btn-primary text-white' : 'btn-outline-secondary'} d-inline-flex align-items-center gap-1" title="${escapeHtml(statusText)}">
+                <input type="checkbox" class="form-check-input m-0" data-piece-code="${escapeHtml(code)}" ${isSelected ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+                <span>${escapeHtml(code)}</span>
+            </label>`;
+    }).join('');
+
+    container.querySelectorAll('input[data-piece-code]').forEach(input => {
+        input.addEventListener('change', () => {
+            updateRollPieceSelection(counterId, input.dataset.pieceCode, input.checked);
+        });
+    });
+}
+
+function updateRollPieceSelection(counterId, code, isSelected) {
+    const card = document.getElementById('program_roll_card_' + counterId);
+    const select = card?.querySelector('.roll-select');
+    const input = document.getElementById('roll_allocated_qrs_' + counterId);
+    const quantity = document.getElementById('roll_qty_' + counterId);
+    const rollObj = select?.value
+        ? availableSellerRolls.find(roll => String(roll.id) === String(select.value))
+        : null;
+    if (!rollObj || !input || !quantity) return false;
+
+    const normalizedCode = String(code || '').trim().toUpperCase();
+    const selectedCodes = new Set(getSelectedRollPieceCodes(counterId));
+    const piece = (rollObj.pieces || []).find(item => String(item.code || '').toUpperCase() === normalizedCode);
+    if (isSelected) {
+        if (!piece || piece.status !== 'AVAILABLE') {
+            showScanFeedback(`QR label ${escapeHtml(normalizedCode)} is not available for this program.`, 'warning');
+            renderRollPieces(counterId);
+            return false;
+        }
+        if (getOtherRollPieceCodes(counterId, rollObj.id).has(normalizedCode)) {
+            showScanFeedback(`QR label ${escapeHtml(normalizedCode)} is already assigned to another roll row.`, 'warning');
+            renderRollPieces(counterId);
+            return false;
+        }
+        if (!selectedCodes.has(normalizedCode) && selectedCodes.size >= getRollRowRemainingStock(counterId, rollObj)) {
+            showScanFeedback('The selected QR count cannot exceed the remaining roll stock.', 'warning');
+            renderRollPieces(counterId);
+            return false;
+        }
+        selectedCodes.add(normalizedCode);
+    } else {
+        selectedCodes.delete(normalizedCode);
+    }
+
+    input.value = [...selectedCodes].join(',');
+    quantity.value = String(selectedCodes.size);
+    syncRollStockAllocations();
+    renderRollPieces(counterId);
+    return true;
+}
+
+function selectAllRollPieces(counterId) {
+    const card = document.getElementById('program_roll_card_' + counterId);
+    const select = card?.querySelector('.roll-select');
+    const input = document.getElementById('roll_allocated_qrs_' + counterId);
+    const quantity = document.getElementById('roll_qty_' + counterId);
+    const rollObj = select?.value
+        ? availableSellerRolls.find(roll => String(roll.id) === String(select.value))
+        : null;
+    if (!rollObj || !input || !quantity) return;
+
+    const codesInOtherRows = getOtherRollPieceCodes(counterId, rollObj.id);
+    const maxQuantity = getRollRowRemainingStock(counterId, rollObj);
+    const selectedCodes = (rollObj.pieces || [])
+        .filter(piece => piece.status === 'AVAILABLE' && !codesInOtherRows.has(String(piece.code || '').toUpperCase()))
+        .slice(0, maxQuantity)
+        .map(piece => String(piece.code).toUpperCase());
+    input.value = selectedCodes.join(',');
+    quantity.value = String(selectedCodes.length);
+    syncRollStockAllocations();
+    renderRollPieces(counterId);
+}
+
+function clearRollPieces(counterId) {
+    const input = document.getElementById('roll_allocated_qrs_' + counterId);
+    const quantity = document.getElementById('roll_qty_' + counterId);
+    if (input) input.value = '';
+    if (quantity) quantity.value = '0';
+    syncRollStockAllocations();
+    renderRollPieces(counterId);
+}
+
 function handleRollRowChange(selectElement, counterId, autoPopulate = true) {
     const qtyInput = document.getElementById('roll_qty_' + counterId);
     const weightInput = document.getElementById('roll_weight_' + counterId);
     const priceInput = document.getElementById('roll_price_' + counterId);
+    const allocatedCodesInput = document.getElementById('roll_allocated_qrs_' + counterId);
     const specsDiv = document.getElementById('roll_specs_' + counterId);
     const piecesSection = document.getElementById('roll_pieces_section_' + counterId);
     const warningDiv = document.getElementById('roll_qty_warning_' + counterId);
     const catSelect = document.getElementById('roll_cat_' + counterId);
+    const previousRollId = selectElement.dataset.previousRollId;
+    const currentSelectedRollId = String(selectElement.value || '');
+    if (previousRollId !== undefined && previousRollId !== currentSelectedRollId && allocatedCodesInput) {
+        allocatedCodesInput.value = '';
+    }
+    selectElement.dataset.previousRollId = currentSelectedRollId;
 
     if (!selectElement.value) {
         if (specsDiv) specsDiv.classList.add('d-none');
@@ -796,11 +956,14 @@ function handleRollRowChange(selectElement, counterId, autoPopulate = true) {
         catSelect.disabled = false;
     }
 
-    const selectedRollId = selectElement.value;
-    const rollObj = availableSellerRolls.find(r => String(r.id) === String(selectedRollId));
+    const rollObj = availableSellerRolls.find(r => String(r.id) === String(currentSelectedRollId));
     if (!rollObj) {
         syncRollStockAllocations();
         return;
+    }
+    const selectedQrCodes = getSelectedRollPieceCodes(counterId);
+    if (selectedQrCodes.length && qtyInput) {
+        qtyInput.value = String(selectedQrCodes.length);
     }
 
     const origQty = parseInt(rollObj.quantity || 0);
@@ -841,7 +1004,7 @@ function handleRollRowChange(selectElement, counterId, autoPopulate = true) {
     if (qtyInput) {
         qtyInput.setAttribute('max', totalAvail);
         if (autoPopulate && (!qtyInput.value || parseInt(qtyInput.value) <= 0)) {
-            qtyInput.value = currentAvail > 0 ? 1 : 1;
+            qtyInput.value = currentAvail > 0 ? 1 : 0;
         }
     }
 
@@ -1467,7 +1630,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (sel && sel.value) {
                     hasValidRoll = true;
                     const opt = sel.options[sel.selectedIndex];
-                    const availQty = parseFloat(opt.getAttribute('data-avail-qty')) || parseFloat(opt.getAttribute('data-qty')) || 0;
+                    const availableQtyAttr = opt.getAttribute('data-avail-qty');
+                    const availQty = availableQtyAttr !== null
+                        ? (parseFloat(availableQtyAttr) || 0)
+                        : (parseFloat(opt.getAttribute('data-qty')) || 0);
                     const enteredQty = parseFloat(qtyInp?.value) || 0;
 
                     if (enteredQty <= 0) {
@@ -1477,7 +1643,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         return false;
                     }
 
-                    if (availQty > 0 && enteredQty > availQty) {
+                    if (enteredQty > availQty) {
                         e.preventDefault();
                         alert(`Roll #${i + 1}: Quantity cannot exceed available roll stock (${availQty} pcs).`);
                         qtyInp?.focus();
@@ -1537,40 +1703,45 @@ function processScannedRollCode(rawCode) {
         return false;
     }
 
-    // Match by QR code, roll_number, start_code, end_code, or piece code
     let matchedPiece = null;
-    let matchedRoll = availableSellerRolls.find(r => {
-        if (r.qr_code && r.qr_code.toUpperCase() === code) return true;
-        if (r.roll_number && r.roll_number.toUpperCase() === code) return true;
-        if (r.start_code && r.start_code.toUpperCase() === code) return true;
-        if (r.end_code && r.end_code.toUpperCase() === code) return true;
-        if (String(r.id) === code) return true;
-        if (r.pieces && Array.isArray(r.pieces)) {
-            const foundPiece = r.pieces.find(p => p.code && p.code.toUpperCase() === code);
-            if (foundPiece) {
-                matchedPiece = foundPiece;
-                return true;
-            }
+    let matchedRoll = null;
+    for (const roll of availableSellerRolls) {
+        const piece = (roll.pieces || []).find(item => String(item.code || '').toUpperCase() === code);
+        if (piece) {
+            matchedRoll = roll;
+            matchedPiece = piece;
+            break;
         }
-        return false;
-    });
+    }
+    if (!matchedRoll) {
+        matchedRoll = availableSellerRolls.find(roll => [
+            roll.qr_code,
+            roll.roll_number,
+            roll.start_code,
+            roll.end_code,
+            roll.id
+        ].some(value => String(value || '').trim().toUpperCase() === code));
+    }
 
     if (!matchedRoll) {
         showScanFeedback(`No active raw material roll found matching "<strong>${escapeHtml(rawCode)}</strong>".`, 'danger');
         return false;
     }
 
-    // Check available stock
+    if (matchedPiece && matchedPiece.status !== 'AVAILABLE') {
+        showScanFeedback(`QR label <strong>${escapeHtml(code)}</strong> is unavailable (${escapeHtml(matchedPiece.meta || matchedPiece.status)}).`, 'warning');
+        return false;
+    }
+
     const availStock = (matchedRoll.available_quantity !== undefined && matchedRoll.available_quantity !== null)
-        ? parseInt(matchedRoll.available_quantity)
-        : parseInt(matchedRoll.quantity || 0);
+        ? (parseInt(matchedRoll.available_quantity, 10) || 0)
+        : (parseInt(matchedRoll.quantity || 0, 10) || 0);
 
     if (availStock <= 0) {
         showScanFeedback(`Roll #${matchedRoll.roll_number} is OUT OF STOCK (0 pcs available).`, 'warning');
         return false;
     }
 
-    // Check existing cards
     let existingCard = null;
     let emptyCard = null;
     document.querySelectorAll('.program-roll-card').forEach(card => {
@@ -1584,45 +1755,71 @@ function processScannedRollCode(rawCode) {
         }
     });
 
-    if (existingCard) {
-        const cardIdMatch = existingCard.id.match(/\d+$/);
-        const idx = cardIdMatch ? parseInt(cardIdMatch[0]) : 1;
-        showScanFeedback(`Roll <strong>${escapeHtml(matchedRoll.roll_number)}</strong> is already added in Roll #${idx}.`, 'warning');
-        existingCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        existingCard.classList.add('border-primary', 'bg-primary-subtle');
-        setTimeout(() => existingCard.classList.remove('border-primary', 'bg-primary-subtle'), 1800);
-        return true;
+    let otherRowsUsed = 0;
+    document.querySelectorAll('.program-roll-card').forEach(card => {
+        if (card === existingCard) return;
+        const sel = card.querySelector('.roll-select');
+        const quantity = card.querySelector('.roll-qty-input');
+        if (sel && String(sel.value) === String(matchedRoll.id)) {
+            otherRowsUsed += parseInt(quantity?.value || '0', 10) || 0;
+        }
+    });
+    if (availStock - otherRowsUsed <= 0) {
+        showScanFeedback(`Roll <strong>${escapeHtml(matchedRoll.roll_number)}</strong> has no remaining stock for another QR allocation.`, 'warning');
+        return false;
     }
 
+    let targetCard = existingCard;
     if (emptyCard) {
-        const cardIdMatch = emptyCard.id.match(/\d+$/);
-        const idx = cardIdMatch ? parseInt(cardIdMatch[0]) : 1;
-        const sel = emptyCard.querySelector('.roll-select');
-        if (sel) {
-            sel.value = matchedRoll.id;
-            handleRollRowChange(sel, idx, true);
-            showScanFeedback(`✓ Scanned Roll <strong>${escapeHtml(matchedRoll.roll_number)}</strong> (${escapeHtml(matchedRoll.color || 'Standard')}) auto-assigned to Roll #${idx}!`, 'success');
-            emptyCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            emptyCard.classList.add('border-success', 'bg-success-subtle');
-            setTimeout(() => emptyCard.classList.remove('border-success', 'bg-success-subtle'), 1800);
-            return true;
+        if (!targetCard) {
+            targetCard = emptyCard;
         }
     }
 
-    // Otherwise, automatically create a new roll row
-    addProgramRollRow({
-        seller_roll_id: matchedRoll.id,
-        roll_qty: 1,
-        roll_weight: matchedRoll.weight,
-        roll_price: matchedRoll.price
-    });
-    showScanFeedback(`✓ Scanned Roll <strong>${escapeHtml(matchedRoll.roll_number)}</strong> (${escapeHtml(matchedRoll.color || 'Standard')}) added as Roll #${rollCounter}!`, 'success');
-    const newCard = document.getElementById('program_roll_card_' + rollCounter);
-    if (newCard) {
-        newCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        newCard.classList.add('border-success', 'bg-success-subtle');
-        setTimeout(() => newCard.classList.remove('border-success', 'bg-success-subtle'), 1800);
+    if (!targetCard) {
+        addProgramRollRow({
+            seller_roll_id: matchedRoll.id,
+            roll_qty: 1,
+            roll_weight: matchedRoll.weight,
+            roll_price: matchedRoll.price
+        });
+        targetCard = document.getElementById('program_roll_card_' + rollCounter);
     }
+
+    const cardIdMatch = targetCard?.id.match(/\d+$/);
+    const counterId = cardIdMatch ? parseInt(cardIdMatch[0], 10) : 0;
+    const select = targetCard?.querySelector('.roll-select');
+    if (!counterId || !select) return false;
+    if (String(select.value) !== String(matchedRoll.id)) {
+        select.value = String(matchedRoll.id);
+        handleRollRowChange(select, counterId, true);
+    }
+
+    if (matchedPiece) {
+        if (!updateRollPieceSelection(counterId, matchedPiece.code, true)) return false;
+    } else if (Array.isArray(matchedRoll.pieces) && matchedRoll.pieces.length) {
+        selectAllRollPieces(counterId);
+    } else {
+        const quantity = document.getElementById('roll_qty_' + counterId);
+        if (quantity) quantity.value = String(Math.max(0, availStock - otherRowsUsed));
+        syncRollStockAllocations();
+    }
+
+    const selectedQuantity = parseInt(document.getElementById('roll_qty_' + counterId)?.value || '0', 10) || 0;
+    if (selectedQuantity <= 0) {
+        showScanFeedback(`No available piece QR labels remain for roll <strong>${escapeHtml(matchedRoll.roll_number)}</strong>.`, 'warning');
+        return false;
+    }
+
+    showScanFeedback(
+        matchedPiece
+            ? `✓ Added piece QR <strong>${escapeHtml(matchedPiece.code)}</strong>; Roll #${counterId} quantity is now ${selectedQuantity}.`
+            : `✓ Scanned roll <strong>${escapeHtml(matchedRoll.roll_number)}</strong>; selected ${selectedQuantity} available piece QR(s).`,
+        'success'
+    );
+    targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    targetCard.classList.add('border-success', 'bg-success-subtle');
+    setTimeout(() => targetCard.classList.remove('border-success', 'bg-success-subtle'), 1800);
     return true;
 }
 
@@ -1786,7 +1983,7 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
                                 ${isReq ? '<span class="text-danger">*</span>' : ''}
                             </label>
                         </div>
-                        <div class="p-3 border rounded-3 bg-light d-flex flex-wrap gap-2.5 align-items-center" id="attr_chips_container_${idx}_${cleanAttrName}" style="min-height: 50px;">`;
+                        <div class="p-3 px-4 border rounded-3 bg-light d-flex flex-wrap gap-2 align-items-center" id="attr_chips_container_${idx}_${cleanAttrName}" style="min-height: 50px;">`;
 
                     if (opts.length === 0) {
                         html += `
