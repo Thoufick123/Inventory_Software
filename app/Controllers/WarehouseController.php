@@ -6521,6 +6521,14 @@ class WarehouseController {
              WHERE pv.is_active = 1
              ORDER BY p.name ASC, pv.sku ASC"
         );
+        $requestedVariantId = (int)($_GET['variant_id'] ?? 0);
+        $selectedVariantId = 0;
+        foreach ($variants as $variant) {
+            if ((int)$variant['id'] === $requestedVariantId) {
+                $selectedVariantId = $requestedVariantId;
+                break;
+            }
+        }
 
         Response::view('warehouse.adjustments.index', [
             'pageTitle'          => 'Stock Adjustments & Audits',
@@ -6530,6 +6538,7 @@ class WarehouseController {
             'warehouses'         => $warehouses,
             'variants'           => $variants,
             'warehouseId'        => $warehouseId,
+            'selectedVariantId'   => $selectedVariantId,
             'scopedWarehouseId'  => $scopedWarehouseId,
             'status'             => $status,
             'type'               => $type,
