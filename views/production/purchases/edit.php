@@ -474,6 +474,14 @@ $taxValueForItem = static function (array $item, string $type): float {
     font-size: 8px;
     color: #64748b;
 }
+.hsn-dropdown .hsn-opt-item.active,
+.hsn-dropdown .hsn-opt-item.active:hover,
+.hsn-dropdown .hsn-opt-item.active:focus {
+    color: #ffffff !important;
+}
+.hsn-dropdown .hsn-opt-item.active :not(.badge) {
+    color: #ffffff !important;
+}
 </style>
 <template id="editSupplyTemplate">
     <div class="supply-card card border shadow-sm mb-3 supply-row">

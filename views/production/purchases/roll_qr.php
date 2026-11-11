@@ -249,7 +249,7 @@
             </div>
         </div>
     <?php else: ?>
-        <div class="mb-3 d-flex justify-content-between align-items-center no-print">
+        <div class="mb-1 d-flex justify-content-between align-items-center no-print">
             <span class="text-muted small fw-semibold">
                 <i class="bi bi-layers me-1 text-primary"></i> Displaying <strong><?= count($stickers) ?></strong> thermal fabric roll label stickers (50x30mm standard):
             </span>

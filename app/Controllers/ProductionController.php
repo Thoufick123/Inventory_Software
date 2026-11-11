@@ -35,6 +35,14 @@ class ProductionController {
                 Database::execute("ALTER TABLE seller_rolls ADD COLUMN hsn_code VARCHAR(20) DEFAULT NULL AFTER qr_code");
             }
         } catch (\Throwable $e) {}
+        try {
+            $col3 = Database::fetchOne("SHOW COLUMNS FROM sellers LIKE 'production_deleted_at'");
+            if (!$col3) {
+                Database::execute("ALTER TABLE sellers ADD COLUMN production_deleted_at DATETIME DEFAULT NULL AFTER is_active");
+            }
+        } catch (\Throwable $e) {
+            error_log('Unable to ensure production supplier archive column: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -281,6 +289,7 @@ class ProductionController {
     }
 
     private function storeSupplierProfile(): void {
+        self::ensureDatabaseSchema();
         $name = mb_strtoupper(trim((string)($_POST['name'] ?? '')));
         $company = mb_strtoupper(trim((string)($_POST['company'] ?? '')));
         $phone = trim((string)($_POST['phone'] ?? ''));
@@ -304,7 +313,7 @@ class ProductionController {
         if ($cleanPhone !== '') {
             $phone = substr($cleanPhone, 0, 15);
             $dupPhone = Database::fetchOne(
-                "SELECT id, name, company FROM sellers WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') LIKE ? AND (is_active = 1 OR is_active IS NULL)",
+                "SELECT id, name, company FROM sellers WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') LIKE ? AND (is_active = 1 OR is_active IS NULL) AND production_deleted_at IS NULL",
                 ['%' . substr($cleanPhone, -10)]
             );
             if ($dupPhone) {
@@ -317,7 +326,7 @@ class ProductionController {
 
         if ($gstNumber !== '') {
             $dupGst = Database::fetchOne(
-                "SELECT id, name, company FROM sellers WHERE UPPER(gst_number) = ? AND (is_active = 1 OR is_active IS NULL)",
+                "SELECT id, name, company FROM sellers WHERE UPPER(gst_number) = ? AND (is_active = 1 OR is_active IS NULL) AND production_deleted_at IS NULL",
                 [$gstNumber]
             );
             if ($dupGst) {
@@ -355,8 +364,9 @@ class ProductionController {
     }
 
     private function updateSupplierProfile(int $sellerId): void {
+        self::ensureDatabaseSchema();
         $existing = Database::fetchOne(
-            "SELECT * FROM sellers WHERE id = ? AND seller_type = 'MATERIAL_SUPPLIER'",
+            "SELECT * FROM sellers WHERE id = ? AND seller_type = 'MATERIAL_SUPPLIER' AND production_deleted_at IS NULL",
             [$sellerId]
         );
         if (!$existing) {
@@ -388,7 +398,7 @@ class ProductionController {
         if ($cleanPhone !== '') {
             $phone = substr($cleanPhone, 0, 15);
             $dupPhone = Database::fetchOne(
-                "SELECT id, name, company FROM sellers WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') LIKE ? AND (is_active = 1 OR is_active IS NULL) AND id != ?",
+                "SELECT id, name, company FROM sellers WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') LIKE ? AND (is_active = 1 OR is_active IS NULL) AND production_deleted_at IS NULL AND id != ?",
                 ['%' . substr($cleanPhone, -10), $sellerId]
             );
             if ($dupPhone) {
@@ -401,7 +411,7 @@ class ProductionController {
 
         if ($gstNumber !== '') {
             $dupGst = Database::fetchOne(
-                "SELECT id, name, company FROM sellers WHERE UPPER(gst_number) = ? AND (is_active = 1 OR is_active IS NULL) AND id != ?",
+                "SELECT id, name, company FROM sellers WHERE UPPER(gst_number) = ? AND (is_active = 1 OR is_active IS NULL) AND production_deleted_at IS NULL AND id != ?",
                 [$gstNumber, $sellerId]
             );
             if ($dupGst) {
@@ -439,11 +449,12 @@ class ProductionController {
     }
 
     public function sellerList(): void {
+        self::ensureDatabaseSchema();
         $search = trim($_GET['search'] ?? '');
         $status = $_GET['status'] ?? '';
         $city = trim($_GET['city'] ?? '');
 
-        $sql = "SELECT s.* FROM sellers s WHERE s.seller_type = 'MATERIAL_SUPPLIER' AND (s.is_active = 1 OR s.is_active IS NULL)";
+        $sql = "SELECT s.* FROM sellers s WHERE s.seller_type = 'MATERIAL_SUPPLIER' AND (s.is_active = 1 OR s.is_active IS NULL) AND s.production_deleted_at IS NULL";
         $params = [];
 
         if ($search !== '') {
@@ -461,7 +472,7 @@ class ProductionController {
         $sql .= " ORDER BY s.created_at DESC";
         $sellers = Database::fetchAll($sql, $params);
 
-        $cities = Database::fetchAll("SELECT DISTINCT city FROM sellers WHERE seller_type = 'MATERIAL_SUPPLIER' AND (is_active = 1 OR is_active IS NULL) AND city IS NOT NULL AND TRIM(city) != '' ORDER BY city ASC");
+        $cities = Database::fetchAll("SELECT DISTINCT city FROM sellers WHERE seller_type = 'MATERIAL_SUPPLIER' AND (is_active = 1 OR is_active IS NULL) AND production_deleted_at IS NULL AND city IS NOT NULL AND TRIM(city) != '' ORDER BY city ASC");
 
         Response::view('production.sellers.index', [
             'pageTitle'      => 'Production Suppliers',
@@ -480,6 +491,7 @@ class ProductionController {
     }
 
     public function createSeller(): void {
+        self::ensureDatabaseSchema();
         Response::view('production.sellers.profile_create', [
             'pageTitle'    => 'Add Material Supplier',
             'activeModule' => 'production',
@@ -521,7 +533,8 @@ class ProductionController {
     }
 
     public function editSeller(string $id): void {
-        $seller = Database::fetchOne("SELECT * FROM sellers WHERE id = ? AND seller_type = 'MATERIAL_SUPPLIER'", [(int)$id]);
+        self::ensureDatabaseSchema();
+        $seller = Database::fetchOne("SELECT * FROM sellers WHERE id = ? AND seller_type = 'MATERIAL_SUPPLIER' AND production_deleted_at IS NULL", [(int)$id]);
         if (!$seller) {
             Response::error(404, 'Supplier not found.');
         }
@@ -548,7 +561,178 @@ class ProductionController {
         $this->updateSupplierProfile((int)$id);
     }
 
+    /**
+     * List historical records retained when a production supplier is retired.
+     */
+    public static function getSupplierConnectedRecords(int $sellerId): array {
+        $reasons = [];
+        $counts  = [];
+
+        // 1. Production Purchases
+        try {
+            $purchases = Database::fetchAll(
+                "SELECT id, purchase_number, invoice_number FROM production_purchases WHERE seller_id = ?",
+                [$sellerId]
+            );
+            $cnt = count($purchases);
+            if ($cnt > 0) {
+                $counts['production_purchases'] = $cnt;
+                $sample = implode(', ', array_slice(array_column($purchases, 'purchase_number'), 0, 3));
+                $reasons[] = "{$cnt} Production Purchase(s) (e.g. {$sample})";
+            }
+        } catch (\Throwable $e) {}
+
+        // 2. Purchase Orders
+        try {
+            $pos = Database::fetchAll(
+                "SELECT id, po_number FROM purchase_orders WHERE seller_id = ? OR warehouse_supplier_id = ?",
+                [$sellerId, $sellerId]
+            );
+            $cnt = count($pos);
+            if ($cnt > 0) {
+                $counts['purchase_orders'] = $cnt;
+                $sample = implode(', ', array_slice(array_column($pos, 'po_number'), 0, 3));
+                $reasons[] = "{$cnt} Purchase Order(s) (e.g. {$sample})";
+            }
+        } catch (\Throwable $e) {}
+
+        // 3. Products in Catalog
+        try {
+            $products = Database::fetchAll(
+                "SELECT id, name FROM products WHERE seller_id = ? OR warehouse_supplier_id = ?",
+                [$sellerId, $sellerId]
+            );
+            $cnt = count($products);
+            if ($cnt > 0) {
+                $counts['products'] = $cnt;
+                $sample = implode(', ', array_slice(array_column($products, 'name'), 0, 3));
+                $reasons[] = "{$cnt} Catalog Product(s) (e.g. {$sample})";
+            }
+        } catch (\Throwable $e) {}
+
+        // 4. Fabric / Material Rolls (seller_rolls)
+        try {
+            $rolls = Database::fetchAll(
+                "SELECT id, roll_number, color FROM seller_rolls WHERE seller_id = ?",
+                [$sellerId]
+            );
+            $cnt = count($rolls);
+            if ($cnt > 0) {
+                $counts['seller_rolls'] = $cnt;
+                $sample = implode(', ', array_slice(array_column($rolls, 'roll_number'), 0, 3));
+                $reasons[] = "{$cnt} Fabric/Material Roll(s) (e.g. Roll #{$sample})";
+            }
+        } catch (\Throwable $e) {}
+
+        // 5. Production Programs (direct or via rolls)
+        try {
+            $programs = Database::fetchAll(
+                "SELECT DISTINCT id, program_number FROM production_programs WHERE seller_id = ?",
+                [$sellerId]
+            );
+            if (empty($programs)) {
+                $programs = Database::fetchAll(
+                    "SELECT DISTINCT pp.id, pp.program_number FROM production_program_rolls ppr JOIN production_programs pp ON pp.id = ppr.program_id WHERE ppr.seller_id = ?",
+                    [$sellerId]
+                );
+            }
+            $cnt = count($programs);
+            if ($cnt > 0) {
+                $counts['production_programs'] = $cnt;
+                $sample = implode(', ', array_slice(array_column($programs, 'program_number'), 0, 3));
+                $reasons[] = "{$cnt} Production Program(s) (e.g. {$sample})";
+            }
+        } catch (\Throwable $e) {}
+
+        // 6. Cutting Batches
+        try {
+            $cuttings = Database::fetchAll(
+                "SELECT DISTINCT cb.id, cb.batch_number FROM cutting_batch_rolls cbr JOIN cutting_batches cb ON cb.id = cbr.cutting_batch_id WHERE cbr.seller_id = ?",
+                [$sellerId]
+            );
+            $cnt = count($cuttings);
+            if ($cnt > 0) {
+                $counts['cutting_batches'] = $cnt;
+                $sample = implode(', ', array_slice(array_column($cuttings, 'batch_number'), 0, 3));
+                $reasons[] = "{$cnt} Cutting Batch(es) (e.g. {$sample})";
+            }
+        } catch (\Throwable $e) {}
+
+        // 7. Roll Damages
+        try {
+            $damages = Database::fetchAll(
+                "SELECT id FROM roll_damages WHERE seller_id = ?",
+                [$sellerId]
+            );
+            $cnt = count($damages);
+            if ($cnt > 0) {
+                $counts['roll_damages'] = $cnt;
+                $reasons[] = "{$cnt} Roll Damage Record(s)";
+            }
+        } catch (\Throwable $e) {}
+
+        $total = array_sum($counts);
+        return [
+            'can_delete' => true,
+            'reasons'    => $reasons,
+            'counts'     => $counts,
+            'total'      => $total,
+        ];
+    }
+
+    /**
+     * Dedicated delete confirmation page for a supplier.
+     */
+    public function confirmDeleteSeller(string $id): void {
+        self::ensureDatabaseSchema();
+        $seller = Database::fetchOne("SELECT * FROM sellers WHERE id = ? AND seller_type = 'MATERIAL_SUPPLIER' AND production_deleted_at IS NULL", [(int)$id]);
+        if (!$seller) {
+            Session::flash('error', 'Supplier not found.');
+            Response::redirect(url('production/sellers'));
+            return;
+        }
+
+        $connections = self::getSupplierConnectedRecords((int)$id);
+
+        Response::view('production.sellers.delete_confirm', [
+            'pageTitle'    => 'Confirm Supplier Deletion — ' . $seller['name'],
+            'activeModule' => 'production',
+            'activeMenu'   => 'prod-sellers',
+            'seller'       => $seller,
+            'connections'  => $connections,
+            'canDelete'    => $connections['can_delete'],
+            'breadcrumb'   => [
+                ['label' => 'Production', 'url' => url('production/dashboard')],
+                ['label' => 'Suppliers', 'url' => url('production/sellers')],
+                ['label' => 'Delete Supplier'],
+            ],
+        ]);
+    }
+
+    /**
+     * Real-time AJAX check for a production supplier retirement.
+     */
+    public function ajaxCheckSupplierDeletable(): void {
+        self::ensureDatabaseSchema();
+        $id = (int)($_GET['id'] ?? 0);
+        $seller = Database::fetchOne("SELECT id, name, company FROM sellers WHERE id = ? AND seller_type = 'MATERIAL_SUPPLIER' AND production_deleted_at IS NULL", [$id]);
+        if (!$seller) {
+            Response::json(['success' => false, 'message' => 'Supplier not found.'], 404);
+            return;
+        }
+
+        $connections = self::getSupplierConnectedRecords($id);
+        Response::json([
+            'success'    => true,
+            'can_delete' => true,
+            'message'    => 'Supplier will be removed from active production suppliers. Historical records will be preserved.',
+            'reasons'    => $connections['reasons'],
+            'counts'     => $connections['counts'],
+        ]);
+    }
+
     public function deleteSeller(string $id): void {
+        self::ensureDatabaseSchema();
         $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
                   || (isset($_SERVER['HTTP_ACCEPT']) && str_contains($_SERVER['HTTP_ACCEPT'], 'application/json'));
 
@@ -562,7 +746,7 @@ class ProductionController {
             return;
         }
 
-        $seller = Database::fetchOne("SELECT * FROM sellers WHERE id = ?", [(int)$id]);
+        $seller = Database::fetchOne("SELECT * FROM sellers WHERE id = ? AND seller_type = 'MATERIAL_SUPPLIER' AND production_deleted_at IS NULL", [(int)$id]);
         if (!$seller) {
             if ($isAjax) {
                 Response::json(['success' => false, 'message' => 'Supplier not found.'], 404);
@@ -572,16 +756,6 @@ class ProductionController {
             Response::redirect(url('production/sellers'));
             return;
         }
-
-        $purchaseCount = (int)(Database::fetchOne(
-            "SELECT COUNT(*) AS purchase_count FROM production_purchases WHERE seller_id = ?",
-            [(int)$id]
-        )['purchase_count'] ?? 0);
-
-        $poCount = (int)(Database::fetchOne(
-            "SELECT COUNT(*) AS po_count FROM purchase_orders WHERE seller_id = ?",
-            [(int)$id]
-        )['po_count'] ?? 0);
 
         $delSnapshot = [
             'Supplier Name'  => $seller['name'] ?? '',
@@ -594,27 +768,31 @@ class ProductionController {
             'Total Price'    => '₹' . number_format((float)($seller['roll_price'] ?? 0), 2),
         ];
 
-        if ($purchaseCount > 0 || $poCount > 0) {
-            // Soft delete supplier to preserve purchase / financial integrity and foreign keys
-            Database::execute("UPDATE sellers SET is_active = 0, updated_at = NOW() WHERE id = ?", [(int)$id]);
-        } else {
-            // No purchase history - hard delete if possible, fallback to soft delete
-            try {
-                Database::execute("DELETE FROM seller_rolls WHERE seller_id = ?", [(int)$id]);
-                Database::execute("DELETE FROM sellers WHERE id = ?", [(int)$id]);
-            } catch (\Throwable $e) {
-                Database::execute("UPDATE sellers SET is_active = 0, updated_at = NOW() WHERE id = ?", [(int)$id]);
+        try {
+            Database::execute(
+                "UPDATE sellers SET production_deleted_at = NOW(), updated_at = NOW()
+                 WHERE id = ? AND seller_type = 'MATERIAL_SUPPLIER' AND production_deleted_at IS NULL",
+                [(int)$id]
+            );
+        } catch (\Throwable $e) {
+            error_log('Production supplier could not be retired: ' . $e->getMessage());
+            if ($isAjax) {
+                Response::json(['success' => false, 'message' => 'Supplier could not be removed from active production suppliers. Please try again.'], 500);
+                return;
             }
+            Session::flash('error', 'Supplier could not be removed from active production suppliers. Please try again.');
+            Response::redirect(url('production/sellers'));
+            return;
         }
 
         AuditService::log('production', 'DELETE', 'sellers', (int)$id, $delSnapshot, null);
 
         if ($isAjax) {
-            Response::json(['success' => true, 'message' => "Supplier '{$seller['name']}' deleted successfully."]);
+            Response::json(['success' => true, 'message' => "Supplier '{$seller['name']}' removed from active production suppliers. Historical records were preserved."]);
             return;
         }
 
-        Session::flash('success', "Supplier '{$seller['name']}' deleted successfully.");
+        Session::flash('success', "Supplier '{$seller['name']}' removed from active production suppliers. Historical records were preserved.");
         Response::redirect(url('production/sellers'));
     }
 
@@ -1266,10 +1444,11 @@ class ProductionController {
     }
 
     public function createProductionPurchase(): void {
+        self::ensureDatabaseSchema();
         $sellers = Database::fetchAll(
             "SELECT id, name, company, phone, email, gst_number, city, state, address
              FROM sellers
-             WHERE seller_type = 'MATERIAL_SUPPLIER' AND (is_active = 1 OR is_active IS NULL)
+             WHERE seller_type = 'MATERIAL_SUPPLIER' AND (is_active = 1 OR is_active IS NULL) AND production_deleted_at IS NULL
              ORDER BY company, name"
         );
         $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
@@ -1288,6 +1467,7 @@ class ProductionController {
     }
 
     public function storeProductionPurchase(): void {
+        self::ensureDatabaseSchema();
         if (!CSRF::validateRequest()) {
             Session::flash('error', 'Invalid security token. Please try again.');
             Response::back();
@@ -1297,7 +1477,7 @@ class ProductionController {
         $sellerId = (int)($_POST['seller_id'] ?? 0);
         $seller = Database::fetchOne(
             "SELECT id, name, company FROM sellers
-             WHERE id = ? AND seller_type = 'MATERIAL_SUPPLIER'",
+             WHERE id = ? AND seller_type = 'MATERIAL_SUPPLIER' AND production_deleted_at IS NULL",
             [$sellerId]
         );
         if (!$seller) {
@@ -2869,6 +3049,7 @@ class ProductionController {
     }
 
     public function damageList(): void {
+        self::ensureDatabaseSchema();
         $search = trim($_GET['search'] ?? '');
         $sellerId = !empty($_GET['seller_id']) ? (int)$_GET['seller_id'] : null;
         $reason = trim($_GET['reason'] ?? '');
@@ -2975,7 +3156,7 @@ class ProductionController {
         ];
 
         // Suppliers list for dropdown
-        $sellers = Database::fetchAll("SELECT id, name, company FROM sellers WHERE seller_type = 'MATERIAL_SUPPLIER' ORDER BY name ASC");
+        $sellers = Database::fetchAll("SELECT id, name, company FROM sellers WHERE seller_type = 'MATERIAL_SUPPLIER' AND production_deleted_at IS NULL ORDER BY name ASC");
         $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
 
         Response::view('production.damages.index', [
@@ -13795,6 +13976,7 @@ class ProductionController {
      * Real-time duplicate & validation check for Material Supplier creation/editing.
      */
     public function ajaxCheckSupplierDuplicate(): void {
+        self::ensureDatabaseSchema();
         $field = trim((string)($_GET['field'] ?? ''));
         $value = trim((string)($_GET['value'] ?? ''));
         $exceptId = !empty($_GET['except_id']) ? (int)$_GET['except_id'] : null;
@@ -13816,7 +13998,7 @@ class ProductionController {
                 return;
             }
 
-            $sql = "SELECT id, name, company FROM sellers WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') LIKE ? AND (is_active = 1 OR is_active IS NULL)";
+            $sql = "SELECT id, name, company FROM sellers WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') LIKE ? AND (is_active = 1 OR is_active IS NULL) AND production_deleted_at IS NULL";
             $params = ['%' . $clean];
             if ($exceptId !== null) {
                 $sql .= " AND id != ?";
@@ -13842,7 +14024,7 @@ class ProductionController {
                 Response::json(['valid' => false, 'available' => false, 'message' => 'Invalid GSTIN format (15 characters alphanumeric).']);
                 return;
             }
-            $sql = "SELECT id, name, company FROM sellers WHERE UPPER(gst_number) = ? AND (is_active = 1 OR is_active IS NULL)";
+            $sql = "SELECT id, name, company FROM sellers WHERE UPPER(gst_number) = ? AND (is_active = 1 OR is_active IS NULL) AND production_deleted_at IS NULL";
             $params = [$gst];
             if ($exceptId !== null) {
                 $sql .= " AND id != ?";
@@ -13868,7 +14050,7 @@ class ProductionController {
                 return;
             }
             $col = ($field === 'company') ? 'company' : 'name';
-            $sql = "SELECT id, name, company FROM sellers WHERE LOWER({$col}) = LOWER(?) AND (is_active = 1 OR is_active IS NULL)";
+            $sql = "SELECT id, name, company FROM sellers WHERE LOWER({$col}) = LOWER(?) AND (is_active = 1 OR is_active IS NULL) AND production_deleted_at IS NULL";
             $params = [$value];
             if ($exceptId !== null) {
                 $sql .= " AND id != ?";

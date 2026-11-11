@@ -379,6 +379,18 @@
     font-size: 8px;
     color: #64748b;
 }
+#supplierSearchDropdown .supplier-opt-item.active,
+#supplierSearchDropdown .supplier-opt-item.active:hover,
+#supplierSearchDropdown .supplier-opt-item.active:focus,
+.hsn-dropdown .hsn-opt-item.active,
+.hsn-dropdown .hsn-opt-item.active:hover,
+.hsn-dropdown .hsn-opt-item.active:focus {
+    color: #ffffff !important;
+}
+#supplierSearchDropdown .supplier-opt-item.active :not(.badge),
+.hsn-dropdown .hsn-opt-item.active :not(.badge) {
+    color: #ffffff !important;
+}
 </style>
 
 <template id="fabricRollTemplate">

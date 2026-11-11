@@ -343,6 +343,7 @@ class Router {
         $this->get('production/sellers/view/{id}', 'ProductionController', 'viewSeller', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
         $this->get('production/sellers/edit/{id}', 'ProductionController', 'editSeller', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'edit']]);
         $this->post('production/sellers/update/{id}', 'ProductionController', 'updateSeller', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'edit']]);
+        $this->get('production/sellers/delete/{id}', 'ProductionController', 'confirmDeleteSeller', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'delete']]);
         $this->post('production/sellers/delete/{id}', 'ProductionController', 'deleteSeller', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'delete']]);
         $this->post('production/sellers/delete-roll/{id}', 'ProductionController', 'deleteSellerRoll', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'delete']]);
         $this->get('production/sellers/download-bill/{id}', 'ProductionController', 'downloadBill', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
@@ -355,6 +356,7 @@ class Router {
         $this->get('api/sellers/next-roll-codes', 'ProductionController', 'ajaxNextFabricRollCodes', ['AuthMiddleware']);
         $this->get('api/sellers/{id}/rolls', 'ProductionController', 'ajaxSellerRolls', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
         $this->get('api/production/sellers/check-duplicate', 'ProductionController', 'ajaxCheckSupplierDuplicate', ['AuthMiddleware']);
+        $this->get('api/production/sellers/check-deletable', 'ProductionController', 'ajaxCheckSupplierDeletable', ['AuthMiddleware']);
 
         // Production Purchases (supplier-linked fabric rolls and general supplies)
         $this->get('production/purchases', 'ProductionController', 'productionPurchaseList', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'view']]);
