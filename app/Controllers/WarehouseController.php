@@ -3395,13 +3395,9 @@ class WarehouseController {
                      WHERE pv.id = ?",
                     [$soldItem['variant_id']]
                 );
-                $isMasterOrComp = ($soldVar && (
-                    $soldVar['qr_type'] === 'SERIES_BATCH'
-                    || strtoupper($soldVar['cat_type'] ?? '') === 'SERIES'
-                    || strtoupper($soldVar['cat_type'] ?? '') === 'COMPLEMENTARY'
-                    || (int)($soldVar['pack_quantity'] ?? 0) > 1
-                    || !empty($soldVar['is_comp'])
-                ));
+                // Use canonical product type resolver for allocation guardrails
+                $soldAllocPType = $soldVar ? self::determineAllocationProductType($soldVar) : 'NORMAL';
+                $isMasterOrComp = in_array($soldAllocPType, ['SERIES', 'COMPLEMENTARY'], true);
 
                 if ($isMasterOrComp) {
                     $availStockRow = Database::fetchOne(
@@ -3499,13 +3495,9 @@ class WarehouseController {
                      WHERE pv.id = ?",
                     [$dpoPurchase['variant_id']]
                 );
-                $isMasterOrComp = ($dpoVar && (
-                    $dpoVar['qr_type'] === 'SERIES_BATCH'
-                    || strtoupper($dpoVar['cat_type'] ?? '') === 'SERIES'
-                    || strtoupper($dpoVar['cat_type'] ?? '') === 'COMPLEMENTARY'
-                    || (int)($dpoVar['pack_quantity'] ?? 0) > 1
-                    || !empty($dpoVar['is_comp'])
-                ));
+                // Use canonical product type resolver for DPO allocation guardrail
+                $dpoAllocPType = $dpoVar ? self::determineAllocationProductType($dpoVar) : 'NORMAL';
+                $isMasterOrComp = in_array($dpoAllocPType, ['SERIES', 'COMPLEMENTARY'], true);
 
                 if ($isMasterOrComp) {
                     $availStockRow = Database::fetchOne(
@@ -4174,6 +4166,7 @@ class WarehouseController {
             'sub_subcategory_id'   => (int)($variant['sub_subcategory_id'] ?? 0),
             'category_name'        => $variant['category_name'] ?? '',
             'category_type'        => $categoryType,
+            'product_type'         => $categoryType,
             'subcategory_name'     => $variant['subcategory_name'] ?? '',
             'sub_subcategory_name' => $variant['sub_subcategory_name'] ?? '',
             'hierarchy'            => $catHierarchy,
@@ -6925,7 +6918,15 @@ class WarehouseController {
             "SELECT pv.id, pv.sku, pv.qr_code as barcode, pv.mrp, pv.selling_price, pv.purchase_price,
                     pv.qr_type, pv.pack_quantity, pv.series_start_code, pv.series_end_code,
                     GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary, p.is_complementary as prod_is_comp,
-                    UPPER(COALESCE(wc.category_type, 'NORMAL')) as category_type,
+                    CASE
+                        WHEN GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) = 1 THEN 'COMPLEMENTARY'
+                        WHEN UPPER(COALESCE(wc.category_type, '')) = 'COMPLEMENTARY' THEN 'COMPLEMENTARY'
+                        WHEN UPPER(COALESCE(pv.qr_type, '')) = 'SERIES_BATCH' THEN 'SERIES'
+                        WHEN UPPER(COALESCE(wc.category_type, '')) = 'SERIES' THEN 'SERIES'
+                        WHEN pv.series_start_code IS NOT NULL AND TRIM(pv.series_start_code) != '' THEN 'SERIES'
+                        WHEN COALESCE(pv.pack_quantity, 1) > 1 THEN 'SERIES'
+                        ELSE 'NORMAL'
+                    END as category_type,
                     p.id as product_id, p.name as product_name, p.category_id, p.subcategory_id, p.sub_subcategory_id,
                     sz.name as size_name, c.name as color_name,
                     COALESCE(wc.name, cat.name) as category_name, subcat.name as subcategory_name, subsub.name as sub_subcategory_name,
@@ -6941,6 +6942,12 @@ class WarehouseController {
              WHERE pv.is_active = 1
              ORDER BY p.name ASC, sz.sort_order ASC"
         );
+        foreach ($variants as &$v) {
+            $v['category_type'] = self::determineAllocationProductType($v);
+            $v['is_series'] = ($v['category_type'] === 'SERIES' ? 1 : 0);
+            $v['is_complementary'] = ($v['category_type'] === 'COMPLEMENTARY' ? 1 : 0);
+        }
+        unset($v);
 
         Response::view('warehouse.allocation.create', [
             'pageTitle'          => 'New Shop Allocation Requisition',
@@ -7079,7 +7086,8 @@ class WarehouseController {
                  WHERE pv.id = ?",
                 [$vIdInt]
             );
-            if ($allocationVariant && strtoupper($allocationVariant['category_type']) === 'NORMAL') {
+            $pType = self::determineAllocationProductType($allocationVariant ?: []);
+            if ($allocationVariant && $pType === 'NORMAL') {
                 $eligiblePieces = $this->generateVariantQrPieces($allocationVariant, PHP_INT_MAX, $warehouseId, true);
                 if ($totalReqQty > count($eligiblePieces)) {
                     $skuName = $allocationVariant['sku'] ?? "Variant #$vIdInt";
@@ -7116,9 +7124,13 @@ class WarehouseController {
                     if (empty($stag) || strlen($stag) < 3) continue;
                     $stagUpper = strtoupper($stag);
 
+                    $allocPType = self::determineAllocationProductType($allocationVariant ?: []);
+                    $isMasterOrComp = in_array($allocPType, ['SERIES', 'COMPLEMENTARY'], true);
+
                     if (
                         !$allocationVariant
-                        || (!$this->isAllocationVariantIdentifier($allocationVariant, $stag)
+                        || (!$isMasterOrComp
+                            && !$this->isAllocationVariantIdentifier($allocationVariant, $stag)
                             && !isset($eligibleQrCodes[$stagUpper]))
                     ) {
                         Session::flash('error', "Cannot save: QR code '{$stag}' is not a verified inwarded tag or product code for this warehouse.");
@@ -7134,18 +7146,6 @@ class WarehouseController {
                     }
 
                     if (isset($seenInSubmission[$stagUpper])) {
-                        $vCheck = Database::fetchOne(
-                            "SELECT pv.id, pv.qr_type, pv.pack_quantity,
-                                    COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
-                                    COALESCE(wc.category_type, 'NORMAL') as cat_type
-                             FROM product_variants pv 
-                             JOIN products p ON pv.product_id = p.id 
-                             LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
-                             LEFT JOIN categories cat ON p.category_id = cat.id
-                             WHERE pv.id = ?",
-                            [(int)$vId]
-                        );
-                        $isMasterOrComp = $vCheck && in_array(strtoupper($vCheck['cat_type'] ?? ''), ['SERIES', 'COMPLEMENTARY'], true);
                         if (!$isMasterOrComp) {
                             Session::flash('error', "Cannot save: Piece Tag '{$stagUpper}' was added multiple times in this requisition.");
                             Response::redirect(url('warehouse/allocation/create'));
@@ -7166,19 +7166,6 @@ class WarehouseController {
                     );
                     if ($exist) {
                         // Check if this variant is a Master pack / Series batch / Complementary pack with sufficient available stock
-                        $vCheck = Database::fetchOne(
-                            "SELECT pv.id, pv.qr_type, pv.pack_quantity,
-                                    COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
-                                    COALESCE(wc.category_type, 'NORMAL') as cat_type
-                             FROM product_variants pv 
-                             JOIN products p ON pv.product_id = p.id 
-                             LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
-                             LEFT JOIN categories cat ON p.category_id = cat.id
-                             WHERE pv.id = ?",
-                            [(int)$vId]
-                        );
-                        $isMasterOrComp = $vCheck && in_array(strtoupper($vCheck['cat_type'] ?? ''), ['SERIES', 'COMPLEMENTARY'], true);
-
                         $availStockRow = Database::fetchOne(
                             "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
                              WHERE variant_id = ? AND location_type = 'WAREHOUSE' " . ($warehouseId > 0 ? "AND location_id = {$warehouseId}" : "") . " AND stock_state = 'AVAILABLE'",
@@ -7306,6 +7293,7 @@ class WarehouseController {
             $totalStock     = $availableStock + $reservedStock;
 
             $qrPieces = $this->generateVariantQrPieces($variant, (int)$availableStock, $warehouseId > 0 ? $warehouseId : null, true);
+            $singlePType = self::determineAllocationProductType($variant);
 
             Response::json([
                 'success'              => true,
@@ -7319,12 +7307,18 @@ class WarehouseController {
                 'subcategory_id'       => (int)($variant['subcategory_id'] ?? 0),
                 'sub_subcategory_id'   => (int)($variant['sub_subcategory_id'] ?? 0),
                 'category_name'        => $variant['category_name'] ?? '',
+                'category_type'        => $singlePType,
+                'product_type'         => $singlePType,
                 'subcategory_name'     => $variant['subcategory_name'] ?? '',
                 'sub_subcategory_name' => $variant['sub_subcategory_name'] ?? '',
                 'product_name'         => $variant['product_name'] ?? '',
                 'sku'                  => $variant['sku'] ?? '',
                 'color_name'           => $variant['color_name'] ?? '',
                 'size_name'            => $variant['size_name'] ?? '',
+                'qr_type'              => $variant['qr_type'] ?? 'INDIVIDUAL',
+                'pack_quantity'        => (int)($variant['pack_quantity'] ?? 1),
+                'is_series'            => ($singlePType === 'SERIES') ? 1 : 0,
+                'is_complementary'     => ($singlePType === 'COMPLEMENTARY') ? 1 : 0,
                 'qr_pieces'            => $qrPieces,
             ]);
             return;
@@ -7383,6 +7377,12 @@ class WarehouseController {
             $v['available_stock'] = (float)$v['available_stock'];
             $v['reserved_stock'] = (float)$v['reserved_stock'];
             $v['hierarchy'] = trim(($v['category_name'] ?? '') . ' > ' . ($v['subcategory_name'] ?? '') . ($v['sub_subcategory_name'] ? ' > ' . $v['sub_subcategory_name'] : ''), ' >');
+            // Apply canonical product type resolver
+            $pType = self::determineAllocationProductType($v);
+            $v['product_type'] = $pType;
+            $v['category_type'] = $pType;
+            $v['is_series'] = ($pType === 'SERIES') ? 1 : 0;
+            $v['is_complementary'] = ($pType === 'COMPLEMENTARY') ? 1 : (int)($v['is_complementary'] ?? 0);
         }
 
         Response::json([
@@ -7390,6 +7390,43 @@ class WarehouseController {
             'warehouse_id' => $warehouseId,
             'variants'     => $variants,
         ]);
+    }
+
+    public static function determineAllocationProductType(?array $item): string {
+        if (empty($item)) {
+            return 'NORMAL';
+        }
+
+        $isComp = !empty($item['is_complementary']) 
+            || !empty($item['is_comp'])
+            || !empty($item['prod_is_comp']) 
+            || !empty($item['product_is_complementary'])
+            || strtoupper(trim((string)($item['category_type'] ?? ''))) === 'COMPLEMENTARY'
+            || strtoupper(trim((string)($item['warehouse_category_type'] ?? ''))) === 'COMPLEMENTARY'
+            || strtoupper(trim((string)($item['cat_type'] ?? ''))) === 'COMPLEMENTARY';
+        if ($isComp) {
+            return 'COMPLEMENTARY';
+        }
+
+        $qrType = strtoupper(trim((string)($item['qr_type'] ?? '')));
+        $catType = strtoupper(trim((string)($item['category_type'] ?? '')));
+        $whCatType = strtoupper(trim((string)($item['warehouse_category_type'] ?? '')));
+        $catTypeAlt = strtoupper(trim((string)($item['cat_type'] ?? '')));
+        $packQty = (int)($item['pack_quantity'] ?? 1);
+        $hasSeriesStart = !empty($item['series_start_code']) && trim((string)$item['series_start_code']) !== '';
+        $isSeriesFlag = !empty($item['is_series']);
+
+        if ($qrType === 'SERIES_BATCH' 
+            || $catType === 'SERIES' 
+            || $whCatType === 'SERIES' 
+            || $catTypeAlt === 'SERIES' 
+            || $packQty > 1 
+            || $hasSeriesStart 
+            || $isSeriesFlag) {
+            return 'SERIES';
+        }
+
+        return 'NORMAL';
     }
 
     private function isAllocationVariantIdentifier(array $variant, string $code): bool {
@@ -7404,13 +7441,27 @@ class WarehouseController {
             }
         }
 
-        if (
-            in_array(strtoupper((string)($variant['category_type'] ?? $variant['cat_type'] ?? 'NORMAL')), ['SERIES', 'COMPLEMENTARY'], true)
-            && !empty($variant['series_start_code'])
-            && !empty($variant['series_end_code'])
-        ) {
-            $rangeCode = strtoupper(trim($variant['series_start_code']) . ' - ' . trim($variant['series_end_code']));
-            return $rangeCode === $normalizedCode;
+        $pType = self::determineAllocationProductType($variant);
+        if ($pType === 'SERIES' || $pType === 'COMPLEMENTARY') {
+            if (!empty($variant['series_start_code']) && !empty($variant['series_end_code'])) {
+                $rangeCode = strtoupper(trim($variant['series_start_code']) . ' - ' . trim($variant['series_end_code']));
+                if ($rangeCode === $normalizedCode) {
+                    return true;
+                }
+                if (preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $normalizedCode, $mCode) &&
+                    preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', trim($variant['series_start_code']), $mS) &&
+                    preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', trim($variant['series_end_code']), $mE)) {
+                    if (strtoupper($mS[1]) === strtoupper($mCode[1])) {
+                        $cNum = (int)$mCode[2];
+                        $sNum = (int)$mS[2];
+                        $eNum = (int)$mE[2];
+                        if ($cNum >= $sNum && $cNum <= $eNum) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return true;
         }
 
         return false;
@@ -7926,7 +7977,8 @@ class WarehouseController {
                      WHERE pv.id = ?",
                     [$dmgCheck['variant_id']]
                 );
-                $isMasterOrComp = $dmgVar && in_array(strtoupper($dmgVar['cat_type'] ?? ''), ['SERIES', 'COMPLEMENTARY'], true);
+                $dmgAllocPType = self::determineAllocationProductType($dmgVar);
+                $isMasterOrComp = in_array($dmgAllocPType, ['SERIES', 'COMPLEMENTARY'], true);
                 $isAggregateCode = $isMasterOrComp && $this->isAllocationVariantIdentifier($dmgVar, (string)$scannedPieceTag);
                 if (!$isAggregateCode && $isMasterOrComp) {
                     $aggregateQr = Database::fetchOne(
@@ -8020,13 +8072,9 @@ class WarehouseController {
                      WHERE pv.id = ?",
                     [$soldItem['variant_id']]
                 );
-                $isMasterOrComp = ($soldVar && (
-                    $soldVar['qr_type'] === 'SERIES_BATCH'
-                    || strtoupper($soldVar['cat_type'] ?? '') === 'SERIES'
-                    || strtoupper($soldVar['cat_type'] ?? '') === 'COMPLEMENTARY'
-                    || (int)($soldVar['pack_quantity'] ?? 0) > 1
-                    || !empty($soldVar['is_comp'])
-                ));
+                // Use canonical product type resolver for allocation guardrails
+                $soldAllocPType = $soldVar ? self::determineAllocationProductType($soldVar) : 'NORMAL';
+                $isMasterOrComp = in_array($soldAllocPType, ['SERIES', 'COMPLEMENTARY'], true);
 
                 if ($isMasterOrComp) {
                     $availStockRow = Database::fetchOne(
@@ -8124,13 +8172,9 @@ class WarehouseController {
                      WHERE pv.id = ?",
                     [$dpoPurchase['variant_id']]
                 );
-                $isMasterOrComp = ($dpoVar && (
-                    $dpoVar['qr_type'] === 'SERIES_BATCH'
-                    || strtoupper($dpoVar['cat_type'] ?? '') === 'SERIES'
-                    || strtoupper($dpoVar['cat_type'] ?? '') === 'COMPLEMENTARY'
-                    || (int)($dpoVar['pack_quantity'] ?? 0) > 1
-                    || !empty($dpoVar['is_comp'])
-                ));
+                // Use canonical product type resolver for DPO allocation guardrail
+                $dpoAllocPType = $dpoVar ? self::determineAllocationProductType($dpoVar) : 'NORMAL';
+                $isMasterOrComp = in_array($dpoAllocPType, ['SERIES', 'COMPLEMENTARY'], true);
 
                 if ($isMasterOrComp) {
                     $availStockRow = Database::fetchOne(
@@ -8218,7 +8262,9 @@ class WarehouseController {
                      WHERE pv.id = ?",
                     [$alreadyAlloc['variant_id']]
                 );
-                $isMasterOrComp = $allocVar && in_array(strtoupper($allocVar['cat_type'] ?? ''), ['SERIES', 'COMPLEMENTARY'], true);
+                // Use canonical product type resolver for already-allocated guardrail
+                $allocAllocPType = $allocVar ? self::determineAllocationProductType($allocVar) : 'NORMAL';
+                $isMasterOrComp = in_array($allocAllocPType, ['SERIES', 'COMPLEMENTARY'], true);
 
                 if ($isMasterOrComp) {
                     $availStockRow = Database::fetchOne(
@@ -8794,11 +8840,9 @@ class WarehouseController {
              LIMIT 1",
             [(int)$variant['id']]
         );
-        $isSeriesOrComp = in_array(
-            strtoupper(trim((string)($variant['category_type'] ?? 'NORMAL'))),
-            ['SERIES', 'COMPLEMENTARY'],
-            true
-        );
+        // Use canonical product type resolver for the allocation response
+        $allocProductType = self::determineAllocationProductType($variant);
+        $isSeriesOrComp = in_array($allocProductType, ['SERIES', 'COMPLEMENTARY'], true);
         if ($activeDmgVariant) {
             $variantDmgQty = (float)($activeDmgVariant['damaged_qty'] ?? 0);
             if ($availableStock <= 0 || (!empty($extractedTag) && str_starts_with(strtoupper($extractedTag), 'DMG-') && !$isSeriesOrComp)) {
@@ -8823,7 +8867,7 @@ class WarehouseController {
             exit;
         }
 
-        $categoryType = strtoupper(trim((string)($variant['category_type'] ?? 'NORMAL')));
+        $categoryType = $allocProductType;
         $isAggregateAllocation = in_array($categoryType, ['SERIES', 'COMPLEMENTARY'], true);
         if ($availableStock <= 0) {
             echo json_encode([
@@ -8915,6 +8959,7 @@ class WarehouseController {
             'sub_subcategory_id'   => (int)($variant['sub_subcategory_id'] ?? 0),
             'category_name'        => $variant['category_name'] ?? '',
             'category_type'        => $categoryType,
+            'product_type'         => $categoryType,
             'subcategory_name'     => $variant['subcategory_name'] ?? '',
             'sub_subcategory_name' => $variant['sub_subcategory_name'] ?? '',
             'hierarchy'            => $catHierarchy,
