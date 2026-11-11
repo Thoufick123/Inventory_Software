@@ -310,12 +310,9 @@
                                         </button>
                                         <?php endif; ?>
                                         <?php if (hasPermission('damages', 'delete')): ?>
-                                        <form method="POST" action="<?= url('production/damages/delete/' . $d['id']) ?>" class="d-inline-flex flex-shrink-0" onsubmit="return confirm('Are you sure you want to delete Damage Record #<?= e(addslashes($d['damage_number'])) ?>? Roll inventory will be restored.');">
-                                            <?= CSRF::field() ?>
-                                            <button type="submit" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center" style="width: 34px; height: 34px;" title="Delete Damage Record" aria-label="Delete Damage Record">
-                                                <i class="bi bi-trash"></i>
-                                            </button>
-                                        </form>
+                                        <button type="button" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center flex-shrink-0" style="width: 34px; height: 34px;" title="Delete Damage Record" aria-label="Delete Damage Record" onclick="confirmDeleteDamage('<?= url('production/damages/delete/' . $d['id']) ?>', '<?= e(addslashes($d['damage_number'])) ?>')">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
                                         <?php endif; ?>
                                     </div>
                                 </td>
@@ -451,23 +448,30 @@
 <!-- 2. Edit Damage Modal -->
 <div class="modal fade" id="editDamageModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content shadow-lg border-warning">
-            <div class="modal-header bg-warning text-dark py-3">
-                <h5 class="modal-title fw-bold fs-6">
-                    <i class="bi bi-pencil-square me-2"></i>Edit Fabric Roll Damage Details
-                </h5>
+        <div class="modal-content shadow-lg border-0 rounded-4 overflow-hidden">
+            <div class="modal-header bg-white border-bottom py-3 px-4">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="rounded-circle bg-warning-subtle text-warning d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
+                        <i class="bi bi-pencil-square fs-5"></i>
+                    </div>
+                    <div>
+                        <h5 class="modal-title fw-bold fs-6 mb-0 text-dark">Edit Fabric Roll Damage Details</h5>
+                        <small class="text-muted" style="font-size: 11px;">Modify defect reason, damage quantity, and loss estimations</small>
+                    </div>
+                </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form method="POST" id="editDamageForm" enctype="multipart/form-data">
                 <?= CSRF::field() ?>
                 <div class="modal-body p-4">
-                    <div class="p-2 px-3 bg-light rounded border mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
-                        <div>
-                            <span class="small text-muted d-block">RECORD NUMBER</span>
-                            <span class="badge bg-dark font-monospace fs-7" id="editDamageNo">DMG-ROL-XXXX</span>
+                    <!-- Record & Status Header Ribbon -->
+                    <div class="p-2.5 px-3 bg-light rounded-3 border mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="small text-muted text-uppercase fw-semibold" style="font-size: 11px;">Record Number:</span>
+                            <span class="badge bg-dark font-monospace" id="editDamageNo">DMG-ROL-XXXX</span>
                         </div>
-                        <div class="text-end">
-                            <span class="small text-muted d-block">CURRENT STATUS</span>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="small text-muted text-uppercase fw-semibold" style="font-size: 11px;">Status:</span>
                             <span class="badge bg-danger-subtle text-danger border" id="editDamageStatus">LOGGED</span>
                         </div>
                     </div>
@@ -475,8 +479,8 @@
                     <div class="row g-3">
                         <!-- Supplier Selection -->
                         <div class="col-md-6">
-                            <label class="form-label fw-bold required">Material Supplier / Mill</label>
-                            <select name="seller_id" id="editSellerSelect" class="form-select form-select-lg" required onchange="loadSupplierRollsForEdit(this.value)">
+                            <label class="form-label fw-bold small text-dark required">Material Supplier / Mill</label>
+                            <select name="seller_id" id="editSellerSelect" class="form-select" required onchange="loadSupplierRollsForEdit(this.value)">
                                 <option value="">-- Choose Supplier --</option>
                                 <?php foreach ($sellers as $s): ?>
                                     <option value="<?= $s['id'] ?>">
@@ -488,27 +492,54 @@
 
                         <!-- Roll Selection -->
                         <div class="col-md-6">
-                            <label class="form-label fw-bold required">Defective Fabric Roll</label>
-                            <select name="seller_roll_id" id="editRollSelect" class="form-select form-select-lg" required onchange="handleEditRollSelectionChange(this)">
+                            <label class="form-label fw-bold small text-dark required">Defective Fabric Roll</label>
+                            <select name="seller_roll_id" id="editRollSelect" class="form-select" required onchange="handleEditRollSelectionChange(this)">
                                 <option value="">-- Select Supplier First --</option>
                             </select>
                         </div>
 
-                        <!-- Roll Info Box -->
+                        <!-- Clean Structured Roll Specification Box -->
                         <div class="col-12" id="editRollInfoBox">
-                            <div class="p-3 bg-light rounded border d-flex justify-content-between align-items-center flex-wrap gap-2">
-                                <div>
-                                    <span class="small text-muted d-block">SELECTED ROLL SPECIFICATION</span>
-                                    <strong class="text-dark fs-6" id="editInfoRollCode">ROLL-01</strong>
-                                    <span class="text-muted mx-2">•</span>
-                                    <span class="badge bg-info-subtle text-info border" id="editInfoRollColor">Color</span>
-                                    <span class="badge bg-warning-subtle text-warning border" id="editInfoRollDesign">Design</span>
-                                    <div class="mt-1 d-flex gap-1 flex-wrap" id="editInfoRollRates"></div>
-                                </div>
-                                <div class="text-end">
-                                    <span class="small text-muted d-block">DAMAGEABLE BALANCE</span>
-                                    <div id="editInfoRollBalance">0.00 kg</div>
-                                    <small class="text-muted d-block" id="editInfoRollPrice">₹0.00</small>
+                            <div class="card border bg-light shadow-none rounded-3 overflow-hidden">
+                                <div class="card-body p-3">
+                                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2.5 pb-2 border-bottom">
+                                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                                            <span class="badge bg-dark font-monospace fs-7" id="editInfoRollCode">ROLL-01</span>
+                                            <span class="badge bg-info-subtle text-info border" id="editInfoRollColor">Color</span>
+                                            <span class="badge bg-warning-subtle text-warning border" id="editInfoRollDesign">Design</span>
+                                        </div>
+                                        <div class="text-sm-end d-flex align-items-center gap-2">
+                                            <small class="text-muted text-uppercase fw-semibold" style="font-size: 10px;">Damageable Stock:</small>
+                                            <div id="editInfoRollBalance"><span class="text-success fw-bold">0.00 kg</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="row g-2 text-center">
+                                        <div class="col-3">
+                                            <div class="bg-white border rounded p-1.5">
+                                                <small class="text-muted d-block text-uppercase" style="font-size: 9px; letter-spacing: 0.5px;">Rate / kg</small>
+                                                <strong class="text-dark small" id="editInfoRateKg">₹0.00</strong>
+                                            </div>
+                                        </div>
+                                        <div class="col-3">
+                                            <div class="bg-white border rounded p-1.5">
+                                                <small class="text-muted d-block text-uppercase" style="font-size: 9px; letter-spacing: 0.5px;">Piece Weight</small>
+                                                <strong class="text-primary small" id="editInfoPieceWeight">0.00 kg</strong>
+                                            </div>
+                                        </div>
+                                        <div class="col-3">
+                                            <div class="bg-white border rounded p-1.5">
+                                                <small class="text-muted d-block text-uppercase" style="font-size: 9px; letter-spacing: 0.5px;">Piece Value</small>
+                                                <strong class="text-dark small" id="editInfoPiecePrice">₹0.00</strong>
+                                            </div>
+                                        </div>
+                                        <div class="col-3">
+                                            <div class="bg-white border rounded p-1.5">
+                                                <small class="text-muted d-block text-uppercase" style="font-size: 9px; letter-spacing: 0.5px;">Lot Value</small>
+                                                <strong class="text-secondary small" id="editInfoRollPrice">₹0.00</strong>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="d-none" id="editInfoRollRates"></div>
                                 </div>
                             </div>
                         </div>
@@ -516,8 +547,8 @@
                         <!-- Damage Reason -->
                         <div class="col-md-6">
                             <div class="d-flex justify-content-between align-items-center mb-1">
-                                <label class="form-label fw-bold mb-0" for="editReasonSelect">Damage / Defect Reason <span class="text-danger">*</span></label>
-                                <button type="button" class="btn btn-link btn-sm text-decoration-none p-0" onclick="addDamageReason('editReasonSelect')"><i class="bi bi-plus-circle me-1"></i>New</button>
+                                <label class="form-label fw-bold small text-dark mb-0" for="editReasonSelect">Damage / Defect Reason <span class="text-danger">*</span></label>
+                                <button type="button" class="btn btn-link btn-sm text-decoration-none p-0 fw-semibold" onclick="addDamageReason('editReasonSelect')" style="font-size: 11px;"><i class="bi bi-plus-circle me-0.5"></i>+ New</button>
                             </div>
                             <select name="damage_reason" id="editReasonSelect" class="form-select" required>
                                 <option value="">-- Select Reason --</option>
@@ -529,65 +560,65 @@
 
                         <!-- Damaged Quantity -->
                         <div class="col-md-3">
-                            <label class="form-label fw-bold required">Damaged Quantity</label>
-                            <div class="input-group">
-                                <input type="number" name="damaged_quantity" id="editDamagedQty" class="form-control" value="1" min="1" required oninput="onEditQtyChange()">
-                                <span class="input-group-text bg-light">pcs</span>
+                            <label class="form-label fw-bold small text-dark required">Damaged Quantity</label>
+                            <div class="input-group input-group-sm">
+                                <input type="number" name="damaged_quantity" id="editDamagedQty" class="form-control fw-bold" value="1" min="1" required oninput="onEditQtyChange()">
+                                <span class="input-group-text bg-light text-muted">pcs</span>
                             </div>
-                            <small class="text-muted d-block mt-1" id="editQtyHelp">1 pc = 0.00 kg</small>
+                            <small class="text-muted d-block mt-1" id="editQtyHelp" style="font-size: 11px;">1 pc = 0.00 kg</small>
                         </div>
 
-                        <!-- Damaged Weight (Disabled with clear visibility) -->
+                        <!-- Damaged Weight -->
                         <div class="col-md-3">
-                            <label class="form-label fw-bold text-dark">
-                                Damaged Weight <span class="badge bg-secondary-subtle text-secondary border ms-1">Auto</span>
+                            <label class="form-label fw-bold small text-dark">
+                                Damaged Weight <span class="badge bg-secondary-subtle text-secondary border ms-1" style="font-size: 10px;">Auto</span>
                             </label>
-                            <div class="input-group">
-                                <input type="number" step="0.01" name="damaged_weight" id="editDamagedWeight" class="form-control bg-light fw-bold text-dark" placeholder="0.00" readonly tabindex="-1" style="background-color: #f1f3f5 !important; cursor: not-allowed;">
-                                <span class="input-group-text bg-light">kg</span>
+                            <div class="input-group input-group-sm">
+                                <input type="number" step="0.01" name="damaged_weight" id="editDamagedWeight" class="form-control bg-light fw-bold text-dark border" placeholder="0.00" readonly tabindex="-1">
+                                <span class="input-group-text bg-light text-muted">kg</span>
                             </div>
-                            <small class="text-muted d-block mt-1" id="editWeightHelp">Rate: ₹0.00 / kg</small>
+                            <small class="text-muted d-block mt-1" id="editWeightHelp" style="font-size: 11px;">Rate: ₹0.00 / kg</small>
                         </div>
 
-                        <!-- Estimated Loss Valuation (Disabled with clear visibility) -->
+                        <!-- Estimated Loss Valuation -->
                         <div class="col-md-6">
-                            <label class="form-label fw-bold text-danger">
-                                <i class="bi bi-currency-rupee me-1"></i>Estimated Loss Valuation <span class="badge bg-danger-subtle text-danger border ms-1">Auto</span>
+                            <label class="form-label fw-bold small text-danger">
+                                <i class="bi bi-currency-rupee me-0.5"></i>Estimated Loss Valuation <span class="badge bg-danger-subtle text-danger border ms-1" style="font-size: 10px;">Auto</span>
                             </label>
-                            <div class="input-group">
+                            <div class="input-group input-group-sm">
                                 <span class="input-group-text bg-danger-subtle text-danger fw-bold">₹</span>
-                                <input type="number" step="0.01" name="loss_amount" id="editEstimatedLoss" class="form-control fw-bold text-danger bg-light fs-6" placeholder="0.00" readonly tabindex="-1" style="background-color: #f1f3f5 !important; cursor: not-allowed;">
-                                <span class="input-group-text bg-light text-muted small" id="editRateBadge">₹0.00 / kg</span>
+                                <input type="number" step="0.01" name="loss_amount" id="editEstimatedLoss" class="form-control fw-bold text-danger bg-light" placeholder="0.00" readonly tabindex="-1">
+                                <span class="input-group-text bg-light text-muted small" id="editRateBadge" style="font-size: 11px;">₹0.00 / kg</span>
                             </div>
-                            <small class="text-muted d-block mt-1" id="editLossCalcHelp">Calculated: 0.00 kg × ₹0.00/kg</small>
+                            <small class="text-muted d-block mt-1" id="editLossCalcHelp" style="font-size: 11px;">Calculated from roll rate</small>
                         </div>
 
                         <!-- Photo Upload & Current Preview -->
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold" id="editPhotoLabel">
+                            <label class="form-label fw-semibold small text-dark" id="editPhotoLabel">
                                 Defect Photo / Evidence <span class="text-danger" id="editPhotoReqStar" style="display:none;">*</span>
                             </label>
-                            <input type="file" name="photo" id="editPhotoInput" class="form-control" accept="image/*,application/pdf">
+                            <input type="file" name="photo" id="editPhotoInput" class="form-control form-control-sm" accept="image/*,application/pdf">
                             <div id="editCurrentPhotoBox" class="mt-2" style="display: none;">
-                                <small class="text-muted d-block mb-1">Current Attached Proof:</small>
+                                <small class="text-muted d-block mb-1" style="font-size: 11px;">Current Attached Proof:</small>
                                 <a href="#" target="_blank" id="editCurrentPhotoLink" class="d-inline-block">
-                                    <img src="" id="editCurrentPhotoImg" class="rounded border shadow-sm" style="max-height: 50px; max-width: 100px; object-fit: cover;">
+                                    <img src="" id="editCurrentPhotoImg" class="rounded border shadow-sm" style="max-height: 48px; max-width: 90px; object-fit: cover;">
                                 </a>
                             </div>
                         </div>
 
                         <!-- Defect Notes -->
                         <div class="col-12">
-                            <label class="form-label fw-semibold" id="editNotesLabel">
+                            <label class="form-label fw-semibold small text-dark" id="editNotesLabel">
                                 Defect Notes &amp; Observations <small class="text-muted fw-normal">(Optional)</small>
                             </label>
                             <textarea name="defect_notes" id="editDefectNotes" class="form-control" rows="2" placeholder="Add additional observations if needed"></textarea>
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer bg-light py-3">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-warning px-4 fw-semibold shadow-sm">
+                <div class="modal-footer bg-light py-2 px-4">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning btn-sm px-4 fw-semibold shadow-sm">
                         <i class="bi bi-check2-circle me-1"></i> Update Damage Record
                     </button>
                 </div>
@@ -990,13 +1021,13 @@ function updateEditCalculations(m, qty, weight) {
     if (rateBadge) rateBadge.textContent = `₹${m.ratePerKg.toFixed(2)} / kg`;
 
     const qtyHelp = document.getElementById('editQtyHelp');
-    if (qtyHelp) qtyHelp.textContent = `1 pc = ${m.weightPerPc.toFixed(2)} kg (Max damageable: ${m.availQty} pcs)`;
+    if (qtyHelp) qtyHelp.textContent = `1 pc = ${m.weightPerPc.toFixed(2)} kg (Max: ${m.availQty} pcs)`;
 
     const weightHelp = document.getElementById('editWeightHelp');
-    if (weightHelp) weightHelp.textContent = `Rate: ₹${m.ratePerKg.toFixed(2)} / kg`;
+    if (weightHelp) weightHelp.textContent = `Total: ${weight.toFixed(2)} kg`;
 
     const lossHelp = document.getElementById('editLossCalcHelp');
-    if (lossHelp) lossHelp.textContent = `Calculated: ${weight.toFixed(2)} kg × ₹${m.ratePerKg.toFixed(2)}/kg = ₹${lossVal.toFixed(2)}`;
+    if (lossHelp) lossHelp.textContent = `Valuation: ₹${lossVal.toFixed(2)} (${weight.toFixed(2)} kg @ ₹${m.ratePerKg.toFixed(2)}/kg)`;
 }
 
 function onEditQtyChange() {
@@ -1136,16 +1167,23 @@ function handleEditRollSelectionChange(selectEl, resetValues = true) {
     document.getElementById('editInfoRollColor').textContent = r.color || 'Standard';
     document.getElementById('editInfoRollDesign').textContent = r.design_name || 'Plain';
     
-    document.getElementById('editInfoRollRates').innerHTML = 
-        `<span class="badge bg-success-subtle text-success border me-1">1 kg = ₹${m.ratePerKg.toFixed(2)}</span>` +
-        `<span class="badge bg-primary-subtle text-primary border">1 pc = ${m.weightPerPc.toFixed(2)} kg (₹${m.pricePerPc.toFixed(2)})</span>`;
+    const rateEl = document.getElementById('editInfoRateKg');
+    if (rateEl) rateEl.textContent = `₹${m.ratePerKg.toFixed(2)}`;
+    const pwEl = document.getElementById('editInfoPieceWeight');
+    if (pwEl) pwEl.textContent = `${m.weightPerPc.toFixed(2)} kg`;
+    const ppEl = document.getElementById('editInfoPiecePrice');
+    if (ppEl) ppEl.textContent = `₹${m.pricePerPc.toFixed(2)}`;
+    const tpEl = document.getElementById('editInfoRollPrice');
+    if (tpEl) tpEl.textContent = `₹${m.totPrice.toFixed(2)}`;
 
-    if (m.availWeight > 0) {
-        document.getElementById('editInfoRollBalance').innerHTML = `<span class="text-success fw-bold">${m.availWeight.toFixed(2)} kg damageable</span> <small class="text-muted">(${m.availQty} pcs damageable / ${m.totWeight.toFixed(2)} kg total${m.usedQty ? ` • ${m.usedQty} pcs assigned` : ''})</small>`;
-    } else {
-        document.getElementById('editInfoRollBalance').innerHTML = `<span class="text-dark fw-bold">No damageable balance</span> <small class="text-muted">(${m.usedQty || 0} pcs assigned / ${m.totQty} pcs total)</small>`;
+    const balEl = document.getElementById('editInfoRollBalance');
+    if (balEl) {
+        if (m.availWeight > 0) {
+            balEl.innerHTML = `<span class="text-success fw-bold">${m.availWeight.toFixed(2)} kg</span> <span class="badge bg-success-subtle text-success border ms-1 font-monospace" style="font-size: 10px;">${m.availQty} pcs</span>`;
+        } else {
+            balEl.innerHTML = `<span class="text-secondary fw-semibold">0.00 kg</span> <span class="badge bg-secondary-subtle text-secondary border ms-1 font-monospace" style="font-size: 10px;">0 pcs</span>`;
+        }
     }
-    document.getElementById('editInfoRollPrice').textContent = `Total Lot: ₹${m.totPrice.toFixed(2)}`;
 
     const qtyInput = document.getElementById('editDamagedQty');
     if (qtyInput) {
@@ -1181,25 +1219,26 @@ function openResolveModal(damageData) {
     document.getElementById('inputRefundAmount').value = damageData.refund_amount > 0 ? damageData.refund_amount : damageData.loss_amount;
     document.getElementById('inputDebitNote').value = damageData.debit_note_number || '';
 
-    // Populate all replacement roll fields from damageData
-    document.getElementById('inputReplacementRoll').value = damageData.replacement_roll_number || (damageData.roll_number ? (damageData.roll_number + '-REPL') : 'ROLL #1-REPL');
-    document.getElementById('inputReplacementColor').value = damageData.roll_color || '';
-    document.getElementById('inputReplacementDesign').value = damageData.roll_design || '';
-    document.getElementById('inputReplacementDesignCount').value = damageData.roll_design_count || 1;
-    document.getElementById('inputReplacementQuantity').value = damageData.damaged_quantity || 1;
-    document.getElementById('inputReplacementWeight').value = damageData.damaged_weight || '';
-    document.getElementById('inputReplacementPrice').value = damageData.loss_amount || '';
+    // Replacement roll details are manually entered by staff/admin (kept empty for manual entry)
+    document.getElementById('inputReplacementRoll').value = damageData.replacement_roll_number || '';
+    document.getElementById('inputReplacementColor').value = '';
+    document.getElementById('inputReplacementDesign').value = '';
+    document.getElementById('inputReplacementDesignCount').value = '1';
+    document.getElementById('inputReplacementQuantity').value = '1';
+    document.getElementById('inputReplacementWeight').value = '';
+    document.getElementById('inputReplacementPrice').value = '';
 
-    const hsnVal = damageData.roll_hsn_code || '';
     const hsnHidden = document.getElementById('inputReplacementHsn');
     if (hsnHidden) {
-        hsnHidden.value = hsnVal;
+        hsnHidden.value = '';
         const btnText = document.querySelector('#fieldReplacementBox .hsn-btn-text');
         if (btnText) {
-            btnText.textContent = hsnVal ? hsnVal : '-- Select HSN --';
+            btnText.textContent = '-- Select HSN --';
         }
     }
     document.getElementById('inputReplacementGstType').value = 'EXEMPTED';
+    const replPhotoInp = document.getElementById('inputReplacementPhoto');
+    if (replPhotoInp) replPhotoInp.value = '';
     document.getElementById('inputResolutionNotes').value = damageData.resolution_notes || '';
 
     handleResolutionStatusChange(document.getElementById('resStatusSelect').value);
@@ -1760,4 +1799,53 @@ function showDamageQrModal(damageNumber, qrCode, rollNumber, reason, weight, sup
 
     bootstrap.Modal.getOrCreateInstance(document.getElementById('damageQrModal')).show();
 }
+
+function confirmDeleteDamage(actionUrl, damageNumber) {
+    const modalEl = document.getElementById('modalConfirmDeleteDamage');
+    const formEl = document.getElementById('deleteDamageForm');
+    const numEl = document.getElementById('deleteDamageNumber');
+    if (formEl) formEl.action = actionUrl;
+    if (numEl) numEl.textContent = '#' + damageNumber;
+    if (modalEl) {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+    }
+}
 </script>
+
+<!-- Modal: Modern Confirmation Popup for Deleting Damage Records -->
+<div class="modal fade" id="modalConfirmDeleteDamage" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width: 460px;">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-body p-4 text-center">
+                <div class="mb-3 d-inline-flex align-items-center justify-content-center rounded-circle bg-danger-subtle text-danger" style="width: 68px; height: 68px;">
+                    <i class="bi bi-trash3-fill fs-2"></i>
+                </div>
+                <h5 class="fw-bold text-dark mb-2">Delete Damage Record</h5>
+                <p class="text-secondary small mb-3">
+                    Are you sure you want to delete Damage Record <strong class="text-dark" id="deleteDamageNumber"></strong>?
+                </p>
+                <div class="alert alert-info border-0 bg-info-subtle text-start p-3 rounded-3 small mb-4">
+                    <div class="d-flex align-items-start gap-2">
+                        <i class="bi bi-arrow-counterclockwise text-primary fs-5 flex-shrink-0 mt-n1"></i>
+                        <div>
+                            <strong class="text-primary">Inventory Roll Restoration:</strong>
+                            <div class="text-secondary mt-1">
+                                Deleting this record will automatically restore the damaged roll quantity and weight back to the active fabric inventory stock.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <form method="POST" id="deleteDamageForm" action="">
+                    <?= CSRF::field() ?>
+                    <div class="d-flex gap-2 justify-content-center">
+                        <button type="button" class="btn btn-light px-4 fw-semibold border" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-danger px-4 fw-semibold shadow-sm d-flex align-items-center gap-1">
+                            <i class="bi bi-trash me-1"></i> Delete &amp; Restore
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
