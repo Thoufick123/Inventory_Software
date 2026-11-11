@@ -329,6 +329,38 @@ function hasPermission(string $module, ?string $action = null): bool {
         return true;
     }
 
+    // Backward-compatibility alias fallbacks for renamed or granular submodules
+    if ($module === 'production_purchases') {
+        if (in_array('sellers.' . $action, $userPermissions, true) || in_array('purchases.' . $action, $userPermissions, true) || in_array('production.' . $action, $userPermissions, true)) {
+            return true;
+        }
+    }
+    if ($module === 'production_billing') {
+        if (in_array('billing.' . $action, $userPermissions, true) || in_array('production.' . $action, $userPermissions, true)) {
+            return true;
+        }
+    }
+    if ($module === 'production_returns') {
+        if (in_array('returns.' . $action, $userPermissions, true) || in_array('production_billing.' . $action, $userPermissions, true) || in_array('production.' . $action, $userPermissions, true)) {
+            return true;
+        }
+    }
+    if ($module === 'production_stock_requests') {
+        if (in_array('shop_requests.' . $action, $userPermissions, true) || in_array('stock_requests.' . $action, $userPermissions, true) || in_array('production.' . $action, $userPermissions, true)) {
+            return true;
+        }
+    }
+    if ($module === 'asset_register' || $module === 'asset_dashboard') {
+        if (in_array('assets.' . $action, $userPermissions, true)) {
+            return true;
+        }
+    }
+    if ($module === 'whatsapp_returned_products') {
+        if (in_array('whatsapp_returns.' . $action, $userPermissions, true) || in_array('whatsapp_orders.' . $action, $userPermissions, true) || in_array('whatsapp_inventory.' . $action, $userPermissions, true)) {
+            return true;
+        }
+    }
+
     // Secondary fallback alias checks for returns
     if ($module === 'whatsapp_return_to_wh') {
         if (in_array('whatsapp_returns.' . $action, $userPermissions, true) || in_array('whatsapp_return_to_wh.' . $action, $userPermissions, true)) {

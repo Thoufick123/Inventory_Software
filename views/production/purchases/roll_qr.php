@@ -199,6 +199,12 @@
 <body>
 
 <div class="roll-qr-container">
+    <?php
+    $canManageRolls = hasPermission('production_purchases', 'create') 
+        || hasPermission('production_purchases', 'edit') 
+        || hasPermission('sellers', 'create') 
+        || hasPermission('sellers', 'edit');
+    ?>
     <!-- Top Action & Info Bar -->
     <div class="action-bar no-print">
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
@@ -220,10 +226,10 @@
                     <i class="bi bi-arrow-left me-1"></i> Back to Purchases
                 </a>
                 <div class="form-check form-switch d-inline-flex align-items-center gap-2 mb-0 bg-light border px-2 py-1 rounded">
-                    <input class="form-check-input ms-0" type="checkbox" id="selectAllRolls" checked onchange="toggleSelectAllRolls(this.checked)" style="cursor: pointer;">
-                    <label class="form-check-label small fw-bold text-dark cursor-pointer mb-0" for="selectAllRolls">Select All (<span id="selectedCount"><?= count($stickers) ?></span>/<?= count($stickers) ?>)</label>
+                    <input class="form-check-input ms-0" type="checkbox" id="selectAllRolls" <?= $canManageRolls ? 'checked onchange="toggleSelectAllRolls(this.checked)" style="cursor: pointer;"' : 'disabled style="cursor: not-allowed; opacity: 0.5;"' ?>>
+                    <label class="form-check-label small fw-bold text-dark <?= $canManageRolls ? 'cursor-pointer' : '' ?> mb-0" for="selectAllRolls">Select All (<span id="selectedCount"><?= count($stickers) ?></span>/<?= count($stickers) ?>)<?= !$canManageRolls ? ' <span class="badge bg-secondary-subtle text-secondary border px-1.5 py-0.5 ms-1" style="font-size:10px;">View Only</span>' : '' ?></label>
                 </div>
-                <button type="button" class="btn btn-dark btn-sm fw-bold px-3 shadow-sm" id="printSelectedBtn" onclick="printSelectedLabels()">
+                <button type="button" class="btn btn-dark btn-sm fw-bold px-3 shadow-sm" id="printSelectedBtn" <?= $canManageRolls ? 'onclick="printSelectedLabels()"' : 'disabled style="opacity: 0.5; cursor: not-allowed;" title="Printing disabled in view-only access"' ?>>
                     <i class="bi bi-printer me-1 text-warning"></i> Print Selected QR Labels (<span id="btnSelectedCount"><?= count($stickers) ?></span>)
                 </button>
             </div>
@@ -255,7 +261,7 @@
                 <div class="roll-label-card" id="card-<?= $stk['index'] ?>">
                     <div class="label-header">
                         <div class="d-flex align-items-center gap-1">
-                            <input type="checkbox" class="form-check-input roll-select-box no-print" id="check-roll-<?= $stk['index'] ?>" data-index="<?= $stk['index'] ?>" checked onchange="updateSelectedCount()" title="Check to print this roll label" style="margin-top: 0; cursor: pointer;">
+                            <input type="checkbox" class="form-check-input roll-select-box no-print" id="check-roll-<?= $stk['index'] ?>" data-index="<?= $stk['index'] ?>" checked <?= $canManageRolls ? 'onchange="updateSelectedCount()" title="Check to print this roll label" style="margin-top: 0; cursor: pointer;"' : 'disabled style="margin-top: 0; cursor: not-allowed; opacity: 0.5;" title="Selection disabled in view-only access"' ?>>
                             <div class="company-tag" title="<?= htmlspecialchars($stk['supplier_name']) ?>">
                                 <?= htmlspecialchars($stk['supplier_name']) ?>
                             </div>
@@ -293,9 +299,15 @@
                     </div>
 
                     <div class="label-footer no-print">
+                        <?php if ($canManageRolls): ?>
                         <button type="button" class="btn btn-outline-dark btn-xs single-print-btn" onclick="printSingleLabel(<?= $stk['index'] ?>)" title="Print only this label">
                             <i class="bi bi-printer"></i> Print
                         </button>
+                        <?php else: ?>
+                        <button type="button" class="btn btn-outline-secondary btn-xs single-print-btn" disabled style="opacity: 0.5; cursor: not-allowed;" title="Print disabled in view-only access">
+                            <i class="bi bi-printer"></i> Print
+                        </button>
+                        <?php endif; ?>
                     </div>
                 </div>
             <?php endforeach; ?>
@@ -337,7 +349,10 @@ document.addEventListener('DOMContentLoaded', function() {
     updateSelectedCount();
 });
 
+const canManageRolls = <?= json_encode((bool)$canManageRolls) ?>;
+
 function toggleSelectAllRolls(checked) {
+    if (!canManageRolls) return;
     document.querySelectorAll('.roll-select-box').forEach(cb => {
         cb.checked = checked;
     });
@@ -370,6 +385,10 @@ function updateSelectedCount() {
 }
 
 function printSelectedLabels() {
+    if (!canManageRolls) {
+        alert('Action restricted: You only have view permission.');
+        return;
+    }
     const checked = document.querySelectorAll('.roll-select-box:checked');
     if (checked.length === 0) {
         alert('Please select at least 1 roll sticker to print.');
@@ -380,6 +399,10 @@ function printSelectedLabels() {
 }
 
 function printSingleLabel(index) {
+    if (!canManageRolls) {
+        alert('Action restricted: You only have view permission.');
+        return;
+    }
     const card = document.getElementById('card-' + index);
     if (!card) return;
 
