@@ -37,9 +37,28 @@ class AssetController {
             throw new RuntimeException("The selected {$field} file type is not supported.");
         }
 
-        $url = CloudinaryService::upload($file, 'grm_inventory/assets', $resourceType);
+        $url = null;
+        if (class_exists('CloudinaryService') && CloudinaryService::isConfigured()) {
+            $url = CloudinaryService::upload($file, 'grm_inventory/assets', $resourceType);
+        }
+
         if (empty($url)) {
-            throw new RuntimeException("The selected {$field} file could not be saved. Check the Cloudinary configuration and try again.");
+            $uploadDir = BASE_PATH . '/public/uploads/assets';
+            if (!is_dir($uploadDir)) {
+                @mkdir($uploadDir, 0755, true);
+            }
+            $origName = $file['name'] ?? '';
+            $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+            if (empty($ext)) {
+                $ext = ($mimeType === 'application/pdf') ? 'pdf' : 'jpg';
+            }
+            $cleanFilename = 'ast_' . date('Ymd_His') . '_' . bin2hex(random_bytes(6)) . '.' . $ext;
+            $destPath = $uploadDir . '/' . $cleanFilename;
+            if (move_uploaded_file($tmpPath, $destPath)) {
+                $url = 'uploads/assets/' . $cleanFilename;
+            } else {
+                throw new RuntimeException("The selected {$field} file could not be saved to disk.");
+            }
         }
 
         return $url;
@@ -197,7 +216,7 @@ class AssetController {
      * Store Newly Registered Asset.
      */
     public function store(): void {
-        CSRF::validate();
+        CSRF::verify();
 
         $user = Session::user();
         $userId = $user['id'] ?? null;
@@ -310,7 +329,7 @@ class AssetController {
      * Update Existing Asset.
      */
     public function update(string $id): void {
-        CSRF::validate();
+        CSRF::verify();
 
         $user = Session::user();
         $userId = $user['id'] ?? null;
@@ -367,7 +386,7 @@ class AssetController {
      * Delete Asset.
      */
     public function delete(string $id): void {
-        CSRF::validate();
+        CSRF::verify();
         try {
             AssetService::deleteAsset((int)$id);
             Session::flash('success', "Asset deleted successfully.");
@@ -409,7 +428,7 @@ class AssetController {
      * Execute Inter-Unit Transfer.
      */
     public function storeTransfer(): void {
-        CSRF::validate();
+        CSRF::verify();
         $user = Session::user();
         $userId = $user['id'] ?? null;
 
@@ -487,7 +506,7 @@ class AssetController {
      * Record Maintenance Ticket.
      */
     public function storeMaintenance(): void {
-        CSRF::validate();
+        CSRF::verify();
         $user = Session::user();
         $userId = $user['id'] ?? null;
 
@@ -584,6 +603,77 @@ class AssetController {
                 ['label' => 'QR Register'],
             ],
         ]);
+    }
+
+    /**
+     * Export Comprehensive Asset Intelligence Reports (CSV / Print).
+     */
+    public function exportReports(): void {
+        $periodType = trim((string)($_REQUEST['period_type'] ?? 'MONTH'));
+        $format = strtoupper(trim((string)($_REQUEST['format'] ?? 'CSV')));
+
+        if ($periodType === 'MONTH') {
+            $month = (int)($_REQUEST['selected_month'] ?? date('n'));
+            $year = (int)($_REQUEST['selected_year'] ?? date('Y'));
+            $month = max(1, min(12, $month));
+            $year = max(2020, min(2035, $year));
+            $startDate = sprintf('%04d-%02d-01', $year, $month);
+            $endDate = date('Y-m-t', strtotime($startDate));
+            $periodLabel = date('F Y', strtotime($startDate));
+        } else {
+            $startDate = trim((string)($_REQUEST['date_from'] ?? date('Y-m-01')));
+            $endDate = trim((string)($_REQUEST['date_to'] ?? date('Y-m-d')));
+            if (empty($startDate)) $startDate = date('Y-m-01');
+            if (empty($endDate)) $endDate = date('Y-m-d');
+            $periodLabel = date('d M Y', strtotime($startDate)) . ' to ' . date('d M Y', strtotime($endDate));
+        }
+
+        $unitFilter = $this->parseUnitFilter();
+        $allModules = ['registry', 'categories', 'facilities', 'transfers', 'maintenance', 'critical'];
+        $selectedModules = !empty($_REQUEST['modules']) && is_array($_REQUEST['modules'])
+            ? array_values(array_intersect($_REQUEST['modules'], $allModules))
+            : $allModules;
+
+        if (empty($selectedModules)) {
+            $selectedModules = $allModules;
+        }
+
+        $facilityScopeLabel = 'All Enterprise Facilities';
+        if ($unitFilter['unitKey'] !== 'ALL') {
+            if ($unitFilter['locationType'] && $unitFilter['locationId']) {
+                $facilityScopeLabel = AssetService::resolveLocationName($unitFilter['locationType'], $unitFilter['locationId']);
+            } elseif ($unitFilter['locationType'] === 'PRODUCTION') {
+                $facilityScopeLabel = 'All Production Plants';
+            } elseif ($unitFilter['locationType'] === 'WAREHOUSE') {
+                $facilityScopeLabel = 'All Central Warehouses';
+            } elseif ($unitFilter['locationType'] === 'SHOP') {
+                $facilityScopeLabel = 'All Retail Showrooms';
+            } elseif ($unitFilter['locationType'] === 'OFFICE') {
+                $facilityScopeLabel = 'Head Office & Logistics Fleet';
+            }
+        }
+
+        $data = AssetService::getExportReportData(
+            $startDate,
+            $endDate,
+            $unitFilter['locationType'],
+            $unitFilter['locationId'],
+            $selectedModules
+        );
+
+        if ($format === 'PRINT') {
+            Response::viewOnly('assets.print_report', [
+                'periodLabel'        => $periodLabel,
+                'startDate'          => $startDate,
+                'endDate'            => $endDate,
+                'facilityScopeLabel' => $facilityScopeLabel,
+                'selectedModules'    => $selectedModules,
+                'data'               => $data,
+            ]);
+            return;
+        }
+
+        AssetService::streamCsv($periodLabel, $startDate, $endDate, $data, $facilityScopeLabel);
     }
 
     /**

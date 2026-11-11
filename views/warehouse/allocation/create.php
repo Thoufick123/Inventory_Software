@@ -673,33 +673,11 @@ document.addEventListener('DOMContentLoaded', function() {
     function supportsAdjustableAllocationQty(product) {
         if (!product) return false;
         const categoryType = getAllocationProductType(product);
-        const qrType = String(product.qr_type || product.qrType || product.dataset?.qrType || '').trim().toUpperCase();
-        const isSeries = product.is_series === true || product.is_series === 1 || product.is_series === '1'
-            || product.isSeries === true || product.isSeries === 1 || product.isSeries === '1'
-            || product.dataset?.isSeries === '1';
-        const isComp = product.is_complementary === true || product.is_complementary === 1 || product.is_complementary === '1'
-            || product.isComplementary === true || product.isComplementary === 1 || product.isComplementary === '1'
-            || product.dataset?.isComplementary === '1';
-        const packQty = parseInt(product.pack_quantity || product.dataset?.packQuantity || 1) || 1;
-
-        return categoryType === 'SERIES'
-            || categoryType === 'COMPLEMENTARY'
-            || qrType === 'SERIES_BATCH'
-            || isSeries
-            || isComp
-            || packQty > 1;
+        return categoryType === 'SERIES' || categoryType === 'COMPLEMENTARY';
     }
 
     function getAllocationProductType(product) {
         const categoryType = String(product.category_type || product.categoryType || product.dataset?.categoryType || '').trim().toUpperCase();
-        const qrType = String(product.qr_type || product.qrType || product.dataset?.qrType || '').trim().toUpperCase();
-        const isComplementary = product.is_complementary === true
-            || product.is_complementary === 1
-            || product.is_complementary === '1'
-            || product.isComplementary === '1'
-            || product.dataset?.isComplementary === '1';
-        if (isComplementary || categoryType === 'COMPLEMENTARY') return 'COMPLEMENTARY';
-        if (qrType === 'SERIES_BATCH' || categoryType === 'SERIES') return 'SERIES';
         return categoryType || 'NORMAL';
     }
 
@@ -1331,14 +1309,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             })
             .catch(err => {
-                // Client-side fallback matching only for generic errors (never for already allocated items)
-                const clean = tagCode.replace(/[-_]\d+$/, '');
+                // Exact SKU/barcode fallback only; a piece-tag prefix is not proof of inwarded stock.
                 let local = variantsList.find(v => (v.sku || '').toUpperCase() === tagCode || (v.barcode || '').toUpperCase() === tagCode);
-                if (!local) local = variantsList.find(v => (v.sku || '').toUpperCase() === clean || (v.barcode || '').toUpperCase() === clean);
-                if (!local) local = variantsList.find(v => tagCode.startsWith((v.sku || '').toUpperCase()) || (v.sku && clean.startsWith((v.sku || '').toUpperCase())));
 
                 if (local) {
-                    if (parseFloat(local.total_warehouse_stock || 0) <= 0) {
+                    if (parseFloat(local.available_warehouse_stock ?? local.available_stock ?? local.total_warehouse_stock ?? 0) <= 0) {
                         playDuplicateSound();
                         showScanAlert('danger', `❌ <strong>Scan Failed:</strong> Product <strong>${local.product_name || local.sku}</strong> is out of stock in this warehouse.`);
                         clearAndRefocusScanInput();

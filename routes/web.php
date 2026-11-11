@@ -958,6 +958,8 @@ class Router {
         $this->post('asset/maintenance/store', 'AssetController', 'storeMaintenance', ['AuthMiddleware', ['PermissionMiddleware', 'asset_maintenance', 'create']]);
         $this->get('asset/label/{id}', 'AssetController', 'label', ['AuthMiddleware', ['PermissionMiddleware', 'asset_register', 'view']]);
         $this->get('asset/bulk-labels', 'AssetController', 'bulkLabels', ['AuthMiddleware', ['PermissionMiddleware', 'asset_bulk_labels', 'view']]);
+        $this->get('asset/reports/export', 'AssetController', 'exportReports', ['AuthMiddleware', ['PermissionMiddleware', 'asset_dashboard', 'view']]);
+        $this->post('asset/reports/export', 'AssetController', 'exportReports', ['AuthMiddleware', ['PermissionMiddleware', 'asset_dashboard', 'view']]);
         $this->get('api/asset/lookup', 'AssetController', 'ajaxLookup', ['AuthMiddleware', ['PermissionMiddleware', 'asset_scanner', 'view']]);
         $this->post('api/asset/lookup', 'AssetController', 'ajaxLookup', ['AuthMiddleware', ['PermissionMiddleware', 'asset_scanner', 'view']]);
         $this->post('api/asset/category/create', 'AssetController', 'ajaxCreateCategory', ['AuthMiddleware', ['PermissionMiddleware', 'asset_register', 'create']]);
