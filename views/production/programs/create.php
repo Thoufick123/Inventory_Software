@@ -106,9 +106,6 @@
                             <button type="button" class="btn btn-success fw-semibold px-3" onclick="triggerQuickRollScan()">
                                 <i class="bi bi-plus-circle me-1"></i> Scan / Add
                             </button>
-                            <button type="button" class="btn btn-outline-secondary px-3" onclick="openScanRollModal()" title="Open Camera Scanner">
-                                <i class="bi bi-camera-video me-1"></i> Camera Scanner
-                            </button>
                         </div>
                         <div id="quickScanFeedbackAlert" class="small mt-2 d-none p-2 px-3 rounded-2" role="status"></div>
                     </div>
@@ -403,9 +400,6 @@
                         <label class="form-label small fw-bold text-dark required">Input Type <span class="text-danger">*</span></label>
                         <select name="attr_type" id="attrModalType" class="form-select form-select-sm" onchange="handleAttrTypeChange(this.value)">
                             <option value="MULTI_SELECT" selected>Multiple Checkbox Pills / Sizes (Image 2 style)</option>
-                            <option value="SELECT">Dropdown Select (Single Option)</option>
-                            <option value="TEXT">Free Text Input</option>
-                            <option value="NUMBER">Numeric Value</option>
                         </select>
                     </div>
 
@@ -577,21 +571,21 @@ function addProgramRollRow(rollData = null) {
     const subSubcategoryOptionsHtml = buildSubSubcategoryOptionsHtml(subcatId, subSubcatId);
 
     rowDiv.innerHTML = `
-        <div class="d-flex align-items-center justify-content-between mb-3.5 pb-2.5 border-bottom">
+        <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
             <span class="badge bg-primary-subtle text-primary border fw-semibold roll-badge-num px-2.5 py-1.5" style="font-size: 12px;">Roll #${idx}</span>
             <button type="button" class="btn btn-sm btn-outline-danger p-1 px-2.5 btn-remove-roll fw-semibold" onclick="removeProgramRollRow(${idx})" title="Remove Roll">
                 <i class="bi bi-trash me-1"></i> Remove
             </button>
         </div>
 
-        <div class="mb-3.5">
-            <label class="form-label small fw-semibold text-dark mb-1.5">Select Raw Material Roll <span class="text-danger">*</span></label>
+        <div class="mb-4">
+            <label class="form-label small fw-semibold text-dark mb-2">Select Raw Material Roll <span class="text-danger">*</span></label>
             <select name="rolls[${idx}][seller_roll_id]" class="form-select roll-select" required onchange="handleRollRowChange(this, ${idx})">
                 ${optionsHtml}
             </select>
         </div>
 
-        <div class="row g-3 mb-3.5 align-items-start">
+        <div class="row g-3 mb-4 align-items-start">
             <div class="col-12 col-sm-4">
                 <label for="roll_qty_${idx}" class="form-label small fw-semibold text-muted mb-1 roll-field-label">
                     <span class="roll-field-label-text">Roll Qty (pcs)</span>
@@ -627,15 +621,15 @@ function addProgramRollRow(rollData = null) {
             </div>
         </div>
 
-        <div id="roll_specs_${idx}" class="p-3 bg-light rounded-3 small text-muted d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3.5 ${rollData ? '' : 'd-none'}">
+        <div id="roll_specs_${idx}" class="p-3 bg-light rounded-3 small text-muted d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4 ${rollData ? '' : 'd-none'}">
             <div><i class="bi bi-building text-primary me-1"></i> <span id="roll_supplier_${idx}">-</span></div>
             <div><i class="bi bi-palette text-primary me-1"></i> <span id="roll_color_${idx}">-</span></div>
             <div><i class="bi bi-brush text-primary me-1"></i> <span id="roll_design_${idx}">-</span></div>
         </div>
 
         <!-- Individual Piece QR Codes Area for THIS Roll -->
-        <div id="roll_pieces_section_${idx}" class="p-3.5 bg-white rounded-3 border mb-3.5 shadow-sm ${rollData ? '' : 'd-none'}">
-            <div class="d-flex justify-content-between align-items-center mb-2.5 flex-wrap gap-2">
+        <div id="roll_pieces_section_${idx}" class="p-3 bg-white rounded-3 border mb-4 shadow-sm ${rollData ? '' : 'd-none'}">
+            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                 <span class="small fw-bold text-dark d-flex align-items-center gap-1.5">
                     <i class="bi bi-qr-code text-primary fs-6"></i>
                     <span>Individual Piece QR Codes</span>
@@ -656,26 +650,26 @@ function addProgramRollRow(rollData = null) {
         </div>
 
         <!-- 3-Tier Catalog Selection for THIS specific Roll -->
-        <div class="p-3.5 p-md-4 bg-light-subtle rounded-3 border my-3.5 shadow-xs">
-            <div class="d-flex align-items-center justify-content-between mb-3.5 flex-wrap gap-2 pb-2.5 border-bottom">
+        <div class="p-3 p-md-4 bg-light-subtle rounded-3 border my-4 shadow-xs">
+            <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2 pb-2 border-bottom">
                 <span class="small fw-bold text-primary"><i class="bi bi-diagram-3 me-1"></i>Catalog Hierarchy for this Roll</span>
                 <span class="badge bg-secondary-subtle text-secondary border small roll-catalog-badge" id="roll_cat_badge_${idx}">Catalog</span>
             </div>
-            <div class="row g-3 mb-3.5">
+            <div class="row g-3 mb-4">
                 <div class="col-12 mb-1">
-                    <label class="form-label small text-muted mb-1.5 fw-semibold" style="font-size: 11px;">Main Category</label>
+                    <label class="form-label small text-muted mb-1 fw-semibold" style="font-size: 11px;">Main Category</label>
                     <select name="rolls[${idx}][category_id]" class="form-select form-select-sm fw-semibold roll-cat-select" id="roll_cat_${idx}" onchange="handleRollCategoryChange(${idx}, this.value)">
                         ${categoryOptionsHtml}
                     </select>
                 </div>
                 <div class="col-6">
-                    <label class="form-label small text-muted mb-1.5 fw-semibold" style="font-size: 11px;">Sub Category</label>
+                    <label class="form-label small text-muted mb-1 fw-semibold" style="font-size: 11px;">Sub Category</label>
                     <select name="rolls[${idx}][subcategory_id]" class="form-select form-select-sm roll-subcat-select" id="roll_subcat_${idx}" onchange="handleRollSubcategoryChange(${idx}, this.value)" ${catId ? '' : 'disabled'}>
                         ${subcategoryOptionsHtml}
                     </select>
                 </div>
                 <div class="col-6">
-                    <label class="form-label small text-muted mb-1.5 fw-semibold" style="font-size: 11px;">Sub Sub Category</label>
+                    <label class="form-label small text-muted mb-1 fw-semibold" style="font-size: 11px;">Sub Sub Category</label>
                     <select name="rolls[${idx}][sub_subcategory_id]" class="form-select form-select-sm roll-subsubcat-select" id="roll_subsubcat_${idx}" onchange="handleRollSubSubcategoryChange(${idx}, this.value)" ${subcatId ? '' : 'disabled'}>
                         ${subSubcategoryOptionsHtml}
                     </select>
@@ -683,7 +677,7 @@ function addProgramRollRow(rollData = null) {
             </div>
 
             <!-- Dynamic Category Attributes & Specifications -->
-            <div class="mt-3.5 pt-3.5 border-top" id="roll_attrs_box_${idx}">
+            <div class="mt-4 pt-4 border-top" id="roll_attrs_box_${idx}">
                 <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
                     <span class="small fw-bold text-dark d-flex align-items-center gap-1.5" style="font-size: 12px;">
                         <i class="bi bi-sliders text-primary"></i>
@@ -693,8 +687,8 @@ function addProgramRollRow(rollData = null) {
                         <i class="bi bi-plus-circle me-1"></i>+ Add Attribute
                     </button>
                 </div>
-                <div id="roll_attrs_container_${idx}" class="roll-attributes-container d-flex flex-column gap-3.5">
-                    <div class="text-muted small py-3 px-3.5 bg-white rounded-3 border border-dashed fst-italic" style="font-size: 11px;">
+                <div id="roll_attrs_container_${idx}" class="roll-attributes-container d-flex flex-column gap-3">
+                    <div class="text-muted small py-3 px-3 bg-white rounded-3 border border-dashed fst-italic" style="font-size: 11px;">
                         <i class="bi bi-info-circle me-1"></i>Select a Main Category above to view and assign category attributes.
                     </div>
                 </div>
@@ -1779,8 +1773,8 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
                     const attrLabelTitle = isSize ? 'Size Attributes:' : `${escapeHtml(attr.attr_name)} Attributes:`;
 
                     html += `
-                    <div class="p-3.5 bg-white rounded-3 border shadow-xs roll-attr-block mb-3.5" id="roll_attr_block_${idx}_${cleanAttrName}">
-                        <div class="d-flex justify-content-between align-items-center mb-2.5 flex-wrap gap-2">
+                    <div class="p-3 bg-white rounded-3 border shadow-xs roll-attr-block mb-3" id="roll_attr_block_${idx}_${cleanAttrName}">
+                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                             <label class="form-label fw-bold mb-0 text-dark small d-flex align-items-center gap-1.5" style="font-size: 12px;">
                                 <i class="bi bi-${isSize ? 'rulers' : 'tags'} text-primary"></i>
                                 <span>${attrLabelTitle}</span>
@@ -1812,16 +1806,16 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
                     </div>`;
                 } else if (attr.attr_type === 'NUMBER') {
                     html += `
-                    <div class="p-3.5 bg-white rounded-3 border shadow-xs roll-attr-block mb-3.5">
-                        <label class="form-label small text-muted mb-1.5 fw-semibold" style="font-size: 11px;">
+                    <div class="p-3 bg-white rounded-3 border shadow-xs roll-attr-block mb-3">
+                        <label class="form-label small text-muted mb-2 fw-semibold" style="font-size: 11px;">
                             ${escapeHtml(attr.attr_name)} ${isReq ? '<span class="text-danger">*</span>' : ''}
                         </label>
                         <input type="number" step="any" name="rolls[${idx}][attributes][${escapeHtml(attr.attr_name)}]" class="form-control form-control-sm" style="font-size: 12px; height: 36px;" value="${escapeHtml(curVal)}" placeholder="Enter ${escapeHtml(attr.attr_name)}" ${isReq ? 'required' : ''}>
                     </div>`;
                 } else {
                     html += `
-                    <div class="p-3.5 bg-white rounded-3 border shadow-xs roll-attr-block mb-3.5">
-                        <label class="form-label small text-muted mb-1.5 fw-semibold" style="font-size: 11px;">
+                    <div class="p-3 bg-white rounded-3 border shadow-xs roll-attr-block mb-3">
+                        <label class="form-label small text-muted mb-2 fw-semibold" style="font-size: 11px;">
                             ${escapeHtml(attr.attr_name)} ${isReq ? '<span class="text-danger">*</span>' : ''}
                         </label>
                         <input type="text" name="rolls[${idx}][attributes][${escapeHtml(attr.attr_name)}]" class="form-control form-control-sm" style="font-size: 12px; height: 36px;" value="${escapeHtml(curVal)}" placeholder="Enter ${escapeHtml(attr.attr_name)}" ${isReq ? 'required' : ''}>
