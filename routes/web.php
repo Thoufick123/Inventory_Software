@@ -568,6 +568,9 @@ class Router {
         $this->get('warehouse/allocation/create', 'WarehouseController', 'createAllocation', ['AuthMiddleware', ['PermissionMiddleware', 'allocation', 'create']]);
         $this->post('warehouse/allocation/store', 'WarehouseController', 'storeAllocation', ['AuthMiddleware', ['PermissionMiddleware', 'allocation', 'create']]);
         $this->get('warehouse/allocation/view/{id}', 'WarehouseController', 'viewAllocation', ['AuthMiddleware', ['PermissionMiddleware', 'allocation', 'view']]);
+        $this->get('warehouse/allocation/edit/{id}', 'WarehouseController', 'editAllocation', ['AuthMiddleware', ['PermissionMiddleware', 'allocation', 'edit']]);
+        $this->post('warehouse/allocation/update/{id}', 'WarehouseController', 'updateAllocation', ['AuthMiddleware', ['PermissionMiddleware', 'allocation', 'edit']]);
+        $this->post('warehouse/allocation/delete/{id}', 'WarehouseController', 'deleteAllocation', ['AuthMiddleware', ['PermissionMiddleware', 'allocation', 'delete']]);
         $this->post('warehouse/allocation/approve/{id}', 'WarehouseController', 'approveAllocation', ['AuthMiddleware', ['PermissionMiddleware', 'allocation', 'approve']]);
         $this->post('warehouse/allocation/pick/{id}', 'WarehouseController', 'pickAllocation', ['AuthMiddleware', ['PermissionMiddleware', 'allocation', 'pick']]);
         $this->post('warehouse/allocation/pack/{id}', 'WarehouseController', 'packAllocation', ['AuthMiddleware', ['PermissionMiddleware', 'allocation', 'pack']]);

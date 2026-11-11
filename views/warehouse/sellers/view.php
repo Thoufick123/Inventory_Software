@@ -15,7 +15,7 @@
     </div>
     <div class="d-flex flex-wrap gap-2">
         <?php if (hasPermission('wh_sellers', 'edit')): ?>
-        <a href="<?= url('warehouse/sellers/edit/' . $seller['id']) ?>" class="btn btn-primary shadow-sm">
+        <a href="<?= url('warehouse/sellers/create?seller_id=' . $seller['id'] . '&mode=edit') ?>" class="btn btn-primary shadow-sm">
             <i class="bi bi-pencil-square me-1"></i> Edit Supplier
         </a>
         <?php endif; ?>

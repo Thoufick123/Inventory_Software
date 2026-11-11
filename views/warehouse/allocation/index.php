@@ -111,9 +111,30 @@
                                 </a>
                             <?php endif; ?>
 
-                            <a href="<?= url('warehouse/allocation/view/' . $alc['id']) ?>" class="btn btn-sm btn-outline-primary" title="View Details">
+                            <a href="<?= url('warehouse/allocation/view/' . $alc['id']) ?>" class="btn btn-sm btn-outline-primary me-1" title="View Details">
                                 <i class="bi bi-eye"></i>
                             </a>
+
+                            <?php if (hasPermission('allocation', 'edit') || hasPermission('warehouse', 'edit')): ?>
+                                <a href="<?= url('warehouse/allocation/edit/' . $alc['id']) ?>" class="btn btn-sm btn-outline-secondary me-1" title="Edit Allocation">
+                                    <i class="bi bi-pencil-square"></i>
+                                </a>
+                            <?php endif; ?>
+
+                            <?php if (hasPermission('allocation', 'delete') || hasPermission('warehouse', 'delete') || hasPermission('allocation', 'edit')): ?>
+                                <button type="button" class="btn btn-sm btn-outline-danger" 
+                                        onclick="openDeleteAllocationModal(<?= htmlspecialchars(json_encode([
+                                            'id' => (int)$alc['id'],
+                                            'number' => $alc['allocation_number'],
+                                            'warehouse' => $alc['warehouse_name'] ?? '',
+                                            'destination' => $alc['shop_name'] ?? ($alc['dest_warehouse_name'] ?? ($alc['channel_name'] ?? ($alc['destination_type'] ?? ''))),
+                                            'qty' => $alc['total_requested_qty'],
+                                            'status' => $alc['status']
+                                        ])) ?>)" 
+                                        title="Delete Allocation">
+                                    <i class="bi bi-trash3"></i>
+                                </button>
+                            <?php endif; ?>
                         </td>
                     </tr>
                 <?php endforeach; endif; ?>
@@ -121,3 +142,95 @@
         </table>
     </div>
 </div>
+
+<!-- Modal Confirm Delete Allocation with Reason -->
+<div class="modal fade" id="modalDeleteAllocation" tabindex="-1" aria-labelledby="modalDeleteAllocationLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <form method="POST" id="formDeleteAllocation" action="">
+                <?= CSRF::field() ?>
+                <div class="modal-header bg-danger text-white py-3">
+                    <h5 class="modal-title fw-bold" id="modalDeleteAllocationLabel">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>Delete / Cancel Allocation Requisition
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="alert alert-warning border border-warning-subtle small py-2 px-3 mb-3">
+                        <i class="bi bi-info-circle-fill me-1"></i>
+                        <strong>Important:</strong> Deleting this allocation will cancel the requisition, release all scanned/allocated product tags, and <strong>restore the allocated stock back to available warehouse inventory</strong>.
+                    </div>
+
+                    <div class="card bg-light border-0 mb-3">
+                        <div class="card-body p-3 small">
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <span class="text-muted d-block">Allocation #:</span>
+                                    <strong class="font-monospace text-primary fs-6" id="delAllocNumber">-</strong>
+                                </div>
+                                <div class="col-6">
+                                    <span class="text-muted d-block">Current Status:</span>
+                                    <span class="badge bg-secondary" id="delAllocStatus">-</span>
+                                </div>
+                                <div class="col-6">
+                                    <span class="text-muted d-block">Warehouse:</span>
+                                    <strong class="text-dark" id="delAllocWarehouse">-</strong>
+                                </div>
+                                <div class="col-6">
+                                    <span class="text-muted d-block">Destination / Qty:</span>
+                                    <strong class="text-dark" id="delAllocDestination">-</strong> (<span id="delAllocQty">0</span> pcs)
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold text-dark small">
+                            Reason for Deletion / Cancellation <span class="text-danger">*</span>
+                        </label>
+                        <textarea name="reason" id="delAllocReason" class="form-control" rows="3" required 
+                                  placeholder="Please provide the exact reason why this allocation is being deleted (e.g. Allocation cancelled by shop, duplicate dispatch, wrong products scanned)..."></textarea>
+                        <div class="form-text text-muted" style="font-size: 0.76rem;">
+                            This reason will be recorded in the system audit log and inventory movement history for tracking.
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">
+                        <i class="bi bi-x-lg me-1"></i> Cancel
+                    </button>
+                    <button type="submit" class="btn btn-danger btn-sm px-3 fw-bold" id="btnConfirmDeleteAlloc">
+                        <i class="bi bi-trash3-fill me-1"></i> Confirm & Delete Allocation
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function openDeleteAllocationModal(data) {
+    if (!data || !data.id) return;
+    const form = document.getElementById('formDeleteAllocation');
+    if (form) {
+        form.action = '<?= url("warehouse/allocation/delete/") ?>' + data.id;
+    }
+    document.getElementById('delAllocNumber').textContent = data.number || ('#' + data.id);
+    document.getElementById('delAllocStatus').textContent = data.status || 'UNKNOWN';
+    document.getElementById('delAllocStatus').className = 'badge ' + (
+        data.status === 'DISPATCHED' ? 'bg-success' :
+        (data.status === 'APPROVED' ? 'bg-info text-dark' :
+        (data.status === 'REQUESTED' ? 'bg-warning text-dark' : 'bg-primary'))
+    );
+    document.getElementById('delAllocWarehouse').textContent = data.warehouse || '-';
+    document.getElementById('delAllocDestination').textContent = data.destination || '-';
+    document.getElementById('delAllocQty').textContent = data.qty || 0;
+    document.getElementById('delAllocReason').value = '';
+
+    const modalEl = document.getElementById('modalDeleteAllocation');
+    if (modalEl && typeof bootstrap !== 'undefined') {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+    }
+}
+</script>
