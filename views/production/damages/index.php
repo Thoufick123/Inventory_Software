@@ -704,7 +704,7 @@
                                         <div class="col-lg-2 col-md-3">
                                             <label class="form-label required small fw-bold">Weight (kg) *</label>
                                             <div class="input-group">
-                                                <input type="number" min="0.01" step="0.01" name="replacement_weight" id="inputReplacementWeight" class="form-control" placeholder="0.00">
+                                                <input type="text" inputmode="decimal" name="replacement_weight" id="inputReplacementWeight" class="form-control" placeholder="0.00">
                                                 <span class="input-group-text">kg</span>
                                             </div>
                                         </div>

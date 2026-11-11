@@ -2037,7 +2037,7 @@ CREATE TABLE `roll_damages` (
   `damage_reason` varchar(255) NOT NULL,
   `defect_notes` text DEFAULT NULL,
   `photo_url` varchar(500) DEFAULT NULL,
-  `status` enum('LOGGED','INVESTIGATING','CLAIMED','SETTLED','REJECTED','CLOSED','CANCELLED','REPLACEMENT_RECEIVED') NOT NULL DEFAULT 'LOGGED',
+  `status` enum('LOGGED','INVESTIGATING','CLAIMED','SETTLED','REJECTED','CLOSED','CANCELLED','REPLACEMENT_RECEIVED','RETURN_INITIATED','RETURNED_TO_SELLER','REFUND_RECEIVED') NOT NULL DEFAULT 'LOGGED',
   `resolution_type` varchar(100) DEFAULT 'NONE',
   `refund_amount` decimal(12,2) DEFAULT 0.00,
   `debit_note_number` varchar(100) DEFAULT NULL,

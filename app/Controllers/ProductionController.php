@@ -43,6 +43,31 @@ class ProductionController {
         } catch (\Throwable $e) {
             error_log('Unable to ensure production supplier archive column: ' . $e->getMessage());
         }
+
+        $statusColumn = Database::fetchOne("SHOW COLUMNS FROM roll_damages LIKE 'status'");
+        if (!$statusColumn) {
+            throw new RuntimeException('The damage status column could not be found.');
+        }
+        $statusType = strtoupper((string)($statusColumn['Type'] ?? ''));
+        $requiredStatuses = ['RETURN_INITIATED', 'RETURNED_TO_SELLER', 'REFUND_RECEIVED'];
+        $needsStatusMigration = false;
+        foreach ($requiredStatuses as $requiredStatus) {
+            if (strpos($statusType, "'" . $requiredStatus . "'") === false) {
+                $needsStatusMigration = true;
+                break;
+            }
+        }
+        if ($needsStatusMigration) {
+            Database::execute("UPDATE roll_damages SET status = 'LOGGED' WHERE status = ''");
+            Database::execute(
+                "ALTER TABLE roll_damages
+                 MODIFY COLUMN status ENUM(
+                    'LOGGED', 'INVESTIGATING', 'CLAIMED', 'SETTLED', 'REJECTED',
+                    'CLOSED', 'CANCELLED', 'REPLACEMENT_RECEIVED',
+                    'RETURN_INITIATED', 'RETURNED_TO_SELLER', 'REFUND_RECEIVED'
+                 ) NOT NULL DEFAULT 'LOGGED'"
+            );
+        }
     }
 
     /**
@@ -3800,6 +3825,7 @@ class ProductionController {
             return;
         }
 
+        self::ensureDatabaseSchema();
         $damageId = (int)$id;
         $status = trim($_POST['status'] ?? '');
         $resolutionType = trim($_POST['resolution_type'] ?? '');
