@@ -3224,38 +3224,37 @@ class ProductionController {
         if (empty($submittedQrCodes) && !empty($_POST['qr_code'])) {
             $submittedQrCodes = [$_POST['qr_code']];
         }
-        $qrCodes = [];
-        foreach ($submittedQrCodes as $submittedCode) {
+        $qrEntries = [];
+        $seenQrCodes = [];
+        foreach ($submittedQrCodes as $scanIndex => $submittedCode) {
             $code = strtoupper(trim(explode('|', trim((string)$submittedCode), 2)[0]));
             $code = ltrim($code, '#');
             $code = trim($code);
-            if ($code !== '' && !in_array($code, $qrCodes, true)) {
-                $qrCodes[] = $code;
+            if ($code !== '' && !isset($seenQrCodes[$code])) {
+                $seenQrCodes[$code] = true;
+                $qrEntries[] = [
+                    'code' => $code,
+                    'scan_index' => (string)$scanIndex,
+                ];
             }
         }
-        $damageReason = trim($_POST['damage_reason'] ?? '');
+        $submittedReasons = $_POST['damage_reasons'] ?? [];
+        if (!is_array($submittedReasons)) {
+            $submittedReasons = [];
+        }
+        $legacyDamageReason = trim($_POST['damage_reason'] ?? '');
         $defectNotes = trim($_POST['defect_notes'] ?? '');
 
-        if (empty($qrCodes)) {
+        if (empty($qrEntries)) {
             Session::flash('error', 'Scan at least one valid fabric roll or finished product QR label before recording damage.');
-            Response::back();
-            return;
-        }
-
-        if ($damageReason === '') {
-            Session::flash('error', 'Please enter a Damage / Defect Reason.');
-            Response::back();
-            return;
-        }
-        if (mb_strlen($damageReason) > 255) {
-            Session::flash('error', 'Damage / Defect Reason must not exceed 255 characters.');
             Response::back();
             return;
         }
 
         $damageItems = [];
         $newDamageCountByRoll = [];
-        foreach ($qrCodes as $qrCode) {
+        foreach ($qrEntries as $qrEntry) {
+            $qrCode = $qrEntry['code'];
             $existingQrDamage = Database::fetchOne(
                 "SELECT damage_number FROM roll_damages WHERE qr_code = ? LIMIT 1",
                 [$qrCode]
@@ -3311,6 +3310,7 @@ class ProductionController {
                     $damageItems[] = [
                         'item_type' => 'FABRIC_ROLL',
                         'qr_code' => $qrCode,
+                        'scan_index' => $qrEntry['scan_index'],
                         'seller_id' => (int)$roll['seller_id'],
                         'seller_roll_id' => $sellerRollId,
                         'product_id' => null,
@@ -3408,6 +3408,7 @@ class ProductionController {
                 $damageItems[] = [
                     'item_type' => 'PRODUCT',
                     'qr_code' => $qrCode,
+                    'scan_index' => $qrEntry['scan_index'],
                     'seller_id' => null,
                     'seller_roll_id' => null,
                     'product_id' => (int)$prodItem['product_id'],
@@ -3443,20 +3444,77 @@ class ProductionController {
             }
         }
 
-        // Defect Photo / Evidence is required
-        if (empty($_FILES['photo']['name']) || $_FILES['photo']['error'] !== UPLOAD_ERR_OK) {
-            Session::flash('error', 'Defect Photo / Evidence is required.');
-            Response::back();
-            return;
+        $submittedPhotoFiles = $_FILES['damage_photos'] ?? [];
+        $hasPerItemPhotos = isset($submittedPhotoFiles['name']) && is_array($submittedPhotoFiles['name']);
+        foreach ($damageItems as $index => $item) {
+            $scanIndex = $item['scan_index'];
+            $damageReason = trim((string)($submittedReasons[$scanIndex] ?? $legacyDamageReason));
+            if ($damageReason === '') {
+                Session::flash('error', "Please select a Damage / Defect Reason for QR label {$item['qr_code']}.");
+                Response::back();
+                return;
+            }
+            if (mb_strlen($damageReason) > 255) {
+                Session::flash('error', "Damage / Defect Reason for QR label {$item['qr_code']} must not exceed 255 characters.");
+                Response::back();
+                return;
+            }
+            $damageItems[$index]['damage_reason'] = $damageReason;
+
+            if ($hasPerItemPhotos) {
+                $photoName = $submittedPhotoFiles['name'][$scanIndex] ?? '';
+                $photoError = (int)($submittedPhotoFiles['error'][$scanIndex] ?? UPLOAD_ERR_NO_FILE);
+                $photoTmpName = $submittedPhotoFiles['tmp_name'][$scanIndex] ?? '';
+                if ($photoName === '' || $photoError !== UPLOAD_ERR_OK || $photoTmpName === '') {
+                    Session::flash('error', "A photo / evidence file is required for QR label {$item['qr_code']}.");
+                    Response::back();
+                    return;
+                }
+                $damageItems[$index]['photo_file'] = [
+                    'name' => $photoName,
+                    'type' => $submittedPhotoFiles['type'][$scanIndex] ?? '',
+                    'tmp_name' => $photoTmpName,
+                    'error' => $photoError,
+                    'size' => $submittedPhotoFiles['size'][$scanIndex] ?? 0,
+                ];
+            }
         }
 
-        // Handle photo upload (Cloudinary Cloud Storage)
-        $photoUrl = CloudinaryService::upload($_FILES['photo'], 'grm_inventory/damages', 'image');
-
-        if (!$photoUrl) {
-            Session::flash('error', 'Failed to upload Defect Photo. Please ensure Cloudinary is configured and a valid image is provided.');
-            Response::back();
-            return;
+        $sharedPhotoUrl = null;
+        if (!$hasPerItemPhotos) {
+            $legacyPhoto = $_FILES['photo'] ?? [];
+            if (empty($legacyPhoto['name']) || ($legacyPhoto['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                Session::flash('error', 'Defect Photo / Evidence is required for every scanned label.');
+                Response::back();
+                return;
+            }
+            $sharedPhotoUrl = CloudinaryService::upload($legacyPhoto, 'grm_inventory/damages', 'image');
+            if (!$sharedPhotoUrl) {
+                Session::flash('error', 'Failed to upload Defect Photo. Please ensure Cloudinary is configured and a valid image is provided.');
+                Response::back();
+                return;
+            }
+        } else {
+            $photosToUpload = [];
+            foreach ($damageItems as $index => $item) {
+                $photosToUpload[$index] = $item['photo_file'];
+            }
+            $uploadedPhotoUrls = CloudinaryService::uploadMany($photosToUpload, 'grm_inventory/damages', 'image');
+            foreach ($damageItems as $index => $item) {
+                $photoUrl = $uploadedPhotoUrls[$index] ?? null;
+                if (!$photoUrl) {
+                    Session::flash('error', "Failed to upload the photo for QR label {$item['qr_code']}. Please ensure Cloudinary is configured and the file is valid.");
+                    Response::back();
+                    return;
+                }
+                $damageItems[$index]['photo_url'] = $photoUrl;
+                unset($damageItems[$index]['photo_file']);
+            }
+        }
+        if (!$hasPerItemPhotos) {
+            foreach ($damageItems as $index => $item) {
+                $damageItems[$index]['photo_url'] = $sharedPhotoUrl;
+            }
         }
 
         $userId = (int)(Session::get('user_id') ?? 1);
@@ -3484,9 +3542,9 @@ class ProductionController {
                         $item['qr_code'],
                         $item['damaged_weight'],
                         $item['loss_amount'],
-                        $damageReason,
+                        $item['damage_reason'],
                         $defectNotes ?: null,
-                        $photoUrl,
+                        $item['photo_url'],
                         $userId,
                         $createdAt,
                         $createdAt
@@ -3506,7 +3564,7 @@ class ProductionController {
                     'item_type' => $item['item_type'],
                     'qr_code' => $item['qr_code'],
                     'loss_amount' => $item['loss_amount'],
-                    'reason' => $damageReason
+                    'reason' => $item['damage_reason']
                 ]);
             }
             Database::commit();

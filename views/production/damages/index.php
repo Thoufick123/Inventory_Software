@@ -349,7 +349,7 @@
 
 <!-- 1. Report Damage Modal -->
 <div class="modal fade" id="reportDamageModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
         <div class="modal-content shadow-lg border-danger">
             <div class="modal-header bg-danger text-white py-3">
                 <h5 class="modal-title fw-bold fs-6">
@@ -370,25 +370,17 @@
                                     <strong>Scanned labels</strong>
                                     <span id="damageScannedCount" class="badge bg-secondary">0 pieces</span>
                                 </div>
-                                <div id="damageScannedLabels" class="list-group small">
+                                <div id="damageScannedLabels" class="list-group small" style="max-height: 340px; overflow-y: auto;">
                                     <div class="list-group-item text-muted" id="damageScannedEmpty">No labels scanned yet.</div>
                                 </div>
                             </div>
                             <div id="damageQrInputs"></div>
                         </div>
 
-                        <!-- Damage Reason -->
-                        <div class="col-md-6">
-                            <div class="d-flex justify-content-between align-items-center mb-1">
-                                <label class="form-label fw-bold mb-0" for="reportReasonSelect">Damage / Defect Reason <span class="text-danger">*</span></label>
-                                <button type="button" class="btn btn-link btn-sm text-decoration-none p-0" onclick="addDamageReason('reportReasonSelect')"><i class="bi bi-plus-circle me-1"></i>New</button>
+                        <div class="col-12">
+                            <div class="alert alert-info py-2 mb-0 small">
+                                <i class="bi bi-info-circle me-1"></i>Set a damage reason and attach a photo for each scanned label.
                             </div>
-                            <select name="damage_reason" id="reportReasonSelect" class="form-select" required>
-                                <option value="">-- Select Reason --</option>
-                                <?php foreach ($damageReasons as $damageReasonOption): ?>
-                                    <option value="<?= e($damageReasonOption['damage_reason']) ?>"><?= e($damageReasonOption['damage_reason']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
                         </div>
 
                         <!-- Damaged Weight (Disabled with clear visibility - Auto-calculated) -->
@@ -416,19 +408,10 @@
                             <small class="text-muted d-block mt-1" id="reportLossCalcHelp">Calculated: 0.00 kg × ₹0.00/kg</small>
                         </div>
 
-                        <!-- Photo Evidence Upload (Required) -->
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold required">
-                                <i class="bi bi-camera me-1 text-danger"></i>Defect Photo / Evidence
-                            </label>
-                            <input type="file" name="photo" id="reportPhotoInput" class="form-control" accept="image/*,application/pdf" required>
-                            <small class="text-muted d-block mt-1">Upload clear photo/evidence of the damaged roll</small>
-                        </div>
-
-                        <!-- Specific Notes (Either Reason or Notes is required) -->
+                        <!-- Shared notes are optional; reason and evidence are captured per scanned label. -->
                         <div class="col-12">
                             <label class="form-label fw-semibold" id="reportNotesLabel">
-                                Defect Notes &amp; Observations <small class="text-muted fw-normal">(Optional)</small>
+                                Additional Notes &amp; Observations <small class="text-muted fw-normal">(Optional, applies to all scanned labels)</small>
                             </label>
                             <textarea name="defect_notes" id="reportDefectNotes" class="form-control" rows="2" placeholder="Add additional observations if needed"></textarea>
                         </div>
@@ -853,6 +836,7 @@
 let loadedEditRollsMap = {};
 let damageScannedLabels = [];
 let damageScanInProgress = false;
+const damageReasonOptions = <?= json_encode(array_values(array_column($damageReasons, 'damage_reason')), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 
 function setDamageRollScanStatus(message, isError = false) {
     const status = document.getElementById('damageRollScanStatus');
@@ -892,20 +876,23 @@ function renderDamageScannedLabels() {
         totalLoss += item.loss;
 
         const row = document.createElement('div');
-        row.className = 'list-group-item d-flex justify-content-between align-items-center gap-2';
+        row.className = 'list-group-item';
+        const header = document.createElement('div');
+        header.className = 'd-flex justify-content-between align-items-start gap-2';
         const details = document.createElement('div');
-        details.className = 'text-break';
+        details.className = 'text-break flex-grow-1';
         const code = document.createElement('strong');
         code.textContent = item.code;
         const metadata = document.createElement('div');
         metadata.className = 'text-muted small mt-0.5';
 
         const isProd = (item.itemType === 'PRODUCT');
-        const typeBadge = isProd
-            ? '<span class="badge bg-primary-subtle text-primary border me-1"><i class="bi bi-box-seam me-1"></i>Product</span>'
-            : '<span class="badge bg-secondary-subtle text-secondary border me-1"><i class="bi bi-disc me-1"></i>Roll</span>';
-
-        metadata.innerHTML = `${typeBadge} <span>${item.sellerName} • ${item.rollNumber} • ${item.weight.toFixed(2)} kg • ₹${item.loss.toFixed(2)}</span>`;
+        const typeBadge = document.createElement('span');
+        typeBadge.className = `badge ${isProd ? 'bg-primary-subtle text-primary' : 'bg-secondary-subtle text-secondary'} border me-1`;
+        typeBadge.textContent = isProd ? 'Product' : 'Roll';
+        metadata.append(typeBadge, document.createTextNode(
+            `${item.sellerName} • ${item.rollNumber} • ${item.weight.toFixed(2)} kg • ₹${item.loss.toFixed(2)}`
+        ));
         details.append(code, metadata);
 
         const remove = document.createElement('button');
@@ -917,12 +904,70 @@ function renderDamageScannedLabels() {
             damageScannedLabels.splice(index, 1);
             renderDamageScannedLabels();
         });
-        row.append(details, remove);
+        header.append(details, remove);
+        row.appendChild(header);
+
+        const fields = document.createElement('div');
+        fields.className = 'row g-2 mt-1';
+
+        const reasonColumn = document.createElement('div');
+        reasonColumn.className = 'col-md-6';
+        const reasonLabel = document.createElement('label');
+        reasonLabel.className = 'form-label small fw-semibold mb-1';
+        reasonLabel.htmlFor = `damageReason_${index}`;
+        reasonLabel.textContent = 'Damage / Defect Reason *';
+        const reasonControls = document.createElement('div');
+        reasonControls.className = 'd-flex gap-1';
+        const reasonSelect = document.createElement('select');
+        reasonSelect.id = `damageReason_${index}`;
+        reasonSelect.name = `damage_reasons[${index}]`;
+        reasonSelect.className = 'form-select form-select-sm';
+        reasonSelect.required = true;
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = '-- Select Reason --';
+        reasonSelect.appendChild(placeholder);
+        damageReasonOptions.forEach(reason => {
+            const option = document.createElement('option');
+            option.value = reason;
+            option.textContent = reason;
+            reasonSelect.appendChild(option);
+        });
+        reasonSelect.value = item.damageReason || '';
+        reasonSelect.addEventListener('change', () => {
+            item.damageReason = reasonSelect.value;
+        });
+        const addReasonButton = document.createElement('button');
+        addReasonButton.type = 'button';
+        addReasonButton.className = 'btn btn-sm btn-outline-primary flex-shrink-0';
+        addReasonButton.textContent = 'New';
+        addReasonButton.addEventListener('click', () => addDamageReason(reasonSelect.id));
+        reasonControls.append(reasonSelect, addReasonButton);
+        reasonColumn.append(reasonLabel, reasonControls);
+
+        const photoColumn = document.createElement('div');
+        photoColumn.className = 'col-md-6';
+        const photoLabel = document.createElement('label');
+        photoLabel.className = 'form-label small fw-semibold mb-1';
+        photoLabel.htmlFor = `damagePhoto_${index}`;
+        photoLabel.textContent = 'Defect Photo / Evidence *';
+        if (!item.photoInput) {
+            item.photoInput = document.createElement('input');
+            item.photoInput.type = 'file';
+            item.photoInput.accept = 'image/*,application/pdf';
+            item.photoInput.className = 'form-control form-control-sm';
+            item.photoInput.required = true;
+        }
+        item.photoInput.id = `damagePhoto_${index}`;
+        item.photoInput.name = `damage_photos[${index}]`;
+        photoColumn.append(photoLabel, item.photoInput);
+        fields.append(reasonColumn, photoColumn);
+        row.appendChild(fields);
         list.appendChild(row);
 
         const hiddenCode = document.createElement('input');
         hiddenCode.type = 'hidden';
-        hiddenCode.name = 'qr_codes[]';
+        hiddenCode.name = `qr_codes[${index}]`;
         hiddenCode.value = item.code;
         inputs.appendChild(hiddenCode);
     });
@@ -970,7 +1015,8 @@ function scanDamageRollQr() {
                 sellerName: data.seller_name || 'Own Production',
                 rollNumber: data.roll_number,
                 weight: pieceWeight,
-                loss: loss
+                loss: loss,
+                damageReason: ''
             });
             renderDamageScannedLabels();
             const badgeType = isProd ? 'Finished Product' : 'Fabric Roll';
@@ -1551,9 +1597,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const reportForm = document.getElementById('reportDamageForm');
     if (reportForm) {
         reportForm.addEventListener('submit', function(e) {
-            const reason = document.getElementById('reportReasonSelect').value.trim();
-            const photoInput = document.getElementById('reportPhotoInput');
-
             if (damageScannedLabels.length === 0) {
                 alert('Scan at least one valid fabric QR label first.');
                 e.preventDefault();
@@ -1564,15 +1607,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.preventDefault();
                 return false;
             }
-            if (!reason) {
-                alert('Please enter a Damage / Defect Reason.');
-                e.preventDefault();
-                return false;
-            }
-            if (photoInput && photoInput.hasAttribute('required') && (!photoInput.files || photoInput.files.length === 0)) {
-                alert('Defect Photo / Evidence is required. Please attach a clear photo of the damaged roll.');
-                e.preventDefault();
-                return false;
+            for (const item of damageScannedLabels) {
+                if (!item.damageReason || !item.damageReason.trim()) {
+                    alert(`Please select a Damage / Defect Reason for QR label ${item.code}.`);
+                    e.preventDefault();
+                    return false;
+                }
+                if (!item.photoInput || !item.photoInput.files || item.photoInput.files.length === 0) {
+                    alert(`Please attach a photo / evidence file for QR label ${item.code}.`);
+                    e.preventDefault();
+                    return false;
+                }
             }
         });
     }
@@ -1689,6 +1734,9 @@ async function addDamageReason(selectId) {
         }
 
         const savedReason = result.reason;
+        if (!damageReasonOptions.some(option => option.toLowerCase() === savedReason.toLowerCase())) {
+            damageReasonOptions.push(savedReason);
+        }
         const select = document.getElementById(selectId);
         if (select && !Array.from(select.options).some(option => option.value.toLowerCase() === savedReason.toLowerCase())) {
             const option = document.createElement('option');
@@ -1696,7 +1744,10 @@ async function addDamageReason(selectId) {
             option.textContent = savedReason;
             select.appendChild(option);
         }
-        if (select) select.value = savedReason;
+        if (select) {
+            select.value = savedReason;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        }
     } catch (error) {
         window.alert(error.message || 'Unable to save this damage reason.');
     }
