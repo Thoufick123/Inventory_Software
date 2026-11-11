@@ -176,7 +176,7 @@
                         <th>Vehicle / Tracking</th>
                         <th>Dispatched At</th>
                         <th>Status</th>
-                        <th class="text-end">Actions</th>
+                        <th class="text-end" style="min-width: 220px;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -207,13 +207,33 @@
                                     </span>
                                 </td>
                                 <td class="text-end">
-                                    <div class="d-flex justify-content-end gap-1">
-                                        <?php if (hasPermission('allocation_outward', 'gatepass')): ?>
-                                            <a href="<?= url('warehouse/allocation/gatepass/' . $o['allocation_id']) ?>" target="_blank" class="btn btn-sm btn-outline-secondary">
-                                                <i class="bi bi-qr-code-scan me-1"></i> QR Sticker / Pass
+                                    <div class="d-flex justify-content-end gap-1 flex-wrap">
+                                        <?php if (hasPermission('allocation_outward', 'view')): ?>
+                                            <button type="button" class="btn btn-sm btn-outline-primary fw-semibold" onclick="viewAllocationOutwardDetails(<?= (int)$o['id'] ?>)" title="View Outward Details &amp; Items Breakdown">
+                                                <i class="bi bi-eye me-1"></i> View
+                                            </button>
+                                        <?php endif; ?>
+
+                                        <?php if (hasPermission('allocation_outward', 'edit')): ?>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary fw-semibold" onclick='openEditAllocationOutwardModal(<?= json_encode($o, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)' title="Edit Vehicle &amp; Dispatch Details">
+                                                <i class="bi bi-pencil me-1"></i> Edit
+                                            </button>
+                                        <?php endif; ?>
+
+                                        <?php if (hasPermission('allocation_outward', 'gatepass') || hasPermission('allocation_outward', 'view')): ?>
+                                            <a href="<?= url('warehouse/allocation/gatepass/' . $o['allocation_id']) ?>" target="_blank" class="btn btn-sm btn-outline-info" title="Print QR Gatepass / Labels">
+                                                <i class="bi bi-qr-code-scan"></i>
                                             </a>
                                         <?php endif; ?>
 
+                                        <?php if (hasPermission('allocation_outward', 'delete')): ?>
+                                            <form method="POST" action="<?= url('warehouse/allocation/outward/delete/' . (int)$o['id']) ?>" class="d-inline mb-0" onsubmit="return confirm('Are you sure you want to delete Outward Dispatch #<?= htmlspecialchars($o['outward_number'], ENT_QUOTES) ?>? This will cancel the outward and revert allocation status to Approved.');">
+                                                <?= CSRF::field() ?>
+                                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete Outward Dispatch">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
+                                        <?php endif; ?>
                                     </div>
                                 </td>
                             </tr>
@@ -467,3 +487,324 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 <?php endif; ?>
+
+<!-- ========================================================================= -->
+<!-- MODAL: VIEW ALLOCATION OUTWARD DETAILS & ITEMS BREAKDOWN -->
+<!-- ========================================================================= -->
+<div class="modal fade" id="viewAllocationOutwardModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0 rounded-3">
+            <div class="modal-header bg-dark text-white py-3">
+                <h5 class="modal-title fw-bold">
+                    <i class="bi bi-truck me-2 text-primary"></i>Outward Dispatch Details
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="text-center py-4 text-muted" id="vaodLoadingSpinner">
+                    <div class="spinner-border text-primary mb-2" role="status"></div>
+                    <div>Loading outward dispatch details...</div>
+                </div>
+                <div id="vaodContent" style="display: none;">
+                    <div class="d-flex justify-content-between align-items-center p-3 rounded-3 bg-light border mb-3 flex-wrap gap-2">
+                        <div>
+                            <span class="text-uppercase small text-muted fw-bold d-block">Outward Document #</span>
+                            <span class="fs-5 fw-bold text-primary font-monospace" id="vaodOutwardNumber">—</span>
+                        </div>
+                        <div>
+                            <span class="badge bg-success px-3 py-2 fs-7" id="vaodStatusBadge">DISPATCHED</span>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6 col-12">
+                            <div class="card bg-light border-0 p-3 rounded-3 h-100">
+                                <h6 class="fw-bold text-dark mb-2"><i class="bi bi-diagram-3 text-primary me-1"></i>Allocation &amp; Route</h6>
+                                <div class="small mb-1"><span class="text-muted">Allocation #:</span> <strong id="vaodAllocNumber" class="font-monospace text-primary"></strong></div>
+                                <div class="small mb-1"><span class="text-muted">Source Warehouse:</span> <strong id="vaodSourceWh"></strong></div>
+                                <div class="small mb-1"><span class="text-muted">Destination:</span> <strong id="vaodDestination"></strong></div>
+                                <div class="small mb-1"><span class="text-muted">Dispatched By:</span> <span id="vaodDispatchedBy"></span></div>
+                                <div class="small"><span class="text-muted">Dispatch Date:</span> <span id="vaodDispatchDate"></span></div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 col-12">
+                            <div class="card bg-light border-0 p-3 rounded-3 h-100">
+                                <h6 class="fw-bold text-dark mb-2"><i class="bi bi-truck text-success me-1"></i>Vehicle &amp; Transport Info</h6>
+                                <div class="small mb-1"><span class="text-muted">Vehicle #:</span> <strong id="vaodVehicleNum" class="font-monospace text-dark"></strong></div>
+                                <div class="small mb-1"><span class="text-muted">Transporter:</span> <span id="vaodTransporter"></span></div>
+                                <div class="small mb-1"><span class="text-muted">Driver Name &amp; Contact:</span> <span id="vaodDriver"></span></div>
+                                <div class="small mb-1"><span class="text-muted">LR / Note #:</span> <span id="vaodLrNum" class="font-monospace"></span></div>
+                                <div class="small"><span class="text-muted">Total Pieces / Boxes:</span> <strong id="vaodPiecesBoxes" class="text-success"></strong></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="vaodNotesContainer" class="alert alert-info py-2 px-3 small mb-3" style="display:none;">
+                        <strong><i class="bi bi-info-circle me-1"></i>Dispatch Notes:</strong> <span id="vaodNotes"></span>
+                    </div>
+
+                    <h6 class="fw-bold text-dark mb-2"><i class="bi bi-boxes text-primary me-1"></i>Dispatched Products Breakdown</h6>
+                    <div class="table-responsive border rounded-3 mb-2" style="max-height: 250px; overflow-y: auto;">
+                        <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light small">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Product / Style</th>
+                                    <th>SKU &amp; Barcode</th>
+                                    <th>Size / Color</th>
+                                    <th class="text-end">Dispatched Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody id="vaodItemsTbody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light py-2 px-4 d-flex justify-content-between align-items-center">
+                <a id="vaodGatepassBtn" href="#" target="_blank" class="btn btn-sm btn-outline-info">
+                    <i class="bi bi-printer me-1"></i> Print Transport Gatepass / QR
+                </a>
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL: EDIT ALLOCATION OUTWARD DISPATCH -->
+<!-- ========================================================================= -->
+<div class="modal fade" id="editAllocationOutwardModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0 rounded-3">
+            <div class="modal-header bg-dark text-white py-3 px-4">
+                <div class="d-flex align-items-center gap-2">
+                    <div style="background:#4f46e5;color:#fff;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;">
+                        <i class="bi bi-pencil-square"></i>
+                    </div>
+                    <div>
+                        <h5 class="modal-title fw-bold mb-0 text-white">Edit Warehouse Outward Dispatch</h5>
+                        <small class="text-white-50">Update vehicle details, transporter, boxes, status and tracking notes</small>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editAllocationOutwardForm" method="POST" action="">
+                <?= CSRF::field() ?>
+                <div class="modal-body p-4 bg-light">
+                    <div class="d-flex justify-content-between align-items-center p-3 rounded-3 bg-white border mb-3 flex-wrap gap-2">
+                        <div>
+                            <span class="text-uppercase small text-muted fw-bold d-block">Outward #</span>
+                            <span class="fs-6 fw-bold text-primary font-monospace" id="editAoOutwardNumber">—</span>
+                        </div>
+                        <div>
+                            <span class="text-uppercase small text-muted fw-bold d-block">Allocation #</span>
+                            <span class="badge bg-secondary font-monospace" id="editAoAllocNumber">—</span>
+                        </div>
+                    </div>
+
+                    <div class="card border-0 shadow-xs rounded-3 bg-white mb-3">
+                        <div class="card-body p-3">
+                            <h6 class="fw-bold mb-3 text-dark border-bottom pb-2">
+                                <i class="bi bi-truck text-primary me-1.5"></i>Vehicle &amp; Transporter Information
+                            </h6>
+                            <div class="row g-3">
+                                <div class="col-md-6 col-12">
+                                    <label class="form-label small fw-bold text-dark mb-1">Vehicle / Transport Reg Number <span class="text-danger">*</span></label>
+                                    <input type="text" id="editAoVehicleNumber" name="vehicle_number" class="form-control form-control-sm text-uppercase fw-semibold" placeholder="e.g. TN38AB1234 or Handover" required>
+                                </div>
+                                <div class="col-md-6 col-12">
+                                    <label class="form-label small fw-bold text-dark mb-1">Transporter / Logistics Name</label>
+                                    <input type="text" id="editAoTransporterName" name="transporter_name" class="form-control form-control-sm" placeholder="e.g. VRL Logistics, Professional Courier">
+                                </div>
+                                <div class="col-md-6 col-12">
+                                    <label class="form-label small fw-bold text-dark mb-1">Driver / Courier Person Name</label>
+                                    <input type="text" id="editAoDriverName" name="driver_name" class="form-control form-control-sm" placeholder="Driver name">
+                                </div>
+                                <div class="col-md-6 col-12">
+                                    <label class="form-label small fw-bold text-dark mb-1">Driver / Dispatch Contact Phone</label>
+                                    <input type="tel" id="editAoDriverContact" name="driver_contact" class="form-control form-control-sm font-monospace" placeholder="10-digit mobile number">
+                                </div>
+                                <div class="col-md-6 col-12">
+                                    <label class="form-label small fw-bold text-dark mb-1">LR / Consignment Tracking Number</label>
+                                    <input type="text" id="editAoLrNumber" name="lr_number" class="form-control form-control-sm font-monospace" placeholder="LR / AWB Number">
+                                </div>
+                                <div class="col-md-6 col-12">
+                                    <label class="form-label small fw-bold text-dark mb-1">Total Packed Boxes / Cartons <span class="text-danger">*</span></label>
+                                    <input type="number" id="editAoTotalBoxes" name="total_boxes" class="form-control form-control-sm text-center fw-bold" min="1" step="1" required>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card border-0 shadow-xs rounded-3 bg-white">
+                        <div class="card-body p-3">
+                            <h6 class="fw-bold mb-3 text-dark border-bottom pb-2">
+                                <i class="bi bi-clock-history text-success me-1.5"></i>Dispatch Schedule &amp; Delivery Status
+                            </h6>
+                            <div class="row g-3">
+                                <div class="col-md-6 col-12">
+                                    <label class="form-label small fw-bold text-dark mb-1">Dispatch Date &amp; Time <span class="text-danger">*</span></label>
+                                    <input type="datetime-local" id="editAoDispatchDate" name="dispatch_date" class="form-control form-control-sm" required>
+                                </div>
+                                <div class="col-md-6 col-12">
+                                    <label class="form-label small fw-bold text-dark mb-1">Delivery Status</label>
+                                    <select id="editAoStatus" name="status" class="form-select form-select-sm fw-semibold">
+                                        <option value="DISPATCHED">DISPATCHED (In Transit)</option>
+                                        <option value="DELIVERED">DELIVERED (Delivered &amp; Received)</option>
+                                    </select>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small fw-bold text-dark mb-1">Outward Notes / Special Instructions</label>
+                                    <textarea id="editAoNotes" name="notes" class="form-control form-control-sm" rows="2" placeholder="e.g. Fragile garments, seal sticker verified"></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2 px-4 d-flex justify-content-between align-items-center">
+                    <span class="text-muted small"><i class="bi bi-info-circle me-1 text-primary"></i>Changes will update the outward dispatch ledger record.</span>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary fw-semibold px-4 shadow-sm" id="btnSubmitEditAllocationOutward">
+                            <i class="bi bi-check2-circle me-1"></i> Save Changes
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+let vaodModalInstance = null;
+let editAoModalInstance = null;
+
+function viewAllocationOutwardDetails(outwardId) {
+    const modalEl = document.getElementById('viewAllocationOutwardModal');
+    if (!vaodModalInstance) vaodModalInstance = new bootstrap.Modal(modalEl);
+
+    document.getElementById('vaodLoadingSpinner').style.display = 'block';
+    document.getElementById('vaodContent').style.display = 'none';
+    vaodModalInstance.show();
+
+    fetch('<?= url("warehouse/allocation/outward/view-ajax/") ?>' + outwardId)
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('vaodLoadingSpinner').style.display = 'none';
+            if (!data.success) {
+                alert(data.message || 'Error loading outward details.');
+                vaodModalInstance.hide();
+                return;
+            }
+
+            const o = data.outward || {};
+            const items = data.items || [];
+
+            document.getElementById('vaodOutwardNumber').textContent = o.outward_number || ('#' + o.id);
+            const statusBadge = document.getElementById('vaodStatusBadge');
+            statusBadge.textContent = o.status || 'DISPATCHED';
+            statusBadge.className = 'badge px-3 py-2 fs-7 ' + (o.status === 'DELIVERED' ? 'bg-success' : 'bg-primary');
+
+            document.getElementById('vaodAllocNumber').textContent = o.allocation_number || ('ALC #' + o.allocation_id);
+            document.getElementById('vaodSourceWh').textContent = (o.warehouse_name || '') + (o.warehouse_code ? ' (' + o.warehouse_code + ')' : '');
+            document.getElementById('vaodDestination').textContent = o.destination_display || o.alloc_dest_type || '—';
+            document.getElementById('vaodDispatchedBy').textContent = o.created_by_name || 'Staff';
+            document.getElementById('vaodDispatchDate').textContent = o.dispatch_date ? new Date(o.dispatch_date).toLocaleString() : '—';
+
+            document.getElementById('vaodVehicleNum').textContent = o.vehicle_number || 'Handover';
+            document.getElementById('vaodTransporter').textContent = o.transporter_name || '—';
+            document.getElementById('vaodDriver').textContent = (o.driver_name || '—') + (o.driver_contact ? ' (' + o.driver_contact + ')' : '');
+            document.getElementById('vaodLrNum').textContent = o.lr_number || '—';
+            document.getElementById('vaodPiecesBoxes').textContent = (o.total_quantity || 0) + ' pcs (' + (o.total_boxes || 1) + ' box)';
+
+            const notesEl = document.getElementById('vaodNotes');
+            const notesCont = document.getElementById('vaodNotesContainer');
+            if (o.notes) {
+                notesEl.textContent = o.notes;
+                notesCont.style.display = 'block';
+            } else {
+                notesCont.style.display = 'none';
+            }
+
+            // Populate items table
+            const tbody = document.getElementById('vaodItemsTbody');
+            tbody.innerHTML = '';
+            if (items.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-3 text-muted">No line items found.</td></tr>';
+            } else {
+                items.forEach((it, idx) => {
+                    const row = document.createElement('tr');
+                    const qty = it.dispatched_qty > 0 ? it.dispatched_qty : (it.packed_qty > 0 ? it.packed_qty : it.requested_qty);
+                    const colorDot = it.color_hex ? `<span class="rounded-circle border d-inline-block me-1" style="width:10px;height:10px;background:${it.color_hex};vertical-align:middle;"></span>` : '';
+                    row.innerHTML = `
+                        <td class="text-muted">${idx + 1}</td>
+                        <td>
+                            <strong class="text-dark">${it.product_name || 'Product'}</strong>
+                            <small class="text-muted d-block">${it.product_code || ''}</small>
+                        </td>
+                        <td>
+                            <span class="font-monospace fw-semibold text-primary">${it.sku || '—'}</span>
+                            ${it.barcode ? `<small class="text-muted d-block font-monospace"><i class="bi bi-qr-code me-0.5"></i>${it.barcode}</small>` : ''}
+                        </td>
+                        <td>
+                            <span class="badge bg-light text-dark border">${it.size_name || 'Free'}</span>
+                            <span class="small text-muted ms-1">${colorDot}${it.color_name || 'Std'}</span>
+                        </td>
+                        <td class="text-end fw-bold text-success fs-7">
+                            ${qty} pcs
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            }
+
+            const gatepassBtn = document.getElementById('vaodGatepassBtn');
+            if (data.gatepass_url) {
+                gatepassBtn.href = data.gatepass_url;
+                gatepassBtn.style.display = 'inline-block';
+            } else {
+                gatepassBtn.style.display = 'none';
+            }
+
+            document.getElementById('vaodContent').style.display = 'block';
+        })
+        .catch(err => {
+            document.getElementById('vaodLoadingSpinner').style.display = 'none';
+            alert('Request failed: ' + err.message);
+            vaodModalInstance.hide();
+        });
+}
+
+function openEditAllocationOutwardModal(o) {
+    if (!o) return;
+    const modalEl = document.getElementById('editAllocationOutwardModal');
+    if (!editAoModalInstance) editAoModalInstance = new bootstrap.Modal(modalEl);
+
+    document.getElementById('editAllocationOutwardForm').action = '<?= url("warehouse/allocation/outward/update/") ?>' + o.id;
+    document.getElementById('editAoOutwardNumber').textContent = o.outward_number || ('#' + o.id);
+    document.getElementById('editAoAllocNumber').textContent = o.allocation_number || ('ALC #' + o.allocation_id);
+
+    document.getElementById('editAoVehicleNumber').value = o.vehicle_number || '';
+    document.getElementById('editAoTransporterName').value = o.transporter_name || '';
+    document.getElementById('editAoDriverName').value = o.driver_name || '';
+    document.getElementById('editAoDriverContact').value = o.driver_contact || '';
+    document.getElementById('editAoLrNumber').value = o.lr_number || '';
+    document.getElementById('editAoTotalBoxes').value = o.total_boxes || 1;
+
+    // Format dispatch_date for datetime-local (YYYY-MM-DDTHH:MM)
+    if (o.dispatch_date) {
+        const d = new Date(o.dispatch_date);
+        const pad = num => String(num).padStart(2, '0');
+        const formatted = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        document.getElementById('editAoDispatchDate').value = formatted;
+    } else {
+        document.getElementById('editAoDispatchDate').value = '';
+    }
+
+    document.getElementById('editAoStatus').value = o.status || 'DISPATCHED';
+    document.getElementById('editAoNotes').value = o.notes || '';
+
+    editAoModalInstance.show();
+}
+</script>

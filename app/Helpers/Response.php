@@ -342,6 +342,11 @@ function hasPermission(string $module, ?string $action = null): bool {
     if ($module === 'allocation' && in_array('allocations.' . $action, $userPermissions, true)) {
         return true;
     }
+    if ($module === 'allocation_outward') {
+        if (in_array('allocation_outward.' . $action, $userPermissions, true) || in_array('outward.' . $action, $userPermissions, true) || in_array('allocation.' . $action, $userPermissions, true)) {
+            return true;
+        }
+    }
 
     // Backward-compatibility alias fallbacks for renamed or granular submodules
     if ($module === 'production_purchases') {

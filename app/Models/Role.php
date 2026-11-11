@@ -271,9 +271,17 @@ class Role {
             ['batches', 'create', 'Create Packaging Batch & Box Consolidations', 'batches.create', null],
             ['batches', 'edit', 'Edit Packaging Batches & Box Allocations', 'batches.edit', null],
             ['batches', 'delete', 'Delete or Cancel Packaging Batches', 'batches.delete', null],
+
+            ['allocation_outward', 'view', 'View Warehouse Outward Manifests', 'allocation_outward.view', 'allocation'],
+            ['allocation_outward', 'create', 'Create Outward Transport Manifest', 'allocation_outward.create', 'allocation'],
+            ['allocation_outward', 'edit', 'Edit Outward Delivery Manifest & Vehicle Notes', 'allocation_outward.edit', 'allocation'],
+            ['allocation_outward', 'delete', 'Delete & Cancel Outward Dispatch Record', 'allocation_outward.delete', 'allocation'],
         ];
 
         try {
+            // Self-heal slugs for allocation_outward permissions
+            Database::execute("UPDATE permissions SET slug = CONCAT(module, '.', action) WHERE module = 'allocation_outward' AND (slug IS NULL OR slug = '')");
+
             foreach ($required as $r) {
                 [$mod, $act, $desc, $slug, $syncFromMod] = $r;
                 $row = Database::fetchOne("SELECT id FROM permissions WHERE module = ? AND action = ?", [$mod, $act]);
@@ -299,8 +307,35 @@ class Role {
                             );
                         }
                     }
+                } else {
+                    // Ensure existing permission has correct slug and role sync
+                    if ($syncFromMod) {
+                        $sourcePerm = Database::fetchOne("SELECT id FROM permissions WHERE module = ? AND action = ?", [$syncFromMod, $act]);
+                        if ($sourcePerm) {
+                            $sourceId = (int)$sourcePerm['id'];
+                            Database::execute(
+                                "INSERT IGNORE INTO role_permissions (role_id, permission_id) 
+                                 SELECT role_id, ? FROM role_permissions WHERE permission_id = ?",
+                                [$row['id'], $sourceId]
+                            );
+                            Database::execute(
+                                "INSERT IGNORE INTO user_permissions (user_id, permission_id) 
+                                 SELECT user_id, ? FROM user_permissions WHERE permission_id = ?",
+                                [$row['id'], $sourceId]
+                            );
+                        }
+                    }
                 }
             }
+
+            // Always ensure Super Admin (1) and Admin (2) have all allocation_outward permissions
+            Database::execute("
+                INSERT IGNORE INTO role_permissions (role_id, permission_id)
+                SELECT r.id, p.id
+                FROM roles r
+                CROSS JOIN permissions p
+                WHERE r.id IN (1, 2) AND p.module = 'allocation_outward'
+            ");
         } catch (\Throwable $e) {
             // Silently ignore if database is temporarily unavailable during boot
         }

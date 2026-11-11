@@ -13,6 +13,17 @@ class PermissionMiddleware {
      */
     public function handle(string $module, string $action): void {
         if (!hasPermission($module, $action)) {
+            // Allow access to seller edit mode if user has edit permission
+            if ($module === 'wh_sellers' && $action === 'create') {
+                $isEditReq = (!empty($_GET['mode']) && $_GET['mode'] === 'edit')
+                    || !empty($_GET['seller_id'])
+                    || (!empty($_POST['edit_supplier_mode']) && $_POST['edit_supplier_mode'] == '1')
+                    || !empty($_POST['existing_supplier_id']);
+                if ($isEditReq && hasPermission('wh_sellers', 'edit')) {
+                    return;
+                }
+            }
+
             $readableModule = ucwords(str_replace('_', ' ', $module));
             $readableAction = strtolower($action);
 
