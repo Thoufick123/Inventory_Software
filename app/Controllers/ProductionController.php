@@ -4808,42 +4808,116 @@ class ProductionController {
                 }
             }
 
-            // Master active sizes
+            // 5. Query matching product style(s) and their variants from catalog (products & product_variants)
+            $catalogSizes = [];
+            $catalogColors = [];
+
+            $matchingProducts = [];
+            if (!empty($allSubSubcatIds)) {
+                $subSubPlaceholders = implode(',', array_fill(0, count($allSubSubcatIds), '?'));
+                $matchingProducts = Database::fetchAll(
+                    "SELECT id, name, code FROM products WHERE sub_subcategory_id IN ($subSubPlaceholders) AND is_active = 1 ORDER BY id DESC",
+                    array_values($allSubSubcatIds)
+                );
+            }
+            if (empty($matchingProducts) && !empty($allSubcatIds)) {
+                $subPlaceholders = implode(',', array_fill(0, count($allSubcatIds), '?'));
+                $matchingProducts = Database::fetchAll(
+                    "SELECT id, name, code FROM products WHERE subcategory_id IN ($subPlaceholders) AND is_active = 1 ORDER BY id DESC",
+                    array_values($allSubcatIds)
+                );
+            }
+            if (empty($matchingProducts) && !empty($allCatIds)) {
+                $cPlaceholders = implode(',', array_fill(0, count($allCatIds), '?'));
+                $matchingProducts = Database::fetchAll(
+                    "SELECT id, name, code FROM products WHERE category_id IN ($cPlaceholders) AND is_active = 1 ORDER BY id DESC",
+                    array_values($allCatIds)
+                );
+            }
+
+            if (!empty($matchingProducts)) {
+                $pIds = array_column($matchingProducts, 'id');
+                $pPlaceholders = implode(',', array_fill(0, count($pIds), '?'));
+                $pvRows = Database::fetchAll(
+                    "SELECT pv.*, s.name as size_name, s.code as size_code, c.name as color_name 
+                     FROM product_variants pv
+                     LEFT JOIN sizes s ON pv.size_id = s.id
+                     LEFT JOIN colors c ON pv.color_id = c.id
+                     WHERE pv.product_id IN ($pPlaceholders) AND pv.is_active = 1
+                     ORDER BY pv.id ASC",
+                    $pIds
+                );
+
+                foreach ($pvRows as $pv) {
+                    $sName = !empty($pv['size_code']) ? $pv['size_code'] : (!empty($pv['size_name']) ? $pv['size_name'] : '');
+                    if (!empty($sName)) {
+                        foreach (explode(',', $sName) as $sp) {
+                            $sp = trim($sp);
+                            if ($sp !== '' && !in_array($sp, $catalogSizes, true)) {
+                                $catalogSizes[] = $sp;
+                            }
+                        }
+                    }
+
+                    $cName = !empty($pv['color_name']) ? trim($pv['color_name']) : '';
+                    if (!empty($cName)) {
+                        foreach (explode(',', $cName) as $cp) {
+                            $cp = trim($cp);
+                            if ($cp !== '' && !in_array($cp, $catalogColors, true)) {
+                                $catalogColors[] = $cp;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Master active sizes as fallback if no catalog sizes or configured sizes exist
             $masterSizes = Database::fetchAll("SELECT id, name, code FROM sizes WHERE is_active = 1 ORDER BY sort_order ASC, id ASC");
             $defaultSizeCodes = !empty($masterSizes) ? array_values(array_unique(array_column($masterSizes, 'code'))) : ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
 
-            // Words that should NEVER be inside SIZE options (cleans out corrupted entries like COLOR, SIZE, RED, PINK, STANDARD)
-            $junkWords = ['COLOR', 'SIZE', 'RED', 'YELLOW', 'PINK', 'BLUE', 'GREEN', 'BLACK', 'WHITE', 'STANDARD', 'DEFAULT'];
-
             $finalAttributes = [];
+            $hasSizeAttr = false;
+            $hasColorAttr = false;
+
             foreach ($scopedAttrs as $item) {
                 $attr = $item['data'];
-                if (mb_strtoupper(trim($attr['attr_name'])) === 'SIZE') {
-                    // Sanitize SIZE options
+                $attrNameUpper = mb_strtoupper(trim($attr['attr_name']));
+
+                if ($attrNameUpper === 'SIZE') {
+                    $hasSizeAttr = true;
                     $opts = !empty($attr['attr_options']) ? array_map('trim', explode(',', $attr['attr_options'])) : [];
-                    $cleanedOpts = [];
-                    foreach ($opts as $o) {
-                        $uo = mb_strtoupper(trim($o));
-                        if ($uo !== '' && !in_array($uo, $junkWords, true)) {
-                            $cleanedOpts[] = $uo;
-                        }
+                    $opts = array_values(array_unique(array_filter($opts)));
+
+                    // If catalog style has defined sizes, prioritize/merge them
+                    if (!empty($catalogSizes)) {
+                        $opts = array_values(array_unique(array_merge($catalogSizes, $opts)));
                     }
-                    $cleanedOpts = array_values(array_unique($cleanedOpts));
-                    if (empty($cleanedOpts)) {
-                        $cleanedOpts = $defaultSizeCodes;
+                    if (empty($opts)) {
+                        $opts = $defaultSizeCodes;
                     }
-                    $cleanOptionsStr = implode(',', $cleanedOpts);
-                    if ($cleanOptionsStr !== $attr['attr_options']) {
-                        Database::execute("UPDATE wh_category_attributes SET attr_options = ?, attr_type = 'MULTI_SELECT', updated_at = NOW() WHERE id = ?", [$cleanOptionsStr, $attr['id']]);
-                        $attr['attr_options'] = $cleanOptionsStr;
-                    }
+                    $attr['attr_options'] = implode(',', $opts);
                     $attr['attr_type'] = 'MULTI_SELECT';
+                    $attr['sort_order'] = 1;
+                } elseif ($attrNameUpper === 'COLOR') {
+                    $hasColorAttr = true;
+                    $opts = !empty($attr['attr_options']) ? array_map('trim', explode(',', $attr['attr_options'])) : [];
+                    $opts = array_values(array_unique(array_filter($opts)));
+
+                    // If catalog style has defined colors, prioritize/merge them
+                    if (!empty($catalogColors)) {
+                        $opts = array_values(array_unique(array_merge($catalogColors, $opts)));
+                    }
+                    $attr['attr_options'] = implode(',', $opts);
+                    $attr['attr_type'] = 'MULTI_SELECT';
+                    $attr['sort_order'] = 2;
                 }
+
                 $finalAttributes[] = $attr;
             }
 
-            // If no attributes were configured for this category hierarchy, provide clean default apparel SIZE
-            if (empty($finalAttributes)) {
+            // If no SIZE attribute was defined in wh_category_attributes, provide it dynamically
+            if (!$hasSizeAttr) {
+                $sizeOptions = !empty($catalogSizes) ? $catalogSizes : $defaultSizeCodes;
                 $finalAttributes[] = [
                     'id'                 => 0,
                     'category_id'        => $categoryId,
@@ -4851,9 +4925,25 @@ class ProductionController {
                     'sub_subcategory_id' => $subSubcategoryId,
                     'attr_name'          => 'SIZE',
                     'attr_type'          => 'MULTI_SELECT',
-                    'attr_options'       => implode(',', $defaultSizeCodes),
+                    'attr_options'       => implode(',', $sizeOptions),
                     'is_required'        => 0,
                     'sort_order'         => 1,
+                    'is_active'          => 1,
+                ];
+            }
+
+            // If catalog has COLOR variants and no COLOR attribute was in wh_category_attributes, add COLOR attribute dynamically
+            if (!$hasColorAttr && !empty($catalogColors)) {
+                $finalAttributes[] = [
+                    'id'                 => 0,
+                    'category_id'        => $categoryId,
+                    'subcategory_id'     => $subcategoryId,
+                    'sub_subcategory_id' => $subSubcategoryId,
+                    'attr_name'          => 'COLOR',
+                    'attr_type'          => 'MULTI_SELECT',
+                    'attr_options'       => implode(',', $catalogColors),
+                    'is_required'        => 0,
+                    'sort_order'         => 2,
                     'is_active'          => 1,
                 ];
             }
@@ -11239,34 +11329,6 @@ class ProductionController {
             return;
         }
 
-        // Validate cutting batch available wastage balance (excluding current sale)
-        $cb = Database::fetchOne("SELECT id, batch_number, name, program_id, wastage_weight FROM cutting_batches WHERE id = ?", [$cuttingBatchId]);
-        if (!$cb) {
-            Session::flash('error', 'Selected cutting batch not found.');
-            Response::back();
-            return;
-        }
-
-        $soldRow = Database::fetchOne(
-            "SELECT COALESCE(SUM(weight), 0.0) as sold_weight FROM wastage_sales WHERE cutting_batch_id = ? AND id != ?",
-            [$cuttingBatchId, $saleId]
-        );
-        $alreadySold = (float)($soldRow['sold_weight'] ?? 0.0);
-        $totalWastage = (float)($cb['wastage_weight'] ?? 0.0);
-        $availableWastage = max(0.0, $totalWastage - $alreadySold);
-
-        if ($availableWastage <= 0.001) {
-            Session::flash('error', "Cutting Batch [{$cb['batch_number']}] wastage is ALREADY FULLY SOLD by other transactions. Cannot update sale.");
-            Response::back();
-            return;
-        }
-
-        if ($weight > $availableWastage + 0.001) {
-            Session::flash('error', "Entered weight ({$weight} kg) exceeds available wastage balance ({$availableWastage} kg) for Batch [{$cb['batch_number']}].");
-            Response::back();
-            return;
-        }
-
         // Validate cutting batch available wastage balance
         $cb = Database::fetchOne("SELECT id, batch_number, name, program_id, wastage_weight FROM cutting_batches WHERE id = ?", [$cuttingBatchId]);
         if (!$cb) {
@@ -11479,7 +11541,7 @@ class ProductionController {
             return;
         }
 
-        // Validate cutting batch available wastage balance (excluding current sale)
+        // Validate cutting batch available wastage balance (excluding current sale being updated)
         $cb = Database::fetchOne("SELECT id, batch_number, name, program_id, wastage_weight FROM cutting_batches WHERE id = ?", [$cuttingBatchId]);
         if (!$cb) {
             Session::flash('error', 'Selected cutting batch not found.');
@@ -11496,35 +11558,7 @@ class ProductionController {
         $availableWastage = max(0.0, $totalWastage - $alreadySold);
 
         if ($availableWastage <= 0.001) {
-            Session::flash('error', "Cutting Batch [{$cb['batch_number']}] wastage is ALREADY FULLY SOLD by other transactions. Cannot update sale.");
-            Response::back();
-            return;
-        }
-
-        if ($weight > $availableWastage + 0.001) {
-            Session::flash('error', "Entered weight ({$weight} kg) exceeds available wastage balance ({$availableWastage} kg) for Batch [{$cb['batch_number']}].");
-            Response::back();
-            return;
-        }
-
-        // Validate cutting batch available wastage balance
-        $cb = Database::fetchOne("SELECT id, batch_number, name, program_id, wastage_weight FROM cutting_batches WHERE id = ?", [$cuttingBatchId]);
-        if (!$cb) {
-            Session::flash('error', 'Selected cutting batch not found.');
-            Response::back();
-            return;
-        }
-
-        $soldRow = Database::fetchOne(
-            "SELECT COALESCE(SUM(weight), 0.0) as sold_weight FROM wastage_sales WHERE cutting_batch_id = ?",
-            [$cuttingBatchId]
-        );
-        $alreadySold = (float)($soldRow['sold_weight'] ?? 0.0);
-        $totalWastage = (float)($cb['wastage_weight'] ?? 0.0);
-        $availableWastage = max(0.0, $totalWastage - $alreadySold);
-
-        if ($availableWastage <= 0.001) {
-            Session::flash('error', "Cutting Batch [{$cb['batch_number']}] wastage is ALREADY FULLY SOLD ({$alreadySold} kg sold of {$totalWastage} kg total). Cannot record another sale.");
+            Session::flash('error', "Cutting Batch [{$cb['batch_number']}] wastage is ALREADY FULLY SOLD by other transactions ({$alreadySold} kg sold of {$totalWastage} kg total). Cannot update sale.");
             Response::back();
             return;
         }
