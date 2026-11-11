@@ -4941,7 +4941,7 @@ class WarehouseController {
         $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $variants = Database::fetchAll(
             "SELECT pv.id, pv.sku, pv.qr_code, pv.qr_type, pv.series_start_code, pv.series_end_code, pv.pack_quantity,
-                    COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), '') as hsn_code,
+                    COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), NULLIF(cat.hsn_code, ''), NULLIF(c_old.hsn_code, ''), '') as hsn_code,
                     pv.selling_price, pv.mrp, p.name as product_name, p.code as product_code, p.qr_code_prefix,
                     p.category_code, p.subcategory_code, p.sub_subcategory_code,
                     s.name as size_name, s.code as size_code, c.name as color_name,
@@ -5004,6 +5004,7 @@ class WarehouseController {
             'customers'    => $customers,
             'warehouses'   => $warehouses,
             'variants'     => $variants,
+            'hsnCodes'     => $hsnCodes,
             'breadcrumb'   => [
                 ['label' => 'Warehouse', 'url' => url('warehouse/dashboard')],
                 ['label' => 'Direct Purchases', 'url' => url('warehouse/purchases')],
@@ -5241,7 +5242,7 @@ class WarehouseController {
         $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $variants = Database::fetchAll(
             "SELECT pv.id, pv.sku, pv.qr_code, pv.qr_type, pv.series_start_code, pv.series_end_code, pv.pack_quantity,
-                    COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), '') as hsn_code,
+                    COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), NULLIF(cat.hsn_code, ''), NULLIF(c_old.hsn_code, ''), '') as hsn_code,
                     pv.selling_price, pv.mrp, p.name as product_name, p.code as product_code, p.qr_code_prefix,
                     p.category_code, p.subcategory_code, p.sub_subcategory_code,
                     s.name as size_name, s.code as size_code, c.name as color_name,
@@ -5308,6 +5309,7 @@ class WarehouseController {
             'customers'    => $customers,
             'warehouses'   => $warehouses,
             'variants'     => $variants,
+            'hsnCodes'     => $hsnCodes,
             'breadcrumb'   => [
                 ['label' => 'Warehouse', 'url' => url('warehouse/dashboard')],
                 ['label' => 'Direct Purchases', 'url' => url('warehouse/purchases')],
@@ -5614,7 +5616,7 @@ class WarehouseController {
         $baseVariantSql = "
             SELECT pv.*, 
                    p.id as product_id, p.name as product_name, p.code as product_code, p.image_url as product_image,
-                   COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), '') as resolved_hsn_code,
+                   COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), NULLIF(wc.hsn_code, ''), NULLIF(cat.hsn_code, ''), '') as resolved_hsn_code,
                    COALESCE(NULLIF(p.gst_percentage, 0), 5.0) as gst_rate,
                    COALESCE(p.is_complementary, 0) as prod_is_comp,
                    COALESCE(pv.is_complementary, p.is_complementary, 0) as is_complementary,
@@ -6137,6 +6139,8 @@ class WarehouseController {
                 'is_series'        => $isSeries,
                 'qr_type'          => $variant['qr_type'] ?? 'INDIVIDUAL',
                 'pack_quantity'    => (int)($variant['pack_quantity'] ?? 1),
+                'hsn_code'          => $variant['resolved_hsn_code'] ?? $variant['hsn_code'] ?? '',
+                'resolved_hsn_code' => $variant['resolved_hsn_code'] ?? $variant['hsn_code'] ?? '',
                 'selling_price'    => $retailPrice,
                 'mrp'              => $isComp ? 0.0 : (float)($variant['mrp'] ?? $retailPrice),
                 'gst_rate'         => $isComp ? 0.0 : (float)($variant['gst_rate'] ?? 5.0),
