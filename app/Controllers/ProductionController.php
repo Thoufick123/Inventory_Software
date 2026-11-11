@@ -3643,10 +3643,11 @@ class ProductionController {
                     }
 
                     // Recalculate purchase total
-                    $sumTotal = (float)Database::fetchValue(
-                        "SELECT SUM(total_price) FROM production_purchase_items WHERE purchase_id = ?",
+                    $sumRow = Database::fetchOne(
+                        "SELECT SUM(total_price) as total FROM production_purchase_items WHERE purchase_id = ?",
                         [$purchaseId]
                     );
+                    $sumTotal = (float)($sumRow['total'] ?? 0);
                     Database::execute(
                         "UPDATE production_purchases SET total_amount = ? WHERE id = ?",
                         [$sumTotal, $purchaseId]
