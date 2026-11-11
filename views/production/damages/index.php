@@ -348,8 +348,8 @@
 </div>
 
 <!-- 1. Report Damage Modal -->
-<div class="modal fade" id="reportDamageModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
+<div class="modal fade" id="reportDamageModal" tabindex="-1" aria-hidden="true" style="overflow-y: auto;">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content shadow-lg border-danger">
             <div class="modal-header bg-danger text-white py-3">
                 <h5 class="modal-title fw-bold fs-6">
@@ -357,9 +357,9 @@
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="POST" action="<?= url('production/damages/store') ?>" enctype="multipart/form-data" id="reportDamageForm" style="display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden;">
+            <form method="POST" action="<?= url('production/damages/store') ?>" enctype="multipart/form-data" id="reportDamageForm">
                 <?= CSRF::field() ?>
-                <div class="modal-body p-4" style="flex: 1 1 auto; min-height: 0; max-height: calc(100vh - 190px); overflow-y: auto;">
+                <div class="modal-body p-4">
                     <div class="row g-3">
                         <div class="col-12">
                             <div class="p-3 bg-light rounded-3 border">
@@ -395,7 +395,7 @@
                                     <strong>Scanned labels</strong>
                                     <span id="damageScannedCount" class="badge bg-secondary">0 pieces</span>
                                 </div>
-                                <div id="damageScannedLabels" class="list-group small" style="max-height: 340px; overflow-y: auto;">
+                                <div id="damageScannedLabels" class="list-group small">
                                     <div class="list-group-item text-muted" id="damageScannedEmpty">No labels scanned yet.</div>
                                 </div>
                             </div>
@@ -442,7 +442,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer bg-light py-3" style="flex: 0 0 auto;">
+                <div class="modal-footer bg-light py-3">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-danger px-4 fw-semibold shadow-sm">
                         <i class="bi bi-check-circle me-1"></i> Save Damage &amp; Deduct Stock
