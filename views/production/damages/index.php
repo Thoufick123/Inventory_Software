@@ -359,7 +359,7 @@
             </div>
             <form method="POST" action="<?= url('production/damages/store') ?>" enctype="multipart/form-data" id="reportDamageForm" style="display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; overflow: hidden;">
                 <?= CSRF::field() ?>
-                <div class="modal-body p-4" style="flex: 1 1 auto; min-height: 0; overflow-y: auto;">
+                <div class="modal-body p-4" style="flex: 1 1 auto; min-height: 0; max-height: calc(100vh - 190px); overflow-y: auto;">
                     <div class="row g-3">
                         <div class="col-12">
                             <div class="p-3 bg-light rounded-3 border">
