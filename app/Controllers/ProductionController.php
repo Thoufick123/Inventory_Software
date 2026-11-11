@@ -4722,66 +4722,148 @@ class ProductionController {
 
     /**
      * AJAX: Get category attributes for dynamic catalog hierarchy specifications.
+     * Matches exact hierarchy with multi-level scoping and cross-catalog synchronization.
      */
     public function ajaxGetCategoryAttributes(int $categoryId): void {
         try {
             $subcategoryId = !empty($_GET['subcategory_id']) ? (int)$_GET['subcategory_id'] : null;
             $subSubcategoryId = !empty($_GET['sub_subcategory_id']) ? (int)$_GET['sub_subcategory_id'] : null;
 
-            // Ensure default SIZE attribute exists for this category if none exists in wh_category_attributes
-            $hasAny = Database::fetchOne("SELECT id FROM wh_category_attributes WHERE category_id = ? LIMIT 1", [$categoryId]);
-            if (!$hasAny) {
-                $allSizes = Database::fetchAll("SELECT code, name FROM sizes WHERE is_active = 1 ORDER BY sort_order ASC, id ASC");
-                $sizeCodes = !empty($allSizes) ? array_unique(array_column($allSizes, 'code')) : ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
-                $sizeOptionsStr = implode(',', $sizeCodes);
-                Database::execute(
-                    "INSERT INTO wh_category_attributes (category_id, subcategory_id, sub_subcategory_id, attr_name, attr_type, attr_options, is_required, sort_order, is_active, created_at)
-                     VALUES (?, NULL, NULL, 'SIZE', 'MULTI_SELECT', ?, 0, 1, 1, NOW())",
-                    [$categoryId, $sizeOptionsStr]
-                );
+            // 1. Resolve Category IDs across both `categories` and `warehouse_categories` by name and ID
+            $allCatIds = [$categoryId];
+            $catRow = Database::fetchOne("SELECT name FROM categories WHERE id = ?", [$categoryId]);
+            if (!$catRow) {
+                $catRow = Database::fetchOne("SELECT name FROM warehouse_categories WHERE id = ?", [$categoryId]);
+            }
+            if ($catRow && !empty($catRow['name'])) {
+                $catName = trim($catRow['name']);
+                $cIds = Database::fetchAll("SELECT id FROM categories WHERE LOWER(TRIM(name)) = LOWER(?)", [$catName]);
+                $wcIds = Database::fetchAll("SELECT id FROM warehouse_categories WHERE LOWER(TRIM(name)) = LOWER(?)", [$catName]);
+                $allCatIds = array_values(array_unique(array_filter(array_merge($allCatIds, array_column($cIds, 'id'), array_column($wcIds, 'id')))));
             }
 
-            // Also if SIZE attribute exists in wh_category_attributes, ensure it is MULTI_SELECT so user can multi-select
-            Database::execute(
-                "UPDATE wh_category_attributes SET attr_type = 'MULTI_SELECT' WHERE category_id = ? AND attr_name = 'SIZE' AND attr_type != 'MULTI_SELECT'",
-                [$categoryId]
-            );
-
-            // Fetch attributes matching hierarchy:
-            // 1. General to category: subcategory_id IS NULL or 0
-            // 2. Specific to subcategory: subcategory_id = ? AND (sub_subcategory_id IS NULL OR 0)
-            // 3. Specific to sub-subcategory: subcategory_id = ? AND sub_subcategory_id = ?
-            $sql = "SELECT * FROM wh_category_attributes 
-                    WHERE category_id = ? 
-                      AND is_active = 1";
-            $params = [$categoryId];
-
-            if ($subSubcategoryId && $subcategoryId) {
-                $sql .= " AND (
-                    (subcategory_id IS NULL OR subcategory_id = 0)
-                    OR (subcategory_id = ? AND (sub_subcategory_id IS NULL OR sub_subcategory_id = 0 OR sub_subcategory_id = ?))
-                )";
-                $params[] = $subcategoryId;
-                $params[] = $subSubcategoryId;
-            } elseif ($subcategoryId) {
-                $sql .= " AND (
-                    (subcategory_id IS NULL OR subcategory_id = 0)
-                    OR (subcategory_id = ? AND (sub_subcategory_id IS NULL OR sub_subcategory_id = 0))
-                )";
-                $params[] = $subcategoryId;
-            } else {
-                $sql .= " AND (subcategory_id IS NULL OR subcategory_id = 0)";
+            // 2. Resolve Subcategory IDs across both `subcategories` and `warehouse_subcategories`
+            $allSubcatIds = $subcategoryId ? [$subcategoryId] : [];
+            if ($subcategoryId) {
+                $subcatRow = Database::fetchOne("SELECT name FROM subcategories WHERE id = ?", [$subcategoryId]);
+                if (!$subcatRow) {
+                    $subcatRow = Database::fetchOne("SELECT name FROM warehouse_subcategories WHERE id = ?", [$subcategoryId]);
+                }
+                if ($subcatRow && !empty($subcatRow['name'])) {
+                    $subName = trim($subcatRow['name']);
+                    $sIds = Database::fetchAll("SELECT id FROM subcategories WHERE LOWER(TRIM(name)) = LOWER(?)", [$subName]);
+                    $wsIds = Database::fetchAll("SELECT id FROM warehouse_subcategories WHERE LOWER(TRIM(name)) = LOWER(?)", [$subName]);
+                    $allSubcatIds = array_values(array_unique(array_filter(array_merge($allSubcatIds, array_column($sIds, 'id'), array_column($wsIds, 'id')))));
+                }
             }
 
-            $sql .= " ORDER BY sort_order ASC, id ASC";
-            $attributes = Database::fetchAll($sql, $params);
+            // 3. Resolve Sub-Subcategory IDs across both `sub_subcategories` and `warehouse_sub_subcategories`
+            $allSubSubcatIds = $subSubcategoryId ? [$subSubcategoryId] : [];
+            if ($subSubcategoryId) {
+                $subSubRow = Database::fetchOne("SELECT name FROM sub_subcategories WHERE id = ?", [$subSubcategoryId]);
+                if (!$subSubRow) {
+                    $subSubRow = Database::fetchOne("SELECT name FROM warehouse_sub_subcategories WHERE id = ?", [$subSubcategoryId]);
+                }
+                if ($subSubRow && !empty($subSubRow['name'])) {
+                    $sscName = trim($subSubRow['name']);
+                    $ssIds = Database::fetchAll("SELECT id FROM sub_subcategories WHERE LOWER(TRIM(name)) = LOWER(?)", [$sscName]);
+                    $wssIds = Database::fetchAll("SELECT id FROM warehouse_sub_subcategories WHERE LOWER(TRIM(name)) = LOWER(?)", [$sscName]);
+                    $allSubSubcatIds = array_values(array_unique(array_filter(array_merge($allSubSubcatIds, array_column($ssIds, 'id'), array_column($wssIds, 'id')))));
+                }
+            }
 
-            // Also fetch all active sizes for convenience
+            // 4. Query matching attributes from `wh_category_attributes`
+            $catPlaceholders = implode(',', array_fill(0, count($allCatIds), '?'));
+            $sql = "SELECT * FROM wh_category_attributes WHERE category_id IN ($catPlaceholders) AND is_active = 1";
+            $rawAttributes = Database::fetchAll($sql, array_values($allCatIds));
+
+            // Hierarchy matching & override logic:
+            // Level 1: Category root (subcategory_id is NULL or 0)
+            // Level 2: Subcategory (subcategory_id in $allSubcatIds and (sub_subcategory_id is NULL or 0))
+            // Level 3: Sub-subcategory (sub_subcategory_id in $allSubSubcatIds)
+            // More specific level overrides less specific level for attributes with the same name
+            $scopedAttrs = [];
+
+            foreach ($rawAttributes as $row) {
+                $rSubcat = !empty($row['subcategory_id']) ? (int)$row['subcategory_id'] : 0;
+                $rSubSubcat = !empty($row['sub_subcategory_id']) ? (int)$row['sub_subcategory_id'] : 0;
+
+                $level = 0;
+                if (!empty($allSubSubcatIds) && $rSubSubcat > 0 && in_array($rSubSubcat, $allSubSubcatIds, true)) {
+                    $level = 3;
+                } elseif (!empty($allSubcatIds) && $rSubcat > 0 && in_array($rSubcat, $allSubcatIds, true) && $rSubSubcat === 0) {
+                    $level = 2;
+                } elseif ($rSubcat === 0 && $rSubSubcat === 0) {
+                    $level = 1;
+                }
+
+                if ($level > 0) {
+                    $attrKey = mb_strtoupper(trim($row['attr_name']));
+                    if (!isset($scopedAttrs[$attrKey]) || $level >= $scopedAttrs[$attrKey]['level']) {
+                        $scopedAttrs[$attrKey] = [
+                            'level' => $level,
+                            'data'  => $row
+                        ];
+                    }
+                }
+            }
+
+            // Master active sizes
             $masterSizes = Database::fetchAll("SELECT id, name, code FROM sizes WHERE is_active = 1 ORDER BY sort_order ASC, id ASC");
+            $defaultSizeCodes = !empty($masterSizes) ? array_values(array_unique(array_column($masterSizes, 'code'))) : ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
+
+            // Words that should NEVER be inside SIZE options (cleans out corrupted entries like COLOR, SIZE, RED, PINK, STANDARD)
+            $junkWords = ['COLOR', 'SIZE', 'RED', 'YELLOW', 'PINK', 'BLUE', 'GREEN', 'BLACK', 'WHITE', 'STANDARD', 'DEFAULT'];
+
+            $finalAttributes = [];
+            foreach ($scopedAttrs as $item) {
+                $attr = $item['data'];
+                if (mb_strtoupper(trim($attr['attr_name'])) === 'SIZE') {
+                    // Sanitize SIZE options
+                    $opts = !empty($attr['attr_options']) ? array_map('trim', explode(',', $attr['attr_options'])) : [];
+                    $cleanedOpts = [];
+                    foreach ($opts as $o) {
+                        $uo = mb_strtoupper(trim($o));
+                        if ($uo !== '' && !in_array($uo, $junkWords, true)) {
+                            $cleanedOpts[] = $uo;
+                        }
+                    }
+                    $cleanedOpts = array_values(array_unique($cleanedOpts));
+                    if (empty($cleanedOpts)) {
+                        $cleanedOpts = $defaultSizeCodes;
+                    }
+                    $cleanOptionsStr = implode(',', $cleanedOpts);
+                    if ($cleanOptionsStr !== $attr['attr_options']) {
+                        Database::execute("UPDATE wh_category_attributes SET attr_options = ?, attr_type = 'MULTI_SELECT', updated_at = NOW() WHERE id = ?", [$cleanOptionsStr, $attr['id']]);
+                        $attr['attr_options'] = $cleanOptionsStr;
+                    }
+                    $attr['attr_type'] = 'MULTI_SELECT';
+                }
+                $finalAttributes[] = $attr;
+            }
+
+            // If no attributes were configured for this category hierarchy, provide clean default apparel SIZE
+            if (empty($finalAttributes)) {
+                $finalAttributes[] = [
+                    'id'                 => 0,
+                    'category_id'        => $categoryId,
+                    'subcategory_id'     => $subcategoryId,
+                    'sub_subcategory_id' => $subSubcategoryId,
+                    'attr_name'          => 'SIZE',
+                    'attr_type'          => 'MULTI_SELECT',
+                    'attr_options'       => implode(',', $defaultSizeCodes),
+                    'is_required'        => 0,
+                    'sort_order'         => 1,
+                    'is_active'          => 1,
+                ];
+            }
+
+            // Sort attributes by sort_order
+            usort($finalAttributes, fn($a, $b) => ($a['sort_order'] ?? 0) <=> ($b['sort_order'] ?? 0));
 
             Response::json([
                 'success'      => true,
-                'attributes'   => $attributes,
+                'attributes'   => $finalAttributes,
                 'master_sizes' => $masterSizes
             ]);
         } catch (\Throwable $e) {
@@ -4905,6 +4987,9 @@ class ProductionController {
             $subSubcategoryId = !empty($_POST['sub_subcategory_id']) ? (int)$_POST['sub_subcategory_id'] : null;
             $attrName = mb_strtoupper(trim($_POST['attr_name'] ?? ''));
             $attrType = in_array(strtoupper(trim($_POST['attr_type'] ?? '')), ['TEXT', 'NUMBER', 'SELECT', 'MULTI_SELECT']) ? strtoupper(trim($_POST['attr_type'])) : 'SELECT';
+            if ($attrName === 'SIZE') {
+                $attrType = 'MULTI_SELECT';
+            }
             $attrOptions = trim($_POST['attr_options'] ?? '');
             $isRequired = !empty($_POST['is_required']) ? 1 : 0;
 
