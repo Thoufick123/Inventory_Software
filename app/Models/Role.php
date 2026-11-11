@@ -266,6 +266,11 @@ class Role {
             ['dashboard', 'create', 'Create infrastructure facilities (Production Units, Warehouses, Shops, Channels)', 'dashboard.create', null],
             ['dashboard', 'edit', 'Edit infrastructure facilities and dashboard configurations', 'dashboard.edit', null],
             ['dashboard', 'delete', 'Delete infrastructure facilities and records', 'dashboard.delete', null],
+
+            ['batches', 'view', 'View Packaging Batches', 'batches.view', null],
+            ['batches', 'create', 'Create Packaging Batch & Box Consolidations', 'batches.create', null],
+            ['batches', 'edit', 'Edit Packaging Batches & Box Allocations', 'batches.edit', null],
+            ['batches', 'delete', 'Delete or Cancel Packaging Batches', 'batches.delete', null],
         ];
 
         try {

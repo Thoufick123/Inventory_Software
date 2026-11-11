@@ -159,9 +159,11 @@
                                         <a href="<?= url('production/batches/label/' . $b['id']) ?>" target="_blank" class="btn btn-sm btn-outline-secondary" title="Print Carton QR Label">
                                             <i class="bi bi-qr-code me-1"></i> QR Sticker
                                         </a>
+                                        <?php if (hasPermission('batches', 'edit')): ?>
                                         <button type="button" class="btn btn-sm btn-outline-primary" onclick='openEditBatchModal(<?= json_encode($b, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)' title="Edit Batch Details">
                                             <i class="bi bi-pencil"></i>
                                         </button>
+                                        <?php endif; ?>
                                         <?php if ($b['status'] === 'PREPARING' && hasPermission('batches', 'approve')): ?>
                                             <form method="POST" action="<?= url('production/batches/approve/' . $b['id']) ?>" class="d-inline" onsubmit="return confirm('Approve this batch for outward dispatch?');">
                                                 <?= CSRF::field() ?>
@@ -498,7 +500,13 @@ function onEditBatchMultiSelectChange() {
     }
 }
 
+const canEditBatches = <?= json_encode(hasPermission('batches', 'edit')) ?>;
+
 function openEditBatchModal(batch) {
+    if (!canEditBatches) {
+        alert('Action restricted: You do not have permission to edit packaging batches.');
+        return;
+    }
     if (!batch) return;
     const form = document.getElementById('editBatchForm');
     if (form) {
