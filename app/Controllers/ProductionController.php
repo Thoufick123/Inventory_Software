@@ -6051,6 +6051,27 @@ class ProductionController {
             }
         }
 
+        // Also parse attributes from assigned rolls for sizes
+        if (!empty($assignedRolls)) {
+            foreach ($assignedRolls as $ar) {
+                if (!empty($ar['attributes'])) {
+                    $dec = is_string($ar['attributes']) ? json_decode($ar['attributes'], true) : $ar['attributes'];
+                    if (is_array($dec)) {
+                        foreach ($dec as $k => $v) {
+                            if (strtoupper($k) === 'SIZE' && is_array($v)) {
+                                foreach ($v as $sz) {
+                                    $sz = trim((string)$sz);
+                                    if ($sz !== '' && !in_array($sz, $parsedSizes, true)) {
+                                        $parsedSizes[] = $sz;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Check active sizes and colors in database as fallback
         if (empty($parsedSizes)) {
             $rawSizes = Database::fetchAll("SELECT * FROM sizes WHERE is_active = 1 ORDER BY sort_order ASC, id ASC");
@@ -6424,6 +6445,8 @@ class ProductionController {
         $categoryId = !empty($_GET['category_id']) ? (int)$_GET['category_id'] : null;
         $subcategoryId = !empty($_GET['subcategory_id']) ? (int)$_GET['subcategory_id'] : null;
         $subSubcategoryId = !empty($_GET['sub_subcategory_id']) ? (int)$_GET['sub_subcategory_id'] : null;
+        $rollId = !empty($_GET['roll_id']) ? (int)$_GET['roll_id'] : null;
+        $programId = !empty($_GET['program_id']) ? (int)$_GET['program_id'] : null;
 
         // Resolve product matching hierarchy
         $product = null;
@@ -6439,6 +6462,37 @@ class ProductionController {
 
         $parsedSizes = [];
         $parsedColors = [];
+        $sellerName = '';
+
+        if ($rollId) {
+            $ppr = Database::fetchOne(
+                "SELECT ppr.*, sr.roll_number, sr.color as sr_color, sr.design_name as sr_design,
+                        s.name as seller_name, s.company as seller_company
+                 FROM seller_rolls sr
+                 LEFT JOIN sellers s ON sr.seller_id = s.id
+                 LEFT JOIN production_program_rolls ppr ON (ppr.seller_roll_id = sr.id" . ($programId ? " AND ppr.production_program_id = " . (int)$programId : "") . ")
+                 WHERE sr.id = ? LIMIT 1",
+                [$rollId]
+            );
+            if ($ppr) {
+                if (!empty($ppr['attributes'])) {
+                    $dec = is_string($ppr['attributes']) ? json_decode($ppr['attributes'], true) : $ppr['attributes'];
+                    if (is_array($dec)) {
+                        foreach ($dec as $k => $v) {
+                            if (strtoupper($k) === 'SIZE' && is_array($v) && !empty($v)) {
+                                foreach ($v as $sz) {
+                                    $sz = trim((string)$sz);
+                                    if ($sz !== '' && !in_array($sz, $parsedSizes, true)) {
+                                        $parsedSizes[] = $sz;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                $sellerName = trim($ppr['seller_company'] ?: ($ppr['seller_name'] ?? ''));
+            }
+        }
 
         if ($product) {
             $pvRows = Database::fetchAll(
@@ -6532,11 +6586,12 @@ class ProductionController {
         }
 
         Response::json([
-            'success'  => true,
-            'product'  => $product,
-            'sizes'    => $parsedSizes,
-            'colors'   => $parsedColors,
-            'variants' => $variants,
+            'success'     => true,
+            'product'     => $product,
+            'sizes'       => $parsedSizes,
+            'colors'      => $parsedColors,
+            'variants'    => $variants,
+            'seller_name' => $sellerName,
         ]);
     }
 
@@ -6550,11 +6605,15 @@ class ProductionController {
                     COALESCE(pp.name, p.name) as product_name, 
                     pu.name as unit_name,
                     sr.roll_number, sr.color as roll_color, sr.design_name as roll_design,
-                    c.name as category_name, sc.name as subcategory_name, ssc.name as sub_subcategory_name
+                    c.name as category_name, sc.name as subcategory_name, ssc.name as sub_subcategory_name,
+                    COALESCE(s.name, s_roll.name, (SELECT s2.name FROM production_program_rolls ppr2 JOIN seller_rolls sr2 ON ppr2.seller_roll_id = sr2.id JOIN sellers s2 ON (ppr2.seller_id = s2.id OR sr2.seller_id = s2.id) WHERE ppr2.production_program_id = pp.id LIMIT 1)) as seller_name,
+                    COALESCE(s.company, s_roll.company, (SELECT s2.company FROM production_program_rolls ppr2 JOIN seller_rolls sr2 ON ppr2.seller_roll_id = sr2.id JOIN sellers s2 ON (ppr2.seller_id = s2.id OR sr2.seller_id = s2.id) WHERE ppr2.production_program_id = pp.id LIMIT 1)) as seller_company
              FROM production_programs pp
              LEFT JOIN products p ON pp.product_id = p.id
              LEFT JOIN production_units pu ON pp.production_unit_id = pu.id
              LEFT JOIN seller_rolls sr ON pp.seller_roll_id = sr.id
+             LEFT JOIN sellers s ON pp.seller_id = s.id
+             LEFT JOIN sellers s_roll ON sr.seller_id = s_roll.id
              LEFT JOIN categories c ON pp.category_id = c.id
              LEFT JOIN subcategories sc ON pp.subcategory_id = sc.id
              LEFT JOIN sub_subcategories ssc ON pp.sub_subcategory_id = ssc.id
@@ -13284,6 +13343,58 @@ class ProductionController {
                 'description' => $description,
                 'gst_rate'    => number_format($gstRate, 2, '.', ''),
             ]
+        ]);
+    }
+
+    /**
+     * AJAX quick add Cutting Master / Operator.
+     */
+    public function ajaxQuickAddOperator(): void {
+        header('Content-Type: application/json');
+
+        $rawInput = file_get_contents('php://input');
+        $jsonData = !empty($rawInput) ? json_decode($rawInput, true) : [];
+        if (!is_array($jsonData)) $jsonData = [];
+
+        $fullName = mb_strtoupper(trim($_POST['full_name'] ?? $jsonData['full_name'] ?? ''));
+        $phone = trim($_POST['phone'] ?? $jsonData['phone'] ?? '');
+
+        if (empty($fullName)) {
+            Response::json(['success' => false, 'message' => 'Cutting Master / Operator name is required.'], 422);
+            return;
+        }
+
+        // Determine operator role
+        $role = Database::fetchOne("SELECT id FROM roles WHERE slug IN ('production-staff', 'operator', 'staff', 'production-manager') ORDER BY id ASC LIMIT 1");
+        $roleId = $role ? (int)$role['id'] : 4;
+
+        // Generate clean unique username
+        $baseUsername = strtolower(preg_replace('/[^a-z0-9_]/', '', str_replace(' ', '_', $fullName)));
+        if (empty($baseUsername)) {
+            $baseUsername = 'operator_' . time();
+        }
+        $username = $baseUsername;
+        $counter = 1;
+        while (Database::fetchOne("SELECT id FROM users WHERE username = ?", [$username])) {
+            $username = $baseUsername . '_' . $counter;
+            $counter++;
+        }
+
+        $passwordHash = password_hash('Operator@123', PASSWORD_BCRYPT);
+
+        Database::execute(
+            "INSERT INTO users (username, full_name, phone, role_id, department, password_hash, is_active, created_at, updated_at) 
+             VALUES (?, ?, ?, ?, 'PRODUCTION', ?, 1, NOW(), NOW())",
+            [$username, $fullName, $phone ?: null, $roleId, $passwordHash]
+        );
+
+        $newId = (int)Database::lastInsertId();
+
+        Response::json([
+            'success' => true,
+            'id'      => $newId,
+            'name'    => $fullName,
+            'message' => 'Cutting Master added successfully!'
         ]);
     }
 

@@ -77,8 +77,13 @@ $canDeleteCutting = hasPermission('cutting', 'delete');
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">Cutting Master / Operator</label>
-                        <select name="operator_id" class="form-select">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <label class="form-label fw-semibold mb-0">Cutting Master / Operator</label>
+                            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 fw-semibold" onclick="openAddOperatorModal()">
+                                <i class="bi bi-plus-circle me-1"></i>+ Add Cutting Master
+                            </button>
+                        </div>
+                        <select name="operator_id" id="operatorSelect" class="form-select">
                             <option value="">Select Operator</option>
                             <?php foreach ($users as $u): ?>
                                 <option value="<?= $u['id'] ?>" <?= ($batch['operator_id'] == $u['id']) ? 'selected' : '' ?>><?= e($u['full_name']) ?></option>
@@ -297,15 +302,16 @@ function buildRollOptionsHtml(selectedRollId = '') {
             const w = r.weight !== undefined ? r.weight : (r.weight_kg || 0);
             const p = r.price !== undefined ? r.price : (r.price_total || 0);
             const isSel = (selectedRollId && String(r.id) === String(selectedRollId)) ? 'selected' : '';
+            const sName = r.seller_company ? `${r.seller_company} (${r.seller_name || ''})` : (r.seller_name || '');
             html += `<option value="${r.id}" 
                 data-weight="${w}" 
                 data-price="${p}" 
                 data-color="${escapeHtml(r.color || '')}" 
                 data-design="${escapeHtml(r.design_name || '')}" 
                 data-material="${escapeHtml(r.material_type || '')}" 
-                data-seller="${escapeHtml(r.seller_name || '')}" 
+                data-seller="${escapeHtml(sName)}" 
                 ${isSel}>
-                Roll #${escapeHtml(r.roll_number || r.id)} (${escapeHtml(r.color || 'Standard')} - ${escapeHtml(r.design_name || 'Plain')}) — ${parseFloat(w).toFixed(2)} kg / ₹${parseFloat(p).toFixed(2)}
+                Roll #${escapeHtml(r.roll_number || r.id)} (${escapeHtml(r.color || 'Standard')} - ${escapeHtml(r.design_name || 'Plain')}${sName ? ' — ' + escapeHtml(sName) : ''}) — ${parseFloat(w).toFixed(2)} kg / ₹${parseFloat(p).toFixed(2)}
             </option>`;
         });
     }
@@ -741,11 +747,14 @@ function regenerateAllRollVariants() {
         if (subSubcatSelect && subSubcatSelect.selectedIndex > 0) catParts.push(subSubcatSelect.options[subSubcatSelect.selectedIndex].text);
         const catalogPath = catParts.length > 0 ? catParts.join(' › ') : 'General Catalog';
 
+        const sellerName = rollOpt ? (rollOpt.getAttribute('data-seller') || '') : '';
+
         activeRollRequests.push({
             rollId,
             rollNumber,
             rollColor,
             rollDesign,
+            sellerName,
             catId,
             subcatId,
             subSubcatId,
@@ -787,15 +796,15 @@ function regenerateAllRollVariants() {
     });
 
     const promises = activeRollRequests.map(req => {
-        const url = '<?= url('api/catalog/variants') ?>?category_id=' + (req.catId || '') + 
-                    '&subcategory_id=' + (req.subcatId || '') + 
-                    '&sub_subcategory_id=' + (req.subSubcatId || '') + 
-                    '&roll_id=' + (req.rollId || '') + 
+        const url = '<?= url('api/catalog/variants') ?>?category_id=' + encodeURIComponent(req.catId || '') + 
+                    '&subcategory_id=' + encodeURIComponent(req.subcatId || '') + 
+                    '&sub_subcategory_id=' + encodeURIComponent(req.subSubcatId || '') + 
+                    '&roll_id=' + encodeURIComponent(req.rollId || '') + 
                     '&roll_color=' + encodeURIComponent(req.rollColor || '');
         return fetch(url)
             .then(res => res.json())
             .then(data => ({
-                req,
+                req: Object.assign({}, req, { sellerName: data.seller_name || req.sellerName || '' }),
                 variants: data.variants || [],
                 sizes: data.sizes || ['M', 'L', 'XL', 'XXL', '3XL'],
                 colors: data.colors || (req.rollColor ? [req.rollColor] : ['STANDARD'])
@@ -825,7 +834,8 @@ function regenerateAllRollVariants() {
             const groupKey = 'roll_' + (req.rollId || resIdx);
             let rawRollNum = req.rollNumber ? String(req.rollNumber).trim() : String(resIdx + 1);
             let cleanRollNum = rawRollNum.replace(/^(roll\s*#?|#)\s*/i, '').trim() || (resIdx + 1);
-            const rollTitle = `Roll #${cleanRollNum} (${req.rollColor || 'Standard'}${req.rollDesign ? ' - ' + req.rollDesign : ''}) — ${req.catalogPath}`;
+            const sellerPart = req.sellerName ? ` — ${req.sellerName}` : '';
+            const rollTitle = `Roll #${cleanRollNum} (${req.rollColor || 'Standard'}${req.rollDesign ? ' - ' + req.rollDesign : ''}${sellerPart}) — ${req.catalogPath}`;
 
             const groupTr = document.createElement('tr');
             groupTr.className = 'table-light border-top border-2 roll-variant-item roll-variant-header roll-group-' + groupKey;
@@ -875,9 +885,10 @@ function regenerateAllRollVariants() {
             }
 
             totalVariantsCount += rollVariantCount;
+            const tabLabel = `Roll #${cleanRollNum}` + (req.rollColor ? ` (${req.rollColor})` : '') + (req.sellerName ? ` - ${req.sellerName}` : '');
             rollTabConfigs.push({
                 groupKey,
-                label: `Roll #${cleanRollNum}` + (req.rollColor ? ` (${req.rollColor})` : ''),
+                label: tabLabel,
                 fullTitle: rollTitle,
                 count: rollVariantCount
             });
@@ -1155,8 +1166,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 return false;
             }
 
-            const masterSelect = document.getElementById('cuttingMasterSelect');
-            if (masterSelect && !masterSelect.value) {
+            const masterSelect = document.getElementById('operatorSelect') || document.getElementById('cuttingMasterSelect');
+            if (masterSelect && masterSelect.hasAttribute('required') && !masterSelect.value) {
                 e.preventDefault();
                 alert('Validation error: Please select a Cutting Master.');
                 masterSelect.focus();
@@ -1178,4 +1189,145 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+function openAddOperatorModal() {
+    const nameInput = document.getElementById('newOperatorName');
+    const phoneInput = document.getElementById('newOperatorPhone');
+    const alertBox = document.getElementById('addOperatorAlert');
+    if (nameInput) nameInput.value = '';
+    if (phoneInput) phoneInput.value = '';
+    if (alertBox) {
+        alertBox.classList.add('d-none');
+        alertBox.innerText = '';
+    }
+    const modalEl = document.getElementById('addOperatorModal');
+    if (modalEl) {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+        setTimeout(() => nameInput && nameInput.focus(), 300);
+    }
+}
+
+function saveNewOperator() {
+    const nameInput = document.getElementById('newOperatorName');
+    const phoneInput = document.getElementById('newOperatorPhone');
+    const alertBox = document.getElementById('addOperatorAlert');
+    const saveBtn = document.getElementById('btnSaveOperator');
+
+    const name = nameInput ? nameInput.value.trim() : '';
+    const phone = phoneInput ? phoneInput.value.trim() : '';
+
+    if (!name) {
+        if (alertBox) {
+            alertBox.innerText = 'Please enter the cutting master / operator name.';
+            alertBox.classList.remove('d-none');
+        }
+        nameInput?.focus();
+        return;
+    }
+
+    if (alertBox) alertBox.classList.add('d-none');
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+    }
+
+    const formData = new FormData();
+    formData.append('full_name', name);
+    formData.append('phone', phone);
+    const csrfToken = document.querySelector('input[name="csrf_token"]')?.value || '';
+    if (csrfToken) formData.append('csrf_token', csrfToken);
+
+    fetch('<?= url('api/operators/quick-add') ?>', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Save Cutting Master';
+        }
+
+        if (data.success) {
+            const select = document.getElementById('operatorSelect');
+            if (select) {
+                const opt = document.createElement('option');
+                opt.value = data.id;
+                opt.textContent = data.name;
+                opt.selected = true;
+                select.appendChild(opt);
+                select.value = data.id;
+                select.dispatchEvent(new Event('change'));
+            }
+
+            const modalEl = document.getElementById('addOperatorModal');
+            if (modalEl) {
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if (modal) modal.hide();
+            }
+
+            // Quick non-blocking feedback
+            const toastDiv = document.createElement('div');
+            toastDiv.className = 'alert alert-success position-fixed top-0 end-0 m-3 shadow-lg py-2 px-3';
+            toastDiv.style.zIndex = '9999';
+            toastDiv.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>' + escapeHtml(data.message || 'Cutting Master added!');
+            document.body.appendChild(toastDiv);
+            setTimeout(() => toastDiv.remove(), 3000);
+        } else {
+            if (alertBox) {
+                alertBox.innerText = data.message || 'Error saving operator.';
+                alertBox.classList.remove('d-none');
+            } else {
+                alert(data.message || 'Error saving operator.');
+            }
+        }
+    })
+    .catch(err => {
+        console.error('Error saving operator:', err);
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Save Cutting Master';
+        }
+        if (alertBox) {
+            alertBox.innerText = 'Network error while saving cutting master.';
+            alertBox.classList.remove('d-none');
+        }
+    });
+}
 </script>
+
+<!-- Modal: Add Cutting Master / Operator -->
+<div class="modal fade" id="addOperatorModal" tabindex="-1" aria-labelledby="addOperatorModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-primary text-white py-3">
+                <h6 class="modal-title fw-bold" id="addOperatorModalLabel">
+                    <i class="bi bi-person-plus-fill me-2"></i>Add Cutting Master / Operator
+                </h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div id="addOperatorAlert" class="alert alert-danger py-2 px-3 small d-none mb-3"></div>
+                <div class="mb-3">
+                    <label class="form-label required fw-semibold">Cutting Master / Operator Name <span class="text-danger">*</span></label>
+                    <input type="text" id="newOperatorName" class="form-control text-uppercase fw-semibold" placeholder="e.g. MASTER RAMESH" required>
+                    <small class="text-muted">Enter the operator or cutting master's full name.</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Phone Number (Optional)</label>
+                    <input type="text" id="newOperatorPhone" class="form-control" placeholder="e.g. 9876543210">
+                </div>
+            </div>
+            <div class="modal-footer bg-light py-2 px-4 justify-content-between">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-sm btn-primary px-3 fw-semibold" id="btnSaveOperator" onclick="saveNewOperator()">
+                    <i class="bi bi-check-circle me-1"></i> Save Cutting Master
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
