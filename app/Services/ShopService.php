@@ -3912,17 +3912,18 @@ class ShopService {
             throw new InvalidArgumentException("Carton / Box count must be at least 1.");
         }
 
-        $driverPhone = trim($payload['driver_phone'] ?? '');
-        if (!empty($driverPhone)) {
-            $driverPhoneDigits = preg_replace('/\D/', '', $driverPhone);
-            if (!preg_match('/^[6-9][0-9]{9}$/', $driverPhoneDigits)) {
-                throw new InvalidArgumentException("Invalid driver phone number. Must be a valid 10-digit mobile number starting with 6-9.");
-            }
-            $driverPhone = $driverPhoneDigits;
+        $vehicleNo    = strtoupper(trim((string)($payload['vehicle_no'] ?? '')));
+        $driverName   = trim((string)($payload['driver_name'] ?? ''));
+        $driverPhone  = preg_replace('/\D/', '', trim((string)($payload['driver_phone'] ?? '')));
+        if ($vehicleNo === '' || strlen($vehicleNo) > 20 || !preg_match('/^[A-Z0-9 -]+$/', $vehicleNo)) {
+            throw new InvalidArgumentException("Enter a valid vehicle number using letters, numbers, spaces, or hyphens.");
         }
-
-        $vehicleNo    = strtoupper(trim($payload['vehicle_no'] ?? ''));
-        $driverName   = trim($payload['driver_name'] ?? '');
+        if ($driverName === '' || mb_strlen($driverName) > 50) {
+            throw new InvalidArgumentException("Driver name is required and must be 50 characters or fewer.");
+        }
+        if (!preg_match('/^[6-9][0-9]{9}$/', $driverPhone)) {
+            throw new InvalidArgumentException("Driver phone is required and must be a valid 10-digit mobile number starting with 6-9.");
+        }
         $trackingNo   = trim($payload['tracking_no'] ?? '');
         $dispatchDate = trim($payload['dispatch_date'] ?? date('Y-m-d H:i:s'));
         $remarks      = trim($payload['remarks'] ?? ($payload['notes'] ?? ''));

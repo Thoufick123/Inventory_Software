@@ -54,24 +54,60 @@ $totalInwardQty = (int)array_sum(array_map(fn($r) => max(1, (int)($r['quantity']
     </div>
 </div>
 
-<!-- Top Two Navigation Tabs: History & Details -->
-<ul class="nav nav-tabs nav-fill bg-white rounded-top border-bottom-0 shadow-sm px-2 pt-2 mb-0" id="purchasesTabs" role="tablist">
-    <li class="nav-item" role="presentation">
-        <button class="nav-link active fw-bold py-3 text-start text-sm-center" id="tab-history-link" data-bs-toggle="tab" data-bs-target="#tab-history" type="button" role="tab" aria-controls="tab-history" aria-selected="true">
-            <i class="bi bi-clock-history me-2 text-primary"></i>Purchase History
-            <span class="badge bg-primary-subtle text-primary border ms-2"><?= count($purchases) ?> Records</span>
-        </button>
-    </li>
-    <li class="nav-item" role="presentation">
-        <button class="nav-link fw-bold py-3 text-start text-sm-center" id="tab-details-link" data-bs-toggle="tab" data-bs-target="#tab-details" type="button" role="tab" aria-controls="tab-details" aria-selected="false">
-            <i class="bi bi-layers-half me-2 text-success"></i>Roll &amp; Inward Details
-            <span class="badge bg-success-subtle text-success border ms-2"><?= $totalRollCount ?> Rolls (<?= $totalInwardQty ?> Qty)</span>
-        </button>
-    </li>
-</ul>
+<style>
+.purchase-tabs-nav {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 4px;
+}
+.purchase-tabs-nav .nav-link {
+    border-radius: 8px !important;
+    font-size: 0.92rem;
+    color: #475569;
+    background-color: transparent;
+    border: 1px solid transparent;
+    transition: all 0.2s ease-in-out;
+}
+.purchase-tabs-nav .nav-link:hover {
+    color: #0f172a;
+    background-color: rgba(255, 255, 255, 0.7);
+}
+.purchase-tabs-nav .nav-link.active {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    font-weight: 700 !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08) !important;
+}
+.purchase-tabs-nav .nav-link .tab-badge {
+    font-weight: 600;
+}
+</style>
 
-<!-- Tabs Content -->
-<div class="tab-content bg-white shadow-sm border border-top-0 rounded-bottom mb-4 p-3" id="purchasesTabsContent">
+<!-- Top Two Navigation Tabs: History & Details -->
+<div class="card border shadow-sm mb-4">
+    <div class="card-header bg-white border-bottom p-2">
+        <ul class="nav nav-pills nav-fill purchase-tabs-nav gap-2" id="purchasesTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active fw-bold py-2.5 px-3 text-center d-flex align-items-center justify-content-center" id="tab-history-link" data-bs-toggle="tab" data-bs-target="#tab-history" type="button" role="tab" aria-controls="tab-history" aria-selected="true">
+                    <i class="bi bi-clock-history me-2 text-primary fs-6"></i>
+                    <span>Purchase History</span>
+                    <span class="badge bg-primary-subtle text-primary border ms-2 tab-badge"><?= count($purchases) ?> Records</span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-bold py-2.5 px-3 text-center d-flex align-items-center justify-content-center" id="tab-details-link" data-bs-toggle="tab" data-bs-target="#tab-details" type="button" role="tab" aria-controls="tab-details" aria-selected="false">
+                    <i class="bi bi-layers-half me-2 text-success fs-6"></i>
+                    <span>Roll &amp; Inward Details</span>
+                    <span class="badge bg-success-subtle text-success border ms-2 tab-badge"><?= $totalRollCount ?> Rolls (<?= $totalInwardQty ?> Qty)</span>
+                </button>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Tabs Content -->
+    <div class="tab-content card-body p-3" id="purchasesTabsContent">
 
     <!-- 1. TAB: PURCHASE HISTORY (Clean List Style) -->
     <div class="tab-pane fade show active" id="tab-history" role="tabpanel" aria-labelledby="tab-history-link">
@@ -191,12 +227,9 @@ $totalInwardQty = (int)array_sum(array_map(fn($r) => max(1, (int)($r['quantity']
                                     </a>
                                 <?php endif; ?>
                                 <?php if (hasPermission('production_purchases', 'delete') || hasPermission('sellers', 'delete')): ?>
-                                    <form method="POST" action="<?= url('production/purchases/delete/' . $purchase['id']) ?>" class="d-inline mb-0" onsubmit="return confirm('Delete purchase <?= e(addslashes($purchase['purchase_number'])) ?>?');">
-                                        <?= CSRF::field() ?>
-                                        <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2" title="Delete Purchase">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                    </form>
+                                    <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2" title="Delete Purchase" onclick="confirmDeletePurchase('<?= url('production/purchases/delete/' . $purchase['id']) ?>', '<?= e(addslashes($purchase['purchase_number'])) ?>')">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
                                 <?php endif; ?>
                             </div>
                         </td>
@@ -314,6 +347,7 @@ $totalInwardQty = (int)array_sum(array_map(fn($r) => max(1, (int)($r['quantity']
         <?php endif; ?>
     </div>
 </div>
+</div>
 
 <script>
 function filterPurchasesTable(query) {
@@ -349,4 +383,53 @@ document.addEventListener('DOMContentLoaded', function() {
         switchToDetailsTab();
     }
 });
+
+function confirmDeletePurchase(actionUrl, purchaseNumber) {
+    const modalEl = document.getElementById('modalConfirmDeletePurchase');
+    const formEl = document.getElementById('deletePurchaseForm');
+    const numEl = document.getElementById('deletePurchaseNumber');
+    if (formEl) formEl.action = actionUrl;
+    if (numEl) numEl.textContent = purchaseNumber;
+    if (modalEl) {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+    }
+}
 </script>
+
+<!-- Modal: Modern Confirmation Popup for Deleting Purchases -->
+<div class="modal fade" id="modalConfirmDeletePurchase" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width: 460px;">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-body p-4 text-center">
+                <div class="mb-3 d-inline-flex align-items-center justify-content-center rounded-circle bg-danger-subtle text-danger" style="width: 68px; height: 68px;">
+                    <i class="bi bi-trash3-fill fs-2"></i>
+                </div>
+                <h5 class="fw-bold text-dark mb-2">Delete Purchase</h5>
+                <p class="text-secondary small mb-3">
+                    Are you sure you want to delete purchase <strong class="text-dark" id="deletePurchaseNumber"></strong>?
+                </p>
+                <div class="alert alert-danger border-0 bg-danger-subtle text-start p-3 rounded-3 small mb-4">
+                    <div class="d-flex align-items-start gap-2">
+                        <i class="bi bi-exclamation-triangle-fill text-danger fs-5 flex-shrink-0 mt-n1"></i>
+                        <div>
+                            <strong class="text-danger">Warning:</strong>
+                            <div class="text-secondary mt-1">
+                                This will permanently delete this purchase record and its associated inward items. This action cannot be undone.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <form method="POST" id="deletePurchaseForm" action="">
+                    <?= CSRF::field() ?>
+                    <div class="d-flex gap-2 justify-content-center">
+                        <button type="button" class="btn btn-light px-4 fw-semibold border" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-danger px-4 fw-semibold shadow-sm d-flex align-items-center gap-1">
+                            <i class="bi bi-trash me-1"></i> Delete
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
