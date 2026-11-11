@@ -507,6 +507,7 @@ class AssetService {
         $clean = trim($query);
         if ($clean === '') return [];
 
+        $limit = max(1, min(100, (int)$limit));
         $like = '%' . $clean . '%';
         $sql = "
             SELECT 
@@ -533,13 +534,12 @@ class AssetService {
                     WHEN a.asset_code LIKE ? THEN 4
                     ELSE 5
                 END, a.id DESC
-            LIMIT ?
+            LIMIT {$limit}
         ";
 
         $rows = Database::fetchAll($sql, [
             $like, $like, $like, $like, $like, $like, $like, $like, $like,
-            $clean, $clean, $clean, $clean . '%',
-            $limit
+            $clean, $clean, $clean, $clean . '%'
         ]);
 
         foreach ($rows as &$r) {
@@ -1038,5 +1038,390 @@ class AssetService {
             'type'     => $type,
             'display'  => self::resolveLocationName($type, $unitId)
         ];
+    }
+
+    /**
+     * Get Comprehensive Report Data for Export (CSV / Print).
+     */
+    public static function getExportReportData(string $startDate, string $endDate, ?string $locationType = null, ?int $locationId = null, array $selectedModules = []): array {
+        $where = "WHERE 1=1";
+        $params = [];
+
+        if (!empty($locationType)) {
+            $where .= " AND a.location_type = ?";
+            $params[] = $locationType;
+            if (!empty($locationId)) {
+                $where .= " AND a.location_id = ?";
+                $params[] = $locationId;
+            }
+        }
+
+        // 1. Executive Summary & KPI Metrics
+        $summary = Database::fetchOne("
+            SELECT 
+                COUNT(*) as total_assets,
+                COALESCE(SUM(a.purchase_cost), 0) as total_purchase_cost,
+                COALESCE(SUM(a.current_book_value), 0) as total_book_value,
+                COALESCE(SUM(CASE WHEN a.status = 'IN_USE' THEN 1 ELSE 0 END), 0) as in_use_count,
+                COALESCE(SUM(CASE WHEN a.status = 'IN_MAINTENANCE' THEN 1 ELSE 0 END), 0) as in_maintenance_count,
+                COALESCE(SUM(CASE WHEN a.status = 'IDLE' THEN 1 ELSE 0 END), 0) as idle_count,
+                COALESCE(SUM(CASE WHEN a.status = 'DAMAGED' THEN 1 ELSE 0 END), 0) as damaged_count,
+                COALESCE(SUM(CASE WHEN a.condition_state IN ('POOR', 'CRITICAL') THEN 1 ELSE 0 END), 0) as critical_condition_count,
+                COALESCE(SUM(CASE WHEN a.warranty_expiry IS NOT NULL AND a.warranty_expiry <= DATE_ADD(CURDATE(), INTERVAL 90 DAY) THEN 1 ELSE 0 END), 0) as warranty_expiring_soon_count
+            FROM assets a
+            $where
+        ", $params) ?: [];
+
+        $data = [
+            'summary'     => $summary,
+            'startDate'   => $startDate,
+            'endDate'     => $endDate,
+            'categories'  => [],
+            'facilities'  => [],
+            'registry'    => [],
+            'transfers'   => [],
+            'maintenance' => [],
+            'critical'    => [],
+        ];
+
+        // 2. Categories Breakdown
+        if (in_array('categories', $selectedModules, true)) {
+            $data['categories'] = Database::fetchAll("
+                SELECT 
+                    c.id, c.name, c.code, c.icon, c.depreciation_rate_annual,
+                    COUNT(a.id) as asset_count,
+                    COALESCE(SUM(a.purchase_cost), 0) as total_purchase_cost,
+                    COALESCE(SUM(a.current_book_value), 0) as total_book_value
+                FROM asset_categories c
+                LEFT JOIN assets a ON a.category_id = c.id $where
+                GROUP BY c.id, c.name, c.code, c.icon, c.depreciation_rate_annual
+                ORDER BY asset_count DESC, c.name ASC
+            ", $params);
+        }
+
+        // 3. Facility Capital Distribution
+        if (in_array('facilities', $selectedModules, true)) {
+            $metrics = self::getDashboardMetrics($locationType, $locationId);
+            $data['facilities'] = $metrics['facilityBreakdown'] ?? [];
+        }
+
+        // 4. Asset Inventory Registry
+        if (in_array('registry', $selectedModules, true)) {
+            $regSql = "
+                SELECT 
+                    a.*,
+                    c.name as category_name,
+                    c.code as category_code,
+                    c.depreciation_rate_annual
+                FROM assets a
+                JOIN asset_categories c ON a.category_id = c.id
+                $where
+                ORDER BY a.asset_code ASC, a.id DESC
+            ";
+            $registry = Database::fetchAll($regSql, $params);
+            foreach ($registry as &$ast) {
+                $ast['location_display'] = self::resolveLocationName($ast['location_type'], (int)$ast['location_id']);
+            }
+            $data['registry'] = $registry;
+        }
+
+        // 5. Inter-Unit Movement & Transfers
+        if (in_array('transfers', $selectedModules, true)) {
+            $trfWhere = "WHERE t.transfer_date >= ? AND t.transfer_date <= ?";
+            $trfParams = [$startDate . ' 00:00:00', $endDate . ' 23:59:59'];
+
+            if (!empty($locationType)) {
+                if (!empty($locationId)) {
+                    $trfWhere .= " AND ((t.from_location_type = ? AND t.from_location_id = ?) OR (t.to_location_type = ? AND t.to_location_id = ?))";
+                    $trfParams[] = $locationType;
+                    $trfParams[] = $locationId;
+                    $trfParams[] = $locationType;
+                    $trfParams[] = $locationId;
+                } else {
+                    $trfWhere .= " AND (t.from_location_type = ? OR t.to_location_type = ?)";
+                    $trfParams[] = $locationType;
+                    $trfParams[] = $locationType;
+                }
+            }
+
+            $trfSql = "
+                SELECT 
+                    t.*,
+                    a.name as asset_name,
+                    a.asset_code,
+                    a.barcode_qr,
+                    c.name as category_name,
+                    u.full_name as transferred_by_name
+                FROM asset_transfers t
+                JOIN assets a ON t.asset_id = a.id
+                JOIN asset_categories c ON a.category_id = c.id
+                LEFT JOIN users u ON t.transferred_by = u.id
+                $trfWhere
+                ORDER BY t.transfer_date DESC, t.id DESC
+            ";
+            $transfers = Database::fetchAll($trfSql, $trfParams);
+            foreach ($transfers as &$trf) {
+                $trf['from_display'] = self::resolveLocationName($trf['from_location_type'], (int)$trf['from_location_id']);
+                $trf['to_display']   = self::resolveLocationName($trf['to_location_type'], (int)$trf['to_location_id']);
+            }
+            $data['transfers'] = $transfers;
+        }
+
+        // 6. Maintenance & Repair Service Tickets
+        if (in_array('maintenance', $selectedModules, true)) {
+            $mntWhere = "WHERE m.service_date >= ? AND m.service_date <= ?";
+            $mntParams = [$startDate, $endDate];
+
+            if (!empty($locationType)) {
+                $mntWhere .= " AND a.location_type = ?";
+                $mntParams[] = $locationType;
+                if (!empty($locationId)) {
+                    $mntWhere .= " AND a.location_id = ?";
+                    $mntParams[] = $locationId;
+                }
+            }
+
+            $mntSql = "
+                SELECT 
+                    m.*,
+                    a.name as asset_name,
+                    a.asset_code,
+                    a.location_type,
+                    a.location_id,
+                    a.floor_area,
+                    c.name as category_name,
+                    u.full_name as logged_by_name
+                FROM asset_maintenance_logs m
+                JOIN assets a ON m.asset_id = a.id
+                JOIN asset_categories c ON a.category_id = c.id
+                LEFT JOIN users u ON m.created_by = u.id
+                $mntWhere
+                ORDER BY m.service_date DESC, m.id DESC
+            ";
+            $maintenance = Database::fetchAll($mntSql, $mntParams);
+            foreach ($maintenance as &$log) {
+                $log['location_display'] = self::resolveLocationName($log['location_type'], (int)$log['location_id']);
+            }
+            $data['maintenance'] = $maintenance;
+        }
+
+        // 7. Critical & Warranty Expiring
+        if (in_array('critical', $selectedModules, true)) {
+            $critWhere = $where . " AND (a.condition_state IN ('POOR', 'CRITICAL') OR a.status = 'DAMAGED' OR (a.warranty_expiry IS NOT NULL AND a.warranty_expiry <= DATE_ADD(CURDATE(), INTERVAL 90 DAY)))";
+            $critSql = "
+                SELECT 
+                    a.*,
+                    c.name as category_name
+                FROM assets a
+                JOIN asset_categories c ON a.category_id = c.id
+                $critWhere
+                ORDER BY a.condition_state DESC, a.warranty_expiry ASC
+            ";
+            $critical = Database::fetchAll($critSql, $params);
+            foreach ($critical as &$crit) {
+                $crit['location_display'] = self::resolveLocationName($crit['location_type'], (int)$crit['location_id']);
+            }
+            $data['critical'] = $critical;
+        }
+
+        return $data;
+    }
+
+    /**
+     * Stream CSV formatted asset intelligence report for direct download.
+     */
+    public static function streamCsv(string $periodLabel, string $startDate, string $endDate, array $data, string $facilityScopeLabel = 'All Enterprise Facilities'): void {
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="asset_intelligence_report_' . date('Ymd_His') . '.csv"');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        $out = fopen('php://output', 'w');
+        // UTF-8 BOM for Microsoft Excel recognition
+        fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF));
+
+        // 1. Report Header
+        fputcsv($out, ['GRM APPARELS — ENTERPRISE ASSET MANAGEMENT & OPERATIONS INTELLIGENCE REPORT']);
+        fputcsv($out, ['Facility Scope:', $facilityScopeLabel]);
+        fputcsv($out, ['Report Period:', $periodLabel, "From: {$startDate}", "To: {$endDate}"]);
+        fputcsv($out, ['Generated Timestamp:', date('Y-m-d H:i:s') . ' IST']);
+        fputcsv($out, []); // Blank line
+
+        $sum = $data['summary'] ?? [];
+        $totalAssets = (int)($sum['total_assets'] ?? 0);
+        $inUse = (int)($sum['in_use_count'] ?? 0);
+        $uptime = $totalAssets > 0 ? round(($inUse / $totalAssets) * 100, 1) : 0;
+
+        // 2. Executive Capital & Operations Valuation Summary
+        fputcsv($out, ['=== 1. EXECUTIVE ENTERPRISE ASSET VALUATION & SUMMARY ===']);
+        fputcsv($out, ['Financial / Operational Metric', 'Value', 'Details & Component Breakdown']);
+        fputcsv($out, ['Total Current Book Value', number_format((float)($sum['total_book_value'] ?? 0), 2, '.', ''), 'Written down book value after depreciation']);
+        fputcsv($out, ['Total Original Purchase Cost', number_format((float)($sum['total_purchase_cost'] ?? 0), 2, '.', ''), 'Total acquisition capital expenditure']);
+        fputcsv($out, ['Total Enterprise Assets', $totalAssets, 'Active physical equipment count']);
+        fputcsv($out, ['Active & In-Use Assets', $inUse, "{$uptime}% Fleet Utilization Rate"]);
+        fputcsv($out, ['Under Maintenance / Servicing', (int)($sum['in_maintenance_count'] ?? 0), 'Equipment in active servicing / repair']);
+        fputcsv($out, ['Idle Reserve Assets', (int)($sum['idle_count'] ?? 0), 'Available backup or unallocated units']);
+        fputcsv($out, ['Damaged / Defective Equipment', (int)($sum['damaged_count'] ?? 0), 'Out-of-service / overhaul required']);
+        fputcsv($out, ['Critical / Poor Condition State', (int)($sum['critical_condition_count'] ?? 0), 'Priority replacement candidates']);
+        fputcsv($out, ['Warranty Expiring Soon / Expired', (int)($sum['warranty_expiring_soon_count'] ?? 0), 'Warranty ending within 90 days']);
+        fputcsv($out, []);
+
+        // 3. Category Breakdown
+        if (!empty($data['categories'])) {
+            fputcsv($out, ['=== 2. ASSET VALUATION & FLEET DISTRIBUTION BY CATEGORY ===']);
+            fputcsv($out, ['Category Name', 'Category Code', 'Annual Depreciation Rate (%)', 'Asset Count', 'Total Purchase Cost (INR)', 'Total Book Value (INR)']);
+            $totCatCount = 0;
+            $totCatCost = 0;
+            $totCatBook = 0;
+            foreach ($data['categories'] as $c) {
+                $cCount = (int)$c['asset_count'];
+                $cCost = (float)$c['total_purchase_cost'];
+                $cBook = (float)$c['total_book_value'];
+                $totCatCount += $cCount;
+                $totCatCost += $cCost;
+                $totCatBook += $cBook;
+                fputcsv($out, [
+                    $c['name'],
+                    $c['code'],
+                    number_format((float)$c['depreciation_rate_annual'], 2, '.', '') . '%',
+                    $cCount,
+                    number_format($cCost, 2, '.', ''),
+                    number_format($cBook, 2, '.', ''),
+                ]);
+            }
+            fputcsv($out, ['TOTAL ALL CATEGORIES', '', '', $totCatCount, number_format($totCatCost, 2, '.', ''), number_format($totCatBook, 2, '.', '')]);
+            fputcsv($out, []);
+        }
+
+        // 4. Facility Distribution
+        if (!empty($data['facilities'])) {
+            fputcsv($out, ['=== 3. FACILITY & OPERATIONAL UNITS CAPITAL BREAKDOWN ===']);
+            fputcsv($out, ['Facility / Store Name', 'Pillar Type', 'Asset Count', 'In-Use Active', 'Under Maintenance', 'Damaged', 'Total Book Value (INR)']);
+            foreach ($data['facilities'] as $f) {
+                fputcsv($out, [
+                    $f['label'],
+                    $f['type'],
+                    (int)$f['asset_count'],
+                    (int)$f['in_use_count'],
+                    (int)$f['in_maintenance'],
+                    (int)$f['damaged_count'],
+                    number_format((float)$f['total_value'], 2, '.', ''),
+                ]);
+            }
+            fputcsv($out, []);
+        }
+
+        // 5. Full Asset Registry
+        if (!empty($data['registry'])) {
+            fputcsv($out, ['=== 4. ASSET INVENTORY REGISTRY ===']);
+            fputcsv($out, [
+                'Asset Code', 'Equipment / Asset Name', 'Category', 'Location / Facility',
+                'Floor Area / Line', 'Brand', 'Model Number', 'Serial # (SN)',
+                'Barcode / QR Tag', 'Purchase Date', 'Purchase Cost (INR)', 'Book Value (INR)',
+                'Operational Status', 'Condition State', 'Warranty Expiry', 'Vendor / Supplier', 'Custodian'
+            ]);
+            foreach ($data['registry'] as $a) {
+                fputcsv($out, [
+                    $a['asset_code'],
+                    $a['name'],
+                    $a['category_name'],
+                    $a['location_display'],
+                    $a['floor_area'] ?? '',
+                    $a['brand'] ?? '',
+                    $a['model_number'] ?? '',
+                    $a['serial_number'] ?? '',
+                    $a['barcode_qr'] ?? '',
+                    $a['purchase_date'] ?? '',
+                    number_format((float)$a['purchase_cost'], 2, '.', ''),
+                    number_format((float)$a['current_book_value'], 2, '.', ''),
+                    $a['status'],
+                    $a['condition_state'],
+                    $a['warranty_expiry'] ?? 'N/A',
+                    $a['vendor_name'] ?? '',
+                    $a['custodian_name'] ?? ''
+                ]);
+            }
+            fputcsv($out, []);
+        }
+
+        // 6. Inter-Unit Transfers
+        if (!empty($data['transfers'])) {
+            fputcsv($out, ['=== 5. INTER-UNIT ASSET MOVEMENT & TRANSFERS MANIFEST ===']);
+            fputcsv($out, [
+                'Transfer #', 'Transfer Date & Time', 'Asset Code', 'Equipment Name',
+                'Origin Facility (From)', 'Destination Facility (To)', 'Destination Area',
+                'Transferred By', 'Reason for Transfer', 'Status'
+            ]);
+            foreach ($data['transfers'] as $t) {
+                fputcsv($out, [
+                    $t['transfer_number'],
+                    $t['transfer_date'],
+                    $t['asset_code'],
+                    $t['asset_name'],
+                    $t['from_display'],
+                    $t['to_display'],
+                    $t['to_floor_area'] ?? '',
+                    $t['transferred_by_name'] ?? 'System',
+                    $t['reason'] ?? '',
+                    $t['status']
+                ]);
+            }
+            fputcsv($out, []);
+        }
+
+        // 7. Maintenance Logs
+        if (!empty($data['maintenance'])) {
+            fputcsv($out, ['=== 6. ASSET MAINTENANCE, REPAIRS & SERVICE TICKETS LOG ===']);
+            fputcsv($out, [
+                'Log / Ticket #', 'Service Date', 'Asset Code', 'Equipment Name',
+                'Location / Unit', 'Service Type', 'Issue / Scope', 'Action Taken',
+                'Serviced By Vendor', 'Technician', 'Service Cost (INR)', 'Downtime (Hours)',
+                'Next Due Date', 'Ticket Status'
+            ]);
+            foreach ($data['maintenance'] as $m) {
+                fputcsv($out, [
+                    $m['log_number'],
+                    $m['service_date'],
+                    $m['asset_code'],
+                    $m['asset_name'],
+                    $m['location_display'],
+                    $m['service_type'],
+                    $m['issue_description'] ?? '',
+                    $m['action_taken'] ?? '',
+                    $m['serviced_by_vendor'] ?? '',
+                    $m['technician_name'] ?? '',
+                    number_format((float)$m['service_cost'], 2, '.', ''),
+                    number_format((float)$m['downtime_hours'], 1, '.', ''),
+                    $m['next_due_date'] ?? 'N/A',
+                    $m['status']
+                ]);
+            }
+            fputcsv($out, []);
+        }
+
+        // 8. Critical Condition & Warranty Expiring Alerts
+        if (!empty($data['critical'])) {
+            fputcsv($out, ['=== 7. CRITICAL CONDITION & WARRANTY EXPIRING ALERTS ===']);
+            fputcsv($out, [
+                'Asset Code', 'Equipment Name', 'Category', 'Location / Facility',
+                'Status', 'Condition State', 'Warranty Expiry Date', 'Current Book Value (INR)'
+            ]);
+            foreach ($data['critical'] as $cr) {
+                fputcsv($out, [
+                    $cr['asset_code'],
+                    $cr['name'],
+                    $cr['category_name'],
+                    $cr['location_display'],
+                    $cr['status'],
+                    $cr['condition_state'],
+                    $cr['warranty_expiry'] ?? 'N/A',
+                    number_format((float)$cr['current_book_value'], 2, '.', ''),
+                ]);
+            }
+            fputcsv($out, []);
+        }
+
+        fclose($out);
+        exit;
     }
 }
