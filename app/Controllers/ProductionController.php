@@ -3643,10 +3643,11 @@ class ProductionController {
                     }
 
                     // Recalculate purchase total
-                    $sumTotal = (float)Database::fetchValue(
-                        "SELECT SUM(total_price) FROM production_purchase_items WHERE purchase_id = ?",
+                    $sumRow = Database::fetchOne(
+                        "SELECT SUM(total_price) as total FROM production_purchase_items WHERE purchase_id = ?",
                         [$purchaseId]
                     );
+                    $sumTotal = (float)($sumRow['total'] ?? 0);
                     Database::execute(
                         "UPDATE production_purchases SET total_amount = ? WHERE id = ?",
                         [$sumTotal, $purchaseId]
@@ -4719,6 +4720,109 @@ class ProductionController {
         }
     }
 
+    /**
+     * AJAX: Get category attributes for dynamic catalog hierarchy specifications.
+     */
+    public function ajaxGetCategoryAttributes(int $categoryId): void {
+        try {
+            $subcategoryId = !empty($_GET['subcategory_id']) ? (int)$_GET['subcategory_id'] : null;
+            $subSubcategoryId = !empty($_GET['sub_subcategory_id']) ? (int)$_GET['sub_subcategory_id'] : null;
+
+            $sql = "SELECT * FROM wh_category_attributes WHERE category_id = ? AND is_active = 1";
+            $params = [$categoryId];
+
+            if ($subSubcategoryId) {
+                $sql .= " AND (sub_subcategory_id = ? OR sub_subcategory_id IS NULL OR sub_subcategory_id = 0)";
+                $params[] = $subSubcategoryId;
+            } elseif ($subcategoryId) {
+                $sql .= " AND (subcategory_id = ? OR subcategory_id IS NULL OR subcategory_id = 0)";
+                $params[] = $subcategoryId;
+            }
+
+            $sql .= " ORDER BY sort_order ASC, id ASC";
+            $attributes = Database::fetchAll($sql, $params);
+
+            Response::json(['success' => true, 'attributes' => $attributes]);
+        } catch (\Throwable $e) {
+            Response::json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * AJAX: Quick Add category attribute dynamically without page reload.
+     */
+    public function ajaxQuickAddCategoryAttribute(): void {
+        try {
+            $categoryId = (int)($_POST['category_id'] ?? 0);
+            $subcategoryId = !empty($_POST['subcategory_id']) ? (int)$_POST['subcategory_id'] : null;
+            $subSubcategoryId = !empty($_POST['sub_subcategory_id']) ? (int)$_POST['sub_subcategory_id'] : null;
+            $attrName = mb_strtoupper(trim($_POST['attr_name'] ?? ''));
+            $attrType = in_array(strtoupper(trim($_POST['attr_type'] ?? '')), ['TEXT', 'NUMBER', 'SELECT', 'MULTI_SELECT']) ? strtoupper(trim($_POST['attr_type'])) : 'SELECT';
+            $attrOptions = trim($_POST['attr_options'] ?? '');
+            $isRequired = !empty($_POST['is_required']) ? 1 : 0;
+
+            if ($categoryId <= 0) {
+                Response::json(['success' => false, 'message' => 'Please select a Main Category first.'], 400);
+                return;
+            }
+            if (empty($attrName)) {
+                Response::json(['success' => false, 'message' => 'Attribute Name is required.'], 400);
+                return;
+            }
+            if (($attrType === 'SELECT' || $attrType === 'MULTI_SELECT') && empty($attrOptions)) {
+                Response::json(['success' => false, 'message' => 'Please enter at least one option for the attribute.'], 400);
+                return;
+            }
+
+            // Clean options: split by comma, trim, uppercase
+            $formattedOptions = null;
+            if (!empty($attrOptions)) {
+                $opts = array_map('trim', explode(',', $attrOptions));
+                $opts = array_filter($opts, function($v) { return $v !== ''; });
+                $opts = array_map('mb_strtoupper', $opts);
+                $formattedOptions = implode(',', $opts);
+            }
+
+            // Check if attribute with same name already exists for this scope
+            $existingSql = "SELECT id FROM wh_category_attributes WHERE category_id = ? AND attr_name = ?";
+            $existingParams = [$categoryId, $attrName];
+            if ($subSubcategoryId) {
+                $existingSql .= " AND sub_subcategory_id = ?";
+                $existingParams[] = $subSubcategoryId;
+            } elseif ($subcategoryId) {
+                $existingSql .= " AND subcategory_id = ? AND (sub_subcategory_id IS NULL OR sub_subcategory_id = 0)";
+                $existingParams[] = $subcategoryId;
+            } else {
+                $existingSql .= " AND (subcategory_id IS NULL OR subcategory_id = 0) AND (sub_subcategory_id IS NULL OR sub_subcategory_id = 0)";
+            }
+            $existing = Database::fetchOne($existingSql, $existingParams);
+            if ($existing) {
+                Database::execute(
+                    "UPDATE wh_category_attributes SET attr_type = ?, attr_options = ?, is_required = ?, is_active = 1, updated_at = NOW() WHERE id = ?",
+                    [$attrType, $formattedOptions, $isRequired, $existing['id']]
+                );
+                $attrId = (int)$existing['id'];
+            } else {
+                $maxSort = (int)(Database::fetchOne("SELECT MAX(sort_order) as m FROM wh_category_attributes WHERE category_id = ?", [$categoryId])['m'] ?? 0);
+                Database::execute(
+                    "INSERT INTO wh_category_attributes (category_id, subcategory_id, sub_subcategory_id, attr_name, attr_type, attr_options, is_required, sort_order, is_active, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())",
+                    [$categoryId, $subcategoryId, $subSubcategoryId, $attrName, $attrType, $formattedOptions, $isRequired, $maxSort + 1]
+                );
+                $attrId = (int)Database::lastInsertId();
+            }
+
+            $savedAttr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE id = ?", [$attrId]);
+            Response::json([
+                'success'   => true,
+                'message'   => "Attribute '{$attrName}' saved successfully.",
+                'attribute' => $savedAttr
+            ]);
+        } catch (\Throwable $e) {
+            Response::json(['success' => false, 'message' => 'Error saving attribute: ' . $e->getMessage()], 500);
+        }
+    }
+
     public function ajaxQuickAddBrand(): void {
         $name = mb_strtoupper(trim($_POST['name'] ?? ''));
         if (empty($name)) {
@@ -5113,6 +5217,8 @@ class ProductionController {
                     'roll_price'         => $rPrice,
                     'roll_color'         => $sellerData['color'] ?? '',
                     'roll_design'        => $sellerData['design_name'] ?? '',
+                    'allocated_qr_codes' => !empty($r['allocated_qr_codes']) ? $r['allocated_qr_codes'] : null,
+                    'attributes'         => !empty($r['attributes']) ? $r['attributes'] : null,
                 ];
                 $totalRollQty += $rQty;
                 $totalRollWeight += $rWeight;
@@ -5139,6 +5245,8 @@ class ProductionController {
                     'roll_price'         => $rPrice,
                     'roll_color'         => $sellerData['color'] ?? '',
                     'roll_design'        => $sellerData['design_name'] ?? '',
+                    'allocated_qr_codes' => !empty($r['allocated_qr_codes']) ? $r['allocated_qr_codes'] : null,
+                    'attributes'         => !empty($r['attributes']) ? $r['attributes'] : null,
                 ];
                 $totalRollQty = $rQty;
                 $totalRollWeight = $rWeight;
@@ -5421,6 +5529,8 @@ class ProductionController {
                     'roll_price'         => $rPrice,
                     'roll_color'         => $sellerData['color'] ?? '',
                     'roll_design'        => $sellerData['design_name'] ?? '',
+                    'allocated_qr_codes' => !empty($r['allocated_qr_codes']) ? $r['allocated_qr_codes'] : null,
+                    'attributes'         => !empty($r['attributes']) ? $r['attributes'] : null,
                 ];
                 $totalRollQty += $rQty;
                 $totalRollWeight += $rWeight;
@@ -5446,6 +5556,8 @@ class ProductionController {
                     'roll_price'         => $rPrice,
                     'roll_color'         => $sellerData['color'] ?? '',
                     'roll_design'        => $sellerData['design_name'] ?? '',
+                    'allocated_qr_codes' => !empty($r['allocated_qr_codes']) ? $r['allocated_qr_codes'] : null,
+                    'attributes'         => !empty($r['attributes']) ? $r['attributes'] : null,
                 ];
                 $totalRollQty = $rQty;
                 $totalRollWeight = $rWeight;

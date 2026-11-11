@@ -499,7 +499,7 @@
                         </div>
 
                         <!-- Clean Structured Roll Specification Box -->
-                        <div class="col-12" id="editRollInfoBox">
+                        <div class="col-12 mt-2" id="editRollInfoBox">
                             <div class="card border bg-light shadow-none rounded-3 overflow-hidden">
                                 <div class="card-body p-3">
                                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2.5 pb-2 border-bottom">
