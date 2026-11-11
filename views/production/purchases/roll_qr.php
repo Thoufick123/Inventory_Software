@@ -297,18 +297,6 @@
                             </div>
                         </div>
                     </div>
-
-                    <div class="label-footer no-print">
-                        <?php if ($canManageRolls): ?>
-                        <button type="button" class="btn btn-outline-dark btn-xs single-print-btn" onclick="printSingleLabel(<?= $stk['index'] ?>)" title="Print only this label">
-                            <i class="bi bi-printer"></i> Print
-                        </button>
-                        <?php else: ?>
-                        <button type="button" class="btn btn-outline-secondary btn-xs single-print-btn" disabled style="opacity: 0.5; cursor: not-allowed;" title="Print disabled in view-only access">
-                            <i class="bi bi-printer"></i> Print
-                        </button>
-                        <?php endif; ?>
-                    </div>
                 </div>
             <?php endforeach; ?>
         </div>

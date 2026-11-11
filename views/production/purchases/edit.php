@@ -142,7 +142,12 @@ $taxValueForItem = static function (array $item, string $type): float {
                                 <div class="col-lg-2 col-md-3"><label class="form-label required">Weight (kg) *</label><div class="input-group"><input type="number" min="0.01" step="0.01" name="items[<?= $key ?>][weight_kg]" class="form-control roll-weight" value="<?= e($item['weight_kg']) ?>" required><span class="input-group-text">kg</span></div></div>
                                 <div class="col-lg-2 col-md-3"><label class="form-label required">Price (₹) *</label><div class="input-group"><span class="input-group-text">₹</span><input type="number" min="0" step="0.01" name="items[<?= $key ?>][unit_price]" class="roll-price form-control" value="<?= e($item['unit_price']) ?>" required></div></div>
                                 <div class="col-lg-2 col-md-3">
-                                    <label class="form-label">HSN Code</label>
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <label class="form-label mb-0">HSN Code</label>
+                                        <button type="button" class="btn btn-link p-0 text-decoration-none small text-primary fw-semibold btn-add-hsn-trigger" style="font-size: 11px;" title="Add new HSN Code">
+                                            <i class="bi bi-plus-circle me-0.5"></i>+ Add HSN
+                                        </button>
+                                    </div>
                                     <div class="dropdown hsn-dropdown w-100 position-relative">
                                         <input type="hidden" name="items[<?= $key ?>][hsn_code]" class="roll-hsn" value="<?= e($item['hsn_code'] ?? '') ?>">
                                         <button type="button" class="form-select form-select-sm text-start d-flex justify-content-between align-items-center hsn-dropdown-btn font-monospace py-1.5 px-2" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" style="font-size: 0.82rem; height: 38px;">
@@ -207,8 +212,8 @@ $taxValueForItem = static function (array $item, string $type): float {
         </div>
         <div class="card-body" id="suppliesContainer">
             <div id="emptySupplyMessage" class="small text-muted <?= $supplyItems ? 'd-none' : '' ?>">No general supplies added.</div>
-            <div id="supplyRows">
-                <?php foreach ($supplyItems as $item): ?>
+            <div id="supplyRows" class="d-flex flex-column gap-3 mb-4">
+                <?php foreach ($supplyItems as $index => $item): ?>
                     <?php
                     $key = (int)$item['id'];
                     $gstType = $taxTypeForItem($item);
@@ -216,38 +221,82 @@ $taxValueForItem = static function (array $item, string $type): float {
                     $cgstValue = $gstType === 'BOTH' ? (float)($item['cgst_value'] ?? 0) : 0;
                     $knownUnit = in_array($item['unit'], $knownUnits, true);
                     ?>
-                    <div class="row g-2 align-items-end supply-row mb-3" data-item-id="<?= $key ?>">
-                        <input type="hidden" name="items[<?= $key ?>][id]" value="<?= $key ?>">
-                        <input type="hidden" name="items[<?= $key ?>][item_type]" value="GENERAL_SUPPLY">
-                        <div class="col-md-3"><label class="form-label">Item Name / Description *</label><input name="items[<?= $key ?>][item_name]" class="form-control supply-name" maxlength="255" value="<?= e($item['item_name']) ?>" required></div>
-                        <div class="col-md-2">
-                            <label class="form-label">HSN Code</label>
-                            <div class="dropdown hsn-dropdown w-100 position-relative">
-                                <input type="hidden" name="items[<?= $key ?>][hsn_code]" class="supply-hsn" value="<?= e($item['hsn_code'] ?? '') ?>">
-                                <button type="button" class="form-select form-select-sm text-start d-flex justify-content-between align-items-center hsn-dropdown-btn font-monospace py-1.5 px-2" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" style="font-size: 0.82rem; height: 38px;">
-                                    <span class="hsn-btn-text text-truncate">-- Select HSN --</span>
-                                </button>
-                                <div class="dropdown-menu shadow-lg p-2 hsn-dropdown-menu" style="min-width: 280px; max-width: 340px; z-index: 1055;">
-                                    <div class="input-group input-group-sm mb-2">
-                                        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
-                                        <input type="text" class="form-control border-start-0 hsn-search-input" placeholder="Search HSN code or item..." autocomplete="off">
+                    <div class="supply-card card border shadow-sm supply-row" data-item-id="<?= $key ?>">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
+                            <strong><i class="bi bi-box-seam text-success me-1"></i><span class="supply-title">SUPPLY #<?= $index + 1 ?></span>
+                                <span class="badge bg-secondary-subtle text-secondary border supply-name-badge <?= empty($item['item_name']) ? 'd-none' : '' ?>"><?= e($item['item_name']) ?></span>
+                            </strong>
+                            <button type="button" class="btn btn-sm btn-outline-danger remove-supply"><i class="bi bi-trash me-1"></i>Delete</button>
+                        </div>
+                        <div class="card-body p-3">
+                            <input type="hidden" name="items[<?= $key ?>][id]" value="<?= $key ?>">
+                            <input type="hidden" name="items[<?= $key ?>][item_type]" value="GENERAL_SUPPLY">
+                            <div class="row g-3">
+                                <div class="col-lg-3 col-md-6">
+                                    <label class="form-label required">Item Name / Description *</label>
+                                    <input name="items[<?= $key ?>][item_name]" class="form-control supply-name text-uppercase" maxlength="255" value="<?= e($item['item_name']) ?>" required>
+                                </div>
+                                <div class="col-lg-2 col-md-3">
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <label class="form-label mb-0">HSN Code</label>
+                                        <button type="button" class="btn btn-link p-0 text-decoration-none small text-primary fw-semibold btn-add-hsn-trigger" style="font-size: 11px;" title="Add new HSN Code">
+                                            <i class="bi bi-plus-circle me-0.5"></i>+ Add HSN
+                                        </button>
                                     </div>
-                                    <div class="overflow-auto hsn-options-list" style="max-height: 200px;"></div>
+                                    <div class="dropdown hsn-dropdown w-100 position-relative">
+                                        <input type="hidden" name="items[<?= $key ?>][hsn_code]" class="supply-hsn" value="<?= e($item['hsn_code'] ?? '') ?>">
+                                        <button type="button" class="form-select form-select-sm text-start d-flex justify-content-between align-items-center hsn-dropdown-btn font-monospace py-1.5 px-2" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" style="font-size: 0.82rem; height: 38px;">
+                                            <span class="hsn-btn-text text-truncate">-- Select HSN --</span>
+                                        </button>
+                                        <div class="dropdown-menu shadow-lg p-2 hsn-dropdown-menu" style="min-width: 280px; max-width: 340px; z-index: 1055;">
+                                            <div class="input-group input-group-sm mb-2">
+                                                <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                                                <input type="text" class="form-control border-start-0 hsn-search-input" placeholder="Search HSN code or item..." autocomplete="off">
+                                            </div>
+                                            <div class="overflow-auto hsn-options-list" style="max-height: 200px;"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-lg-2 col-md-3">
+                                    <label class="form-label required">Quantity *</label>
+                                    <input type="number" min="0.001" step="0.001" name="items[<?= $key ?>][quantity]" class="form-control supply-quantity" value="<?= e($item['quantity']) ?>" required>
+                                </div>
+                                <div class="col-lg-2 col-md-3">
+                                    <label class="form-label required">Unit *</label>
+                                    <select name="items[<?= $key ?>][unit]" class="form-select supply-unit" required>
+                                        <?php foreach (['PCS'=>'Pieces','KG'=>'Kilograms','METRE'=>'Metres','LITRE'=>'Litres','BOX'=>'Boxes','PACK'=>'Packs','PAIR'=>'Pairs','SET'=>'Sets','BUNDLE'=>'Bundles'] as $unit => $label): ?><option value="<?= e($unit) ?>" <?= $item['unit'] === $unit ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?>
+                                        <?php if (!$knownUnit): ?><option value="OTHER" selected>Other</option><?php endif; ?>
+                                    </select>
+                                </div>
+                                <div class="col-lg-3 col-md-3 custom-unit <?= $knownUnit ? 'd-none' : '' ?>">
+                                    <label class="form-label required">Unit Name *</label>
+                                    <input name="items[<?= $key ?>][custom_unit]" class="form-control custom-unit-name text-uppercase" maxlength="30" value="<?= !$knownUnit ? e($item['unit']) : '' ?>" <?= !$knownUnit ? 'required' : '' ?>>
+                                </div>
+                                <div class="col-lg-3 col-md-3">
+                                    <label class="form-label required">Unit Price (₹) *</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">₹</span>
+                                        <input type="number" min="0" step="0.01" name="items[<?= $key ?>][unit_price]" class="form-control supply-price" value="<?= e($item['unit_price']) ?>" required>
+                                    </div>
+                                </div>
+                                <div class="col-lg-2 col-md-3">
+                                    <label class="form-label">GST</label>
+                                    <select name="items[<?= $key ?>][gst_type]" class="form-select item-gst-type"><?php foreach (['SGST'=>'SGST','IGST'=>'IGST','CGST'=>'CGST','BOTH'=>'Both (CGST and SGST)','EXEMPTED'=>'Exempted'] as $type => $label): ?><option value="<?= e($type) ?>" <?= $gstType === $type ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?></select>
+                                </div>
+                                <div class="col-lg-2 col-md-3 tax-mode-field <?= $gstType === 'EXEMPTED' ? 'd-none' : '' ?>">
+                                    <label class="form-label">Tax Input Type</label>
+                                    <select name="items[<?= $key ?>][tax_mode]" class="form-select item-tax-mode"><option value="PERCENT" <?= ($item['tax_input_type'] ?? '') !== 'AMOUNT' ? 'selected' : '' ?>>Percentage (%)</option><option value="AMOUNT" <?= ($item['tax_input_type'] ?? '') === 'AMOUNT' ? 'selected' : '' ?>>Amount (₹)</option></select>
+                                </div>
+                                <div class="col-lg-2 col-md-3 tax-value-field <?= $gstType === 'EXEMPTED' ? 'd-none' : '' ?>">
+                                    <label class="form-label item-tax-label"><?= $gstType === 'BOTH' ? 'SGST' : e($gstType) ?></label>
+                                    <input type="number" min="0" step="0.01" name="items[<?= $key ?>][tax_value]" class="form-control item-tax-value" value="<?= e($taxValue) ?>">
+                                </div>
+                                <div class="col-lg-2 col-md-3 tax-cgst-field <?= $gstType !== 'BOTH' ? 'd-none' : '' ?>">
+                                    <label class="form-label item-cgst-label">CGST</label>
+                                    <input type="number" min="0" step="0.01" name="items[<?= $key ?>][cgst_tax_value]" class="form-control item-cgst-value" value="<?= e($cgstValue) ?>">
                                 </div>
                             </div>
                         </div>
-                        <div class="col-md-2"><label class="form-label">Quantity *</label><input type="number" min="0.001" step="0.001" name="items[<?= $key ?>][quantity]" class="form-control supply-quantity" value="<?= e($item['quantity']) ?>" required></div>
-                        <div class="col-md-2"><label class="form-label">Unit *</label><select name="items[<?= $key ?>][unit]" class="form-select supply-unit" required>
-                            <?php foreach (['PCS'=>'Pieces','KG'=>'Kilograms','METRE'=>'Metres','LITRE'=>'Litres','BOX'=>'Boxes','PACK'=>'Packs','PAIR'=>'Pairs','SET'=>'Sets','BUNDLE'=>'Bundles'] as $unit => $label): ?><option value="<?= e($unit) ?>" <?= $item['unit'] === $unit ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?>
-                            <?php if (!$knownUnit): ?><option value="OTHER" selected>Other</option><?php endif; ?>
-                        </select></div>
-                        <div class="col-md-2 custom-unit <?= $knownUnit ? 'd-none' : '' ?>"><label class="form-label">Unit Name *</label><input name="items[<?= $key ?>][custom_unit]" class="form-control custom-unit-name" maxlength="30" value="<?= !$knownUnit ? e($item['unit']) : '' ?>" <?= !$knownUnit ? 'required' : '' ?>></div>
-                        <div class="col-md-2"><label class="form-label">Unit Price (₹) *</label><input type="number" min="0" step="0.01" name="items[<?= $key ?>][unit_price]" class="form-control supply-price" value="<?= e($item['unit_price']) ?>" required></div>
-                        <div class="col-md-3"><label class="form-label">GST</label><select name="items[<?= $key ?>][gst_type]" class="form-select item-gst-type"><?php foreach (['SGST'=>'SGST','IGST'=>'IGST','CGST'=>'CGST','BOTH'=>'Both (CGST and SGST)','EXEMPTED'=>'Exempted'] as $type => $label): ?><option value="<?= e($type) ?>" <?= $gstType === $type ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?></select></div>
-                        <div class="col-md-3 tax-mode-field <?= $gstType === 'EXEMPTED' ? 'd-none' : '' ?>"><label class="form-label">Tax Input Type</label><select name="items[<?= $key ?>][tax_mode]" class="form-select item-tax-mode"><option value="PERCENT" <?= ($item['tax_input_type'] ?? '') !== 'AMOUNT' ? 'selected' : '' ?>>Percentage (%)</option><option value="AMOUNT" <?= ($item['tax_input_type'] ?? '') === 'AMOUNT' ? 'selected' : '' ?>>Amount (₹)</option></select></div>
-                        <div class="col-md-3 tax-value-field <?= $gstType === 'EXEMPTED' ? 'd-none' : '' ?>"><label class="form-label item-tax-label"><?= $gstType === 'BOTH' ? 'SGST' : e($gstType) ?></label><input type="number" min="0" step="0.01" name="items[<?= $key ?>][tax_value]" class="form-control item-tax-value" value="<?= e($taxValue) ?>"></div>
-                        <div class="col-md-3 tax-cgst-field <?= $gstType !== 'BOTH' ? 'd-none' : '' ?>"><label class="form-label item-cgst-label">CGST</label><input type="number" min="0" step="0.01" name="items[<?= $key ?>][cgst_tax_value]" class="form-control item-cgst-value" value="<?= e($cgstValue) ?>"></div>
-                        <div class="col-md-1"><button type="button" class="btn btn-outline-danger remove-supply" title="Remove supply"><i class="bi bi-trash"></i></button></div>
                     </div>
                 <?php endforeach; ?>
             </div>
@@ -279,6 +328,45 @@ $taxValueForItem = static function (array $item, string $type): float {
             <div class="modal-header bg-dark text-white"><h5 class="modal-title"><i class="bi bi-qr-code me-2 text-warning"></i>Fabric Roll Labels Preview</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
             <div class="modal-body bg-light"><div id="editPurchaseLabelCards" class="d-flex flex-wrap justify-content-center gap-3"></div></div>
             <div class="modal-footer"><span class="small text-muted me-auto" id="editPurchaseLabelCount"></span><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalQuickAddHsn" tabindex="-1" aria-labelledby="modalQuickAddHsnLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-primary text-white py-3 px-4">
+                <h5 class="modal-title fs-6 fw-bold" id="modalQuickAddHsnLabel">
+                    <i class="bi bi-plus-circle me-1"></i> Add New HSN Code &amp; GST Rate
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="mb-3">
+                    <label class="form-label fw-bold small text-dark">HSN Code <span class="text-danger">*</span></label>
+                    <input type="text" id="quickHsnCodeInput" class="form-control text-uppercase fw-bold font-monospace" placeholder="e.g. 6206 or 61091000" maxlength="15" required>
+                    <small class="text-muted" style="font-size:0.75rem;">Harmonized System of Nomenclature code for invoices</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold small text-dark">Commodity / Description <span class="text-danger">*</span></label>
+                    <input type="text" id="quickHsnDescInput" class="form-control" placeholder="e.g. Cotton Woven Fabric / Sewing Thread / Buttons" maxlength="150" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold small text-dark">Default GST Rate (%) <span class="text-danger">*</span></label>
+                    <div class="input-group">
+                        <input type="number" step="0.01" min="0" max="28" id="quickHsnGstInput" class="form-control fw-bold" value="5.00" required>
+                        <span class="input-group-text">%</span>
+                    </div>
+                    <small class="text-muted" style="font-size:0.75rem;">Standard garment slab: 5.00%, 12.00%, 18.00%</small>
+                </div>
+                <div id="quickHsnAlert" class="alert alert-danger py-2 small d-none mb-0"></div>
+            </div>
+            <div class="modal-footer bg-light py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm fw-semibold" id="btnSaveQuickHsn">
+                    <i class="bi bi-check2-circle me-1"></i> Save &amp; Select HSN
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -386,33 +474,95 @@ $taxValueForItem = static function (array $item, string $type): float {
 }
 </style>
 <template id="editSupplyTemplate">
-    <div class="row g-2 align-items-end supply-row mb-3">
-        <div class="col-md-3"><label class="form-label">Item Name / Description *</label><input class="form-control supply-name" maxlength="255" required></div>
-        <div class="col-md-2">
-            <label class="form-label">HSN Code</label>
-            <div class="dropdown hsn-dropdown w-100 position-relative">
-                <input type="hidden" class="supply-hsn">
-                <button type="button" class="form-select form-select-sm text-start d-flex justify-content-between align-items-center hsn-dropdown-btn font-monospace py-1.5 px-2" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" style="font-size: 0.82rem; height: 38px;">
-                    <span class="hsn-btn-text text-truncate">-- Select HSN --</span>
-                </button>
-                <div class="dropdown-menu shadow-lg p-2 hsn-dropdown-menu" style="min-width: 280px; max-width: 340px; z-index: 1055;">
-                    <div class="input-group input-group-sm mb-2">
-                        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
-                        <input type="text" class="form-control border-start-0 hsn-search-input" placeholder="Search HSN code or item..." autocomplete="off">
+    <div class="supply-card card border shadow-sm mb-3 supply-row">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
+            <strong><i class="bi bi-box-seam text-success me-1"></i><span class="supply-title">SUPPLY #1</span> <span class="badge bg-secondary-subtle text-secondary border supply-name-badge d-none"></span></strong>
+            <button type="button" class="btn btn-sm btn-outline-danger remove-supply"><i class="bi bi-trash me-1"></i>Delete</button>
+        </div>
+        <div class="card-body p-3">
+            <div class="row g-3">
+                <div class="col-lg-3 col-md-6">
+                    <label class="form-label required">Item Name / Description *</label>
+                    <input class="form-control supply-name text-uppercase" maxlength="255" placeholder="E.G. SEWING NEEDLES, THREAD, BUTTONS" required>
+                </div>
+                <div class="col-lg-2 col-md-3">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <label class="form-label mb-0">HSN Code</label>
+                        <button type="button" class="btn btn-link p-0 text-decoration-none small text-primary fw-semibold btn-add-hsn-trigger" style="font-size: 11px;" title="Add new HSN Code">
+                            <i class="bi bi-plus-circle me-0.5"></i>+ Add HSN
+                        </button>
                     </div>
-                    <div class="overflow-auto hsn-options-list" style="max-height: 200px;"></div>
+                    <div class="dropdown hsn-dropdown w-100 position-relative">
+                        <input type="hidden" class="supply-hsn">
+                        <button type="button" class="form-select form-select-sm text-start d-flex justify-content-between align-items-center hsn-dropdown-btn font-monospace py-1.5 px-2" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" style="font-size: 0.82rem; height: 38px;">
+                            <span class="hsn-btn-text text-truncate">-- Select HSN --</span>
+                        </button>
+                        <div class="dropdown-menu shadow-lg p-2 hsn-dropdown-menu" style="min-width: 280px; max-width: 340px; z-index: 1055;">
+                            <div class="input-group input-group-sm mb-2">
+                                <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                                <input type="text" class="form-control border-start-0 hsn-search-input" placeholder="Search HSN code or item..." autocomplete="off">
+                            </div>
+                            <div class="overflow-auto hsn-options-list" style="max-height: 200px;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-2 col-md-3">
+                    <label class="form-label required">Quantity *</label>
+                    <input type="number" class="form-control supply-quantity" min="0.001" step="0.001" value="1" required>
+                </div>
+                <div class="col-lg-2 col-md-3">
+                    <label class="form-label required">Unit *</label>
+                    <select class="form-select supply-unit" required>
+                        <option value="PCS">Pieces</option>
+                        <option value="KG">Kilograms</option>
+                        <option value="METRE">Metres</option>
+                        <option value="LITRE">Litres</option>
+                        <option value="BOX">Boxes</option>
+                        <option value="PACK">Packs</option>
+                        <option value="PAIR">Pairs</option>
+                        <option value="SET">Sets</option>
+                        <option value="BUNDLE">Bundles</option>
+                        <option value="OTHER">Other</option>
+                    </select>
+                </div>
+                <div class="col-lg-3 col-md-3 custom-unit d-none">
+                    <label class="form-label required">Unit Name *</label>
+                    <input class="form-control custom-unit-name text-uppercase" maxlength="30" placeholder="e.g. CONE, PACK">
+                </div>
+                <div class="col-lg-3 col-md-3">
+                    <label class="form-label required">Unit Price (₹) *</label>
+                    <div class="input-group">
+                        <span class="input-group-text">₹</span>
+                        <input type="number" class="form-control supply-price" min="0" step="0.01" value="0" required>
+                    </div>
+                </div>
+                <div class="col-lg-2 col-md-3">
+                    <label class="form-label">GST</label>
+                    <select class="form-select item-gst-type">
+                        <option value="SGST">SGST</option>
+                        <option value="IGST">IGST</option>
+                        <option value="CGST">CGST</option>
+                        <option value="BOTH">Both (CGST and SGST)</option>
+                        <option value="EXEMPTED" selected>Exempted</option>
+                    </select>
+                </div>
+                <div class="col-lg-2 col-md-3 tax-mode-field d-none">
+                    <label class="form-label">Tax Input Type</label>
+                    <select class="form-select item-tax-mode">
+                        <option value="PERCENT">Percentage (%)</option>
+                        <option value="AMOUNT">Amount (₹)</option>
+                    </select>
+                </div>
+                <div class="col-lg-2 col-md-3 tax-value-field d-none">
+                    <label class="form-label item-tax-label">Tax</label>
+                    <input type="number" class="form-control item-tax-value" min="0" max="100" step="0.01" value="0">
+                </div>
+                <div class="col-lg-2 col-md-3 tax-cgst-field d-none">
+                    <label class="form-label item-cgst-label">CGST</label>
+                    <input type="number" class="form-control item-cgst-value" min="0" max="100" step="0.01" value="0">
                 </div>
             </div>
         </div>
-        <div class="col-md-2"><label class="form-label">Quantity *</label><input type="number" class="form-control supply-quantity" min="0.001" step="0.001" value="1" required></div>
-        <div class="col-md-2"><label class="form-label">Unit *</label><select class="form-select supply-unit"><option value="PCS">Pieces</option><option value="KG">Kilograms</option><option value="METRE">Metres</option><option value="LITRE">Litres</option><option value="BOX">Boxes</option><option value="PACK">Packs</option><option value="PAIR">Pairs</option><option value="SET">Sets</option><option value="BUNDLE">Bundles</option><option value="OTHER">Other</option></select></div>
-        <div class="col-md-2 custom-unit d-none"><label class="form-label">Unit Name *</label><input class="form-control custom-unit-name" maxlength="30"></div>
-        <div class="col-md-2"><label class="form-label">Unit Price (₹) *</label><input type="number" class="form-control supply-price" min="0" step="0.01" value="0" required></div>
-        <div class="col-md-3"><label class="form-label">GST</label><select class="form-select item-gst-type"><option value="SGST">SGST</option><option value="IGST">IGST</option><option value="CGST">CGST</option><option value="BOTH">Both (CGST and SGST)</option><option value="EXEMPTED" selected>Exempted</option></select></div>
-        <div class="col-md-3 tax-mode-field d-none"><label class="form-label">Tax Input Type</label><select class="form-select item-tax-mode"><option value="PERCENT">Percentage (%)</option><option value="AMOUNT">Amount (₹)</option></select></div>
-        <div class="col-md-3 tax-value-field d-none"><label class="form-label item-tax-label">Tax</label><input type="number" class="form-control item-tax-value" min="0" max="100" step="0.01" value="0"></div>
-        <div class="col-md-3 tax-cgst-field d-none"><label class="form-label item-cgst-label">CGST</label><input type="number" class="form-control item-cgst-value" min="0" max="100" step="0.01" value="0"></div>
-        <div class="col-md-1"><button type="button" class="btn btn-outline-danger remove-supply" title="Remove supply"><i class="bi bi-trash"></i></button></div>
     </div>
 </template>
 
@@ -425,6 +575,116 @@ $taxValueForItem = static function (array $item, string $type): float {
     window.hsnCodesList = <?= json_encode($hsnCodes ?? []) ?>;
     const money = value => '₹' + (Number(value) || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     const safe = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    let activeHsnTarget = null;
+
+    function openQuickAddHsnModal(dropdownEl, hiddenInput, presetCode = '') {
+        activeHsnTarget = {
+            dropdownEl,
+            hiddenInput,
+            btn: dropdownEl.querySelector('.hsn-dropdown-btn'),
+            btnText: dropdownEl.querySelector('.hsn-btn-text')
+        };
+        const codeInp = document.getElementById('quickHsnCodeInput');
+        const descInp = document.getElementById('quickHsnDescInput');
+        const gstInp = document.getElementById('quickHsnGstInput');
+        const alertBox = document.getElementById('quickHsnAlert');
+        if (codeInp) codeInp.value = presetCode || '';
+        if (descInp) descInp.value = '';
+        if (gstInp) gstInp.value = '5.00';
+        if (alertBox) alertBox.classList.add('d-none');
+        const modalEl = document.getElementById('modalQuickAddHsn');
+        if (modalEl) {
+            const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            modal.show();
+            setTimeout(() => {
+                if (presetCode && descInp) descInp.focus();
+                else if (codeInp) codeInp.focus();
+            }, 300);
+        }
+    }
+
+    function initQuickAddHsnModalHandler() {
+        const btnSave = document.getElementById('btnSaveQuickHsn');
+        if (!btnSave) return;
+        btnSave.addEventListener('click', () => {
+            const code = (document.getElementById('quickHsnCodeInput')?.value || '').trim().toUpperCase();
+            const desc = (document.getElementById('quickHsnDescInput')?.value || '').trim();
+            const gst = parseFloat(document.getElementById('quickHsnGstInput')?.value) || 0;
+            const alertBox = document.getElementById('quickHsnAlert');
+
+            if (!code || code.length < 2) {
+                if (alertBox) { alertBox.textContent = 'Please enter a valid HSN code (at least 2 characters).'; alertBox.classList.remove('d-none'); }
+                return;
+            }
+            if (!desc) {
+                if (alertBox) { alertBox.textContent = 'Please enter a commodity / item description.'; alertBox.classList.remove('d-none'); }
+                return;
+            }
+
+            btnSave.disabled = true;
+            btnSave.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+
+            const fd = new FormData();
+            fd.append('hsn_code', code);
+            fd.append('description', desc);
+            fd.append('gst_rate', gst.toFixed(2));
+            const csrf = document.querySelector('input[name="csrf_token"]');
+            if (csrf) fd.append('csrf_token', csrf.value);
+
+            fetch('<?= url("api/hsn-codes/store") ?>', {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                body: fd
+            })
+            .then(r => r.json())
+            .then(res => {
+                btnSave.disabled = false;
+                btnSave.innerHTML = '<i class="bi bi-check2-circle me-1"></i> Save &amp; Select HSN';
+
+                if (res.success && res.data) {
+                    const newHsn = res.data;
+                    const existingIdx = (window.hsnCodesList || []).findIndex(h => String(h.hsn_code).toUpperCase() === String(newHsn.hsn_code).toUpperCase());
+                    if (existingIdx >= 0) {
+                        window.hsnCodesList[existingIdx] = newHsn;
+                    } else {
+                        if (!window.hsnCodesList) window.hsnCodesList = [];
+                        window.hsnCodesList.push(newHsn);
+                    }
+
+                    if (activeHsnTarget && activeHsnTarget.hiddenInput) {
+                        activeHsnTarget.hiddenInput.value = newHsn.hsn_code;
+                        if (activeHsnTarget.btnText) {
+                            activeHsnTarget.btnText.innerHTML = `<span class="fw-bold text-primary">${safe(newHsn.hsn_code)}</span> <span class="text-muted small">(${safe(newHsn.description).slice(0, 16)}${newHsn.description.length > 16 ? '...' : ''})</span>`;
+                        }
+                        const bsDropdown = bootstrap.Dropdown.getInstance(activeHsnTarget.btn);
+                        if (bsDropdown) bsDropdown.hide();
+                        activeHsnTarget.hiddenInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        activeHsnTarget.hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+
+                    const modalEl = document.getElementById('modalQuickAddHsn');
+                    if (modalEl) {
+                        const modal = bootstrap.Modal.getInstance(modalEl);
+                        if (modal) modal.hide();
+                    }
+                } else {
+                    if (alertBox) {
+                        alertBox.textContent = res.message || 'Failed to save HSN Code.';
+                        alertBox.classList.remove('d-none');
+                    }
+                }
+            })
+            .catch(err => {
+                btnSave.disabled = false;
+                btnSave.innerHTML = '<i class="bi bi-check2-circle me-1"></i> Save &amp; Select HSN';
+                if (alertBox) {
+                    alertBox.textContent = 'Server error occurred while saving HSN Code.';
+                    alertBox.classList.remove('d-none');
+                }
+            });
+        });
+    }
+    initQuickAddHsnModalHandler();
 
     function initHsnDropdown(container, hiddenSelector) {
         const dropdownEl = container.querySelector('.hsn-dropdown');
@@ -434,6 +694,15 @@ $taxValueForItem = static function (array $item, string $type): float {
         const btnText = dropdownEl.querySelector('.hsn-btn-text');
         const searchInput = dropdownEl.querySelector('.hsn-search-input');
         const listContainer = dropdownEl.querySelector('.hsn-options-list');
+
+        const triggerBtn = container.querySelector('.btn-add-hsn-trigger');
+        if (triggerBtn) {
+            triggerBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openQuickAddHsnModal(dropdownEl, hiddenInput);
+            });
+        }
 
         function updateBtnDisplay(code, desc) {
             if (code) {
@@ -482,13 +751,31 @@ $taxValueForItem = static function (array $item, string $type): float {
             if (q !== '' && !matchCount) {
                 html += `
                     <div class="text-muted p-2 text-center small">No matching standard HSN found.</div>
-                    <button type="button" class="dropdown-item py-1.5 px-2 small text-primary fw-semibold hsn-opt-item border-top" data-code="${safe(q.toUpperCase())}" data-desc="Custom HSN">
-                        <i class="bi bi-plus-circle me-1"></i>Use "${safe(q.toUpperCase())}"
+                    <button type="button" class="dropdown-item py-1.5 px-2 small text-primary fw-semibold hsn-quick-add-btn border-top" data-preset="${safe(q.toUpperCase())}">
+                        <i class="bi bi-plus-circle me-1"></i>+ Add "${safe(q.toUpperCase())}" to Database
                     </button>
                 `;
             }
 
+            html += `
+                <div class="border-top pt-1 mt-1 text-center bg-light rounded-bottom">
+                    <button type="button" class="dropdown-item py-1.5 px-2 small text-primary fw-semibold text-center hsn-quick-add-btn" data-preset="${safe(q.toUpperCase())}">
+                        <i class="bi bi-plus-circle me-1"></i>+ Add New HSN Code
+                    </button>
+                </div>
+            `;
+
             listContainer.innerHTML = html;
+
+            listContainer.querySelectorAll('.hsn-quick-add-btn').forEach(btnEl => {
+                btnEl.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const bsDropdown = bootstrap.Dropdown.getInstance(btn);
+                    if (bsDropdown) bsDropdown.hide();
+                    openQuickAddHsnModal(dropdownEl, hiddenInput, btnEl.dataset.preset || '');
+                });
+            });
 
             listContainer.querySelectorAll('.hsn-opt-item').forEach(item => {
                 item.addEventListener('click', (e) => {
@@ -638,6 +925,14 @@ $taxValueForItem = static function (array $item, string $type): float {
         document.getElementById('purchaseTotal').textContent = money(total);
     }
 
+    function updateSupplyTitles() {
+        const visibleRows = Array.from(suppliesContainer.querySelectorAll('.supply-row:not(.d-none)'));
+        visibleRows.forEach((row, i) => {
+            const title = row.querySelector('.supply-title');
+            if (title) title.textContent = 'SUPPLY #' + (i + 1);
+        });
+    }
+
     function addSupplyRow() {
         const row = document.getElementById('editSupplyTemplate').content.firstElementChild.cloneNode(true);
         const key = `new-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
@@ -656,6 +951,7 @@ $taxValueForItem = static function (array $item, string $type): float {
         configureSupplyRow(row);
         suppliesContainer.appendChild(row);
         document.getElementById('emptySupplyMessage').classList.add('d-none');
+        updateSupplyTitles();
         updateSummary();
     }
 
@@ -734,6 +1030,14 @@ $taxValueForItem = static function (array $item, string $type): float {
             input.addEventListener('input', updateSummary);
             input.addEventListener('change', updateSummary);
         });
+        row.querySelector('.supply-name')?.addEventListener('input', (e) => {
+            const badge = row.querySelector('.supply-name-badge');
+            if (badge) {
+                const val = e.target.value.trim().toUpperCase();
+                badge.textContent = val;
+                badge.classList.toggle('d-none', !val);
+            }
+        });
         row.querySelector('.item-gst-type').addEventListener('change', () => { updateTaxFields(row); updateSummary(); });
         row.querySelector('.item-tax-mode').addEventListener('change', () => { updateTaxFields(row); updateSummary(); });
         row.querySelector('.supply-unit').addEventListener('change', event => {
@@ -766,6 +1070,7 @@ $taxValueForItem = static function (array $item, string $type): float {
                 row.remove();
             }
             if (!suppliesContainer.querySelector('.supply-row:not(.d-none)')) document.getElementById('emptySupplyMessage').classList.remove('d-none');
+            updateSupplyTitles();
             updateSummary();
         });
         updateTaxFields(row);
@@ -785,6 +1090,7 @@ $taxValueForItem = static function (array $item, string $type): float {
         initHsnDropdown(row, '.supply-hsn');
         configureSupplyRow(row);
     });
+    updateSupplyTitles();
     document.getElementById('editFabricDescription').addEventListener('input', updateSummary);
     document.getElementById('addSupply').addEventListener('click', addSupplyRow);
     document.getElementById('previewPurchaseLabels').addEventListener('click', previewLabels);

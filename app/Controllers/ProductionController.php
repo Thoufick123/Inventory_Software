@@ -12802,9 +12802,13 @@ class ProductionController {
      * AJAX endpoint to save or update an HSN code.
      */
     public function ajaxStoreHsnCode(): void {
-        $hsnCode = mb_strtoupper(trim($_POST['hsn_code'] ?? ''));
-        $description = trim($_POST['description'] ?? '');
-        $gstRate = max(0.0, (float)($_POST['gst_rate'] ?? 5.0));
+        $rawInput = file_get_contents('php://input');
+        $jsonData = !empty($rawInput) ? json_decode($rawInput, true) : [];
+        if (!is_array($jsonData)) $jsonData = [];
+
+        $hsnCode = mb_strtoupper(trim($_POST['hsn_code'] ?? $jsonData['hsn_code'] ?? ''));
+        $description = trim($_POST['description'] ?? $jsonData['description'] ?? '');
+        $gstRate = max(0.0, (float)($_POST['gst_rate'] ?? $jsonData['gst_rate'] ?? 5.0));
 
         if (empty($hsnCode) || strlen($hsnCode) < 2 || strlen($hsnCode) > 15) {
             Response::json(['success' => false, 'message' => 'Please enter a valid HSN code (e.g. 6109 or 6205).'], 422);
