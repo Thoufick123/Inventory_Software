@@ -53,25 +53,16 @@ An enterprise-grade, end-to-end apparel manufacturing, central warehousing, mult
 
 3. Database Initialization:
    - Create database `grm_inventory` in phpMyAdmin / MySQL CLI.
-   - Import [`database/schema.sql`](file:///c:/xampp/htdocs/grm-inventory/database/schema.sql) and [`database/seed.sql`](file:///c:/xampp/htdocs/grm-inventory/database/seed.sql).
+   - For a **new, empty database**, import [`database/schema.sql`](file:///c:/xampp/htdocs/grm-inventory/database/schema.sql) and [`database/seed.sql`](file:///c:/xampp/htdocs/grm-inventory/database/seed.sql). The schema contains `DROP TABLE` statements and must not be imported into a database with data to preserve.
    - Seed any missing permission records (safe to rerun):
      ```bash
      php database/seed_permissions.php
      ```
-   - Run incremental migrations to verify all tables:
+   - For an existing database, apply the additive price-history schema update:
      ```bash
-     php database/migrations/create_expenses_and_categories_tables.php
-     php database/migrations/create_asset_tables.php
-     php database/migrations/create_cash_flow_tables.php
-     php database/migrations/add_complementary_product_columns.php
-     php database/migrations/add_inward_qr_codes_to_production_batch_items.php
-     php database/migrations/fix_warehouse_damage_production_inward_schema.php
-     php database/migrations/create_warehouse_catalog_attribute_tables.php
-     php database/migrations/add_catalog_and_supplier_document_columns.php
-     php database/migrations/create_warehouse_qr_codes_table.php
-     php database/migrations/add_warehouse_stock_price_edit_permission.php
+     mysql -h 127.0.0.1 -P 3307 -u root -p grm_inventory < database/migrations/2026_11_11_add_product_price_logs.sql
      ```
-   - Hostinger Git deployment updates application files, but does not update the production database. After deploying a release that adds a migration, run that migration against the Hostinger database using Hostinger's PHP terminal/SSH before using the affected feature. Then assign any new permissions to the intended roles/staff in the application.
+   - Database changes are not applied by deploying application files. Run the corresponding additive SQL migration against the production database before using the affected feature.
 
 4. Launch Application:
    - Navigate to: **[http://localhost/grm-inventory/](http://localhost/grm-inventory/)**
@@ -112,7 +103,7 @@ Detailed specifications and architectural guides are available in the [`requirem
 1. **[Project Requirements Document (PRD)](file:///c:/xampp/htdocs/grm-inventory/requirements/01_PROJECT_REQUIREMENT_DOCUMENT.md)**: Executive summary, user roles, business goals, and non-functional requirements.
 2. **[Architecture & System Design](file:///c:/xampp/htdocs/grm-inventory/requirements/02_PROJECT_DESIGN.md)**: Architectural diagrams, folder structure, stock ledger engine, and lifecycle pipelines.
 3. **[Technology Stack](file:///c:/xampp/htdocs/grm-inventory/requirements/03_TECH_STACK.md)**: Complete technology matrix, backend standards, database specs, and printing compatibility.
-4. **[Database Schema & Models](file:///c:/xampp/htdocs/grm-inventory/requirements/04_DATABASE_SCHEMA_AND_MODELS.md)**: 82-table relational schema map, column constraints, entity relationships, and indexes.
+4. **[Database Schema & Models](file:///c:/xampp/htdocs/grm-inventory/requirements/04_DATABASE_SCHEMA_AND_MODELS.md)**: Complete 112-table schema inventory, column constraints, entity relationships, and indexes.
 5. **[Module Workflows & Specifications](file:///c:/xampp/htdocs/grm-inventory/requirements/05_MODULE_WORKFLOWS_AND_SPECIFICATIONS.md)**: Step-by-step sequence diagrams and functional rules for all 10 core domains.
 6. **[UI Style Guide & Design System](file:///c:/xampp/htdocs/grm-inventory/requirements/06_UI_STYLE_GUIDE_AND_DESIGN_SYSTEM.md)**: Design tokens, typography hierarchy, status badge taxonomy, POS UI rules, and `@media print` stylesheets.
 7. **[API & Routing Catalog](file:///c:/xampp/htdocs/grm-inventory/requirements/07_API_AND_ROUTING_CATALOG.md)**: Complete route reference across all HTTP verbs, controllers, actions, and permission middleware.

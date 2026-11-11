@@ -40,10 +40,10 @@
 ## 3. Database & SQL Architecture
 
 ### 3.1 Storage Specifications:
-- **Engine**: `InnoDB` across all 82 tables.
+- **Engine**: `InnoDB` across all 112 tables in the canonical schema.
 - **Character Set**: `utf8mb4` with `utf8mb4_unicode_ci` collation.
 - **SQL Mode**: Optimized for strict group-by compliance (`REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY','')`).
-- **Money & Precision**: `DECIMAL(12,2)` for all monetary values, unit costs, and tax calculations.
+- **Money & Precision**: Decimal precision follows each field's storage requirements; catalog unit prices commonly use `DECIMAL(10,2)`, with larger precision for aggregate amounts.
 - **Quantities**: `DECIMAL(10,2)` or `INT UNSIGNED` for pieces, rolls, and meters.
 
 ### 3.2 Indexing & Performance:
@@ -93,7 +93,7 @@ The user interface features a sleek, modern, glassmorphic aesthetic defined via 
 - Database stores canonical HTTPS URLs and public IDs.
 
 ### 5.2 Automated SMTP Backup Delivery:
-- [`BackupService.php`](file:///c:/xampp/htdocs/grm-inventory/app/Services/BackupService.php) generates SQL dumps of all 82 tables.
+- [`BackupService.php`](file:///c:/xampp/htdocs/grm-inventory/app/Services/BackupService.php) generates database SQL backups; the canonical schema currently defines 112 tables.
 - Automatically creates compressed ZIP archives with timestamp naming (`grm_backup_YYYY-MM-DD_HH-mm-ss.zip`).
 - Direct socket TLS SMTP transport connects to Gmail / external mail server to email the ZIP backup directly to the administrative inbox.
 

@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS `product_price_logs` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `variant_id` int(10) unsigned DEFAULT NULL,
+  `product_id` int(10) unsigned DEFAULT NULL,
+  `sku` varchar(100) NOT NULL,
+  `old_selling_price` decimal(10,2) NOT NULL,
+  `new_selling_price` decimal(10,2) NOT NULL,
+  `old_mrp` decimal(10,2) NOT NULL,
+  `new_mrp` decimal(10,2) NOT NULL,
+  `cost_price` decimal(10,2) NOT NULL,
+  `markup_percentage` decimal(10,4) DEFAULT NULL,
+  `discount_percentage` decimal(10,4) NOT NULL,
+  `revision_notes` text NOT NULL,
+  `user_id` int(10) unsigned DEFAULT NULL,
+  `user_name` varchar(200) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_price_logs_variant_created` (`variant_id`,`created_at`),
+  KEY `idx_price_logs_product` (`product_id`),
+  KEY `idx_price_logs_user` (`user_id`),
+  CONSTRAINT `product_price_logs_ibfk_1` FOREIGN KEY (`variant_id`) REFERENCES `product_variants` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `product_price_logs_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -2,51 +2,40 @@
 
 ## 1. Database Architecture Overview
 
-The database is built on **MariaDB 10.4+ / MySQL 8.0+** using the `InnoDB` storage engine and `utf8mb4_unicode_ci` collation. It contains **82 normalized relational tables** organized into 10 cohesive business domains:
+The database is built on **MariaDB 10.4+ / MySQL 8.0+** using the `InnoDB` storage engine and `utf8mb4_unicode_ci` collation. The canonical DDL in [`database/schema.sql`](../database/schema.sql) currently defines **112 tables**. That file is authoritative for complete column definitions, indexes, and constraints; the inventory below lists every table in the current baseline.
 
 ```text
-                                  DATABASE DOMAIN MAP (82 TABLES)
-+----------------------------------------------------------------------------------------------------+
-| 1. AUTH & SECURITY (5 Tables)                                                                      |
-|    users, roles, permissions, role_permissions, user_permissions                                   |
-+----------------------------------------------------------------------------------------------------+
-| 2. ORG & PHYSICAL SITES (5 Tables)                                                                 |
-|    production_units, warehouses, shops, locations, sales_channels                                  |
-+----------------------------------------------------------------------------------------------------+
-| 3. MASTER DATA & PRODUCT CATALOG (12 Tables)                                                       |
-|    categories, subcategories, sub_subcategories, brands, products, product_variants, sizes,        |
-|    colors, units, sellers, seller_rolls, customers                                                 |
-+----------------------------------------------------------------------------------------------------+
-| 4. PRODUCTION & MANUFACTURING (14 Tables)                                                          |
-|    production_programs, production_program_items, production_program_rolls, cutting_batches,        |
-|    cutting_batch_rolls, cutting_items, stitching_batches, stitching_items, label_batches,          |
-|    label_items, qc_batches, qc_items, production_batches, production_batch_items,                  |
-|    production_outwards, roll_damages, wastage_sales, stitching_wastage_sales                       |
-+----------------------------------------------------------------------------------------------------+
-| 5. CENTRAL WAREHOUSE & PROCUREMENT (16 Tables)                                                     |
-|    warehouse_categories, warehouse_subcategories, warehouse_sub_subcategories,                     |
-|    warehouse_suppliers, purchase_orders, purchase_items, purchase_inwards, purchase_inward_items,   |
-|    warehouse_allocations, allocation_items, allocation_outwards, warehouse_transfers,              |
-|    transfer_items, warehouse_damages, stock_adjustments, deliveries                                |
-+----------------------------------------------------------------------------------------------------+
-| 6. CENTRAL STOCK LEDGER (2 Tables)                                                                 |
-|    stock_balances, stock_transactions                                                              |
-+----------------------------------------------------------------------------------------------------+
-| 7. SALES & CHANNEL COMMERCE (4 Tables)                                                             |
-|    sales, sale_items, payments, channel_damages, shop_damages                                      |
-+----------------------------------------------------------------------------------------------------+
-| 8. RETURNS & EXCHANGES (6 Tables)                                                                  |
-|    returns, return_items, exchanges, exchange_items, warehouse_returns, warehouse_return_items     |
-+----------------------------------------------------------------------------------------------------+
-| 9. FINANCIAL & EXPENSES (7 Tables)                                                                 |
-|    expenses, expense_categories, production_expenses, cash_expenses, cash_registers,               |
-|    cash_transactions, bank_deposits                                                                |
-+----------------------------------------------------------------------------------------------------+
-| 10. FIXED ASSETS & SYSTEM (11 Tables)                                                              |
-|     assets, asset_categories, asset_transfers, asset_maintenance_logs, asset_audits,               |
-|     asset_audit_items, audit_logs, notifications, backups, settings                                |
-+----------------------------------------------------------------------------------------------------+
+allocation_items, allocation_outwards, asset_audit_items, asset_audits,
+asset_categories, asset_maintenance_logs, asset_transfers, assets,
+audit_logs, backups, bank_deposits, brands, cash_expenses, cash_registers,
+cash_transactions, categories, channel_damages, colors, customers,
+cutting_batch_rolls, cutting_batches, cutting_items, deliveries,
+exchange_items, exchanges, expense_categories, expenses, hsn_codes,
+label_batches, label_items, locations, notifications, payments, permissions,
+product_price_logs, product_variants, production_batch_items, production_batches,
+production_bill_item_tags, production_bill_items, production_bills,
+production_deleted_label_codes, production_expense_items, production_expenses,
+production_outward_batches, production_outwards, production_program_items,
+production_program_rolls, production_programs, production_purchase_items,
+production_purchases, production_return_items, production_returns,
+production_stock_request_items, production_stock_requests, production_units,
+production_warehouse_reworks, products, purchase_inward_items, purchase_inwards,
+purchase_items, purchase_orders, qc_batches, qc_items, return_items, returns,
+role_permissions, roles, roll_damage_reasons, roll_damages, sale_items, sales,
+sales_channels, seller_roll_deleted_labels, seller_rolls, sellers, settings,
+shop_damages, shop_returned_products, shop_stock_adjustments, shops, sizes,
+stitching_batches, stitching_items, stitching_wastage_sales, stock_adjustments,
+stock_balances, stock_transactions, sub_subcategories, subcategories,
+transfer_items, units, user_permission_overrides, user_permissions, users,
+warehouse_allocations, warehouse_categories, warehouse_damages,
+warehouse_deleted_label_codes, warehouse_qr_codes, warehouse_return_items,
+warehouse_returns, warehouse_sub_subcategories, warehouse_subcategories,
+warehouse_suppliers, warehouse_transfers, warehouses, wastage_sales,
+wh_category_attributes, wh_category_default_products, whatsapp_returned_products,
+whatsapp_stock_adjustments
 ```
+
+`product_price_logs` records warehouse catalog price revisions and is included in both the canonical schema and the additive migration for existing databases.
 
 ---
 
@@ -113,7 +102,24 @@ The database is built on **MariaDB 10.4+ / MySQL 8.0+** using the `InnoDB` stora
 
 ---
 
-### 2.3 Returns & Customer Exchanges (`returns` & `exchanges`)
+### 2.3 Product Price History (`product_price_logs`)
+
+The warehouse catalog price-edit flow records the prior and new selling price and MRP, cost, calculated percentages, revision note, actor snapshot, and timestamp. The composite index on (`variant_id`, `created_at`) supports the stock-detail history query.
+
+| Column | Type | Constraints / behavior |
+| :--- | :--- | :--- |
+| `variant_id` | `INT UNSIGNED` | Nullable FK to `product_variants.id`; `ON DELETE SET NULL` preserves the history row |
+| `product_id` | `INT UNSIGNED` | Nullable FK to `products.id`; `ON DELETE SET NULL` preserves the history row |
+| `sku` | `VARCHAR(100)` | Non-null SKU snapshot |
+| `old_selling_price`, `new_selling_price`, `old_mrp`, `new_mrp`, `cost_price` | `DECIMAL(10,2)` | Non-null price snapshots |
+| `markup_percentage` | `DECIMAL(10,4)` | Nullable when cost is zero |
+| `discount_percentage` | `DECIMAL(10,4)` | Non-null |
+| `revision_notes` | `TEXT` | Non-null reason / note |
+| `user_id` | `INT UNSIGNED` | Nullable indexed actor ID; no FK, so missing actor metadata cannot prevent the log insert |
+| `user_name` | `VARCHAR(200)` | Non-null actor-name snapshot |
+| `created_at` | `DATETIME` | Non-null, defaults to current timestamp |
+
+### 2.4 Returns & Customer Exchanges (`returns` & `exchanges`)
 
 #### Table: `returns` (Customer & Inward Returns)
 | Column | Type | Constraints | Description |

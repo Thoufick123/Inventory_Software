@@ -58,7 +58,7 @@ flowchart TD
     end
 
     subgraph DataLayer [Storage & Persistence]
-        DB[(MariaDB / MySQL 82 Relational Tables)]
+        DB[(MariaDB / MySQL 112 Relational Tables)]
         CloudMedia[(Cloudinary Media CDN)]
         LocalLogs[storage/logs/error.log]
         LocalBackups[storage/backups/]
@@ -130,7 +130,7 @@ c:\xampp\htdocs\grm-inventory\
 │   ├── database.php          # PDO MySQL Connection Settings
 │   └── cloudinary.php        # Cloudinary API Credentials
 ├── database/                 # Database Schema & Migrations
-│   ├── schema.sql            # Master DDL Script (82 tables)
+│   ├── schema.sql            # Master DDL Script (112 tables)
 │   ├── seed.sql              # Master Seed Data
 │   └── migrations/           # Incremental Schema Evolution Scripts
 ├── public/                   # Public Document Root
