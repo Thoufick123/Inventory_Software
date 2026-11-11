@@ -1,6 +1,7 @@
 <?php
 // views/system/settings.php
 $activeTab = $_GET['tab'] ?? 'company';
+$canEditSettings = hasPermission('settings', 'edit') || hasPermission('settings', 'create');
 ?>
 <div class="container-fluid py-4">
     <!-- Header -->
@@ -10,6 +11,15 @@ $activeTab = $_GET['tab'] ?? 'company';
             <p class="text-muted small mb-0">Manage enterprise store profile, tax details, operational switches, security rules, and alert policies.</p>
         </div>
     </div>
+
+    <?php if (!$canEditSettings): ?>
+        <div class="alert alert-secondary border-0 shadow-sm py-2 px-3 mb-4 d-flex align-items-center gap-2">
+            <i class="bi bi-shield-lock-fill text-primary fs-5"></i>
+            <div class="small">
+                <strong>Read-Only Mode:</strong> Your assigned staff account has view-only access. Modifying company profiles, switches, and policies is restricted.
+            </div>
+        </div>
+    <?php endif; ?>
 
     <!-- Navigation Tabs Card -->
     <div class="card border-0 shadow-sm rounded-3">
@@ -44,6 +54,7 @@ $activeTab = $_GET['tab'] ?? 'company';
                 <div class="tab-pane fade <?= $activeTab === 'company' ? 'show active' : '' ?>" id="company-pane">
                     <form method="POST" action="<?= url('system/settings/update') ?>">
                         <input type="hidden" name="group" value="company">
+                        <fieldset <?= !$canEditSettings ? 'disabled' : '' ?>>
                         <h5 class="fw-bold text-dark mb-3"><i class="bi bi-shop me-2 text-primary"></i>Company Profile & Billing Details</h5>
                         
                         <div class="row g-3">
@@ -86,8 +97,13 @@ $activeTab = $_GET['tab'] ?? 'company';
                         </div>
                         
                         <div class="mt-4 pt-3 border-top text-end">
-                            <button type="submit" class="btn btn-primary px-4"><i class="bi bi-check-circle me-1"></i> Save Company Profile</button>
+                            <?php if ($canEditSettings): ?>
+                                <button type="submit" class="btn btn-primary px-4"><i class="bi bi-check-circle me-1"></i> Save Company Profile</button>
+                            <?php else: ?>
+                                <button type="button" class="btn btn-outline-secondary px-4" disabled><i class="bi bi-lock me-1"></i> Edit Restricted (View Only)</button>
+                            <?php endif; ?>
                         </div>
+                        </fieldset>
                     </form>
                 </div>
 
@@ -95,6 +111,7 @@ $activeTab = $_GET['tab'] ?? 'company';
                 <div class="tab-pane fade <?= $activeTab === 'switches' ? 'show active' : '' ?>" id="switches-pane">
                     <form method="POST" action="<?= url('system/settings/update') ?>">
                         <input type="hidden" name="group" value="switches">
+                        <fieldset <?= !$canEditSettings ? 'disabled' : '' ?>>
                         <h5 class="fw-bold text-dark mb-3"><i class="bi bi-toggle2-on me-2 text-primary"></i>Operational Master Switches</h5>
                         
                         <div class="list-group list-group-flush mb-3">
@@ -141,8 +158,13 @@ $activeTab = $_GET['tab'] ?? 'company';
                         </div>
 
                         <div class="mt-4 pt-3 border-top text-end">
-                            <button type="submit" class="btn btn-primary px-4"><i class="bi bi-check-circle me-1"></i> Save Master Switches</button>
+                            <?php if ($canEditSettings): ?>
+                                <button type="submit" class="btn btn-primary px-4"><i class="bi bi-check-circle me-1"></i> Save Master Switches</button>
+                            <?php else: ?>
+                                <button type="button" class="btn btn-outline-secondary px-4" disabled><i class="bi bi-lock me-1"></i> Edit Restricted (View Only)</button>
+                            <?php endif; ?>
                         </div>
+                        </fieldset>
                     </form>
                 </div>
 
@@ -150,6 +172,7 @@ $activeTab = $_GET['tab'] ?? 'company';
                 <div class="tab-pane fade <?= $activeTab === 'inventory' ? 'show active' : '' ?>" id="inventory-pane">
                     <form method="POST" action="<?= url('system/settings/update') ?>">
                         <input type="hidden" name="group" value="inventory">
+                        <fieldset <?= !$canEditSettings ? 'disabled' : '' ?>>
                         <h5 class="fw-bold text-dark mb-3"><i class="bi bi-box-seam me-2 text-primary"></i>Stock & Inventory Threshold Rules</h5>
                         
                         <div class="row g-3">
@@ -173,8 +196,13 @@ $activeTab = $_GET['tab'] ?? 'company';
                         </div>
 
                         <div class="mt-4 pt-3 border-top text-end">
-                            <button type="submit" class="btn btn-primary px-4"><i class="bi bi-check-circle me-1"></i> Save Inventory Rules</button>
+                            <?php if ($canEditSettings): ?>
+                                <button type="submit" class="btn btn-primary px-4"><i class="bi bi-check-circle me-1"></i> Save Inventory Rules</button>
+                            <?php else: ?>
+                                <button type="button" class="btn btn-outline-secondary px-4" disabled><i class="bi bi-lock me-1"></i> Edit Restricted (View Only)</button>
+                            <?php endif; ?>
                         </div>
+                        </fieldset>
                     </form>
                 </div>
 
@@ -182,6 +210,7 @@ $activeTab = $_GET['tab'] ?? 'company';
                 <div class="tab-pane fade <?= $activeTab === 'security' ? 'show active' : '' ?>" id="security-pane">
                     <form method="POST" action="<?= url('system/settings/update') ?>">
                         <input type="hidden" name="group" value="security">
+                        <fieldset <?= !$canEditSettings ? 'disabled' : '' ?>>
                         <h5 class="fw-bold text-dark mb-3"><i class="bi bi-shield-lock me-2 text-primary"></i>Security & Authentication Policies</h5>
                         
                         <div class="row g-3">
@@ -207,8 +236,13 @@ $activeTab = $_GET['tab'] ?? 'company';
                         </div>
 
                         <div class="mt-4 pt-3 border-top text-end">
-                            <button type="submit" class="btn btn-primary px-4"><i class="bi bi-check-circle me-1"></i> Save Security Policies</button>
+                            <?php if ($canEditSettings): ?>
+                                <button type="submit" class="btn btn-primary px-4"><i class="bi bi-check-circle me-1"></i> Save Security Policies</button>
+                            <?php else: ?>
+                                <button type="button" class="btn btn-outline-secondary px-4" disabled><i class="bi bi-lock me-1"></i> Edit Restricted (View Only)</button>
+                            <?php endif; ?>
                         </div>
+                        </fieldset>
                     </form>
                 </div>
 

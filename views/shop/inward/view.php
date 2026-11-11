@@ -24,7 +24,11 @@
         }
         unset($item);
     }
-    $canInward = hasPermission('shop_inward', 'verify') || hasPermission('shop_inward', 'receive') || hasPermission('shop_inward', 'create');
+    $canInward = hasPermission('shop_inward', 'verify') 
+        || hasPermission('shop_inward', 'receive') 
+        || hasPermission('shop_inward', 'create')
+        || hasPermission('inward', 'create')
+        || hasPermission('inward', 'verify');
     // Calculate actual total received, damaged, and missing quantities across all items
     $totalRecvCount = 0;
     $totalDamCount = 0;

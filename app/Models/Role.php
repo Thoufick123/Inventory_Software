@@ -276,6 +276,28 @@ class Role {
             ['allocation_outward', 'create', 'Create Outward Transport Manifest', 'allocation_outward.create', 'allocation'],
             ['allocation_outward', 'edit', 'Edit Outward Delivery Manifest & Vehicle Notes', 'allocation_outward.edit', 'allocation'],
             ['allocation_outward', 'delete', 'Delete & Cancel Outward Dispatch Record', 'allocation_outward.delete', 'allocation'],
+
+            ['shop_inward', 'create', 'Scan, Receive & Verify Shop Inward Shipments', 'shop_inward.create', 'inward'],
+            ['shop_inward', 'edit', 'Edit Shop Inward Receipts & Notes', 'shop_inward.edit', 'inward'],
+            ['shop_inward', 'delete', 'Cancel & Delete Shop Inward Records', 'shop_inward.delete', 'inward'],
+
+            // System: Audit Logs (Full CRUD)
+            ['audit', 'view', 'View Audit Trail & System Activity Logs', 'audit.view', null],
+            ['audit', 'create', 'Export Audit Records & Log System Events', 'audit.create', 'audit'],
+            ['audit', 'edit', 'Archive, Filter & Annotate Audit Trail', 'audit.edit', 'audit'],
+            ['audit', 'delete', 'Purge & Clear System Activity Logs', 'audit.delete', 'audit'],
+
+            // System: Settings Hub (Full CRUD)
+            ['settings', 'view', 'View System & Company Configurations', 'settings.view', null],
+            ['settings', 'create', 'Create System Configurations & Profile Presets', 'settings.create', 'settings'],
+            ['settings', 'edit', 'Update System Settings, Tax & Branding', 'settings.edit', null],
+            ['settings', 'delete', 'Reset & Delete System Configurations', 'settings.delete', 'settings'],
+
+            // System: Data Backup (Full CRUD)
+            ['backup', 'view', 'View Database Snapshots & Recovery Hub', 'backup.view', null],
+            ['backup', 'create', 'Generate Manual Database Backup Snapshot', 'backup.create', null],
+            ['backup', 'edit', 'Restore Database Snapshots & Edit Configurations', 'backup.edit', 'backup'],
+            ['backup', 'delete', 'Delete Database Backup Files & Wipe Test Data', 'backup.delete', null],
         ];
 
         try {
@@ -328,13 +350,25 @@ class Role {
                 }
             }
 
-            // Always ensure Super Admin (1) and Admin (2) have all allocation_outward permissions
+            // Always ensure Super Admin (1) and Admin (2) have all system module permissions
             Database::execute("
                 INSERT IGNORE INTO role_permissions (role_id, permission_id)
                 SELECT r.id, p.id
                 FROM roles r
                 CROSS JOIN permissions p
-                WHERE r.id IN (1, 2) AND p.module = 'allocation_outward'
+                WHERE r.id IN (1, 2) AND p.module IN ('allocation_outward', 'shop_inward', 'audit', 'settings', 'backup')
+            ");
+
+            // Sync roles that have shop_inward.receive or shop_inward.verify or inward.create to have shop_inward.create
+            Database::execute("
+                INSERT IGNORE INTO role_permissions (role_id, permission_id)
+                SELECT rp.role_id, p_new.id
+                FROM role_permissions rp
+                JOIN permissions p ON rp.permission_id = p.id
+                CROSS JOIN permissions p_new
+                WHERE p_new.module = 'shop_inward' AND p_new.action = 'create'
+                  AND ((p.module = 'shop_inward' AND p.action IN ('receive', 'verify'))
+                       OR (p.module = 'inward' AND p.action IN ('create', 'verify')))
             ");
         } catch (\Throwable $e) {
             // Silently ignore if database is temporarily unavailable during boot

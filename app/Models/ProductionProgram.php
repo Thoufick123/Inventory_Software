@@ -533,9 +533,16 @@ class ProductionProgram {
     public static function getRolls(int $programId): array {
         return Database::fetchAll(
             "SELECT ppr.*, 
-                    sr.roll_number, sr.color as roll_color, sr.design_name as roll_design,
+                    COALESCE(NULLIF(sr.roll_number, ''), CONCAT('ROLL #', ppr.id)) as roll_number,
+                    COALESCE(NULLIF(ppr.roll_color, ''), NULLIF(ppr.color, ''), sr.color, 'Standard') as roll_color,
+                    COALESCE(NULLIF(ppr.roll_design, ''), NULLIF(ppr.design_name, ''), sr.design_name, 'Plain') as roll_design,
+                    COALESCE(ppr.roll_weight, sr.weight, 0) as roll_weight,
+                    COALESCE(ppr.roll_price, sr.price, 0) as roll_price,
+                    COALESCE(ppr.roll_qty, sr.quantity, 1) as roll_qty,
                     sr.weight as original_weight, sr.price as original_price, sr.quantity as stock_quantity,
-                    s.name as seller_name, s.company as seller_company, s.material_type,
+                    COALESCE(s.name, '') as seller_name,
+                    COALESCE(s.company, '') as seller_company,
+                    s.material_type,
                     COALESCE(ppr.category_id, pp.category_id) as category_id,
                     COALESCE(ppr.subcategory_id, pp.subcategory_id) as subcategory_id,
                     COALESCE(ppr.sub_subcategory_id, pp.sub_subcategory_id) as sub_subcategory_id,
@@ -543,18 +550,18 @@ class ProductionProgram {
                     COALESCE(sc.name, psc.name) as subcategory_name,
                     COALESCE(ssc.name, pssc.name) as sub_subcategory_name
              FROM production_program_rolls ppr
-             JOIN production_programs pp ON ppr.production_program_id = pp.id
-             JOIN seller_rolls sr ON ppr.seller_roll_id = sr.id
-             LEFT JOIN sellers s ON (ppr.seller_id = s.id OR sr.seller_id = s.id)
+             LEFT JOIN production_programs pp ON (ppr.production_program_id = pp.id OR ppr.program_id = pp.id)
+             LEFT JOIN seller_rolls sr ON ppr.seller_roll_id = sr.id
+             LEFT JOIN sellers s ON (ppr.seller_id = s.id OR sr.seller_id = s.id OR pp.seller_id = s.id)
              LEFT JOIN categories c ON ppr.category_id = c.id
              LEFT JOIN subcategories sc ON ppr.subcategory_id = sc.id
              LEFT JOIN sub_subcategories ssc ON ppr.sub_subcategory_id = ssc.id
              LEFT JOIN categories pc ON pp.category_id = pc.id
              LEFT JOIN subcategories psc ON pp.subcategory_id = psc.id
              LEFT JOIN sub_subcategories pssc ON pp.sub_subcategory_id = pssc.id
-             WHERE ppr.production_program_id = ?
+             WHERE (ppr.production_program_id = ? OR ppr.program_id = ?)
              ORDER BY ppr.id ASC",
-            [$programId]
+            [$programId, $programId]
         );
     }
 

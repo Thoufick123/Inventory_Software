@@ -1,5 +1,9 @@
 <?php
-$canInward = hasPermission('shop_inward', 'verify') || hasPermission('shop_inward', 'receive') || hasPermission('shop_inward', 'create');
+$canInward = hasPermission('shop_inward', 'verify') 
+    || hasPermission('shop_inward', 'receive') 
+    || hasPermission('shop_inward', 'create')
+    || hasPermission('inward', 'create')
+    || hasPermission('inward', 'verify');
 $hasMultipleShops = count($shops ?? []) > 1;
 ?>
 <style>
