@@ -3124,6 +3124,7 @@ class ProductionController {
                        sr.roll_number, 
                        sr.color as roll_color, 
                        sr.design_name as roll_design,
+                       sr.quantity as initial_roll_quantity,
                        sr.weight as initial_roll_weight,
                        sr.price as initial_roll_price,
                        sr.photo_url as roll_photo_url,
@@ -3139,7 +3140,18 @@ class ProductionController {
                        cl.name as variant_color_name,
                        u_rep.full_name as reported_by_name,
                        u_res.full_name as resolved_by_name,
-                       repl_sr.roll_number as replacement_roll_code
+                       repl_sr.roll_number as replacement_roll_code,
+                       repl_sr.color as replacement_roll_color,
+                       repl_sr.design_name as replacement_roll_design,
+                       repl_sr.design_count as replacement_roll_design_count,
+                       repl_sr.quantity as replacement_roll_quantity,
+                       repl_sr.weight as replacement_roll_weight,
+                       repl_sr.price as replacement_roll_price,
+                       repl_sr.hsn_code as replacement_roll_hsn_code,
+                       repl_sr.photo_url as replacement_roll_photo_url,
+                       (SELECT ppi.gst_type FROM production_purchase_items ppi WHERE ppi.seller_roll_id = repl_sr.id ORDER BY ppi.id DESC LIMIT 1) as replacement_gst_type,
+                       (SELECT ppi.gst_type FROM production_purchase_items ppi WHERE ppi.seller_roll_id = sr.id ORDER BY ppi.id DESC LIMIT 1) as source_roll_gst_type,
+                       (SELECT ppi.hsn_code FROM production_purchase_items ppi WHERE ppi.seller_roll_id = sr.id ORDER BY ppi.id DESC LIMIT 1) as source_roll_purchase_hsn_code
                 FROM roll_damages rd
                 LEFT JOIN sellers s ON rd.seller_id = s.id
                 LEFT JOIN seller_rolls sr ON rd.seller_roll_id = sr.id
@@ -3789,235 +3801,53 @@ class ProductionController {
         }
 
         $damageId = (int)$id;
-        $damage = Database::fetchOne("SELECT * FROM roll_damages WHERE id = ?", [$damageId]);
-        if (!$damage) {
-            Session::flash('error', 'Damage record not found.');
-            Response::back();
-            return;
-        }
-
         $status = trim($_POST['status'] ?? '');
         $resolutionType = trim($_POST['resolution_type'] ?? '');
         $refundAmount = max(0.0, (float)($_POST['refund_amount'] ?? 0.0));
         $debitNoteNumber = trim($_POST['debit_note_number'] ?? '');
-        $replacementRollNumber = trim($_POST['replacement_roll_number'] ?? '');
         $resolutionNotes = trim($_POST['resolution_notes'] ?? '');
 
-        if (empty($status)) {
-            Session::flash('error', 'Update Damage Status is required. Please select a status.');
+        $allowedStatuses = ['LOGGED', 'RETURN_INITIATED', 'RETURNED_TO_SELLER', 'REFUND_RECEIVED', 'REPLACEMENT_RECEIVED', 'CLOSED'];
+        $allowedResolutionTypes = ['SUPPLIER_REFUND', 'SUPPLIER_REPLACEMENT', 'RATE_CONCESSION', 'SCRAP_WRITE_OFF'];
+        if (!in_array($status, $allowedStatuses, true)) {
+            Session::flash('error', 'Select a valid damage status.');
+            Response::back();
+            return;
+        }
+        if (!in_array($resolutionType, $allowedResolutionTypes, true)) {
+            Session::flash('error', 'Select a valid resolution method.');
+            Response::back();
+            return;
+        }
+        if ($status === 'REPLACEMENT_RECEIVED' && $resolutionType !== 'SUPPLIER_REPLACEMENT') {
+            Session::flash('error', 'Set the resolution method to Supplier Replacement Roll for a replacement received status.');
             Response::back();
             return;
         }
 
-        if (empty($resolutionType) || $resolutionType === 'NONE') {
-            Session::flash('error', 'Resolution Method is required. Please select a valid resolution method.');
-            Response::back();
-            return;
-        }
-
-        $userId = (int)(Session::get('user_id') ?? 1);
+        $userId = max(0, (int)(Session::get('user_id') ?? 1));
+        $isReplacement = $resolutionType === 'SUPPLIER_REPLACEMENT' || $status === 'REPLACEMENT_RECEIVED';
 
         try {
-            // If resolution is SUPPLIER_REPLACEMENT or status is REPLACEMENT_RECEIVED
-            $replacementRollId = null;
-            if ($resolutionType === 'SUPPLIER_REPLACEMENT' || $status === 'REPLACEMENT_RECEIVED') {
-                $origRoll = null;
-                if (!empty($damage['seller_roll_id'])) {
-                    $origRoll = Database::fetchOne("SELECT * FROM seller_rolls WHERE id = ?", [(int)$damage['seller_roll_id']]);
-                }
+            if (!Database::beginTransaction()) {
+                throw new RuntimeException('Could not start the damage resolution transaction.');
+            }
+            $damage = Database::fetchOne("SELECT * FROM roll_damages WHERE id = ? FOR UPDATE", [$damageId]);
+            if (!$damage) {
+                Database::rollback();
+                Session::flash('error', 'Damage record not found.');
+                Response::back();
+                return;
+            }
 
-                $replRollNumber = mb_strtoupper(trim($_POST['replacement_roll_number'] ?? ''));
-                if (!$replRollNumber && $origRoll) {
-                    $replRollNumber = $origRoll['roll_number'] ? ($origRoll['roll_number'] . '-REPL') : 'ROLL-REPL';
-                }
-                $replColor = mb_strtoupper(trim($_POST['replacement_color'] ?? ($origRoll['color'] ?? 'STANDARD')));
-                $replDesignName = mb_strtoupper(trim($_POST['replacement_design_name'] ?? ($origRoll['design_name'] ?? 'PLAIN')));
-                $replDesignCount = max(1, (int)($_POST['replacement_design_count'] ?? ($origRoll['design_count'] ?? 1)));
-                $replQuantity = max(1, (int)($_POST['replacement_quantity'] ?? ($damage['damaged_quantity'] ?: 1)));
-                $replWeight = is_numeric($_POST['replacement_weight'] ?? null) && (float)$_POST['replacement_weight'] > 0
-                    ? (float)$_POST['replacement_weight']
-                    : (float)($damage['damaged_weight'] ?: ($origRoll['weight'] ?? 0));
-                $replPrice = is_numeric($_POST['replacement_price'] ?? null) && (float)$_POST['replacement_price'] >= 0
-                    ? (float)$_POST['replacement_price']
-                    : (float)($damage['loss_amount'] ?: ($origRoll['price'] ?? 0));
-                $replHsn = mb_strtoupper(trim($_POST['replacement_hsn_code'] ?? ($origRoll['hsn_code'] ?? '')));
-                $replGstType = strtoupper(trim($_POST['replacement_gst_type'] ?? 'EXEMPTED'));
-
-                $replPhotoUrl = null;
-                if (!empty($_FILES['replacement_photo']['name']) && $_FILES['replacement_photo']['error'] === UPLOAD_ERR_OK) {
-                    $replPhotoUrl = CloudinaryService::upload($_FILES['replacement_photo'], 'grm_inventory/sellers/rolls', 'image');
-                }
-                if (!$replPhotoUrl && $origRoll) {
-                    $replPhotoUrl = $origRoll['photo_url'] ?? null;
-                }
-
-                $materialType = $origRoll['material_type'] ?? 'STANDARD FABRIC';
-
-                // Sequence and QR code generation
-                $seqData = ProductionService::getNextFabricRollSequence($replQuantity);
-                $startSeq = (int)($seqData['start_seq'] ?? 1);
-                $endSeq = (int)($seqData['end_seq'] ?? ($startSeq + $replQuantity - 1));
-                $startCode = (string)($seqData['start_code'] ?? sprintf('FB%s%02d', date('my'), $startSeq));
-                $endCode = (string)($seqData['end_code'] ?? sprintf('FB%s%02d', date('my'), $endSeq));
-                $rollQrCode = (string)($seqData['qr_code'] ?? ($replQuantity > 1 ? ($startCode . '-' . $endCode) : $startCode));
-
-                $hasRollHsn = (bool)Database::fetchOne("SHOW COLUMNS FROM seller_rolls LIKE 'hsn_code'");
-                if ($hasRollHsn) {
-                    Database::execute(
-                        "INSERT INTO seller_rolls 
-                            (seller_id, roll_number, color, design_name, design_count, quantity, weight, price,
-                             material_type, photo_url, start_seq, end_seq, start_code, end_code, qr_code, hsn_code, notes, created_at, updated_at)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
-                        [
-                            (int)$damage['seller_id'],
-                            $replRollNumber,
-                            $replColor,
-                            $replDesignName,
-                            $replDesignCount,
-                            $replQuantity,
-                            $replWeight,
-                            $replPrice,
-                            $materialType,
-                            $replPhotoUrl,
-                            $startSeq,
-                            $endSeq,
-                            $startCode,
-                            $endCode,
-                            $rollQrCode,
-                            $replHsn ?: null,
-                            'Supplier replacement roll for damaged #' . $damage['damage_number'] . ($origRoll ? ' (' . $origRoll['roll_number'] . ')' : '')
-                        ]
-                    );
-                } else {
-                    Database::execute(
-                        "INSERT INTO seller_rolls 
-                            (seller_id, roll_number, color, design_name, design_count, quantity, weight, price,
-                             material_type, photo_url, start_seq, end_seq, start_code, end_code, qr_code, notes, created_at, updated_at)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
-                        [
-                            (int)$damage['seller_id'],
-                            $replRollNumber,
-                            $replColor,
-                            $replDesignName,
-                            $replDesignCount,
-                            $replQuantity,
-                            $replWeight,
-                            $replPrice,
-                            $materialType,
-                            $replPhotoUrl,
-                            $startSeq,
-                            $endSeq,
-                            $startCode,
-                            $endCode,
-                            $rollQrCode,
-                            'Supplier replacement roll for damaged #' . $damage['damage_number'] . ($origRoll ? ' (' . $origRoll['roll_number'] . ')' : '')
-                        ]
-                    );
-                }
-                $replacementRollId = (int)Database::lastInsertId();
-                $replacementRollNumber = $replRollNumber;
-
-                // Automatically reflect and add to purchase module
-                $origPurchaseItem = null;
-                $purchaseId = null;
-                if (!empty($damage['seller_roll_id'])) {
-                    $origPurchaseItem = Database::fetchOne(
-                        "SELECT ppi.*, pp.purchase_number FROM production_purchase_items ppi JOIN production_purchases pp ON pp.id = ppi.purchase_id WHERE ppi.seller_roll_id = ?",
-                        [(int)$damage['seller_roll_id']]
-                    );
-                    if ($origPurchaseItem) {
-                        $purchaseId = (int)$origPurchaseItem['purchase_id'];
-                    }
-                }
-                if (!$purchaseId && !empty($damage['seller_id'])) {
-                    $lastPurchase = Database::fetchOne(
-                        "SELECT id FROM production_purchases WHERE seller_id = ? ORDER BY id DESC LIMIT 1",
-                        [(int)$damage['seller_id']]
-                    );
-                    if ($lastPurchase) {
-                        $purchaseId = (int)$lastPurchase['id'];
-                    }
-                }
-                if (!$purchaseId) {
-                    // Create new purchase record for inward replacement
-                    $sellerId = (int)$damage['seller_id'];
-                    $purchaseDate = date('Y-m-d');
-                    $notes = 'Supplier Replacement Inward for Damage #' . $damage['damage_number'];
-                    $tmpNum = 'TMP-PP-' . bin2hex(random_bytes(6));
-                    Database::execute(
-                        "INSERT INTO production_purchases (purchase_number, seller_id, purchase_date, notes, total_amount, created_by)
-                         VALUES (?, ?, ?, ?, 0, ?)",
-                        [$tmpNum, $sellerId, $purchaseDate, $notes, $userId ?: null]
-                    );
-                    $purchaseId = (int)Database::lastInsertId();
-                    $poNum = 'PP-' . date('Y') . '-' . sprintf('%06d', $purchaseId);
-                    Database::execute("UPDATE production_purchases SET purchase_number = ? WHERE id = ?", [$poNum, $purchaseId]);
-                }
-
-                if ($purchaseId) {
-                    $taxRate = 0.0;
-                    if ($replGstType !== 'EXEMPTED' && $replHsn) {
-                        $hsnRow = Database::fetchOne("SELECT gst_rate FROM hsn_codes WHERE hsn_code = ?", [$replHsn]);
-                        if ($hsnRow) $taxRate = (float)$hsnRow['gst_rate'];
-                    }
-                    $taxAmount = round($replPrice * ($taxRate / 100), 2);
-                    $sgstAmt = in_array($replGstType, ['SGST', 'BOTH'], true) ? round($taxAmount / ($replGstType === 'BOTH' ? 2 : 1), 2) : 0.0;
-                    $cgstAmt = in_array($replGstType, ['CGST', 'BOTH'], true) ? round($taxAmount / ($replGstType === 'BOTH' ? 2 : 1), 2) : 0.0;
-                    $igstAmt = $replGstType === 'IGST' ? $taxAmount : 0.0;
-                    $totalItemPrice = $replPrice + $sgstAmt + $cgstAmt + $igstAmt;
-
-                    $hasItemHsn = (bool)Database::fetchOne("SHOW COLUMNS FROM production_purchase_items LIKE 'hsn_code'");
-                    $itemName = $origPurchaseItem['item_name'] ?? ($origRoll['material_type'] ?? 'STANDARD FABRIC');
-                    if ($hasItemHsn) {
-                        Database::execute(
-                            "INSERT INTO production_purchase_items
-                                (purchase_id, item_type, item_name, quantity, unit, weight_kg, unit_price, total_price,
-                                 gst_type, tax_input_type, sgst_value, cgst_value, igst_value, sgst_amount, cgst_amount, igst_amount,
-                                 roll_number, color, design_name, design_count, hsn_code, seller_roll_id, created_at)
-                             VALUES (?, 'FABRIC_ROLL', ?, ?, 'PCS', ?, ?, ?, ?, 'PERCENT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
-                            [
-                                $purchaseId, $itemName, $replQuantity, $replWeight, $replPrice, $totalItemPrice,
-                                $replGstType, ($replGstType === 'BOTH' ? $taxRate / 2 : ($replGstType === 'SGST' ? $taxRate : 0)),
-                                ($replGstType === 'BOTH' ? $taxRate / 2 : ($replGstType === 'CGST' ? $taxRate : 0)),
-                                ($replGstType === 'IGST' ? $taxRate : 0),
-                                $sgstAmt, $cgstAmt, $igstAmt,
-                                $replRollNumber, $replColor, $replDesignName, $replDesignCount, $replHsn ?: null,
-                                $replacementRollId
-                            ]
-                        );
-                    } else {
-                        Database::execute(
-                            "INSERT INTO production_purchase_items
-                                (purchase_id, item_type, item_name, quantity, unit, weight_kg, unit_price, total_price,
-                                 gst_type, tax_input_type, sgst_value, cgst_value, igst_value, sgst_amount, cgst_amount, igst_amount,
-                                 roll_number, color, design_name, design_count, seller_roll_id, created_at)
-                             VALUES (?, 'FABRIC_ROLL', ?, ?, 'PCS', ?, ?, ?, ?, 'PERCENT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
-                            [
-                                $purchaseId, $itemName, $replQuantity, $replWeight, $replPrice, $totalItemPrice,
-                                $replGstType, ($replGstType === 'BOTH' ? $taxRate / 2 : ($replGstType === 'SGST' ? $taxRate : 0)),
-                                ($replGstType === 'BOTH' ? $taxRate / 2 : ($replGstType === 'CGST' ? $taxRate : 0)),
-                                ($replGstType === 'IGST' ? $taxRate : 0),
-                                $sgstAmt, $cgstAmt, $igstAmt,
-                                $replRollNumber, $replColor, $replDesignName, $replDesignCount,
-                                $replacementRollId
-                            ]
-                        );
-                    }
-
-                    // Recalculate purchase total
-                    $sumRow = Database::fetchOne(
-                        "SELECT SUM(total_price) as total FROM production_purchase_items WHERE purchase_id = ?",
-                        [$purchaseId]
-                    );
-                    $sumTotal = (float)($sumRow['total'] ?? 0);
-                    Database::execute(
-                        "UPDATE production_purchases SET total_amount = ? WHERE id = ?",
-                        [$sumTotal, $purchaseId]
-                    );
-                }
-
-                // Recalculate seller summary totals
-                $this->refreshSupplierRollTotals((int)$damage['seller_id']);
+            $replacementRollId = !empty($damage['replacement_roll_id']) ? (int)$damage['replacement_roll_id'] : null;
+            $replacementRollNumber = $damage['replacement_roll_number'] ?? null;
+            $purchaseNumber = null;
+            if ($isReplacement) {
+                $replacement = $this->saveSupplierReplacementRoll($damage, $userId);
+                $replacementRollId = $replacement['roll_id'];
+                $replacementRollNumber = $replacement['roll_number'];
+                $purchaseNumber = $replacement['purchase_number'];
             }
 
             Database::execute(
@@ -4049,15 +3879,358 @@ class ProductionController {
             AuditService::log('production', 'update', 'roll_damages', $damageId, $damage, [
                 'status' => $status,
                 'resolution_type' => $resolutionType,
-                'refund_amount' => $refundAmount
+                'refund_amount' => $refundAmount,
+                'replacement_roll_id' => $replacementRollId,
+                'purchase_number' => $purchaseNumber,
             ]);
 
-            Session::flash('success', "Damage record #{$damage['damage_number']} updated successfully. Status: {$status}");
-            Response::redirect(url('production/damages'));
-        } catch (Exception $e) {
+            if (!Database::commit()) {
+                throw new RuntimeException('Could not save the damage resolution.');
+            }
+            $successMessage = "Damage record #{$damage['damage_number']} updated successfully. Status: {$status}";
+            if ($isReplacement) {
+                $successMessage .= " Replacement roll {$replacementRollNumber} is available in Production Purchases ({$purchaseNumber}).";
+            }
+            Session::flash('success', $successMessage);
+            Response::redirect(url($isReplacement ? 'production/purchases' : 'production/damages'));
+        } catch (\Throwable $e) {
+            if (Database::inTransaction()) {
+                Database::rollback();
+            }
+            error_log('Damage resolution failed: ' . $e->getMessage());
             Session::flash('error', 'Error updating damage resolution: ' . $e->getMessage());
             Response::back();
         }
+    }
+
+    private function saveSupplierReplacementRoll(array $damage, int $userId): array {
+        $sellerId = (int)($damage['seller_id'] ?? 0);
+        if ($sellerId < 1) {
+            throw new RuntimeException('A supplier is required for a replacement roll.');
+        }
+
+        $origRoll = null;
+        if (!empty($damage['seller_roll_id'])) {
+            $origRoll = Database::fetchOne(
+                "SELECT * FROM seller_rolls WHERE id = ? AND seller_id = ? FOR UPDATE",
+                [(int)$damage['seller_roll_id'], $sellerId]
+            );
+            if (!$origRoll) {
+                throw new RuntimeException('The damaged fabric roll could not be found for this supplier.');
+            }
+        }
+
+        $replacementRollId = !empty($damage['replacement_roll_id']) ? (int)$damage['replacement_roll_id'] : 0;
+        $existingReplacement = $replacementRollId
+            ? Database::fetchOne("SELECT * FROM seller_rolls WHERE id = ? AND seller_id = ? FOR UPDATE", [$replacementRollId, $sellerId])
+            : null;
+        if ($replacementRollId && !$existingReplacement) {
+            throw new RuntimeException('The previously saved replacement roll could not be found.');
+        }
+
+        $rollNumber = mb_strtoupper(trim((string)($_POST['replacement_roll_number'] ?? '')));
+        if ($rollNumber === '') {
+            $savedRollNumber = trim((string)($existingReplacement['roll_number'] ?? ''));
+            $sourceRollNumber = trim((string)($origRoll['roll_number'] ?? ''));
+            $rollNumber = $savedRollNumber !== ''
+                ? $savedRollNumber
+                : (($sourceRollNumber !== '' ? $sourceRollNumber : 'ROLL') . '-REPL');
+        }
+        $color = mb_strtoupper(trim((string)($_POST['replacement_color'] ?? '')));
+        if ($color === '') {
+            $color = trim((string)($existingReplacement['color'] ?? ''));
+            if ($color === '') {
+                $color = mb_strtoupper(trim((string)($origRoll['color'] ?? ''))) ?: 'STANDARD';
+            }
+        }
+        $designName = mb_strtoupper(trim((string)($_POST['replacement_design_name'] ?? '')));
+        if ($designName === '') {
+            $designName = trim((string)($existingReplacement['design_name'] ?? ''));
+            if ($designName === '') {
+                $designName = mb_strtoupper(trim((string)($origRoll['design_name'] ?? ''))) ?: 'PLAIN';
+            }
+        }
+        $designCount = (int)($_POST['replacement_design_count'] ?? 0);
+        if ($designCount < 1) {
+            $designCount = max(1, (int)($existingReplacement['design_count'] ?? ($origRoll['design_count'] ?? 1)));
+        }
+        $quantity = (int)($_POST['replacement_quantity'] ?? 0);
+        if ($quantity < 1) {
+            $quantity = max(1, (int)($existingReplacement['quantity'] ?? ($origRoll['quantity'] ?? ($damage['damaged_quantity'] ?? 1))));
+        }
+
+        $weightInput = trim((string)($_POST['replacement_weight'] ?? ''));
+        if ($weightInput !== '' && !is_numeric($weightInput)) {
+            throw new RuntimeException('Enter a valid replacement roll weight.');
+        }
+        $weight = $weightInput !== '' && (float)$weightInput > 0 ? (float)$weightInput : 0.0;
+        if ($weight <= 0) {
+            $weight = (float)($existingReplacement['weight'] ?? 0);
+        }
+        if ($weight <= 0) {
+            $weight = (float)($origRoll['weight'] ?? 0);
+        }
+        if ($weight <= 0) {
+            $weight = (float)($damage['damaged_weight'] ?? 0);
+        }
+        if ($weight <= 0) {
+            throw new RuntimeException('Replacement roll weight must be greater than zero.');
+        }
+
+        $priceInput = trim((string)($_POST['replacement_price'] ?? ''));
+        if ($priceInput !== '' && (!is_numeric($priceInput) || (float)$priceInput < 0)) {
+            throw new RuntimeException('Enter a valid non-negative replacement roll price.');
+        }
+        if ($priceInput !== '') {
+            $price = (float)$priceInput;
+        } elseif ($existingReplacement) {
+            $price = (float)($existingReplacement['price'] ?? 0);
+        } elseif ((float)($origRoll['price'] ?? 0) > 0) {
+            $price = (float)$origRoll['price'];
+        } else {
+            $price = (float)($damage['loss_amount'] ?? 0);
+        }
+        if ($rollNumber === '' || mb_strlen($rollNumber) > 50
+            || $color === '' || mb_strlen($color) > 100
+            || $designName === '' || mb_strlen($designName) > 150
+            || $designCount < 1 || $quantity < 1 || $price < 0) {
+            throw new RuntimeException('Complete the replacement roll number, color, design, quantity, weight, and price fields with valid values.');
+        }
+
+        $hsnCode = mb_strtoupper(trim((string)($_POST['replacement_hsn_code'] ?? '')));
+        if ($hsnCode === '') {
+            $hsnCode = (string)($existingReplacement['hsn_code'] ?? ($origRoll['hsn_code'] ?? ''));
+        }
+        $gstType = strtoupper(trim((string)($_POST['replacement_gst_type'] ?? 'EXEMPTED')));
+        if (!in_array($gstType, ['SGST', 'IGST', 'CGST', 'BOTH', 'EXEMPTED'], true)) {
+            throw new RuntimeException('Select a valid replacement roll GST type.');
+        }
+
+        $replacementPhoto = $existingReplacement['photo_url'] ?? ($origRoll['photo_url'] ?? null);
+        $photoUpload = $_FILES['replacement_photo'] ?? null;
+        if ($photoUpload && !empty($photoUpload['name'])) {
+            if (($photoUpload['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+                throw new RuntimeException('The replacement roll photo could not be uploaded.');
+            }
+            $uploadedPhoto = CloudinaryService::upload($photoUpload, 'grm_inventory/sellers/rolls', 'image');
+            if (!$uploadedPhoto) {
+                throw new RuntimeException('The replacement roll photo upload failed. Please try again.');
+            }
+            $replacementPhoto = $uploadedPhoto;
+        }
+
+        $materialType = $existingReplacement['material_type']
+            ?? ($origRoll['material_type'] ?? 'STANDARD FABRIC');
+        $rollNotes = $existingReplacement['notes']
+            ?? ('Supplier replacement roll for damaged #' . $damage['damage_number']
+                . ($origRoll ? ' (' . $origRoll['roll_number'] . ')' : ''));
+        $hasRollHsn = (bool)Database::fetchOne("SHOW COLUMNS FROM seller_rolls LIKE 'hsn_code'");
+        $sequence = null;
+        if (!$existingReplacement || (int)$existingReplacement['quantity'] !== $quantity) {
+            $sequence = ProductionService::getNextFabricRollSequence($quantity);
+        }
+
+        if ($existingReplacement) {
+            $assignments = [
+                'roll_number = ?',
+                'color = ?',
+                'design_name = ?',
+                'design_count = ?',
+                'quantity = ?',
+                'weight = ?',
+                'price = ?',
+                'material_type = ?',
+                'photo_url = ?',
+            ];
+            $rollParams = [$rollNumber, $color, $designName, $designCount, $quantity, $weight, $price, $materialType, $replacementPhoto];
+            if ($hasRollHsn) {
+                $assignments[] = 'hsn_code = ?';
+                $rollParams[] = $hsnCode !== '' ? $hsnCode : null;
+            }
+            $assignments[] = 'notes = ?';
+            $rollParams[] = $rollNotes;
+            if ($sequence) {
+                $assignments[] = 'start_seq = ?';
+                $assignments[] = 'end_seq = ?';
+                $assignments[] = 'start_code = ?';
+                $assignments[] = 'end_code = ?';
+                $assignments[] = 'qr_code = ?';
+                array_push(
+                    $rollParams,
+                    (int)$sequence['start_seq'],
+                    (int)$sequence['end_seq'],
+                    (string)$sequence['start_code'],
+                    (string)$sequence['end_code'],
+                    (string)$sequence['qr_code']
+                );
+            }
+            $assignments[] = 'updated_at = NOW()';
+            $rollParams[] = $replacementRollId;
+            $rollParams[] = $sellerId;
+            Database::execute(
+                'UPDATE seller_rolls SET ' . implode(', ', $assignments) . ' WHERE id = ? AND seller_id = ?',
+                $rollParams
+            );
+        } else {
+            $sequence = $sequence ?? ProductionService::getNextFabricRollSequence($quantity);
+            $startSeq = (int)$sequence['start_seq'];
+            $endSeq = (int)$sequence['end_seq'];
+            $startCode = (string)$sequence['start_code'];
+            $endCode = (string)$sequence['end_code'];
+            $qrCode = (string)$sequence['qr_code'];
+            if ($hasRollHsn) {
+                Database::execute(
+                    "INSERT INTO seller_rolls
+                        (seller_id, roll_number, color, design_name, design_count, quantity, weight, price,
+                         material_type, photo_url, start_seq, end_seq, start_code, end_code, qr_code, hsn_code, notes, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
+                    [$sellerId, $rollNumber, $color, $designName, $designCount, $quantity, $weight, $price,
+                        $materialType, $replacementPhoto, $startSeq, $endSeq, $startCode, $endCode, $qrCode,
+                        $hsnCode !== '' ? $hsnCode : null, $rollNotes]
+                );
+            } else {
+                Database::execute(
+                    "INSERT INTO seller_rolls
+                        (seller_id, roll_number, color, design_name, design_count, quantity, weight, price,
+                         material_type, photo_url, start_seq, end_seq, start_code, end_code, qr_code, notes, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
+                    [$sellerId, $rollNumber, $color, $designName, $designCount, $quantity, $weight, $price,
+                        $materialType, $replacementPhoto, $startSeq, $endSeq, $startCode, $endCode, $qrCode, $rollNotes]
+                );
+            }
+            $replacementRollId = (int)Database::lastInsertId();
+            if ($replacementRollId < 1) {
+                throw new RuntimeException('The replacement roll could not be saved.');
+            }
+        }
+
+        $purchaseItem = Database::fetchOne(
+            "SELECT ppi.*, pp.purchase_number
+             FROM production_purchase_items ppi
+             JOIN production_purchases pp ON pp.id = ppi.purchase_id
+             WHERE ppi.seller_roll_id = ?
+             ORDER BY ppi.id DESC LIMIT 1 FOR UPDATE",
+            [$replacementRollId]
+        );
+        $purchaseId = $purchaseItem ? (int)$purchaseItem['purchase_id'] : 0;
+        $purchaseNumber = $purchaseItem['purchase_number'] ?? null;
+        if (!$purchaseId) {
+            $purchaseNumber = 'TMP-PP-' . bin2hex(random_bytes(6));
+            $purchaseDate = date('Y-m-d');
+            $purchaseNotes = 'Supplier Replacement Inward for Damage #' . $damage['damage_number'];
+            Database::execute(
+                "INSERT INTO production_purchases (purchase_number, seller_id, purchase_date, notes, total_amount, created_by)
+                 VALUES (?, ?, ?, ?, 0, ?)",
+                [$purchaseNumber, $sellerId, $purchaseDate, $purchaseNotes, $userId ?: null]
+            );
+            $purchaseId = (int)Database::lastInsertId();
+            if ($purchaseId < 1) {
+                throw new RuntimeException('The replacement purchase record could not be created.');
+            }
+            $purchaseNumber = 'PP-' . date('Y') . '-' . sprintf('%06d', $purchaseId);
+            Database::execute("UPDATE production_purchases SET purchase_number = ? WHERE id = ?", [$purchaseNumber, $purchaseId]);
+        }
+
+        $taxRate = 0.0;
+        if ($gstType !== 'EXEMPTED' && $hsnCode !== '') {
+            $hsnRow = Database::fetchOne("SELECT gst_rate FROM hsn_codes WHERE hsn_code = ?", [$hsnCode]);
+            if ($hsnRow) {
+                $taxRate = (float)$hsnRow['gst_rate'];
+            }
+        }
+        $taxAmount = round($price * ($taxRate / 100), 2);
+        $sgstAmount = in_array($gstType, ['SGST', 'BOTH'], true)
+            ? round($taxAmount / ($gstType === 'BOTH' ? 2 : 1), 2)
+            : 0.0;
+        $cgstAmount = in_array($gstType, ['CGST', 'BOTH'], true)
+            ? round($taxAmount / ($gstType === 'BOTH' ? 2 : 1), 2)
+            : 0.0;
+        $igstAmount = $gstType === 'IGST' ? $taxAmount : 0.0;
+        $totalPrice = $price + $sgstAmount + $cgstAmount + $igstAmount;
+        $sgstValue = in_array($gstType, ['SGST', 'BOTH'], true)
+            ? ($gstType === 'BOTH' ? $taxRate / 2 : $taxRate)
+            : 0.0;
+        $cgstValue = in_array($gstType, ['CGST', 'BOTH'], true)
+            ? ($gstType === 'BOTH' ? $taxRate / 2 : $taxRate)
+            : 0.0;
+        $igstValue = $gstType === 'IGST' ? $taxRate : 0.0;
+        $itemName = $materialType !== '' ? $materialType : 'STANDARD FABRIC';
+        $hasItemHsn = (bool)Database::fetchOne("SHOW COLUMNS FROM production_purchase_items LIKE 'hsn_code'");
+
+        if ($purchaseItem) {
+            $itemAssignments = [
+                'item_type = ?',
+                'item_name = ?',
+                'quantity = ?',
+                'unit = ?',
+                'weight_kg = ?',
+                'unit_price = ?',
+                'total_price = ?',
+                'gst_type = ?',
+                'tax_input_type = ?',
+                'sgst_value = ?',
+                'cgst_value = ?',
+                'igst_value = ?',
+                'sgst_amount = ?',
+                'cgst_amount = ?',
+                'igst_amount = ?',
+                'roll_number = ?',
+                'color = ?',
+                'design_name = ?',
+                'design_count = ?',
+            ];
+            $itemParams = ['FABRIC_ROLL', $itemName, $quantity, 'PCS', $weight, $price, $totalPrice, $gstType, 'PERCENT',
+                $sgstValue, $cgstValue, $igstValue, $sgstAmount, $cgstAmount, $igstAmount, $rollNumber, $color, $designName, $designCount];
+            if ($hasItemHsn) {
+                $itemAssignments[] = 'hsn_code = ?';
+                $itemParams[] = $hsnCode !== '' ? $hsnCode : null;
+            }
+            $itemAssignments[] = 'seller_roll_id = ?';
+            $itemParams[] = $replacementRollId;
+            $itemParams[] = (int)$purchaseItem['id'];
+            $itemParams[] = $purchaseId;
+            Database::execute(
+                'UPDATE production_purchase_items SET ' . implode(', ', $itemAssignments) . ' WHERE id = ? AND purchase_id = ?',
+                $itemParams
+            );
+        } elseif ($hasItemHsn) {
+            Database::execute(
+                "INSERT INTO production_purchase_items
+                    (purchase_id, item_type, item_name, quantity, unit, weight_kg, unit_price, total_price,
+                     gst_type, tax_input_type, sgst_value, cgst_value, igst_value, sgst_amount, cgst_amount, igst_amount,
+                     roll_number, color, design_name, design_count, hsn_code, seller_roll_id)
+                 VALUES (?, 'FABRIC_ROLL', ?, ?, 'PCS', ?, ?, ?, ?, 'PERCENT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [$purchaseId, $itemName, $quantity, $weight, $price, $totalPrice, $gstType, $sgstValue, $cgstValue, $igstValue,
+                    $sgstAmount, $cgstAmount, $igstAmount, $rollNumber, $color, $designName, $designCount,
+                    $hsnCode !== '' ? $hsnCode : null, $replacementRollId]
+            );
+        } else {
+            Database::execute(
+                "INSERT INTO production_purchase_items
+                    (purchase_id, item_type, item_name, quantity, unit, weight_kg, unit_price, total_price,
+                     gst_type, tax_input_type, sgst_value, cgst_value, igst_value, sgst_amount, cgst_amount, igst_amount,
+                     roll_number, color, design_name, design_count, seller_roll_id)
+                 VALUES (?, 'FABRIC_ROLL', ?, ?, 'PCS', ?, ?, ?, ?, 'PERCENT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [$purchaseId, $itemName, $quantity, $weight, $price, $totalPrice, $gstType, $sgstValue, $cgstValue, $igstValue,
+                    $sgstAmount, $cgstAmount, $igstAmount, $rollNumber, $color, $designName, $designCount, $replacementRollId]
+            );
+        }
+
+        $sumRow = Database::fetchOne(
+            "SELECT COALESCE(SUM(total_price), 0) AS total FROM production_purchase_items WHERE purchase_id = ?",
+            [$purchaseId]
+        );
+        Database::execute(
+            "UPDATE production_purchases SET total_amount = ? WHERE id = ?",
+            [(float)$sumRow['total'], $purchaseId]
+        );
+        $this->refreshSupplierRollTotals($sellerId);
+
+        return [
+            'roll_id' => $replacementRollId,
+            'roll_number' => $rollNumber,
+            'purchase_number' => $purchaseNumber,
+        ];
     }
 
     public function deleteDamage(string $id): void {

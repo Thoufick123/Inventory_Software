@@ -752,6 +752,9 @@
                                         <div class="col-lg-6 col-md-8">
                                             <label class="form-label small fw-bold">Roll Sample Photo <small class="text-muted fw-normal">(Optional — JPG, PNG, WEBP)</small></label>
                                             <input type="file" name="replacement_photo" id="inputReplacementPhoto" class="form-control" accept=".jpg,.jpeg,.png,.webp">
+                                            <div id="replacementPhotoPreview" class="small mt-1" style="display:none;">
+                                                Current replacement photo: <a id="replacementPhotoPreviewLink" href="#" target="_blank" rel="noopener">View photo</a>
+                                            </div>
                                         </div>
 
                                         <div class="col-12 mt-2">
@@ -1332,26 +1335,61 @@ function openResolveModal(damageData) {
     document.getElementById('inputRefundAmount').value = damageData.refund_amount > 0 ? damageData.refund_amount : damageData.loss_amount;
     document.getElementById('inputDebitNote').value = damageData.debit_note_number || '';
 
-    // Replacement roll details are manually entered by staff/admin (kept empty for manual entry)
-    document.getElementById('inputReplacementRoll').value = damageData.replacement_roll_number || '';
-    document.getElementById('inputReplacementColor').value = '';
-    document.getElementById('inputReplacementDesign').value = '';
-    document.getElementById('inputReplacementDesignCount').value = '1';
-    document.getElementById('inputReplacementQuantity').value = '1';
-    document.getElementById('inputReplacementWeight').value = '';
-    document.getElementById('inputReplacementPrice').value = '';
+    const sourceWeight = Number(damageData.initial_roll_weight) || Number(damageData.damaged_weight) || 0;
+    const sourcePrice = Number(damageData.initial_roll_price) || Number(damageData.loss_amount) || 0;
+    document.getElementById('inputReplacementRoll').value =
+        damageData.replacement_roll_code || damageData.replacement_roll_number ||
+        (damageData.roll_number ? `${damageData.roll_number}-REPL` : 'ROLL-REPL');
+    document.getElementById('inputReplacementColor').value =
+        damageData.replacement_roll_color || damageData.roll_color || 'STANDARD';
+    document.getElementById('inputReplacementDesign').value =
+        damageData.replacement_roll_design || damageData.roll_design || 'PLAIN';
+    document.getElementById('inputReplacementDesignCount').value =
+        damageData.replacement_roll_design_count || damageData.roll_design_count || '1';
+    document.getElementById('inputReplacementQuantity').value =
+        damageData.replacement_roll_quantity || damageData.initial_roll_quantity || damageData.damaged_quantity || '1';
+    const replacementWeight = Number(damageData.replacement_roll_weight) || sourceWeight;
+    const hasSavedReplacementPrice = damageData.replacement_roll_price !== null &&
+        damageData.replacement_roll_price !== undefined && String(damageData.replacement_roll_price) !== '';
+    const replacementPrice = hasSavedReplacementPrice
+        ? Number(damageData.replacement_roll_price)
+        : sourcePrice;
+    document.getElementById('inputReplacementWeight').value = replacementWeight > 0 ? replacementWeight.toFixed(2) : '';
+    document.getElementById('inputReplacementPrice').value =
+        Number.isFinite(replacementPrice) && replacementPrice >= 0 ? replacementPrice.toFixed(2) : '';
 
     const hsnHidden = document.getElementById('inputReplacementHsn');
     if (hsnHidden) {
-        hsnHidden.value = '';
+        hsnHidden.value = damageData.replacement_roll_hsn_code || damageData.roll_hsn_code ||
+            damageData.source_roll_purchase_hsn_code || '';
         const btnText = document.querySelector('#fieldReplacementBox .hsn-btn-text');
         if (btnText) {
-            btnText.textContent = '-- Select HSN --';
+            const selectedHsn = (window.hsnCodesList || []).find(hsn =>
+                String(hsn.hsn_code).toUpperCase() === String(hsnHidden.value).toUpperCase()
+            );
+            btnText.textContent = selectedHsn
+                ? `${selectedHsn.hsn_code}${selectedHsn.description ? ` (${selectedHsn.description})` : ''}`
+                : (hsnHidden.value || '-- Select HSN --');
         }
     }
-    document.getElementById('inputReplacementGstType').value = 'EXEMPTED';
+    const gstSelect = document.getElementById('inputReplacementGstType');
+    const savedGstType = damageData.replacement_gst_type || damageData.source_roll_gst_type || 'EXEMPTED';
+    gstSelect.value = Array.from(gstSelect.options).some(option => option.value === savedGstType)
+        ? savedGstType
+        : 'EXEMPTED';
     const replPhotoInp = document.getElementById('inputReplacementPhoto');
     if (replPhotoInp) replPhotoInp.value = '';
+    const replPhotoPreview = document.getElementById('replacementPhotoPreview');
+    const replPhotoLink = document.getElementById('replacementPhotoPreviewLink');
+    if (replPhotoPreview && replPhotoLink && damageData.replacement_roll_photo_url) {
+        const photoUrl = damageData.replacement_roll_photo_url.startsWith('http')
+            ? damageData.replacement_roll_photo_url
+            : ('<?= uploadUrl('') ?>/' + damageData.replacement_roll_photo_url);
+        replPhotoLink.href = photoUrl;
+        replPhotoPreview.style.display = '';
+    } else if (replPhotoPreview) {
+        replPhotoPreview.style.display = 'none';
+    }
     document.getElementById('inputResolutionNotes').value = damageData.resolution_notes || '';
 
     handleResolutionStatusChange(document.getElementById('resStatusSelect').value);
