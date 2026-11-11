@@ -367,7 +367,7 @@
                                     <label for="damageRollQrScan" class="form-label fw-bold mb-0">
                                         <i class="bi bi-upc-scan text-success me-1"></i>Scan Fabric Roll Barcode / QR Tag
                                     </label>
-                                    <small class="text-muted">Hardware gun or camera scanner</small>
+                                    <small class="text-muted">Hardware barcode scanner</small>
                                 </div>
                                 <div class="input-group">
                                     <span class="input-group-text bg-white text-success border-end-0">
@@ -377,19 +377,9 @@
                                     <button type="button" class="btn btn-success fw-semibold px-3" onclick="scanDamageRollQr()">
                                         <i class="bi bi-plus-circle me-1"></i>Scan / Add
                                     </button>
-                                    <button type="button" id="damageCameraToggle" class="btn btn-outline-secondary px-3" onclick="toggleDamageCameraScanner()">
-                                        <i class="bi bi-camera-video me-1"></i><span id="damageCameraToggleLabel">Camera Scanner</span>
-                                    </button>
                                 </div>
                             </div>
                             <div id="damageRollScanStatus" class="small mt-1" role="status" aria-live="polite"></div>
-                            <div id="damageCameraScannerContainer" class="mt-2 p-2 border rounded d-none">
-                                <div id="damageCameraScannerPreview" style="width: 100%; max-width: 420px; min-height: 220px; background: #000; border-radius: 8px; overflow: hidden; margin: 0 auto;"></div>
-                                <div class="d-flex justify-content-between align-items-center gap-2 mt-2">
-                                    <small id="damageCameraScannerStatus" class="text-muted" role="status" aria-live="polite">Position a QR label inside the camera frame.</small>
-                                    <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0" onclick="stopDamageCameraScanner()">Stop Camera</button>
-                                </div>
-                            </div>
                             <div class="border rounded mt-2 p-2">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
                                     <strong>Scanned labels</strong>
@@ -454,17 +444,16 @@
 </div>
 
 <!-- 2. Edit Damage Modal -->
-<div class="modal fade" id="editDamageModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="editDamageModal" tabindex="-1" aria-hidden="true" style="overflow-y: auto;">
     <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content shadow-lg border-0 rounded-4 overflow-hidden">
-            <div class="modal-header bg-white border-bottom py-3 px-4">
+        <div class="modal-content shadow-lg border-warning">
+            <div class="modal-header bg-warning text-dark py-3">
                 <div class="d-flex align-items-center gap-2">
-                    <div class="rounded-circle bg-warning-subtle text-warning d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
-                        <i class="bi bi-pencil-square fs-5"></i>
-                    </div>
                     <div>
-                        <h5 class="modal-title fw-bold fs-6 mb-0 text-dark">Edit Fabric Roll Damage Details</h5>
-                        <small class="text-muted" style="font-size: 11px;">Modify defect reason, damage quantity, and loss estimations</small>
+                        <h5 class="modal-title fw-bold fs-6 mb-0">
+                            <i class="bi bi-pencil-square me-2"></i>Edit Damage / Defect (Rolls &amp; Finished Products)
+                        </h5>
+                        <small class="text-dark opacity-75" style="font-size: 11px;">Update reason, evidence, and notes</small>
                     </div>
                 </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -473,7 +462,7 @@
                 <?= CSRF::field() ?>
                 <div class="modal-body p-4">
                     <!-- Record & Status Header Ribbon -->
-                    <div class="p-2.5 px-3 bg-light rounded-3 border mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div class="py-3 px-4 bg-light rounded-3 border mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <div class="d-flex align-items-center gap-2">
                             <span class="small text-muted text-uppercase fw-semibold" style="font-size: 11px;">Record Number:</span>
                             <span class="badge bg-dark font-monospace" id="editDamageNo">DMG-ROL-XXXX</span>
@@ -485,10 +474,29 @@
                     </div>
 
                     <div class="row g-3">
-                        <!-- Supplier Selection -->
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold small text-dark required">Material Supplier / Mill</label>
-                            <select name="seller_id" id="editSellerSelect" class="form-select" required onchange="loadSupplierRollsForEdit(this.value)">
+                        <div class="col-12">
+                            <div class="p-3 bg-light rounded-3 border">
+                                <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+                                    <label for="editDamageRollQrScan" class="form-label fw-bold mb-0">
+                                        <i class="bi bi-upc-scan text-success me-1"></i>Scan Fabric Roll QR to Select Roll
+                                    </label>
+                                    <small class="text-muted">Hardware barcode scanner</small>
+                                </div>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-white text-success border-end-0">
+                                        <i class="bi bi-qr-code"></i>
+                                    </span>
+                                    <input type="text" id="editDamageRollQrScan" class="form-control border-start-0" placeholder="Scan a roll QR and press Enter to select it for this record" autocomplete="off">
+                                    <button type="button" class="btn btn-warning text-dark fw-semibold px-3" onclick="scanEditDamageRollQr()">
+                                        <i class="bi bi-check2-circle me-1"></i>Scan / Select
+                                    </button>
+                                </div>
+                                <div id="editDamageRollScanStatus" class="small mt-1" role="status" aria-live="polite"></div>
+                            </div>
+                        </div>
+
+                        <div class="d-none">
+                            <select name="seller_id" id="editSellerSelect" onchange="loadSupplierRollsForEdit(this.value)">
                                 <option value="">-- Choose Supplier --</option>
                                 <?php foreach ($sellers as $s): ?>
                                     <option value="<?= $s['id'] ?>">
@@ -496,123 +504,83 @@
                                     </option>
                                 <?php endforeach; ?>
                             </select>
-                        </div>
-
-                        <!-- Roll Selection -->
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold small text-dark required">Defective Fabric Roll</label>
-                            <select name="seller_roll_id" id="editRollSelect" class="form-select" required onchange="handleEditRollSelectionChange(this)">
+                            <select name="seller_roll_id" id="editRollSelect" onchange="handleEditRollSelectionChange(this)">
                                 <option value="">-- Select Supplier First --</option>
                             </select>
+                            <input type="hidden" name="damaged_quantity" id="editDamagedQty" value="1">
                         </div>
 
-                        <!-- Clean Structured Roll Specification Box -->
-                        <div class="col-12 mt-2" id="editRollInfoBox">
-                            <div class="card border bg-light shadow-none rounded-3 overflow-hidden">
-                                <div class="card-body p-3">
-                                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2.5 pb-2 border-bottom">
-                                        <div class="d-flex align-items-center gap-2 flex-wrap">
-                                            <span class="badge bg-dark font-monospace fs-7" id="editInfoRollCode">ROLL-01</span>
-                                            <span class="badge bg-info-subtle text-info border" id="editInfoRollColor">Color</span>
-                                            <span class="badge bg-warning-subtle text-warning border" id="editInfoRollDesign">Design</span>
+                        <div class="col-12">
+                            <div class="border rounded mt-2 p-2">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <strong>Scanned labels</strong>
+                                    <span class="badge bg-secondary">1 item</span>
+                                </div>
+                                <div class="list-group-item rounded small">
+                                    <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                                        <div class="text-break">
+                                            <strong id="editDamageLabelCode" class="d-block">Existing damage item</strong>
+                                            <div id="editDamageLabelMeta" class="text-muted mt-1"></div>
                                         </div>
-                                        <div class="text-sm-end d-flex align-items-center gap-2">
-                                            <small class="text-muted text-uppercase fw-semibold" style="font-size: 10px;">Damageable Stock:</small>
-                                            <div id="editInfoRollBalance"><span class="text-success fw-bold">0.00 kg</span></div>
+                                        <span class="badge bg-secondary flex-shrink-0">Existing record</span>
+                                    </div>
+                                    <div class="row g-2">
+                                        <div class="col-md-5">
+                                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                                <label class="form-label fw-bold small text-dark mb-0" for="editReasonSelect">Damage / Defect Reason <span class="text-danger">*</span></label>
+                                                <button type="button" class="btn btn-link btn-sm text-decoration-none p-0 fw-semibold" onclick="addDamageReason('editReasonSelect')" style="font-size: 11px;"><i class="bi bi-plus-circle me-1"></i>New</button>
+                                            </div>
+                                            <select name="damage_reason" id="editReasonSelect" class="form-select" required>
+                                                <option value="">-- Select Reason --</option>
+                                                <?php foreach ($damageReasons as $damageReasonOption): ?>
+                                                    <option value="<?= e($damageReasonOption['damage_reason']) ?>"><?= e($damageReasonOption['damage_reason']) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-7">
+                                            <label class="form-label fw-bold small text-dark" id="editPhotoLabel">
+                                                Defect Photo / Evidence <span class="text-danger" id="editPhotoReqStar" style="display:none;">*</span>
+                                            </label>
+                                            <input type="file" name="photo" id="editPhotoInput" class="form-control" accept="image/*,application/pdf">
+                                            <div id="editCurrentPhotoBox" class="mt-2" style="display: none;">
+                                                <small class="text-muted d-block mb-1" style="font-size: 11px;">Current Attached Proof:</small>
+                                                <a href="#" target="_blank" id="editCurrentPhotoLink" class="d-inline-block">
+                                                    <img src="" id="editCurrentPhotoImg" class="rounded border shadow-sm" style="max-height: 60px; max-width: 120px; object-fit: cover;">
+                                                </a>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div class="row g-2 text-center">
-                                        <div class="col-3">
-                                            <div class="bg-white border rounded p-1.5">
-                                                <small class="text-muted d-block text-uppercase" style="font-size: 9px; letter-spacing: 0.5px;">Rate / kg</small>
-                                                <strong class="text-dark small" id="editInfoRateKg">₹0.00</strong>
-                                            </div>
-                                        </div>
-                                        <div class="col-3">
-                                            <div class="bg-white border rounded p-1.5">
-                                                <small class="text-muted d-block text-uppercase" style="font-size: 9px; letter-spacing: 0.5px;">Piece Weight</small>
-                                                <strong class="text-primary small" id="editInfoPieceWeight">0.00 kg</strong>
-                                            </div>
-                                        </div>
-                                        <div class="col-3">
-                                            <div class="bg-white border rounded p-1.5">
-                                                <small class="text-muted d-block text-uppercase" style="font-size: 9px; letter-spacing: 0.5px;">Piece Value</small>
-                                                <strong class="text-dark small" id="editInfoPiecePrice">₹0.00</strong>
-                                            </div>
-                                        </div>
-                                        <div class="col-3">
-                                            <div class="bg-white border rounded p-1.5">
-                                                <small class="text-muted d-block text-uppercase" style="font-size: 9px; letter-spacing: 0.5px;">Lot Value</small>
-                                                <strong class="text-secondary small" id="editInfoRollPrice">₹0.00</strong>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="d-none" id="editInfoRollRates"></div>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Damage Reason -->
+                        <div class="col-12">
+                            <div class="alert alert-info py-2 mb-0 small">
+                                <i class="bi bi-info-circle me-1"></i>This edits the selected damage record only; scanning will not create another damage entry.
+                            </div>
+                        </div>
+
                         <div class="col-md-6">
-                            <div class="d-flex justify-content-between align-items-center mb-1">
-                                <label class="form-label fw-bold small text-dark mb-0" for="editReasonSelect">Damage / Defect Reason <span class="text-danger">*</span></label>
-                                <button type="button" class="btn btn-link btn-sm text-decoration-none p-0 fw-semibold" onclick="addDamageReason('editReasonSelect')" style="font-size: 11px;"><i class="bi bi-plus-circle me-0.5"></i>+ New</button>
-                            </div>
-                            <select name="damage_reason" id="editReasonSelect" class="form-select" required>
-                                <option value="">-- Select Reason --</option>
-                                <?php foreach ($damageReasons as $damageReasonOption): ?>
-                                    <option value="<?= e($damageReasonOption['damage_reason']) ?>"><?= e($damageReasonOption['damage_reason']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-
-                        <!-- Damaged Quantity -->
-                        <div class="col-md-3">
-                            <label class="form-label fw-bold small text-dark required">Damaged Quantity</label>
-                            <div class="input-group input-group-sm">
-                                <input type="number" name="damaged_quantity" id="editDamagedQty" class="form-control fw-bold" value="1" min="1" required oninput="onEditQtyChange()">
-                                <span class="input-group-text bg-light text-muted">pcs</span>
-                            </div>
-                            <small class="text-muted d-block mt-1" id="editQtyHelp" style="font-size: 11px;">1 pc = 0.00 kg</small>
-                        </div>
-
-                        <!-- Damaged Weight -->
-                        <div class="col-md-3">
-                            <label class="form-label fw-bold small text-dark">
-                                Damaged Weight <span class="badge bg-secondary-subtle text-secondary border ms-1" style="font-size: 10px;">Auto</span>
+                            <label class="form-label fw-bold text-dark">
+                                Damaged Weight <span class="badge bg-secondary-subtle text-secondary border ms-1">Auto</span>
                             </label>
-                            <div class="input-group input-group-sm">
-                                <input type="number" step="0.01" name="damaged_weight" id="editDamagedWeight" class="form-control bg-light fw-bold text-dark border" placeholder="0.00" readonly tabindex="-1">
-                                <span class="input-group-text bg-light text-muted">kg</span>
+                            <div class="input-group">
+                                <input type="number" step="0.01" name="damaged_weight" id="editDamagedWeight" class="form-control bg-light fw-bold text-dark" placeholder="0.00" readonly tabindex="-1">
+                                <span class="input-group-text bg-light">kg</span>
                             </div>
-                            <small class="text-muted d-block mt-1" id="editWeightHelp" style="font-size: 11px;">Rate: ₹0.00 / kg</small>
+                            <small class="text-muted d-block mt-1" id="editWeightHelp">Rate: ₹0.00 / kg</small>
                         </div>
 
-                        <!-- Estimated Loss Valuation -->
                         <div class="col-md-6">
-                            <label class="form-label fw-bold small text-danger">
-                                <i class="bi bi-currency-rupee me-0.5"></i>Estimated Loss Valuation <span class="badge bg-danger-subtle text-danger border ms-1" style="font-size: 10px;">Auto</span>
+                            <label class="form-label fw-bold text-danger">
+                                <i class="bi bi-currency-rupee me-1"></i>Estimated Loss Valuation <span class="badge bg-danger-subtle text-danger border ms-1">Auto</span>
                             </label>
-                            <div class="input-group input-group-sm">
+                            <div class="input-group">
                                 <span class="input-group-text bg-danger-subtle text-danger fw-bold">₹</span>
                                 <input type="number" step="0.01" name="loss_amount" id="editEstimatedLoss" class="form-control fw-bold text-danger bg-light" placeholder="0.00" readonly tabindex="-1">
-                                <span class="input-group-text bg-light text-muted small" id="editRateBadge" style="font-size: 11px;">₹0.00 / kg</span>
+                                <span class="input-group-text bg-light text-muted small" id="editRateBadge">₹0.00 / kg</span>
                             </div>
-                            <small class="text-muted d-block mt-1" id="editLossCalcHelp" style="font-size: 11px;">Calculated from roll rate</small>
-                        </div>
-
-                        <!-- Photo Upload & Current Preview -->
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold small text-dark" id="editPhotoLabel">
-                                Defect Photo / Evidence <span class="text-danger" id="editPhotoReqStar" style="display:none;">*</span>
-                            </label>
-                            <input type="file" name="photo" id="editPhotoInput" class="form-control form-control-sm" accept="image/*,application/pdf">
-                            <div id="editCurrentPhotoBox" class="mt-2" style="display: none;">
-                                <small class="text-muted d-block mb-1" style="font-size: 11px;">Current Attached Proof:</small>
-                                <a href="#" target="_blank" id="editCurrentPhotoLink" class="d-inline-block">
-                                    <img src="" id="editCurrentPhotoImg" class="rounded border shadow-sm" style="max-height: 48px; max-width: 90px; object-fit: cover;">
-                                </a>
-                            </div>
+                            <small class="text-muted d-block mt-1" id="editLossCalcHelp">Calculated from roll rate</small>
                         </div>
 
                         <!-- Defect Notes -->
@@ -624,9 +592,9 @@
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer bg-light py-2 px-4">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-warning btn-sm px-4 fw-semibold shadow-sm">
+                <div class="modal-footer bg-light py-3">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning text-dark px-4 fw-semibold shadow-sm">
                         <i class="bi bi-check2-circle me-1"></i> Update Damage Record
                     </button>
                 </div>
@@ -861,11 +829,8 @@
 let loadedEditRollsMap = {};
 let damageScannedLabels = [];
 let damageScanInProgress = false;
-let damageCameraScanner = null;
-let damageCameraRunning = false;
-let damageCameraStarting = false;
-let damageCameraRequestId = 0;
-let lastDamageCameraCode = '';
+let editDamageRollScanInProgress = false;
+let editDamageRollScanRequestId = 0;
 let activeDamageReasonEditor = null;
 const damageReasonOptions = <?= json_encode(array_values(array_column($damageReasons, 'damage_reason')), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 
@@ -1016,15 +981,15 @@ function renderDamageScannedLabels() {
     if (lossHelp) lossHelp.textContent = `Estimated loss for ${damageScannedLabels.length} scanned item(s): ₹${totalLoss.toFixed(2)}`;
 }
 
-function scanDamageRollQr(scannedValue = null) {
+function scanDamageRollQr() {
     const scanInput = document.getElementById('damageRollQrScan');
-    const scannedCode = (scannedValue !== null ? String(scannedValue) : (scanInput ? scanInput.value : '')).trim();
+    const scannedCode = scanInput ? scanInput.value.trim() : '';
     if (!scannedCode || damageScanInProgress) return;
 
     const normalizedCode = scannedCode.split('|', 1)[0].trim().toUpperCase().replace(/^#/, '');
     if (damageScannedLabels.some(item => item.code === normalizedCode)) {
         setDamageRollScanStatus(`QR label ${normalizedCode} is already in this damage list.`, true);
-        if (scanInput && scannedValue === null) scanInput.select();
+        if (scanInput) scanInput.select();
         return;
     }
 
@@ -1057,126 +1022,15 @@ function scanDamageRollQr(scannedValue = null) {
             setDamageRollScanStatus(`Added [${badgeType}] ${data.code} — ${data.roll_number}. Scan another label or submit.`);
             if (scanInput) {
                 scanInput.value = '';
-                if (!damageCameraRunning) scanInput.focus();
+                scanInput.focus();
             }
         })
         .catch(error => {
             setDamageRollScanStatus(error.message || 'Unable to scan this item.', true);
-            if (damageCameraRunning) setDamageCameraStatus(error.message || 'Unable to scan this item.', true);
         })
         .finally(() => {
             damageScanInProgress = false;
         });
-}
-
-function setDamageCameraStatus(message, isError = false) {
-    const status = document.getElementById('damageCameraScannerStatus');
-    if (!status) return;
-    status.textContent = message;
-    status.className = `small ${isError ? 'text-danger' : 'text-muted'}`;
-}
-
-function toggleDamageCameraScanner() {
-    if (damageCameraRunning || damageCameraStarting) {
-        stopDamageCameraScanner();
-        return;
-    }
-    startDamageCameraScanner();
-}
-
-async function startDamageCameraScanner() {
-    if (damageCameraRunning || damageCameraStarting) return;
-    const container = document.getElementById('damageCameraScannerContainer');
-    const toggleLabel = document.getElementById('damageCameraToggleLabel');
-    const requestId = ++damageCameraRequestId;
-    damageCameraStarting = true;
-    if (container) container.classList.remove('d-none');
-    setDamageCameraStatus('Starting camera…');
-    let scanner = null;
-
-    try {
-        if (typeof Html5Qrcode === 'undefined') {
-            throw new Error('Camera scanner library is not available. Please use the Scan / Add field.');
-        }
-        const cameras = await Html5Qrcode.getCameras();
-        if (requestId !== damageCameraRequestId) return;
-        if (!cameras || cameras.length === 0) {
-            throw new Error('No camera was found on this device.');
-        }
-
-        const camera = cameras.find(device => /back|rear|environment/i.test(device.label)) || cameras[0];
-        scanner = new Html5Qrcode('damageCameraScannerPreview');
-        damageCameraScanner = scanner;
-        await scanner.start(
-            camera.id,
-            { fps: 10, qrbox: { width: 220, height: 220 } },
-            decodedText => {
-                const normalizedCode = decodedText.split('|', 1)[0].trim().toUpperCase().replace(/^#/, '');
-                if (damageScanInProgress || !normalizedCode || damageScannedLabels.some(item => item.code === normalizedCode)) return;
-                if (normalizedCode === lastDamageCameraCode) return;
-                lastDamageCameraCode = normalizedCode;
-                setDamageCameraStatus(`Scanned ${normalizedCode}. Add the item's reason and photo below.`);
-                scanDamageRollQr(decodedText);
-            },
-            () => {}
-        );
-
-        if (requestId !== damageCameraRequestId) {
-            await scanner.stop();
-            scanner.clear();
-            return;
-        }
-        damageCameraRunning = true;
-        if (toggleLabel) toggleLabel.textContent = 'Stop Camera';
-        setDamageCameraStatus('Camera is ready. Point it at a QR label; scanned labels will be added automatically.');
-    } catch (error) {
-        if (scanner) {
-            if (damageCameraScanner === scanner) damageCameraScanner = null;
-            try {
-                scanner.clear();
-            } catch (clearError) {
-                console.warn('Unable to clear failed Production damage camera scanner:', clearError);
-            }
-        }
-        if (requestId === damageCameraRequestId) {
-            setDamageCameraStatus(error.message || 'Camera could not start. Check camera permission and try again.', true);
-            if (toggleLabel) toggleLabel.textContent = 'Camera Scanner';
-        }
-    } finally {
-        if (requestId === damageCameraRequestId) damageCameraStarting = false;
-    }
-}
-
-async function stopDamageCameraScanner() {
-    const wasStarting = damageCameraStarting;
-    const wasRunning = damageCameraRunning;
-    damageCameraRequestId++;
-    damageCameraStarting = false;
-    damageCameraRunning = false;
-    lastDamageCameraCode = '';
-    const scanner = damageCameraScanner;
-    damageCameraScanner = null;
-    const container = document.getElementById('damageCameraScannerContainer');
-    const toggleLabel = document.getElementById('damageCameraToggleLabel');
-    if (toggleLabel) toggleLabel.textContent = 'Camera Scanner';
-
-    if (scanner) {
-        if (wasRunning) {
-            try {
-                await scanner.stop();
-            } catch (error) {
-                console.warn('Unable to stop Production damage camera scanner:', error);
-            }
-        }
-        if (!wasStarting) {
-            try {
-                scanner.clear();
-            } catch (error) {
-                console.warn('Unable to clear Production damage camera scanner:', error);
-            }
-        }
-    }
-    if (container) container.classList.add('d-none');
 }
 
 function getRollMetrics(r) {
@@ -1188,22 +1042,19 @@ function getRollMetrics(r) {
     
     const weightPerPc = totQty > 0 ? (totWeight / totQty) : totWeight;
     const ratePerKg = totWeight > 0 ? (totPrice / totWeight) : 0;
-    const pricePerPc = totQty > 0 ? (totPrice / totQty) : totPrice;
     
     return {
         totQty,
         totWeight,
-        totPrice,
         availQty,
         availWeight,
         usedQty: parseInt(r.used_quantity, 10) || 0,
         weightPerPc,
-        ratePerKg,
-        pricePerPc
+        ratePerKg
     };
 }
 
-function updateEditCalculations(m, qty, weight) {
+function updateEditCalculations(m, weight) {
     if (!m) return;
     const lossVal = weight * m.ratePerKg;
     
@@ -1213,56 +1064,47 @@ function updateEditCalculations(m, qty, weight) {
     const rateBadge = document.getElementById('editRateBadge');
     if (rateBadge) rateBadge.textContent = `₹${m.ratePerKg.toFixed(2)} / kg`;
 
-    const qtyHelp = document.getElementById('editQtyHelp');
-    if (qtyHelp) qtyHelp.textContent = `1 pc = ${m.weightPerPc.toFixed(2)} kg (Max: ${m.availQty} pcs)`;
-
     const weightHelp = document.getElementById('editWeightHelp');
     if (weightHelp) weightHelp.textContent = `Total: ${weight.toFixed(2)} kg`;
 
     const lossHelp = document.getElementById('editLossCalcHelp');
     if (lossHelp) lossHelp.textContent = `Valuation: ₹${lossVal.toFixed(2)} (${weight.toFixed(2)} kg @ ₹${m.ratePerKg.toFixed(2)}/kg)`;
+
+    const sellerSelect = document.getElementById('editSellerSelect');
+    const sellerOption = sellerSelect.options[sellerSelect.selectedIndex];
+    const roll = loadedEditRollsMap[document.getElementById('editRollSelect').value];
+    updateEditDamageLabelMeta(sellerOption ? sellerOption.textContent.trim() : '', roll ? roll.roll_number : '');
 }
 
-function onEditQtyChange() {
-    const rollId = document.getElementById('editRollSelect').value;
-    if (!rollId || !loadedEditRollsMap[rollId]) return;
-    const m = getRollMetrics(loadedEditRollsMap[rollId]);
-
-    const qtyInput = document.getElementById('editDamagedQty');
-    let qty = parseInt(qtyInput.value) || 0;
-    const maxQty = m.availQty;
-
-    if (qty > maxQty) {
-        alert(`Damaged Quantity (${qty} pcs) cannot exceed the available roll quantity (${maxQty} pcs) in supplier stock.`);
-        qty = maxQty;
-        qtyInput.value = maxQty;
-    } else if (qty < 1 && qtyInput.value !== '' && maxQty > 0) {
-        qty = 1;
-        qtyInput.value = 1;
-    }
-
-    const calcWeight = qty * m.weightPerPc;
-    const weightInput = document.getElementById('editDamagedWeight');
-    if (weightInput) {
-        weightInput.value = calcWeight.toFixed(2);
-    }
-    
-    updateEditCalculations(m, qty, calcWeight);
-}
-
-function onEditWeightChange() {
-    const rollId = document.getElementById('editRollSelect').value;
-    if (!rollId || !loadedEditRollsMap[rollId]) return;
-    const m = getRollMetrics(loadedEditRollsMap[rollId]);
+function updateEditDamageLabelMeta(sellerName, rollNumber) {
+    const meta = document.getElementById('editDamageLabelMeta');
+    if (!meta) return;
 
     const weight = parseFloat(document.getElementById('editDamagedWeight').value) || 0;
-    const qty = parseInt(document.getElementById('editDamagedQty').value) || 1;
-    
-    updateEditCalculations(m, qty, weight);
+    const loss = parseFloat(document.getElementById('editEstimatedLoss').value) || 0;
+    const details = [];
+    if (sellerName) details.push(sellerName);
+    if (rollNumber) details.push(`Roll ${rollNumber}`);
+    if (weight > 0) details.push(`${weight.toFixed(2)} kg`);
+    if (loss > 0) details.push(`₹${loss.toFixed(2)}`);
+    meta.textContent = details.join(' • ');
 }
 
 function openEditDamageModal(damageData) {
-    document.getElementById('editDamageForm').action = '<?= url('production/damages/update') ?>/' + damageData.id;
+    editDamageRollScanRequestId++;
+    editDamageRollScanInProgress = false;
+    const editForm = document.getElementById('editDamageForm');
+    editForm.action = '<?= url('production/damages/update') ?>/' + damageData.id;
+    editForm.dataset.damageId = String(damageData.id);
+    editForm.dataset.originalRollId = String(damageData.seller_roll_id || '');
+    editForm.dataset.qrLinked = damageData.qr_code ? '1' : '0';
+    const scanInput = document.getElementById('editDamageRollQrScan');
+    if (scanInput) scanInput.value = '';
+    setEditDamageRollScanStatus(
+        damageData.qr_code
+            ? 'This QR-linked damage record must remain assigned to its original roll.'
+            : 'Scan a roll QR to select the roll for this existing damage record.'
+    );
     document.getElementById('editDamageNo').textContent = damageData.damage_number;
     document.getElementById('editDamageStatus').textContent = damageData.status;
 
@@ -1272,6 +1114,9 @@ function openEditDamageModal(damageData) {
     document.getElementById('editDamagedWeight').value = parseFloat(damageData.damaged_weight || 0).toFixed(2);
     document.getElementById('editEstimatedLoss').value = parseFloat(damageData.loss_amount || 0).toFixed(2);
     document.getElementById('editDefectNotes').value = damageData.defect_notes || '';
+    document.getElementById('editDamageLabelCode').textContent =
+        damageData.qr_code || damageData.roll_number || damageData.damage_number || 'Existing damage item';
+    updateEditDamageLabelMeta(damageData.seller_name, damageData.roll_number);
 
     // Photo preview
     const photoBox = document.getElementById('editCurrentPhotoBox');
@@ -1293,90 +1138,166 @@ function openEditDamageModal(damageData) {
         if (photoReqStar) photoReqStar.style.display = '';
     }
 
-    loadSupplierRollsForEdit(damageData.seller_id, damageData.seller_roll_id, damageData.id);
+    if (scanInput) scanInput.disabled = true;
+    loadSupplierRollsForEdit(damageData.seller_id, damageData.seller_roll_id, damageData.id)
+        .finally(() => {
+            if (scanInput) {
+                scanInput.disabled = false;
+                if (document.getElementById('editDamageModal').classList.contains('show')) scanInput.focus();
+            }
+        });
 
     const modal = new bootstrap.Modal(document.getElementById('editDamageModal'));
     modal.show();
 }
 
-function loadSupplierRollsForEdit(sellerId, selectedRollId = null, excludeDamageId = 0) {
-    const rollSelect = document.getElementById('editRollSelect');
-    const infoBox = document.getElementById('editRollInfoBox');
-    if (!sellerId) {
-        rollSelect.innerHTML = '<option value="">-- Select Supplier First --</option>';
-        if (infoBox) infoBox.style.display = 'none';
+function setEditDamageRollScanStatus(message, isError = false) {
+    const status = document.getElementById('editDamageRollScanStatus');
+    if (!status) return;
+    status.textContent = message;
+    status.className = `small mt-1 ${isError ? 'text-danger' : 'text-success'}`;
+}
+
+async function scanEditDamageRollQr() {
+    const scanInput = document.getElementById('editDamageRollQrScan');
+    const scannedCode = scanInput ? scanInput.value.trim() : '';
+    const editForm = document.getElementById('editDamageForm');
+    const damageId = parseInt(editForm.dataset.damageId, 10) || 0;
+    if (!scannedCode || editDamageRollScanInProgress) return;
+    if (!damageId) {
+        setEditDamageRollScanStatus('Open an existing damage record before scanning a roll.', true);
         return;
     }
 
+    editDamageRollScanInProgress = true;
+    const requestId = ++editDamageRollScanRequestId;
+    const originalRollId = Number(editForm.dataset.originalRollId) || 0;
+    const qrLinked = editForm.dataset.qrLinked === '1';
+    if (scanInput) scanInput.disabled = true;
+    setEditDamageRollScanStatus('Looking up fabric roll QR…');
+    try {
+        const scanUrl = '<?= url('api/production/damages/scan-roll-edit') ?>'
+            + '?code=' + encodeURIComponent(scannedCode)
+            + '&damage_id=' + encodeURIComponent(damageId);
+        const response = await fetch(scanUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        const result = await response.json();
+        if (requestId !== editDamageRollScanRequestId) return;
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || 'Unable to find this fabric roll.');
+        }
+        if (result.item_type !== 'FABRIC_ROLL' || !result.roll_id || !result.seller_id) {
+            throw new Error('This edit form can only select a fabric roll. Please scan a fabric roll QR label.');
+        }
+
+        const sellerSelect = document.getElementById('editSellerSelect');
+        const rollSelect = document.getElementById('editRollSelect');
+        const targetRollId = Number(result.roll_id);
+        if (qrLinked && originalRollId !== targetRollId) {
+            throw new Error('This QR-linked damage record cannot be moved to a different roll. Scan a QR from its original roll.');
+        }
+        if (!Array.from(sellerSelect.options).some(option => option.value === String(result.seller_id))) {
+            throw new Error('The supplier for this fabric roll is not available in the edit form.');
+        }
+
+        const currentRollId = Number(rollSelect.value || originalRollId);
+        const resetValues = currentRollId !== targetRollId;
+        const rollData = await fetchSupplierRollsForEdit(result.seller_id, damageId);
+        if (requestId !== editDamageRollScanRequestId) return;
+        const selectedRoll = rollData && Array.isArray(rollData.rolls)
+            ? rollData.rolls.find(roll => Number(roll.id) === targetRollId)
+            : null;
+        if (!selectedRoll || Number(selectedRoll.available_quantity) < 1) {
+            throw new Error('This roll has no remaining damageable quantity.');
+        }
+
+        sellerSelect.value = String(result.seller_id);
+        populateSupplierRollsForEdit(rollData, targetRollId, resetValues);
+
+        if (scanInput) scanInput.value = '';
+        setEditDamageRollScanStatus(`Selected ${result.roll_number} for this existing damage record.`);
+    } catch (error) {
+        if (requestId === editDamageRollScanRequestId) {
+            setEditDamageRollScanStatus(error.message || 'Unable to select this fabric roll.', true);
+        }
+    } finally {
+        if (requestId === editDamageRollScanRequestId) {
+            editDamageRollScanInProgress = false;
+        }
+        if (scanInput && requestId === editDamageRollScanRequestId) {
+            scanInput.disabled = false;
+            scanInput.focus();
+        }
+    }
+}
+
+function fetchSupplierRollsForEdit(sellerId, excludeDamageId = 0) {
+    return fetch('<?= url('api/sellers') ?>/' + sellerId + '/rolls?exclude_damage_id=' + encodeURIComponent(excludeDamageId))
+        .then(response => {
+            if (!response.ok) throw new Error('Unable to load rolls for this supplier.');
+            return response.json();
+        });
+}
+
+function populateSupplierRollsForEdit(data, selectedRollId = null, resetValues = false) {
+    const rollSelect = document.getElementById('editRollSelect');
+    rollSelect.innerHTML = '<option value="">-- Choose Fabric Roll --</option>';
+    loadedEditRollsMap = {};
+
+    if (Array.isArray(data.rolls) && data.rolls.length > 0) {
+        data.rolls.forEach(r => {
+            loadedEditRollsMap[r.id] = r;
+            const opt = document.createElement('option');
+            opt.value = r.id;
+            const availWt = parseFloat(r.available_weight) || 0;
+            const availQty = parseInt(r.available_quantity, 10) || 0;
+            const usedQty = parseInt(r.used_quantity, 10) || 0;
+            opt.textContent = `${r.roll_number} (${r.color || 'No Color'} - ${r.design_name || 'No Design'}) • Damageable: ${availQty} pcs / ${availWt.toFixed(2)} kg${usedQty > 0 ? ` • ${usedQty} pcs assigned` : ''}`;
+            if (selectedRollId && Number(selectedRollId) === Number(r.id)) opt.selected = true;
+            rollSelect.appendChild(opt);
+        });
+
+        if (selectedRollId && rollSelect.value) {
+            handleEditRollSelectionChange(rollSelect, resetValues);
+        }
+    } else {
+        rollSelect.innerHTML = '<option value="">No rolls found for this supplier</option>';
+    }
+}
+
+function loadSupplierRollsForEdit(sellerId, selectedRollId = null, excludeDamageId = 0, resetValues = false) {
+    const rollSelect = document.getElementById('editRollSelect');
+    if (!sellerId) {
+        rollSelect.innerHTML = '<option value="">-- Select Supplier First --</option>';
+        const scanInput = document.getElementById('editDamageRollQrScan');
+        if (scanInput) scanInput.disabled = false;
+        return Promise.resolve(null);
+    }
+
+    const scanInput = document.getElementById('editDamageRollQrScan');
+    if (scanInput) scanInput.disabled = true;
     rollSelect.innerHTML = '<option value="">Loading rolls...</option>';
 
-    fetch('<?= url('api/sellers') ?>/' + sellerId + '/rolls?exclude_damage_id=' + encodeURIComponent(excludeDamageId))
-        .then(res => res.json())
+    return fetchSupplierRollsForEdit(sellerId, excludeDamageId)
         .then(data => {
-            rollSelect.innerHTML = '<option value="">-- Choose Fabric Roll --</option>';
-            loadedEditRollsMap = {};
-
-            if (data.rolls && data.rolls.length > 0) {
-                data.rolls.forEach(r => {
-                    loadedEditRollsMap[r.id] = r;
-                    const opt = document.createElement('option');
-                    opt.value = r.id;
-                    const availWt = parseFloat(r.available_weight) || 0;
-                    const totalWt = parseFloat(r.weight) || 0;
-                    const availQty = parseInt(r.available_quantity, 10) || 0;
-                    const usedQty = parseInt(r.used_quantity, 10) || 0;
-                    opt.textContent = `${r.roll_number} (${r.color || 'No Color'} - ${r.design_name || 'No Design'}) • Damageable: ${availQty} pcs / ${availWt.toFixed(2)} kg${usedQty > 0 ? ` • ${usedQty} pcs assigned` : ''}`;
-                    if (selectedRollId && parseInt(selectedRollId) === parseInt(r.id)) {
-                        opt.selected = true;
-                    }
-                    rollSelect.appendChild(opt);
-                });
-
-                if (selectedRollId) {
-                    handleEditRollSelectionChange(rollSelect, false);
-                }
-            } else {
-                rollSelect.innerHTML = '<option value="">No rolls found for this supplier</option>';
-            }
+            populateSupplierRollsForEdit(data, selectedRollId, resetValues);
+            return data;
         })
         .catch(err => {
             console.error('Error fetching edit rolls:', err);
             rollSelect.innerHTML = '<option value="">Failed to load rolls</option>';
+            return null;
+        })
+        .finally(() => {
+            if (scanInput) scanInput.disabled = false;
         });
 }
 
 function handleEditRollSelectionChange(selectEl, resetValues = true) {
     const rollId = selectEl.value;
-    const infoBox = document.getElementById('editRollInfoBox');
-    if (!rollId || !loadedEditRollsMap[rollId]) {
-        if (infoBox) infoBox.style.display = 'none';
-        return;
-    }
+    if (!rollId || !loadedEditRollsMap[rollId]) return;
 
     const r = loadedEditRollsMap[rollId];
     const m = getRollMetrics(r);
-
-    document.getElementById('editInfoRollCode').textContent = r.roll_number;
-    document.getElementById('editInfoRollColor').textContent = r.color || 'Standard';
-    document.getElementById('editInfoRollDesign').textContent = r.design_name || 'Plain';
-    
-    const rateEl = document.getElementById('editInfoRateKg');
-    if (rateEl) rateEl.textContent = `₹${m.ratePerKg.toFixed(2)}`;
-    const pwEl = document.getElementById('editInfoPieceWeight');
-    if (pwEl) pwEl.textContent = `${m.weightPerPc.toFixed(2)} kg`;
-    const ppEl = document.getElementById('editInfoPiecePrice');
-    if (ppEl) ppEl.textContent = `₹${m.pricePerPc.toFixed(2)}`;
-    const tpEl = document.getElementById('editInfoRollPrice');
-    if (tpEl) tpEl.textContent = `₹${m.totPrice.toFixed(2)}`;
-
-    const balEl = document.getElementById('editInfoRollBalance');
-    if (balEl) {
-        if (m.availWeight > 0) {
-            balEl.innerHTML = `<span class="text-success fw-bold">${m.availWeight.toFixed(2)} kg</span> <span class="badge bg-success-subtle text-success border ms-1 font-monospace" style="font-size: 10px;">${m.availQty} pcs</span>`;
-        } else {
-            balEl.innerHTML = `<span class="text-secondary fw-semibold">0.00 kg</span> <span class="badge bg-secondary-subtle text-secondary border ms-1 font-monospace" style="font-size: 10px;">0 pcs</span>`;
-        }
-    }
 
     const qtyInput = document.getElementById('editDamagedQty');
     if (qtyInput) {
@@ -1385,18 +1306,17 @@ function handleEditRollSelectionChange(selectEl, resetValues = true) {
     }
 
     if (resetValues) {
-        const defaultQty = Math.min(1, m.availQty);
+        const defaultQty = parseInt(qtyInput.value, 10) || 1;
         const defaultWeight = defaultQty * m.weightPerPc;
         if (qtyInput) qtyInput.value = defaultQty;
         document.getElementById('editDamagedWeight').value = defaultWeight.toFixed(2);
-        updateEditCalculations(m, defaultQty, defaultWeight);
+        updateEditCalculations(m, defaultWeight);
     } else {
         const curQty = parseInt(document.getElementById('editDamagedQty').value) || 1;
         const curWeight = parseFloat(document.getElementById('editDamagedWeight').value) || (curQty * m.weightPerPc);
-        updateEditCalculations(m, curQty, curWeight);
+        updateEditCalculations(m, curWeight);
     }
 
-    if (infoBox) infoBox.style.display = '';
 }
 
 function openResolveModal(damageData) {
@@ -1702,12 +1622,33 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     initQuickAddHsnModalHandler();
 
+    const editRollScanInput = document.getElementById('editDamageRollQrScan');
+    if (editRollScanInput) {
+        const editModal = document.getElementById('editDamageModal');
+        editModal.addEventListener('shown.bs.modal', () => editRollScanInput.focus());
+        editModal.addEventListener('hidden.bs.modal', () => {
+            editDamageRollScanRequestId++;
+            editDamageRollScanInProgress = false;
+            editRollScanInput.disabled = false;
+            editRollScanInput.value = '';
+            setEditDamageRollScanStatus('');
+        });
+        editRollScanInput.addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                scanEditDamageRollQr();
+            }
+        });
+        editRollScanInput.addEventListener('input', () => {
+            if (!editDamageRollScanInProgress) setEditDamageRollScanStatus('');
+        });
+    }
+
     const scanInput = document.getElementById('damageRollQrScan');
     if (scanInput) {
         const damageModal = document.getElementById('reportDamageModal');
         damageModal.addEventListener('shown.bs.modal', () => scanInput.focus());
         damageModal.addEventListener('hidden.bs.modal', () => {
-            stopDamageCameraScanner();
             closeDamageReasonEditor();
             clearDamageRollSelection();
             scanInput.value = '';

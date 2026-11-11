@@ -2022,6 +2022,67 @@ class ProductionController {
             return;
         }
 
+        $this->lookupDamageRollForScan($scanCode);
+    }
+
+    public function ajaxLookupEditDamageRoll(): void {
+        $damageId = max(0, (int)($_GET['damage_id'] ?? 0));
+        if ($damageId === 0 || !Database::fetchOne("SELECT id FROM roll_damages WHERE id = ?", [$damageId])) {
+            Response::json(['success' => false, 'message' => 'Damage record not found.'], 404);
+            return;
+        }
+
+        $rawScan = trim((string)($_GET['code'] ?? ''));
+        $scanCode = strtoupper(trim(explode('|', $rawScan, 2)[0]));
+        $scanCode = trim(ltrim($scanCode, '#'));
+        if (!preg_match('/^([A-Z]{2}\d{4})(\d+)$/', $scanCode, $matches)) {
+            Response::json(['success' => false, 'message' => 'Scan a valid fabric roll QR label.'], 400);
+            return;
+        }
+
+        $prefix = $matches[1];
+        $sequence = (int)$matches[2];
+        $candidates = Database::fetchAll(
+            "SELECT sr.id, sr.seller_id, sr.roll_number, sr.start_code, sr.end_code, sr.start_seq, sr.end_seq,
+                    s.name AS seller_name, s.company AS seller_company
+             FROM seller_rolls sr
+             JOIN sellers s ON s.id = sr.seller_id
+             WHERE sr.start_code LIKE ? AND sr.end_code LIKE ?",
+            [$prefix . '%', $prefix . '%']
+        );
+        $matchingRolls = array_values(array_filter($candidates, static function (array $candidate) use ($prefix, $sequence): bool {
+            return strtoupper(substr((string)$candidate['start_code'], 0, 6)) === $prefix
+                && strtoupper(substr((string)$candidate['end_code'], 0, 6)) === $prefix
+                && $sequence >= (int)$candidate['start_seq']
+                && $sequence <= (int)$candidate['end_seq'];
+        }));
+        if (count($matchingRolls) !== 1) {
+            Response::json(['success' => false, 'message' => 'This QR label does not identify one fabric roll.'], 404);
+            return;
+        }
+
+        $roll = $matchingRolls[0];
+        $deletedLabel = Database::fetchOne(
+            "SELECT id FROM seller_roll_deleted_labels WHERE seller_roll_id = ? AND `sequence` = ?",
+            [(int)$roll['id'], $sequence]
+        );
+        if ($deletedLabel) {
+            Response::json(['success' => false, 'message' => 'This QR label was deleted and cannot select a fabric roll.'], 404);
+            return;
+        }
+
+        Response::json([
+            'success' => true,
+            'item_type' => 'FABRIC_ROLL',
+            'seller_id' => (int)$roll['seller_id'],
+            'seller_name' => $roll['seller_company'] ?: $roll['seller_name'],
+            'roll_id' => (int)$roll['id'],
+            'roll_number' => $roll['roll_number'],
+            'code' => $scanCode,
+        ]);
+    }
+
+    private function lookupDamageRollForScan(string $scanCode): void {
         // 2. Check if already recorded in Warehouse Damage Management
         $existingWhDamage = Database::fetchOne(
             "SELECT damage_number, damage_reason, status FROM warehouse_damages WHERE tag_code = ? LIMIT 1",
