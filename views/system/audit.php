@@ -53,9 +53,20 @@ $viewMode = $_GET['view'] ?? ($selectedUserId ? 'detail' : 'profiles');
                 </a>
             <?php endif; ?>
             
+            <?php 
+            $canExportAudit = hasPermission('audit', 'create') || hasPermission('audit', 'view');
+            $canDeleteAudit = hasPermission('audit', 'delete');
+            ?>
+            <?php if ($canExportAudit): ?>
             <a href="<?= url('system/audit/export?' . http_build_query($filters)) ?>" class="btn btn-sm btn-outline-success rounded-pill px-3">
                 <i class="bi bi-download me-1"></i> <?= $selectedStaff ? 'Export ' . e($selectedStaff['full_name']) . '\'s Logs' : 'Export Full Audit Report' ?>
             </a>
+            <?php endif; ?>
+            <?php if ($canDeleteAudit): ?>
+            <button type="button" class="btn btn-sm btn-outline-danger rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#purgeAuditModal">
+                <i class="bi bi-trash3 me-1"></i> Purge Logs
+            </button>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -597,7 +608,48 @@ $viewMode = $_GET['view'] ?? ($selectedUserId ? 'detail' : 'profiles');
     </div>
 </div>
 
-<script>
+<!-- PURGE AUDIT LOGS MODAL -->
+<?php if (!empty($canDeleteAudit)): ?>
+<div class="modal fade" id="purgeAuditModal" tabindex="-1" aria-labelledby="purgeAuditModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <form method="POST" action="<?= url('system/audit/purge') ?>">
+                <?= CSRF::field() ?>
+                <div class="modal-header bg-danger text-white py-3 border-0">
+                    <h5 class="modal-title fw-bold" id="purgeAuditModalLabel">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>Purge Historical Audit Logs
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <p class="text-muted small mb-3">
+                        Permanently delete historical system activity logs older than a selected threshold to reduce database size. Core configuration history is preserved.
+                    </p>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small text-dark">Purge Logs Older Than</label>
+                        <select name="older_than_days" class="form-select form-select-sm">
+                            <option value="30">30 Days</option>
+                            <option value="60">60 Days</option>
+                            <option value="90" selected>90 Days (Recommended)</option>
+                            <option value="180">180 Days (6 Months)</option>
+                            <option value="365">365 Days (1 Year)</option>
+                        </select>
+                    </div>
+                    <div class="alert alert-warning py-2 px-3 small mb-0 border-0">
+                        <i class="bi bi-info-circle me-1"></i> This action cannot be undone. Make sure you have exported an audit backup before purging.
+                    </div>
+                </div>
+                <div class="modal-footer bg-light border-0 py-2">
+                    <button type="button" class="btn btn-sm btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-sm btn-danger rounded-pill px-4 fw-bold">
+                        <i class="bi bi-trash3-fill me-1"></i> Confirm Purge
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 document.addEventListener('DOMContentLoaded', function() {
     const diffModalEl = document.getElementById('diffModal');
     if (!diffModalEl) return;

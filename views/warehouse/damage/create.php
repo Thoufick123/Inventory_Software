@@ -446,6 +446,16 @@ document.addEventListener('DOMContentLoaded', function() {
         const availableStock = selectedVariantObj ? parseFloat(selectedVariantObj.total_warehouse_stock || 0) : 0;
         const catDisplay = selectedVariantObj ? (selectedVariantObj.sub_subcategory_name || selectedVariantObj.subcategory_name || selectedVariantObj.category_name || 'General') : '-';
         const sizeDisplay = selectedVariantObj ? (selectedVariantObj.size_name || 'Free Size') : '-';
+        const catType = selectedVariantObj ? getProductType(selectedVariantObj) : 'NORMAL';
+
+        let typeBadgeHtml = '';
+        if (catType === 'COMPLEMENTARY') {
+            typeBadgeHtml = '<span class="badge bg-warning text-dark border border-warning font-monospace d-block mt-1" style="font-size:0.68rem;"><i class="bi bi-gift-fill me-1"></i>COMPLEMENTARY</span>';
+        } else if (catType === 'SERIES') {
+            typeBadgeHtml = '<span class="badge bg-info text-dark border border-info font-monospace d-block mt-1" style="font-size:0.68rem;"><i class="bi bi-collection-fill me-1"></i>SERIES</span>';
+        } else {
+            typeBadgeHtml = '<span class="badge bg-light text-secondary border font-monospace d-block mt-1" style="font-size:0.68rem;"><i class="bi bi-tag-fill me-1"></i>NORMAL</span>';
+        }
 
         const tr = document.createElement('tr');
         tr.className = 'item-row align-middle';
@@ -459,6 +469,7 @@ document.addEventListener('DOMContentLoaded', function() {
             </td>
             <td>
                 <span class="badge bg-secondary-subtle text-secondary category-badge">${escapeHtml(catDisplay)}</span>
+                ${typeBadgeHtml}
             </td>
             <td>
                 <input type="hidden" name="variant_ids[]" class="variant-id-input" value="${selectedVariantId || ''}">
@@ -486,21 +497,23 @@ document.addEventListener('DOMContentLoaded', function() {
                 </select>
             </td>
             <td class="text-center">
-                <div class="input-group input-group-sm mx-auto shadow-xs" style="max-width: 100px;">
+                <div class="input-group input-group-sm mx-auto shadow-xs" style="max-width: 105px;">
                     <button type="button" class="btn btn-outline-secondary px-2 py-0 fw-bold qty-stepper ${canAdjustQty ? '' : 'd-none'}" onclick="changeRowQty(this, -1)" title="Decrease quantity">-</button>
                     <input type="number" 
                            name="requested_qty[]" 
                            class="form-control text-center fw-bold qty-input fs-6 px-1" 
                            value="${rowQty}" 
                            min="1" 
-                           max="${availableStock > 0 ? availableStock : 9999}"
+                           max="${availableStock > 0 ? availableStock : 1}"
                            ${canAdjustQty ? '' : 'readonly'}
                            required 
                            oninput="updateRowStockCalculations(this.closest('tr'))" 
                            onchange="updateRowStockCalculations(this.closest('tr'))">
                     <button type="button" class="btn btn-outline-secondary px-2 py-0 fw-bold qty-stepper ${canAdjustQty ? '' : 'd-none'}" onclick="changeRowQty(this, 1)" title="Increase quantity">+</button>
                 </div>
-                ${!canAdjustQty ? '<small class="text-muted d-block mt-0.5 text-center" style="font-size: 0.65rem;"><i class="bi bi-lock-fill me-0.5"></i>1 pc fixed</small>' : ''}
+                ${!canAdjustQty 
+                    ? '<small class="text-muted d-block mt-0.5 text-center" style="font-size: 0.65rem;"><i class="bi bi-lock-fill me-0.5"></i>1 pc (One-by-One)</small>' 
+                    : `<small class="text-primary fw-semibold d-block mt-0.5 text-center" style="font-size: 0.65rem;"><i class="bi bi-boxes me-0.5"></i>Max: ${availableStock} pcs</small>`}
             </td>
             <td class="text-center">
                 <span class="fw-semibold text-muted unit-cost-badge">₹${cost.toFixed(2)}</span>
@@ -543,6 +556,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const maxAllowed = parseFloat(input.max || opt.dataset.stock || '0');
             if (maxAllowed > 0 && newVal > maxAllowed) {
                 newVal = maxAllowed;
+                playDuplicateSound();
+                showScanAlert('warning', `⚠️ <strong>Warehouse Stock Limit:</strong> Cannot exceed available stock of <strong>${maxAllowed} pcs</strong> in this warehouse!`);
             }
         }
         input.value = newVal;
@@ -585,8 +600,26 @@ document.addEventListener('DOMContentLoaded', function() {
         const costInput = row.querySelector('.cost-per-unit-input');
         const lossBadge = row.querySelector('.total-loss-badge');
         const lossInput = row.querySelector('.total-loss-input');
+        const sel = row.querySelector('.variant-select');
+        const opt = sel ? sel.options[sel.selectedIndex] : null;
 
-        const qty = parseInt(qtyInput ? qtyInput.value : 1) || 1;
+        let qty = parseInt(qtyInput ? qtyInput.value : 1) || 1;
+        if (qty < 1) qty = 1;
+
+        const canAdjust = opt ? supportsAdjustableDamageQty(opt.dataset) : false;
+        if (!canAdjust) {
+            qty = 1;
+            if (qtyInput) qtyInput.value = 1;
+        } else if (opt && opt.value) {
+            const maxAllowed = parseFloat(qtyInput?.max || opt.dataset?.stock || '0');
+            if (maxAllowed > 0 && qty > maxAllowed) {
+                qty = maxAllowed;
+                if (qtyInput) qtyInput.value = maxAllowed;
+                playDuplicateSound();
+                showScanAlert('warning', `⚠️ <strong>Warehouse Stock Limit:</strong> Quantity clamped to available warehouse stock of <strong>${maxAllowed} pcs</strong>.`);
+            }
+        }
+
         const unitCost = parseFloat(costInput ? costInput.value : 0) || 0;
         const totalLoss = qty * unitCost;
 
@@ -824,6 +857,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 } else if (data.is_already_allocated) {
                     playDuplicateSound();
                     showScanAlert('duplicate', `🚫 <strong>Piece Already Allocated:</strong> Tag <code class="fw-bold">${data.tag_code || tagCode}</code> has ALREADY been allocated in Pass <strong>#${data.allocation_number}</strong> (${data.allocation_status}) at <em>${data.allocated_warehouse || 'Warehouse'}</em> for ${data.allocated_product || 'item'}. Cannot damage an allocated piece.`);
+                    clearAndRefocusScanInput();
+                } else if (data.is_already_sold) {
+                    playDuplicateSound();
+                    showScanAlert('danger', `🚫 <strong>Already Outed to Customer:</strong> QR Code <code class="fw-bold">${data.tag_code || tagCode}</code> has ALREADY been purchased / outwarded by customer <strong>"${data.customer_name || 'Customer'}"</strong> (Invoice <strong>#${data.invoice_number || 'N/A'}</strong> on ${data.sale_date || 'N/A'}). Product: <em>${data.product_name || ''} (${data.sku || ''})</em>. This piece is no longer in warehouse stock and cannot be logged as damage!`);
                     clearAndRefocusScanInput();
                 } else if (data.is_exchanged_out) {
                     playDuplicateSound();

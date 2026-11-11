@@ -14,6 +14,10 @@ class SystemController {
     // =========================================================================
 
     public function auditLogs(): void {
+        if (!hasPermission('audit', 'view')) {
+            Response::error(403, 'Your assigned role does not have permission to view Audit Logs.');
+            return;
+        }
         $filters = [
             'search'    => $_GET['search'] ?? '',
             'module'    => $_GET['module'] ?? '',
@@ -85,6 +89,10 @@ class SystemController {
     }
 
     public function exportAuditLogs(): void {
+        if (!hasPermission('audit', 'create') && !hasPermission('audit', 'view')) {
+            Response::error(403, 'Your assigned role does not have permission to export Audit Logs.');
+            return;
+        }
         $filters = [
             'search'    => $_GET['search'] ?? '',
             'module'    => $_GET['module'] ?? '',
@@ -96,11 +104,36 @@ class SystemController {
         AuditService::exportCsv($filters);
     }
 
+    public function purgeAuditLogs(): void {
+        if (!hasPermission('audit', 'delete')) {
+            Response::error(403, 'Your assigned role does not have permission to purge Audit Logs.');
+            return;
+        }
+        $submittedToken = $_POST['_csrf_token'] ?? $_POST['csrf_token'] ?? null;
+        if (!CSRF::validate($submittedToken)) {
+            Session::setFlash('error', 'Invalid security token or session expired.');
+            Response::redirect(url('system/audit'));
+            return;
+        }
+        $days = max(30, (int)($_POST['older_than_days'] ?? 90));
+        try {
+            $deleted = Database::execute("DELETE FROM audit_logs WHERE created_at < DATE_SUB(NOW(), INTERVAL ? DAY)", [$days]);
+            Session::setFlash('success', "Successfully purged $deleted audit logs older than $days days.");
+        } catch (\Exception $e) {
+            Session::setFlash('error', 'Failed to purge audit logs: ' . $e->getMessage());
+        }
+        Response::redirect(url('system/audit'));
+    }
+
     // =========================================================================
     // SYSTEM SETTINGS HUB
     // =========================================================================
 
     public function settings(): void {
+        if (!hasPermission('settings', 'view')) {
+            Response::error(403, 'Your assigned role does not have permission to view Settings.');
+            return;
+        }
         $groupedSettings = SettingsService::getAllGrouped();
 
         Response::view('system.settings', [
@@ -116,6 +149,10 @@ class SystemController {
     }
 
     public function updateSettings(): void {
+        if (!hasPermission('settings', 'edit') && !hasPermission('settings', 'create')) {
+            Response::error(403, 'Your assigned role does not have permission to update Settings.');
+            return;
+        }
         $group = $_POST['group'] ?? 'general';
         $settingsData = $_POST['settings'] ?? [];
 
@@ -134,6 +171,10 @@ class SystemController {
     // =========================================================================
 
     public function backupList(): void {
+        if (!hasPermission('backup', 'view')) {
+            Response::error(403, 'Your assigned role does not have permission to view Backups.');
+            return;
+        }
         $backups = BackupService::listBackups();
 
         Response::view('system.backup', [
@@ -149,6 +190,10 @@ class SystemController {
     }
 
     public function createBackup(): void {
+        if (!hasPermission('backup', 'create')) {
+            Response::error(403, 'Your assigned role does not have permission to create backups.');
+            return;
+        }
         CSRF::verify();
         $compress = isset($_POST['compress']) && $_POST['compress'] == '1';
         $notes = $_POST['notes'] ?? 'Manual backup from Admin Dashboard';
@@ -174,6 +219,10 @@ class SystemController {
     }
 
     public function importBackup(): void {
+        if (!hasPermission('backup', 'create') && !hasPermission('backup', 'edit')) {
+            Response::error(403, 'Your assigned role does not have permission to import backups.');
+            return;
+        }
         $submittedToken = $_POST['_csrf_token'] ?? $_POST['csrf_token'] ?? null;
         if (!CSRF::validate($submittedToken)) {
             Session::setFlash('error', 'Invalid security token or session expired. Please try again.');
@@ -204,6 +253,10 @@ class SystemController {
     }
 
     public function downloadBackup(string $filename): void {
+        if (!hasPermission('backup', 'view') && !hasPermission('backup', 'create')) {
+            Response::error(403, 'Your assigned role does not have permission to download backups.');
+            return;
+        }
         $backupDir = BASE_PATH . '/storage/backups/';
         $filePath = realpath($backupDir . basename($filename));
 
@@ -224,6 +277,10 @@ class SystemController {
     }
 
     public function restoreBackup(): void {
+        if (!hasPermission('backup', 'edit') && !hasPermission('backup', 'create')) {
+            Response::error(403, 'Your assigned role does not have permission to restore database backups.');
+            return;
+        }
         $filename = $_POST['filename'] ?? '';
         $password = $_POST['password'] ?? '';
         $confirmation = $_POST['confirmation'] ?? '';
@@ -239,24 +296,38 @@ class SystemController {
     }
 
     public function exportSqlDirect(): void {
+        if (!hasPermission('backup', 'create')) {
+            Response::error(403, 'Your assigned role does not have permission to export backups.');
+            return;
+        }
         try {
             BackupService::streamInstantSqlExport();
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
+            error_log("Direct SQL Export failed: " . $e->getMessage());
             Session::setFlash('error', 'Direct SQL Export failed: ' . $e->getMessage());
             Response::redirect(url('system/backup'));
         }
     }
 
     public function exportZipDirect(): void {
+        if (!hasPermission('backup', 'create')) {
+            Response::error(403, 'Your assigned role does not have permission to export backups.');
+            return;
+        }
         try {
             BackupService::streamInstantZipExport();
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
+            error_log("Direct ZIP Export failed: " . $e->getMessage());
             Session::setFlash('error', 'Direct ZIP Export failed: ' . $e->getMessage());
             Response::redirect(url('system/backup'));
         }
     }
 
     public function wipeTestData(): void {
+        if (!hasPermission('backup', 'delete')) {
+            Response::error(403, 'Your assigned role does not have permission to delete or wipe data.');
+            return;
+        }
         $submittedToken = $_POST['_csrf_token'] ?? $_POST['csrf_token'] ?? null;
         if (!CSRF::validate($submittedToken)) {
             Session::setFlash('error', 'Invalid security token or session expired. Please try again.');
@@ -284,6 +355,10 @@ class SystemController {
     }
 
     public function deleteBackup(string $filename): void {
+        if (!hasPermission('backup', 'delete')) {
+            Response::error(403, 'Your assigned role does not have permission to delete backups.');
+            return;
+        }
         try {
             if (BackupService::deleteBackup($filename)) {
                 Session::setFlash('success', "Backup snapshot deleted: $filename");

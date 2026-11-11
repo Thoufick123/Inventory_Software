@@ -405,6 +405,102 @@ function hasPermission(string $module, ?string $action = null): bool {
         }
     }
 
+    // Direct Purchases permission aliases (allows standard create/view/edit permissions to access invoices and receiving)
+    if ($module === 'purchases') {
+        if ($action === 'receive') {
+            if (in_array('purchases.create', $userPermissions, true) || 
+                in_array('purchases.view', $userPermissions, true) || 
+                in_array('purchases.edit', $userPermissions, true) ||
+                in_array('inward.create', $userPermissions, true) ||
+                in_array('inward.verify', $userPermissions, true)) {
+                return true;
+            }
+        }
+        if ($action === 'view' && in_array('purchases.receive', $userPermissions, true)) {
+            return true;
+        }
+        if ($action === 'create' && in_array('purchases.receive', $userPermissions, true)) {
+            return true;
+        }
+    }
+
+    // Purchases Returns & Exchanges aliases (maps standard create/view permissions to process/print)
+    if ($module === 'purchases_returns') {
+        if ($action === 'process' && (in_array('purchases_returns.create', $userPermissions, true) || in_array('purchases_returns.edit', $userPermissions, true) || in_array('returns.create', $userPermissions, true))) {
+            return true;
+        }
+        if ($action === 'print' && (in_array('purchases_returns.view', $userPermissions, true) || in_array('purchases_returns.create', $userPermissions, true) || in_array('returns.view', $userPermissions, true))) {
+            return true;
+        }
+        if ($action === 'create' && in_array('purchases_returns.process', $userPermissions, true)) {
+            return true;
+        }
+        if (in_array('returns.' . $action, $userPermissions, true)) {
+            return true;
+        }
+    }
+
+    // Shop Inward GRN verification / receiving aliases
+    if ($module === 'shop_inward') {
+        if (($action === 'receive' || $action === 'verify' || $action === 'create') && (
+            in_array('shop_inward.create', $userPermissions, true) || 
+            in_array('shop_inward.receive', $userPermissions, true) ||
+            in_array('shop_inward.verify', $userPermissions, true) ||
+            in_array('shop_inward.edit', $userPermissions, true) ||
+            in_array('inward.create', $userPermissions, true) ||
+            in_array('inward.verify', $userPermissions, true) ||
+            in_array('shop.create', $userPermissions, true)
+        )) {
+            return true;
+        }
+        if ($action === 'view' && (
+            in_array('shop_inward.view', $userPermissions, true) ||
+            in_array('inward.view', $userPermissions, true) ||
+            in_array('shop.view', $userPermissions, true)
+        )) {
+            return true;
+        }
+    }
+
+    // System: Audit Logs aliases
+    if ($module === 'audit' || $module === 'audit_logs') {
+        if ($module === 'audit_logs' && in_array('audit.' . $action, $userPermissions, true)) {
+            return true;
+        }
+        if ($module === 'audit' && in_array('audit_logs.' . $action, $userPermissions, true)) {
+            return true;
+        }
+        if ($action === 'create' && in_array('audit.export', $userPermissions, true)) {
+            return true;
+        }
+        if ($action === 'export' && (in_array('audit.create', $userPermissions, true) || in_array('audit.view', $userPermissions, true))) {
+            return true;
+        }
+    }
+
+    // System: Settings Hub aliases
+    if ($module === 'settings') {
+        if ($action === 'edit' && in_array('settings.create', $userPermissions, true)) {
+            return true;
+        }
+        if ($action === 'create' && in_array('settings.edit', $userPermissions, true)) {
+            return true;
+        }
+    }
+
+    // System: Backup & Recovery aliases
+    if ($module === 'backup') {
+        if ($action === 'download' && (in_array('backup.view', $userPermissions, true) || in_array('backup.create', $userPermissions, true))) {
+            return true;
+        }
+        if ($action === 'restore' && (in_array('backup.edit', $userPermissions, true) || in_array('backup.create', $userPermissions, true))) {
+            return true;
+        }
+        if ($action === 'edit' && in_array('backup.restore', $userPermissions, true)) {
+            return true;
+        }
+    }
+
     return false;
 }
 

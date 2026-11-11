@@ -382,6 +382,7 @@ $displayNotes = trim(preg_replace('/\[Split Payment:.*?\]\r?\n?/', '', $po['note
                                 <tr>
                                     <th class="ps-3 text-center" style="width: 38px;">#</th>
                                     <th>Item Details</th>
+                                    <th class="text-center" style="width: 150px;">HSN Code</th>
                                     <th class="text-end" style="width: 100px;">Base Price</th>
                                     <th class="text-end" style="width: 120px;">GST</th>
                                     <th class="text-end" style="width: 105px;">Discount</th>
@@ -414,6 +415,9 @@ $displayNotes = trim(preg_replace('/\[Split Payment:.*?\]\r?\n?/', '', $po['note
                                         $mrp = $isComp ? 0.00 : (float)($item['mrp'] ?? ($selectedVariant['selling_price'] > 0 ? $selectedVariant['selling_price'] : ($selectedVariant['mrp'] ?? $unitPrice)));
                                         if (!$isComp && $mrp <= 0) $mrp = $unitPrice;
                                         $gstRate = $isComp ? 0.0 : ((float)($item['gst_percentage'] ?? 0) > 0 ? (float)$item['gst_percentage'] : (float)($selectedVariant['gst_rate'] ?? 5));
+                                        $hsnCode = isset($item['hsn_code'])
+                                            ? $item['hsn_code']
+                                            : ($item['resolved_hsn_code'] ?? $selectedVariant['hsn_code'] ?? '');
                                         $itemQty = (float)($item['quantity'] ?? 1);
                                         
                                         // Inclusive GST & line math:
@@ -456,6 +460,7 @@ $displayNotes = trim(preg_replace('/\[Split Payment:.*?\]\r?\n?/', '', $po['note
                                                                     data-name="<?= e($v['product_name']) ?>"
                                                                     data-sku="<?= e($v['sku']) ?>"
                                                                     data-qr="<?= e($rowQrTag) ?>"
+                                                                    data-hsn="<?= e($v['hsn_code'] ?? '') ?>"
                                                                     data-category="<?= e($vCat) ?>"
                                                                     data-cat-type="<?= e($vCatType) ?>"
                                                                     data-is-comp="<?= $vIsComp ? 1 : 0 ?>"
@@ -499,6 +504,9 @@ $displayNotes = trim(preg_replace('/\[Split Payment:.*?\]\r?\n?/', '', $po['note
                                                 <input type="hidden" name="mrp[]" class="mrp-input" value="<?= $mrp ?>">
                                             </div>
                                         </div>
+                                    </td>
+                                    <td class="text-center">
+                                        <input type="text" name="hsn_code[]" class="form-control form-control-sm hsn-input font-monospace" value="<?= e($hsnCode) ?>" maxlength="20" aria-label="HSN code">
                                     </td>
                                     <td class="text-end fw-semibold text-secondary font-monospace base-price-cell" style="font-size: 12.5px;">
                                         <span class="base-price-display">₹<?= number_format($lineTaxable, 2) ?></span>
@@ -1286,6 +1294,7 @@ function onVariantChange(selectEl, customTags = null) {
     const priceInput = row.querySelector('.price-input');
     const mrpInput = row.querySelector('.mrp-input');
     const gstInput = row.querySelector('.gst-input');
+    const hsnInput = row.querySelector('.hsn-input');
 
     if (opt && opt.value) {
         const name = opt.getAttribute('data-name') || opt.text.split('|')[0].trim();
@@ -1300,6 +1309,7 @@ function onVariantChange(selectEl, customTags = null) {
         const gstRate = isComp ? 0 : (opt.hasAttribute('data-gst') ? parseFloat(opt.getAttribute('data-gst')) : 5.0);
         const defaultQr = opt.getAttribute('data-qr') || sku;
 
+        if (hsnInput) hsnInput.value = opt.getAttribute('data-hsn') || '';
         if (mrpInput) mrpInput.value = mrp.toFixed(2);
         if (priceInput) {
             priceInput.value = price.toFixed(2);
@@ -1499,6 +1509,7 @@ function addItemRow(selectedVariantId = null, initialQr = null) {
             data-name="${escapeHtml(v.product_name)}"
             data-sku="${escapeHtml(v.sku)}" 
             data-qr="${escapeHtml(qrTag)}" 
+            data-hsn="${escapeHtml(v.hsn_code || v.resolved_hsn_code || '')}"
             data-category="${escapeHtml(catName)}" 
             data-cat-type="${escapeHtml(catType)}" 
             data-is-comp="${isComp ? 1 : 0}" 
@@ -1523,6 +1534,7 @@ function addItemRow(selectedVariantId = null, initialQr = null) {
     const initCat = matchedVariant ? (matchedVariant.category_name || 'General') : '-';
     const initSize = matchedVariant ? ((matchedVariant.size_name || 'Free') + ' / ' + (matchedVariant.color_name || 'Std')).trim() : '-';
     const initGst = isMatchedComp ? 0 : (matchedVariant ? (matchedVariant.gst_rate ?? 5) : 5);
+    const initHsn = matchedVariant ? (matchedVariant.hsn_code || matchedVariant.resolved_hsn_code || '') : '';
     const stockClass = initStock <= 0 ? 'badge bg-danger-subtle text-danger stock-badge' : 'badge bg-success-subtle text-success stock-badge';
     const scannedVal = initialQr ? initialQr.trim() : (matchedVariant ? (matchedVariant.qr_code || matchedVariant.sku || '') : '');
     const initSku = matchedVariant ? matchedVariant.sku : '';
@@ -1583,6 +1595,9 @@ function addItemRow(selectedVariantId = null, initialQr = null) {
                     <input type="hidden" name="mrp[]" class="mrp-input" value="${initMrp}">
                 </div>
             </div>
+        </td>
+        <td class="text-center">
+            <input type="text" name="hsn_code[]" class="form-control form-control-sm hsn-input font-monospace" value="${escapeHtml(initHsn)}" maxlength="20" aria-label="HSN code">
         </td>
         <td class="text-end fw-semibold text-secondary font-monospace base-price-cell" style="font-size: 12.5px;">
             <span class="base-price-display">₹${initTaxable.toFixed(2)}</span>

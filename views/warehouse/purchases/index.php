@@ -1,4 +1,4 @@
-<?php $canReceivePurchase = hasPermission('purchases', 'receive'); ?>
+<?php $canReceivePurchase = hasPermission('purchases', 'receive') || hasPermission('purchases', 'view') || hasPermission('purchases', 'create'); ?>
 <div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
     <div>
         <h2 class="mb-1"><i class="bi bi-cart-check me-2 text-primary"></i>Warehouse Direct Customer Purchases</h2>

@@ -5,6 +5,7 @@
  */
 
 require_once BASE_PATH . '/app/Services/StockService.php';
+require_once BASE_PATH . '/app/Services/ShopService.php';
 require_once BASE_PATH . '/app/Services/CloudinaryService.php';
 require_once BASE_PATH . '/app/Models/ShopDamage.php';
 require_once BASE_PATH . '/app/Models/ChannelDamage.php';
@@ -963,6 +964,7 @@ class SalesController {
         $variants = Database::fetchAll(
             "SELECT pv.id, pv.product_id, pv.sku, pv.qr_code, pv.mrp, pv.selling_price, pv.qr_type, pv.pack_quantity,
                     p.code as product_code, p.name as product_name,
+                    COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), '') as hsn_code,
                     p.is_complementary as p_is_comp,
                     pv.is_complementary as pv_is_comp,
                     wc.category_type as category_type,
@@ -1075,6 +1077,7 @@ class SalesController {
         }
 
         CSRF::verify();
+        ShopService::ensureSaleItemHsnColumn();
 
         $customerId      = (int)($_POST['customer_id'] ?? 0);
         $customerName    = trim($_POST['customer_name'] ?? '');
@@ -1215,7 +1218,8 @@ class SalesController {
 
             if ($variantId > 0 && $qty > 0) {
                 $vRow = Database::fetchOne(
-                    "SELECT pv.*, p.is_complementary as p_is_comp, wc.category_type as warehouse_category_type
+                    "SELECT pv.*, p.is_complementary as p_is_comp, wc.category_type as warehouse_category_type,
+                            COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), '') as resolved_hsn_code
                      FROM product_variants pv
                      JOIN products p ON pv.product_id = p.id
                      LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
@@ -1223,6 +1227,14 @@ class SalesController {
                     [$variantId]
                 );
                 $isComp = $vRow && ((isset($vRow['warehouse_category_type']) && $vRow['warehouse_category_type'] === 'COMPLEMENTARY') || !empty($vRow['is_complementary']) || !empty($vRow['p_is_comp']));
+                $hsnCode = array_key_exists('hsn_code', $itm)
+                    ? trim((string)$itm['hsn_code'])
+                    : trim((string)($vRow['resolved_hsn_code'] ?? ''));
+                if (strlen($hsnCode) > 20) {
+                    Session::flash('error', 'HSN code cannot exceed 20 characters.');
+                    Response::redirect(url('sales/whatsapp/create'));
+                    return;
+                }
 
                 if ($isComp) {
                     $price = 0.00;
@@ -1246,6 +1258,7 @@ class SalesController {
                     'unit_price'       => $price,
                     'mrp'              => $mrp,
                     'gst_percentage'   => $itemGstPercentage,
+                    'hsn_code'         => $hsnCode,
                     'taxable'          => $lineTaxable,
                     'gst_amount'       => $lineGst,
                     'cgst_amount'      => $lineCgst,
@@ -1301,8 +1314,8 @@ class SalesController {
                     (bool)$oi['is_series']
                 );
                 Database::execute(
-                    "INSERT INTO sale_items (sale_id, variant_id, quantity, unit_price, mrp, gst_percentage, cgst_amount, sgst_amount, total_amount, scanned_qr_codes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [$saleId, $oi['variant_id'], $oi['quantity'], $oi['unit_price'], $oi['mrp'], $oi['gst_percentage'], $oi['cgst_amount'], $oi['sgst_amount'], $oi['total'], $oi['scanned_qr_codes']]
+                    "INSERT INTO sale_items (sale_id, variant_id, quantity, unit_price, mrp, gst_percentage, hsn_code, cgst_amount, sgst_amount, total_amount, scanned_qr_codes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [$saleId, $oi['variant_id'], $oi['quantity'], $oi['unit_price'], $oi['mrp'], $oi['gst_percentage'], $oi['hsn_code'], $oi['cgst_amount'], $oi['sgst_amount'], $oi['total'], $oi['scanned_qr_codes']]
                 );
             }
             Database::commit();
@@ -1330,6 +1343,7 @@ class SalesController {
             Response::redirect(url('warehouse/whatsapp-orders'));
             return;
         }
+        ShopService::ensureSaleItemHsnColumn();
 
         $sale = Database::fetchOne(
             "SELECT s.*, c.name as customer_name, c.phone as customer_phone, c.address as customer_db_address
@@ -1347,6 +1361,8 @@ class SalesController {
 
         $items = Database::fetchAll(
             "SELECT si.*, pv.sku, pv.qr_code, p.name as product_name,
+                    CASE WHEN si.hsn_code IS NOT NULL THEN si.hsn_code
+                         ELSE COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), '') END as resolved_hsn_code,
                     COALESCE(c.name, 'General') as category_name,
                     COALESCE(sz.name, 'Standard') as size_name
              FROM sale_items si

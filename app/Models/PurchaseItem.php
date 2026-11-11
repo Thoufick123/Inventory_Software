@@ -5,14 +5,29 @@
  */
 
 class PurchaseItem {
+    private static bool $hsnColumnEnsured = false;
+
+    public static function ensureHsnCodeColumn(): void {
+        if (self::$hsnColumnEnsured) {
+            return;
+        }
+
+        if (!Database::fetchOne("SHOW COLUMNS FROM purchase_items LIKE 'hsn_code'")) {
+            Database::execute("ALTER TABLE purchase_items ADD COLUMN hsn_code VARCHAR(20) DEFAULT NULL AFTER gst_percentage");
+        }
+        self::$hsnColumnEnsured = true;
+    }
 
     /**
      * Get all items for a purchase order.
      */
     public static function getByPurchaseOrder(int $purchaseOrderId): array {
+        self::ensureHsnCodeColumn();
         return Database::fetchAll(
             "SELECT pi.*, 
                     COALESCE(pi.batch_lot_no, '') as scanned_qr_codes,
+                    CASE WHEN pi.hsn_code IS NOT NULL THEN pi.hsn_code
+                         ELSE COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), '') END as resolved_hsn_code,
                     pv.sku, pv.qr_code, pv.selling_price, pv.mrp,
                     p.id as product_id, p.name as product_name, p.code as product_code, p.qr_code_prefix,
                     p.category_code, p.subcategory_code, p.sub_subcategory_code,
@@ -42,27 +57,40 @@ class PurchaseItem {
      * Create purchase item.
      */
     public static function create(array $data): int {
+        $hasHsnCode = array_key_exists('hsn_code', $data);
+        if ($hasHsnCode) {
+            self::ensureHsnCodeColumn();
+        }
+        $hsnColumn = $hasHsnCode ? 'hsn_code, ' : '';
+        $hsnValue = $hasHsnCode ? '?, ' : '';
+        $params = [
+            (int)$data['purchase_order_id'],
+            (int)$data['variant_id'],
+            (int)$data['quantity'],
+            (float)$data['unit_price'],
+            (float)($data['discount_percentage'] ?? 0.00),
+            (float)($data['gst_percentage'] ?? 0.00),
+        ];
+        if ($hasHsnCode) {
+            $params[] = $data['hsn_code'] !== null ? trim((string)$data['hsn_code']) : null;
+        }
+        $params = array_merge($params, [
+            !empty($data['expiry_date']) ? $data['expiry_date'] : null,
+            !empty($data['mfg_date']) ? $data['mfg_date'] : null,
+            !empty($data['batch_lot_no']) ? $data['batch_lot_no'] : (!empty($data['scanned_qr_codes']) ? $data['scanned_qr_codes'] : null),
+            (float)($data['mrp'] ?? 0.00),
+            (float)($data['cgst_amount'] ?? 0.00),
+            (float)($data['sgst_amount'] ?? 0.00),
+            (float)($data['igst_amount'] ?? 0.00),
+            (float)$data['total_amount'],
+            !empty($data['notes']) ? $data['notes'] : (!empty($data['batch_lot_no']) ? ('QR: ' . $data['batch_lot_no']) : null)
+        ]);
+
         Database::execute(
-            "INSERT INTO purchase_items 
-             (purchase_order_id, variant_id, quantity, unit_price, discount_percentage, gst_percentage, expiry_date, mfg_date, batch_lot_no, mrp, cgst_amount, sgst_amount, igst_amount, total_amount, notes)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-                (int)$data['purchase_order_id'],
-                (int)$data['variant_id'],
-                (int)$data['quantity'],
-                (float)$data['unit_price'],
-                (float)($data['discount_percentage'] ?? 0.00),
-                (float)($data['gst_percentage'] ?? 0.00),
-                !empty($data['expiry_date']) ? $data['expiry_date'] : null,
-                !empty($data['mfg_date']) ? $data['mfg_date'] : null,
-                !empty($data['batch_lot_no']) ? $data['batch_lot_no'] : (!empty($data['scanned_qr_codes']) ? $data['scanned_qr_codes'] : null),
-                (float)($data['mrp'] ?? 0.00),
-                (float)($data['cgst_amount'] ?? 0.00),
-                (float)($data['sgst_amount'] ?? 0.00),
-                (float)($data['igst_amount'] ?? 0.00),
-                (float)$data['total_amount'],
-                !empty($data['notes']) ? $data['notes'] : (!empty($data['batch_lot_no']) ? ('QR: ' . $data['batch_lot_no']) : null)
-            ]
+            "INSERT INTO purchase_items
+             (purchase_order_id, variant_id, quantity, unit_price, discount_percentage, gst_percentage, {$hsnColumn}expiry_date, mfg_date, batch_lot_no, mrp, cgst_amount, sgst_amount, igst_amount, total_amount, notes)
+             VALUES (?, ?, ?, ?, ?, ?, {$hsnValue}?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            $params
         );
         return (int)Database::lastInsertId();
     }

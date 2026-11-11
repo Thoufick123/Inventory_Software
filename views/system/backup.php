@@ -1,5 +1,8 @@
 <?php
 // views/system/backup.php — Enterprise Backup Center & Test Data Management
+$canCreateBackup = hasPermission('backup', 'create');
+$canEditBackup = hasPermission('backup', 'edit') || hasPermission('backup', 'create');
+$canDeleteBackup = hasPermission('backup', 'delete');
 ?>
 <div class="container-fluid py-4">
     <!-- Header -->
@@ -9,20 +12,35 @@
             <p class="text-muted small mb-0">Loss-free full database backups, instant SQL/ZIP exports, snapshot restore points, and testing environment tools.</p>
         </div>
         <div class="d-flex flex-wrap gap-2">
-            <button type="button" class="btn btn-sm btn-info text-white rounded-pill px-3 shadow-sm" data-bs-toggle="modal" data-bs-target="#emailBackupModal" title="Send latest backup to abiprasath6@gmail.com">
-                <i class="bi bi-envelope-arrow-up me-1"></i> Send Backup to Email
-            </button>
-            <a href="<?= url('system/backup/export-zip') ?>" class="btn btn-sm btn-primary rounded-pill px-3 shadow-sm" title="Export complete whole database backup (all tables & data) and auto-send to abiprasath6@gmail.com">
-                <i class="bi bi-cloud-arrow-down-fill me-1"></i> Export Data Backup
-            </a>
-            <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#importBackupModal" title="Upload and import backup file">
-                <i class="bi bi-upload me-1"></i> Import Backup File
-            </button>
-            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#createBackupModal" title="Create and email a restore snapshot to abiprasath6@gmail.com">
-                <i class="bi bi-plus-lg me-1"></i> Create Snapshot
-            </button>
+            <?php if ($canCreateBackup): ?>
+                <button type="button" class="btn btn-sm btn-info text-white rounded-pill px-3 shadow-sm" data-bs-toggle="modal" data-bs-target="#emailBackupModal" title="Send latest backup to abiprasath6@gmail.com">
+                    <i class="bi bi-envelope-arrow-up me-1"></i> Send Backup to Email
+                </button>
+                <a href="<?= url('system/backup/export-zip') ?>" class="btn btn-sm btn-primary rounded-pill px-3 shadow-sm" title="Export complete whole database backup (all tables & data) and auto-send to abiprasath6@gmail.com">
+                    <i class="bi bi-cloud-arrow-down-fill me-1"></i> Export Data Backup
+                </a>
+            <?php endif; ?>
+            <?php if ($canCreateBackup || $canEditBackup): ?>
+                <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#importBackupModal" title="Upload and import backup file">
+                    <i class="bi bi-upload me-1"></i> Import Backup File
+                </button>
+            <?php endif; ?>
+            <?php if ($canCreateBackup): ?>
+                <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#createBackupModal" title="Create and email a restore snapshot to abiprasath6@gmail.com">
+                    <i class="bi bi-plus-lg me-1"></i> Create Snapshot
+                </button>
+            <?php endif; ?>
         </div>
     </div>
+
+    <?php if (!$canCreateBackup && !$canEditBackup && !$canDeleteBackup): ?>
+        <div class="alert alert-secondary border-0 shadow-sm py-2 px-3 mb-4 d-flex align-items-center gap-2">
+            <i class="bi bi-shield-lock-fill text-primary fs-5"></i>
+            <div class="small">
+                <strong>Read-Only Mode:</strong> Your assigned staff account has view-only access. Creating, importing, restoring, or deleting backup snapshots is restricted.
+            </div>
+        </div>
+    <?php endif; ?>
 
     <!-- Safety First & Testing Zone Cards Row -->
     <div class="row g-3 mb-4">
@@ -52,9 +70,13 @@
                             <p class="mb-0 text-muted small">Purge test production, rolls, purchases, POS sales & stock balances cleanly.</p>
                         </div>
                     </div>
-                    <button type="button" class="btn btn-danger btn-sm rounded-pill px-3 text-nowrap shadow-sm" data-bs-toggle="modal" data-bs-target="#wipeTestDataModal">
-                        <i class="bi bi-trash3-fill me-1"></i> Delete All Test Data
-                    </button>
+                    <?php if ($canDeleteBackup): ?>
+                        <button type="button" class="btn btn-danger btn-sm rounded-pill px-3 text-nowrap shadow-sm" data-bs-toggle="modal" data-bs-target="#wipeTestDataModal">
+                            <i class="bi bi-trash3-fill me-1"></i> Delete All Test Data
+                        </button>
+                    <?php else: ?>
+                        <span class="badge bg-secondary-subtle text-secondary py-2 px-3 rounded-pill"><i class="bi bi-lock me-1"></i> Admin Protected</span>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -133,16 +155,20 @@
                                         <a href="<?= url('system/backup/download/' . urlencode($bk['filename'])) ?>" class="btn btn-light border rounded-pill px-3 me-1" title="Download File">
                                             <i class="bi bi-download me-1 text-primary"></i> Download
                                         </a>
-                                        <button type="button" class="btn btn-light border rounded-pill px-3 me-1 text-warning-emphasis btn-trigger-restore" 
-                                                data-filename="<?= e($bk['filename']) ?>" title="Restore Database">
-                                            <i class="bi bi-arrow-repeat me-1 text-warning"></i> Restore
-                                        </button>
-                                        <form method="POST" action="<?= url('system/backup/delete/' . urlencode($bk['filename'])) ?>" class="d-inline" onsubmit="return confirm('Delete backup snapshot <?= e($bk['filename']) ?>?');">
-                                            <?= CSRF::field() ?>
-                                            <button type="submit" class="btn btn-light border rounded-circle" title="Delete Snapshot">
-                                                <i class="bi bi-trash text-danger"></i>
+                                        <?php if ($canEditBackup): ?>
+                                            <button type="button" class="btn btn-light border rounded-pill px-3 me-1 text-warning-emphasis btn-trigger-restore" 
+                                                    data-filename="<?= e($bk['filename']) ?>" title="Restore Database">
+                                                <i class="bi bi-arrow-repeat me-1 text-warning"></i> Restore
                                             </button>
-                                        </form>
+                                        <?php endif; ?>
+                                        <?php if ($canDeleteBackup): ?>
+                                            <form method="POST" action="<?= url('system/backup/delete/' . urlencode($bk['filename'])) ?>" class="d-inline" onsubmit="return confirm('Delete backup snapshot <?= e($bk['filename']) ?>?');">
+                                                <?= CSRF::field() ?>
+                                                <button type="submit" class="btn btn-light border rounded-circle" title="Delete Snapshot">
+                                                    <i class="bi bi-trash text-danger"></i>
+                                                </button>
+                                            </form>
+                                        <?php endif; ?>
                                     </div>
                                 </td>
                             </tr>
