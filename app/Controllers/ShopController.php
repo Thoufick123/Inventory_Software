@@ -4695,13 +4695,14 @@ class ShopController {
             $mrp = (float)($foundVariant['mrp'] ?? $foundVariant['selling_price'] ?? 0);
 
             $responseTagCode = $matchedTagCode;
-            if (($isSeries || $isComplementary)
-                && !in_array(strtoupper(trim($responseTagCode)), array_map('strtoupper', array_filter([
+            $aggregateProductCodes = array_map('strtoupper', array_filter([
                     trim((string)($foundVariant['sku'] ?? '')),
                     trim((string)($foundVariant['qr_code'] ?? '')),
                     trim((string)($foundVariant['product_code'] ?? '')),
-                ])), true)) {
-                $responseTagCode = (string)($foundVariant['sku'] ?? '');
+                ]));
+            if (($isSeries || $isComplementary)
+                && in_array(strtoupper(trim($responseTagCode)), $aggregateProductCodes, true)) {
+                $responseTagCode = trim((string)($foundVariant['qr_code'] ?? '')) ?: $responseTagCode;
             }
 
             echo json_encode([
