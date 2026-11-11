@@ -305,15 +305,9 @@ class User {
              WHERE up.user_id = ?",
             [$userId]
         );
-        if (!empty($customRows)) {
-            return array_column($customRows, 'permission_key');
-        }
-        if (self::hasPermissionOverride($userId)) {
-            return [];
-        }
 
-        // Fallback to role permissions
-        $rows = Database::fetchAll(
+        // Fetch assigned role permissions
+        $roleRows = Database::fetchAll(
             "SELECT CONCAT(p.module, '.', p.action) as permission_key 
              FROM users u 
              JOIN role_permissions rp ON u.role_id = rp.role_id 
@@ -321,7 +315,21 @@ class User {
              WHERE u.id = ?",
             [$userId]
         );
-        return array_column($rows, 'permission_key');
+
+        $customKeys = !empty($customRows) ? array_column($customRows, 'permission_key') : [];
+        $roleKeys   = !empty($roleRows)   ? array_column($roleRows, 'permission_key')   : [];
+
+        // Merge both role-inherited permissions and custom individual overrides
+        $mergedKeys = array_values(array_unique(array_merge($roleKeys, $customKeys)));
+        if (!empty($mergedKeys)) {
+            return $mergedKeys;
+        }
+
+        if (self::hasPermissionOverride($userId)) {
+            return [];
+        }
+
+        return [];
     }
 
     /**
@@ -333,13 +341,6 @@ class User {
             "SELECT permission_id FROM user_permissions WHERE user_id = ?",
             [$userId]
         );
-        if (!empty($customRows)) {
-            return array_map('intval', array_column($customRows, 'permission_id'));
-        }
-        if (self::hasPermissionOverride($userId)) {
-            return [];
-        }
-
         $roleRows = Database::fetchAll(
             "SELECT rp.permission_id 
              FROM users u 
@@ -347,7 +348,20 @@ class User {
              WHERE u.id = ?",
             [$userId]
         );
-        return array_map('intval', array_column($roleRows, 'permission_id'));
+
+        $customIds = array_map('intval', array_column($customRows, 'permission_id'));
+        $roleIds   = array_map('intval', array_column($roleRows, 'permission_id'));
+        $mergedIds = array_values(array_unique(array_merge($roleIds, $customIds)));
+
+        if (!empty($mergedIds)) {
+            return $mergedIds;
+        }
+
+        if (self::hasPermissionOverride($userId)) {
+            return [];
+        }
+
+        return [];
     }
 
     private static function hasPermissionOverride(int $userId): bool {

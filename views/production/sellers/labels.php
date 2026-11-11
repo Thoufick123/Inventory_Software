@@ -291,6 +291,11 @@
 <body>
 
 <div class="labels-container">
+    <?php
+    $canManageLabels = hasPermission('sellers', 'create') || hasPermission('sellers', 'edit') || hasPermission('production_purchases', 'create') || hasPermission('production_purchases', 'edit');
+    $canCreateLabels = hasPermission('sellers', 'create') || hasPermission('production_purchases', 'create');
+    $canDeleteLabels = hasPermission('sellers', 'delete') || hasPermission('production_purchases', 'delete');
+    ?>
     <!-- Top Action Bar (hidden on print) -->
     <div class="no-print bg-white p-3 rounded-3 shadow-sm border mb-4">
         <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-2">
@@ -308,22 +313,26 @@
             <!-- Main Action Buttons -->
             <div class="d-flex align-items-center gap-2 flex-wrap">
                 <!-- Generate Extra Continuation Label -->
+                <?php if ($canCreateLabels): ?>
                 <button type="button" class="btn btn-success shadow-sm" onclick="openAddExtraLabelModal()" title="Generate next label in sequence">
                     <i class="bi bi-plus-circle me-1"></i> + Generate Extra Label
                 </button>
+                <?php endif; ?>
 
                 <!-- Delete Selected Button (Dynamically enabled) -->
+                <?php if ($canDeleteLabels): ?>
                 <button type="button" class="btn btn-outline-danger fw-bold shadow-sm" id="btnDeleteSelected" onclick="deleteSelectedStickers()" style="display: none;" title="Delete selected labels">
                     <i class="bi bi-trash me-1"></i> Delete Selected (<span id="deleteSelectedCountSpan">0</span>)
                 </button>
+                <?php endif; ?>
 
                 <!-- Print Selected Button (Dynamically enabled) -->
-                <button type="button" class="btn btn-warning fw-bold shadow-sm" id="btnPrintSelected" onclick="printSelectedStickers()" style="display: none;">
+                <button type="button" class="btn btn-warning fw-bold shadow-sm" id="btnPrintSelected" <?= $canManageLabels ? 'onclick="printSelectedStickers()"' : 'disabled style="opacity: 0.5; cursor: not-allowed;"' ?> style="display: none;">
                     <i class="bi bi-printer me-1"></i> Print Selected (<span id="selectedCountSpan">0</span>)
                 </button>
 
                 <!-- Print All Button -->
-                <button type="button" class="btn btn-primary shadow-sm" id="btnPrintAll" onclick="printAllStickers()">
+                <button type="button" class="btn btn-primary shadow-sm" id="btnPrintAll" <?= $canManageLabels ? 'onclick="printAllStickers()"' : 'disabled style="opacity: 0.5; cursor: not-allowed;" title="Printing disabled in view-only access"' ?>>
                     <i class="bi bi-printer me-1"></i> Print All Stickers (<span id="allCountSpan"><?= count($stickers) ?></span>)
                 </button>
 
@@ -337,14 +346,14 @@
         <!-- Filter & Selection Bar -->
         <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 pt-2 border-top">
             <div class="d-flex align-items-center gap-2 flex-wrap">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnToggleSelectAll" onclick="toggleSelectAll()">
-                    <i class="bi bi-check2-square me-1"></i> Select All
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnToggleSelectAll" <?= $canManageLabels ? 'onclick="toggleSelectAll()"' : 'disabled style="opacity: 0.5; cursor: not-allowed;" title="Selection toggle disabled in view-only access"' ?>>
+                    <i class="bi bi-check2-square me-1"></i> Select All <?= !$canManageLabels ? '(View Only)' : '' ?>
                 </button>
                 <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearSelection" onclick="clearSelection()" style="display: none;">
                     <i class="bi bi-x-square me-1"></i> Clear Selection
                 </button>
                 <span class="text-muted small ms-1" id="selectionHint">
-                    <i class="bi bi-info-circle me-1"></i>Tip: Use <strong>Print This Label</strong> to reprint, or <i class="bi bi-trash text-danger"></i> / <strong>Delete Selected</strong> to remove labels.
+                    <?= $canManageLabels ? '<i class="bi bi-info-circle me-1"></i>Tip: Use <strong>Print This Label</strong> to reprint, or <i class="bi bi-trash text-danger"></i> / <strong>Delete Selected</strong> to remove labels.' : '<i class="bi bi-eye me-1 text-primary"></i>You are viewing labels in read-only mode.' ?>
                 </span>
             </div>
 
@@ -371,17 +380,19 @@
             <div class="fabric-sticker-card<?= !empty($stk['in_damage_module']) ? ' has-damage-report' : '' ?>" id="card_<?= $idx ?>" data-idx="<?= $idx ?>" data-code="<?= e($stk['code']) ?>" data-seq="<?= (int)$stk['seq'] ?>" data-piece="<?= $stk['piece_index'] ?>" data-roll="<?= e($stk['roll_number']) ?>" data-roll-id="<?= (int)($stk['roll_id'] ?? 0) ?>">
                 <!-- Interactive Toolbar (hidden on physical print) -->
                 <div class="sticker-card-toolbar no-print">
-                    <label class="form-check-label d-flex align-items-center gap-1 cursor-pointer mb-0">
-                        <input type="checkbox" class="form-check-input sticker-check" data-idx="<?= $idx ?>" onchange="updateSelectedCount()">
+                    <label class="form-check-label d-flex align-items-center gap-1 <?= $canManageLabels ? 'cursor-pointer' : '' ?> mb-0">
+                        <input type="checkbox" class="form-check-input sticker-check" data-idx="<?= $idx ?>" <?= $canManageLabels ? 'onchange="updateSelectedCount()"' : 'disabled style="cursor: not-allowed; opacity: 0.5;" title="Disabled in view access"' ?>>
                         <span class="fw-semibold text-secondary">#<?= $stk['piece_index'] ?></span>
                     </label>
                     <div class="d-flex align-items-center gap-1">
-                        <button type="button" class="btn btn-dark btn-single-print" onclick="printSingleSticker(<?= $idx ?>)" title="Print ONLY this label (for reprint / damaged sticker)">
+                        <button type="button" class="btn btn-dark btn-single-print" <?= $canManageLabels ? 'onclick="printSingleSticker(' . $idx . ')"' : 'disabled style="opacity: 0.5; cursor: not-allowed;" title="Printing disabled in view-only access"' ?> title="Print ONLY this label (for reprint / damaged sticker)">
                             <i class="bi bi-printer-fill me-1"></i> Print This Label
                         </button>
+                        <?php if ($canDeleteLabels): ?>
                         <button type="button" class="btn btn-outline-danger btn-single-delete" onclick="deleteSingleSticker(<?= $idx ?>)" title="Delete this label">
                             <i class="bi bi-trash"></i>
                         </button>
+                        <?php endif; ?>
                     </div>
                 </div>
 
@@ -481,6 +492,9 @@
 <script>
 let stickersData = <?= json_encode($stickers) ?>;
 const csrfToken = '<?= CSRF::token() ?>';
+const canManageLabels = <?= json_encode((bool)$canManageLabels) ?>;
+const canCreateLabels = <?= json_encode((bool)$canCreateLabels) ?>;
+const canDeleteLabels = <?= json_encode((bool)$canDeleteLabels) ?>;
 const addExtraUrlBase = '<?= url("production/sellers/add-extra-label/") ?>';
 const deleteExtraUrlBase = '<?= url("production/sellers/delete-extra-label/") ?>';
 
@@ -534,6 +548,10 @@ function renderQRCodeForIndex(idx, text) {
 // 1. PRINT SINGLE / DAMAGED STICKER
 // -------------------------------------------------------------
 function printSingleSticker(idx) {
+    if (!canManageLabels) {
+        alert('Action restricted: You only have view permission.');
+        return;
+    }
     const card = document.getElementById('card_' + idx);
     if (!card) return;
 
@@ -586,6 +604,7 @@ function updateSelectedCount() {
 }
 
 function toggleSelectAll() {
+    if (!canManageLabels) return;
     const checkboxes = Array.from(document.querySelectorAll('.sticker-check'));
     const anyUnchecked = checkboxes.some(c => !c.checked);
     checkboxes.forEach(c => c.checked = anyUnchecked);
@@ -593,11 +612,16 @@ function toggleSelectAll() {
 }
 
 function clearSelection() {
+    if (!canManageLabels) return;
     document.querySelectorAll('.sticker-check').forEach(c => c.checked = false);
     updateSelectedCount();
 }
 
 function printSelectedStickers() {
+    if (!canManageLabels) {
+        alert('Action restricted: You only have view permission.');
+        return;
+    }
     const checked = Array.from(document.querySelectorAll('.sticker-check:checked'));
     if (checked.length === 0) {
         alert('Please check at least one label sticker to print.');
@@ -621,6 +645,10 @@ function printSelectedStickers() {
 }
 
 function printAllStickers() {
+    if (!canManageLabels) {
+        alert('Action restricted: You only have view permission.');
+        return;
+    }
     document.body.classList.remove('single-print-mode');
     document.querySelectorAll('.fabric-sticker-card').forEach(c => c.classList.remove('print-hidden', 'print-target'));
     window.print();

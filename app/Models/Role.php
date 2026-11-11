@@ -218,9 +218,94 @@ class Role {
     }
 
     /**
+     * Ensure all required module & submodule permissions exist in the database.
+     * Automatically self-heals schemas across all environments (Local, Staging, Live/Hostinger).
+     */
+    public static function ensureRequiredPermissions(): void {
+        static $ensured = false;
+        if ($ensured) return;
+        $ensured = true;
+
+        $required = [
+            ['production_purchases', 'view', 'View Production Purchases & Supplier Bills', 'production_purchases.view', 'sellers'],
+            ['production_purchases', 'create', 'Create Production Purchase Record', 'production_purchases.create', 'sellers'],
+            ['production_purchases', 'edit', 'Edit Production Purchase & Invoices', 'production_purchases.edit', 'sellers'],
+            ['production_purchases', 'delete', 'Delete Production Purchase Record', 'production_purchases.delete', 'sellers'],
+
+            ['production_billing', 'view', 'View Production Sales Invoices & Bills', 'production_billing.view', 'production'],
+            ['production_billing', 'create', 'Create Production Billing Invoices', 'production_billing.create', 'production'],
+            ['production_billing', 'edit', 'Edit Production Invoices & Pricing', 'production_billing.edit', 'production'],
+            ['production_billing', 'delete', 'Delete Production Invoices & Cancel Bills', 'production_billing.delete', 'production'],
+
+            ['production_returns', 'view', 'View Production Customer Returns & Exchanges', 'production_returns.view', 'production'],
+            ['production_returns', 'create', 'Process Return Items & Credit Notes', 'production_returns.create', 'production'],
+            ['production_returns', 'edit', 'Edit Return Status & Restock Orders', 'production_returns.edit', 'production'],
+            ['production_returns', 'delete', 'Cancel & Delete Production Returns', 'production_returns.delete', 'production'],
+
+            ['production_stock_requests', 'view', 'View Warehouse Requisitions & Indents', 'production_stock_requests.view', 'production'],
+            ['production_stock_requests', 'create', 'Create Stock Request Indents', 'production_stock_requests.create', 'production'],
+            ['production_stock_requests', 'edit', 'Edit & Approve Requisition Quantities', 'production_stock_requests.edit', 'production'],
+            ['production_stock_requests', 'delete', 'Cancel & Reject Requisitions', 'production_stock_requests.delete', 'production'],
+
+            ['asset_register', 'view', 'View Asset Register & Machinery Details', 'asset_register.view', 'assets'],
+            ['asset_register', 'create', 'Add New Machinery & Hardware Assets', 'asset_register.create', 'assets'],
+            ['asset_register', 'edit', 'Edit Asset Specifications & Valuation', 'asset_register.edit', 'assets'],
+            ['asset_register', 'delete', 'Archive & Delete Equipment Assets', 'asset_register.delete', 'assets'],
+
+            ['asset_dashboard', 'view', 'View Asset Overview KPIs & Valuation', 'asset_dashboard.view', 'assets'],
+            ['asset_dashboard', 'create', 'Create Asset Widgets & Custom KPIs', 'asset_dashboard.create', 'assets'],
+            ['asset_dashboard', 'edit', 'Edit Asset Valuation Metrics', 'asset_dashboard.edit', 'assets'],
+            ['asset_dashboard', 'delete', 'Delete Custom Valuation Metrics', 'asset_dashboard.delete', 'assets'],
+
+            ['whatsapp_returned_products', 'view', 'View WhatsApp Returned Parcels & Products', 'whatsapp_returned_products.view', 'whatsapp_returns'],
+            ['whatsapp_returned_products', 'create', 'Inward & Log WhatsApp Returns', 'whatsapp_returned_products.create', 'whatsapp_returns'],
+            ['whatsapp_returned_products', 'edit', 'Inspect & Re-shelve WhatsApp Returns', 'whatsapp_returned_products.edit', 'whatsapp_returns'],
+            ['whatsapp_returned_products', 'delete', 'Delete WhatsApp Return Audit Logs', 'whatsapp_returned_products.delete', 'whatsapp_returns'],
+
+            ['dashboard', 'view', 'View Executive Dashboard KPIs & Analytics', 'dashboard.view', null],
+            ['dashboard', 'create', 'Create infrastructure facilities (Production Units, Warehouses, Shops, Channels)', 'dashboard.create', null],
+            ['dashboard', 'edit', 'Edit infrastructure facilities and dashboard configurations', 'dashboard.edit', null],
+            ['dashboard', 'delete', 'Delete infrastructure facilities and records', 'dashboard.delete', null],
+        ];
+
+        try {
+            foreach ($required as $r) {
+                [$mod, $act, $desc, $slug, $syncFromMod] = $r;
+                $row = Database::fetchOne("SELECT id FROM permissions WHERE module = ? AND action = ?", [$mod, $act]);
+                if (!$row) {
+                    Database::execute(
+                        "INSERT INTO permissions (module, action, description, slug, created_at) VALUES (?, ?, ?, ?, NOW())",
+                        [$mod, $act, $desc, $slug]
+                    );
+                    $newId = (int)Database::lastInsertId();
+                    if ($syncFromMod && $newId > 0) {
+                        $sourcePerm = Database::fetchOne("SELECT id FROM permissions WHERE module = ? AND action = ?", [$syncFromMod, $act]);
+                        if ($sourcePerm) {
+                            $sourceId = (int)$sourcePerm['id'];
+                            Database::execute(
+                                "INSERT IGNORE INTO role_permissions (role_id, permission_id) 
+                                 SELECT role_id, ? FROM role_permissions WHERE permission_id = ?",
+                                [$newId, $sourceId]
+                            );
+                            Database::execute(
+                                "INSERT IGNORE INTO user_permissions (user_id, permission_id) 
+                                 SELECT user_id, ? FROM user_permissions WHERE permission_id = ?",
+                                [$newId, $sourceId]
+                            );
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // Silently ignore if database is temporarily unavailable during boot
+        }
+    }
+
+    /**
      * Get all permissions.
      */
     public static function getAllPermissions(): array {
+        self::ensureRequiredPermissions();
         return Database::fetchAll("SELECT * FROM permissions ORDER BY module ASC, action ASC");
     }
 

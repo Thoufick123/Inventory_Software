@@ -294,14 +294,18 @@
                                                     onclick="viewFacilityDetails('unit', <?= htmlspecialchars(json_encode($unit), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-eye"></i>
                                             </button>
+                                            <?php if ($canEditUnit): ?>
                                             <button type="button" class="btn btn-outline-primary" title="Edit Unit" 
                                                     onclick="editUnit(<?= htmlspecialchars(json_encode($unit), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
+                                            <?php endif; ?>
+                                            <?php if ($canDeleteUnit): ?>
                                             <button type="button" class="btn btn-outline-danger" title="Delete Production Unit"
                                                     onclick="confirmDeleteFacility('unit', <?= (int)$unit['id'] ?>, '<?= addslashes(e($unit['name'])) ?>', '<?= url('admin/production-units/delete/' . $unit['id']) ?>')">
                                                 <i class="bi bi-trash"></i>
                                             </button>
+                                            <?php endif; ?>
                                         </div>
                                     </td>
                                 </tr>
@@ -310,7 +314,7 @@
                                 <tr>
                                     <td colspan="3" class="text-center py-4 text-muted">
                                         <i class="bi bi-gear-wide-connected fs-2 d-block mb-2 text-secondary"></i>
-                                        No production units registered yet. Click "Add Production Unit" to create one.
+                                        No production units registered yet.<?= $canCreateUnit ? ' Click "Add Production Unit" to create one.' : '' ?>
                                     </td>
                                 </tr>
                             <?php endif; ?>
@@ -327,9 +331,11 @@
                     <div class="text-secondary small">
                         <strong><?= count($warehouses ?? []) ?></strong> storage &amp; distribution warehouses holding central stock.
                     </div>
+                    <?php if ($canCreateWarehouse): ?>
                     <button class="btn btn-sm btn-warehouse shadow-sm" data-bs-toggle="modal" data-bs-target="#modalWarehouse" onclick="resetWarehouseModal()">
                         <i class="bi bi-plus-lg me-1"></i> Add Warehouse
                     </button>
+                    <?php endif; ?>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
@@ -363,14 +369,18 @@
                                                     onclick="viewFacilityDetails('warehouse', <?= htmlspecialchars(json_encode($wh), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-eye"></i>
                                             </button>
+                                            <?php if ($canEditWarehouse): ?>
                                             <button type="button" class="btn btn-outline-primary" title="Edit Warehouse" 
                                                     onclick="editWarehouse(<?= htmlspecialchars(json_encode($wh), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
+                                            <?php endif; ?>
+                                            <?php if ($canDeleteWarehouse): ?>
                                             <button type="button" class="btn btn-outline-danger" title="Delete Warehouse"
                                                     onclick="confirmDeleteFacility('warehouse', <?= (int)$wh['id'] ?>, '<?= addslashes(e($wh['name'])) ?>', '<?= url('admin/warehouses/delete/' . $wh['id']) ?>')">
                                                 <i class="bi bi-trash"></i>
                                             </button>
+                                            <?php endif; ?>
                                         </div>
                                     </td>
                                 </tr>
@@ -379,7 +389,7 @@
                                 <tr>
                                     <td colspan="3" class="text-center py-4 text-muted">
                                         <i class="bi bi-buildings fs-2 d-block mb-2 text-secondary"></i>
-                                        No warehouses registered. Click "Add Warehouse" to create one.
+                                        No warehouses registered.<?= $canCreateWarehouse ? ' Click "Add Warehouse" to create one.' : '' ?>
                                     </td>
                                 </tr>
                             <?php endif; ?>
@@ -396,9 +406,11 @@
                     <div class="text-secondary small">
                         <strong><?= count($shops ?? []) ?></strong> retail store counters connected for real-time POS billing.
                     </div>
+                    <?php if ($canCreateShop): ?>
                     <button class="btn btn-sm btn-info shadow-sm text-white" data-bs-toggle="modal" data-bs-target="#modalShop" onclick="resetShopModal()">
                         <i class="bi bi-plus-lg me-1"></i> Add Retail Shop
                     </button>
+                    <?php endif; ?>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
@@ -432,14 +444,18 @@
                                                     onclick="viewFacilityDetails('shop', <?= htmlspecialchars(json_encode($shop), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-eye"></i>
                                             </button>
+                                            <?php if ($canEditShop): ?>
                                             <button type="button" class="btn btn-outline-primary" title="Edit Shop" 
                                                     onclick="editShop(<?= htmlspecialchars(json_encode($shop), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
+                                            <?php endif; ?>
+                                            <?php if ($canDeleteShop): ?>
                                             <button type="button" class="btn btn-outline-danger" title="Delete Shop"
                                                     onclick="confirmDeleteFacility('shop', <?= (int)$shop['id'] ?>, '<?= addslashes(e($shop['name'])) ?>', '<?= url('admin/shops/delete/' . $shop['id']) ?>')">
                                                 <i class="bi bi-trash"></i>
                                             </button>
+                                            <?php endif; ?>
                                         </div>
                                     </td>
                                 </tr>
@@ -448,7 +464,7 @@
                                 <tr>
                                     <td colspan="3" class="text-center py-4 text-muted">
                                         <i class="bi bi-shop fs-2 d-block mb-2 text-secondary"></i>
-                                        No retail shops registered yet. Click "Add Retail Shop" to create one.
+                                        No retail shops registered yet.<?= $canCreateShop ? ' Click "Add Retail Shop" to create one.' : '' ?>
                                     </td>
                                 </tr>
                             <?php endif; ?>
@@ -465,9 +481,11 @@
                     <div class="text-secondary small">
                         <strong><?= count($whatsappChannels ?? []) ?></strong> WhatsApp sales channels configured.
                     </div>
+                    <?php if ($canCreateChannel): ?>
                     <button class="btn btn-sm btn-success shadow-sm" data-bs-toggle="modal" data-bs-target="#modalChannel" onclick="resetChannelModal('WHATSAPP')">
                         <i class="bi bi-plus-lg me-1"></i> Add WhatsApp Channel
                     </button>
+                    <?php endif; ?>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
@@ -498,19 +516,23 @@
                                                     onclick="viewFacilityDetails('whatsapp', <?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-eye"></i>
                                             </button>
+                                            <?php if ($canEditChannel): ?>
                                             <button type="button" class="btn btn-outline-primary" title="Edit Channel" onclick="editChannel(<?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
+                                            <?php endif; ?>
+                                            <?php if ($canDeleteChannel): ?>
                                             <button type="button" class="btn btn-outline-danger" title="Delete Channel"
                                                     onclick="confirmDeleteFacility('whatsapp', <?= (int)$chan['id'] ?>, '<?= addslashes(e($chan['name'])) ?>', '<?= url('admin/channels/delete/' . $chan['id']) ?>')">
                                                 <i class="bi bi-trash"></i>
                                             </button>
+                                            <?php endif; ?>
                                         </div>
                                     </td>
                                 </tr>
                                 <?php endforeach; ?>
                             <?php else: ?>
-                                <tr><td colspan="3" class="text-center py-4 text-muted">No WhatsApp channels added yet.</td></tr>
+                                <tr><td colspan="3" class="text-center py-4 text-muted">No WhatsApp channels added yet.<?= $canCreateChannel ? ' Click "Add WhatsApp Channel" to create one.' : '' ?></td></tr>
                             <?php endif; ?>
                         </tbody>
                     </table>
@@ -525,9 +547,11 @@
                     <div class="text-secondary small">
                         <strong><?= count($websiteChannels ?? []) ?></strong> Website sales channels configured.
                     </div>
+                    <?php if ($canCreateChannel): ?>
                     <button class="btn btn-sm btn-website shadow-sm" data-bs-toggle="modal" data-bs-target="#modalChannel" onclick="resetChannelModal('WEBSITE')">
                         <i class="bi bi-plus-lg me-1"></i> Add Website Channel
                     </button>
+                    <?php endif; ?>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
@@ -558,19 +582,23 @@
                                                     onclick="viewFacilityDetails('website', <?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-eye"></i>
                                             </button>
+                                            <?php if ($canEditChannel): ?>
                                             <button type="button" class="btn btn-outline-primary" title="Edit Channel" onclick="editChannel(<?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
+                                            <?php endif; ?>
+                                            <?php if ($canDeleteChannel): ?>
                                             <button type="button" class="btn btn-outline-danger" title="Delete Channel"
                                                     onclick="confirmDeleteFacility('website', <?= (int)$chan['id'] ?>, '<?= addslashes(e($chan['name'])) ?>', '<?= url('admin/channels/delete/' . $chan['id']) ?>')">
                                                 <i class="bi bi-trash"></i>
                                             </button>
+                                            <?php endif; ?>
                                         </div>
                                     </td>
                                 </tr>
                                 <?php endforeach; ?>
                             <?php else: ?>
-                                <tr><td colspan="3" class="text-center py-4 text-muted">No Website channels added yet.</td></tr>
+                                <tr><td colspan="3" class="text-center py-4 text-muted">No Website channels added yet.<?= $canCreateChannel ? ' Click "Add Website Channel" to create one.' : '' ?></td></tr>
                             <?php endif; ?>
                         </tbody>
                     </table>
