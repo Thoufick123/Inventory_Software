@@ -1370,6 +1370,7 @@ class ProductionController {
             return;
         }
 
+        $rollPhotoFiles = [];
         foreach ($items as &$item) {
             if ($item['type'] !== 'FABRIC_ROLL') {
                 continue;
@@ -1386,16 +1387,12 @@ class ProductionController {
                 Response::back();
                 return;
             }
-            $item['photo_url'] = CloudinaryService::upload($photo, 'grm_inventory/sellers/rolls', 'image');
-            if (!$item['photo_url']) {
-                Session::flash('error', 'A roll photo could not be uploaded. Please try again.');
-                Response::back();
-                return;
-            }
+            $rollPhotoFiles[(string)$item['form_index']] = $photo;
         }
         unset($item);
 
         $documentUrl = null;
+        $documentFile = null;
         if (!empty($_FILES['document']['name'])) {
             $file = $_FILES['document'];
             $extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
@@ -1404,12 +1401,7 @@ class ProductionController {
                 Response::back();
                 return;
             }
-            $documentUrl = CloudinaryService::upload($file, 'grm_inventory/production/purchases', 'auto');
-            if (!$documentUrl) {
-                Session::flash('error', 'Invoice upload failed. Please try again.');
-                Response::back();
-                return;
-            }
+            $documentFile = $file;
         }
 
         $totalAmount = array_sum(array_column($items, 'line_total'));
@@ -1437,6 +1429,7 @@ class ProductionController {
             $currentSeqData = null;
             $currentEndSeq = 0;
             $prefix = '';
+            $rollPhotoTargets = [];
 
             self::ensureDatabaseSchema();
             $hasRollHsn = false;
@@ -1487,6 +1480,9 @@ class ProductionController {
                         );
                     }
                     $sellerRollId = (int)Database::lastInsertId();
+                    if (isset($rollPhotoFiles[(string)$item['form_index']])) {
+                        $rollPhotoTargets[(string)$item['form_index']] = $sellerRollId;
+                    }
                 }
 
                 if ($hasItemHsn) {
@@ -1531,7 +1527,51 @@ class ProductionController {
                 'item_count' => count($items),
             ]);
             $this->refreshSupplierRollTotals($sellerId);
+            $failedAttachmentCount = 0;
+            if ($rollPhotoFiles) {
+                try {
+                    $photoUrls = CloudinaryService::uploadMany($rollPhotoFiles, 'grm_inventory/sellers/rolls', 'image');
+                    foreach ($rollPhotoTargets as $formIndex => $sellerRollId) {
+                        $photoUrl = $photoUrls[$formIndex] ?? null;
+                        if (!$photoUrl) {
+                            $failedAttachmentCount++;
+                            continue;
+                        }
+                        try {
+                            Database::execute(
+                                "UPDATE seller_rolls SET photo_url = ? WHERE id = ? AND seller_id = ?",
+                                [$photoUrl, $sellerRollId, $sellerId]
+                            );
+                        } catch (\Throwable $e) {
+                            error_log('Production purchase roll photo URL could not be saved: ' . $e->getMessage());
+                            $failedAttachmentCount++;
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    error_log('Production purchase roll photo upload failed after purchase was saved: ' . $e->getMessage());
+                    $failedAttachmentCount = count($rollPhotoFiles);
+                }
+            }
+            if ($documentFile) {
+                try {
+                    $documentUrl = CloudinaryService::upload($documentFile, 'grm_inventory/production/purchases', 'auto');
+                    if (!$documentUrl) {
+                        $failedAttachmentCount++;
+                    } else {
+                        Database::execute(
+                            "UPDATE production_purchases SET document_url = ? WHERE id = ?",
+                            [$documentUrl, $purchaseId]
+                        );
+                    }
+                } catch (\Throwable $e) {
+                    error_log('Production purchase invoice upload failed after purchase was saved: ' . $e->getMessage());
+                    $failedAttachmentCount++;
+                }
+            }
             Session::flash('success', "Purchase {$purchaseNumber} recorded successfully.");
+            if ($failedAttachmentCount > 0) {
+                Session::flash('warning', "Purchase and roll data were saved, but {$failedAttachmentCount} attachment(s) could not be uploaded or linked.");
+            }
             Response::redirect(url('production/purchases'));
         } catch (\Throwable $e) {
             if (Database::inTransaction()) {

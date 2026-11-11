@@ -66,6 +66,98 @@ class CloudinaryService {
     }
 
     /**
+     * Upload several files concurrently and return URLs keyed by the input keys.
+     */
+    public static function uploadMany(array $files, string $folder = 'grm_inventory', string $resourceType = 'auto'): array {
+        $results = array_fill_keys(array_keys($files), null);
+        if (!$files || !self::isConfigured()) {
+            if ($files) {
+                error_log("[CloudinaryService] Batch upload unavailable or Cloudinary not configured.");
+            }
+            return $results;
+        }
+
+        if (!function_exists('curl_multi_init')) {
+            foreach ($files as $key => $file) {
+                $results[$key] = self::upload($file, $folder, $resourceType);
+            }
+            return $results;
+        }
+
+        $cloudName = env('CLOUDINARY_CLOUD_NAME');
+        $apiKey = env('CLOUDINARY_API_KEY');
+        $apiSecret = env('CLOUDINARY_API_SECRET');
+        $cleanFolder = trim($folder, '/');
+        $multiHandle = curl_multi_init();
+        $handles = [];
+
+        foreach ($files as $key => $file) {
+            if (!is_array($file) || empty($file['tmp_name']) || ($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+                continue;
+            }
+
+            $timestamp = time();
+            $params = ['folder' => $cleanFolder, 'timestamp' => $timestamp];
+            ksort($params);
+            $paramString = '';
+            foreach ($params as $paramName => $paramValue) {
+                $paramString .= ($paramString !== '' ? '&' : '') . $paramName . '=' . $paramValue;
+            }
+            $signature = sha1($paramString . $apiSecret);
+            $curlFile = new CURLFile(
+                $file['tmp_name'],
+                $file['type'] ?? mime_content_type($file['tmp_name']),
+                $file['name'] ?? 'upload'
+            );
+            $handle = curl_init();
+            curl_setopt_array($handle, [
+                CURLOPT_URL => "https://api.cloudinary.com/v1_1/{$cloudName}/{$resourceType}/upload",
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => [
+                    'file' => $curlFile,
+                    'api_key' => $apiKey,
+                    'timestamp' => $timestamp,
+                    'folder' => $cleanFolder,
+                    'signature' => $signature,
+                ],
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_SSL_VERIFYHOST => 2,
+                CURLOPT_TIMEOUT => 30,
+            ]);
+            curl_multi_add_handle($multiHandle, $handle);
+            $handleId = is_object($handle) ? spl_object_id($handle) : (int)$handle;
+            $handles[$handleId] = ['key' => $key, 'handle' => $handle];
+        }
+
+        $running = null;
+        do {
+            $multiStatus = curl_multi_exec($multiHandle, $running);
+            if ($running && $multiStatus === CURLM_OK && curl_multi_select($multiHandle, 1.0) === -1) {
+                usleep(100000);
+            }
+        } while ($running && $multiStatus === CURLM_OK);
+
+        foreach ($handles as $entry) {
+            $handle = $entry['handle'];
+            $response = curl_multi_getcontent($handle);
+            $httpCode = curl_getinfo($handle, CURLINFO_HTTP_CODE);
+            if ($httpCode === 200 && $response) {
+                $result = json_decode($response, true);
+                $results[$entry['key']] = $result['secure_url'] ?? $result['url'] ?? null;
+            }
+            if ($results[$entry['key']] === null && env('APP_DEBUG', false)) {
+                error_log("[CloudinaryService] Batch upload failed (HTTP {$httpCode}): " . (string)$response);
+            }
+            curl_multi_remove_handle($multiHandle, $handle);
+            curl_close($handle);
+        }
+        curl_multi_close($multiHandle);
+
+        return $results;
+    }
+
+    /**
      * Perform direct signed upload to Cloudinary REST API via cURL.
      */
     private static function uploadToCloudinaryApi(string $filePath, string $folder, string $originalName, ?string $mimeType, string $resourceType): ?string {
@@ -219,4 +311,3 @@ class CloudinaryService {
 if (!class_exists('App\Services\CloudinaryService', false)) {
     class_alias('CloudinaryService', 'App\Services\CloudinaryService');
 }
-
