@@ -1589,11 +1589,28 @@ class AdminController {
      */
     public function ajaxQrStatusFinder(): void {
         $rawCode = trim((string)($_GET['code'] ?? ''));
-        $result = QrFinderService::trace($rawCode);
-        if (empty($result['success'])) {
-            Response::json($result, 404);
+        if ($rawCode === '') {
+            Response::json([
+                'success' => false,
+                'message' => 'Please provide a valid QR code or barcode to scan.'
+            ], 400);
             return;
         }
-        Response::json($result);
+
+        try {
+            $result = QrFinderService::trace($rawCode);
+            if (empty($result['success'])) {
+                Response::json($result, 404);
+                return;
+            }
+            Response::json($result);
+        } catch (Throwable $e) {
+            error_log("Universal QR Finder API error: " . $e->getMessage());
+            Response::json([
+                'success' => false,
+                'message' => "This QR code ({$rawCode}) is not in any inventory sections.",
+                'code'    => $rawCode
+            ], 404);
+        }
     }
 }

@@ -25,14 +25,15 @@ class QrFinderService {
             ];
         }
 
-        $timeline = [];
-        $matched = false;
-        $itemType = 'UNKNOWN';
-        $itemTitle = 'Item ' . $code;
-        $currentStatus = 'UNKNOWN';
-        $statusColor = 'secondary';
-        $currentLocation = 'System Archive / Unspecified';
-        $details = [];
+        try {
+            $timeline = [];
+            $matched = false;
+            $itemType = 'UNKNOWN';
+            $itemTitle = 'Item ' . $code;
+            $currentStatus = 'UNKNOWN';
+            $statusColor = 'secondary';
+            $currentLocation = 'System Archive / Unspecified';
+            $details = [];
 
         // =========================================================================
         // 1. FABRIC ROLL PIECE (e.g. FB112601) OR ROLL NUMBER (e.g. ROLL #1)
@@ -757,48 +758,163 @@ class QrFinderService {
         }
 
         // =========================================================================
-        // 9. PHYSICAL ASSET (e.g. AST-...)
+        // 9. PHYSICAL ASSET / ENTERPRISE EQUIPMENT (e.g. AST-PRD-..., AST-WHS-...)
         // =========================================================================
         if (!$matched) {
-            $asset = Database::fetchOne(
-                "SELECT a.*, l.name as location_name
-                 FROM assets a
-                 LEFT JOIN locations l ON l.id = a.location_id
-                 WHERE a.asset_code = ? OR a.barcode = ?
-                 LIMIT 1",
-                [$code, $code]
-            );
-            if ($asset) {
-                $matched = true;
-                $itemType = 'Physical Asset';
-                $itemTitle = "Asset {$asset['asset_code']} — {$asset['name']}";
-                $details = [
-                    'Asset Code' => $asset['asset_code'],
-                    'Asset Name' => $asset['name'],
-                    'Location' => $asset['location_name'] ?: 'Facility Store',
-                    'Status' => $asset['status'] ?: 'ACTIVE',
-                    'Purchase Cost' => '₹ ' . number_format((float)$asset['purchase_cost'], 2),
-                ];
-                $timeline[] = [
-                    'stage' => 'ASSET_REGISTER',
-                    'title' => 'Asset Registered in System',
-                    'timestamp' => $asset['created_at'],
-                    'badge' => $asset['status'] ?: 'ACTIVE',
-                    'badge_color' => 'primary',
-                    'icon' => 'bi-cpu',
-                    'location' => $asset['location_name'] ?: 'Facility',
-                    'description' => "Asset {$asset['name']} registered at {$asset['location_name']}.",
-                ];
-                $currentStatus = $asset['status'] ?: 'ACTIVE';
-                $statusColor = 'primary';
-                $currentLocation = $asset['location_name'] ?: 'Facility Asset Rack';
+            try {
+                if (!class_exists('AssetService') && defined('BASE_PATH') && file_exists(BASE_PATH . '/app/Services/AssetService.php')) {
+                    require_once BASE_PATH . '/app/Services/AssetService.php';
+                }
+
+                $asset = null;
+                if (class_exists('AssetService')) {
+                    $asset = AssetService::findByCodeOrQR($code);
+                }
+
+                if (!$asset) {
+                    $rawAsset = Database::fetchOne(
+                        "SELECT a.*, c.name as category_name, c.code as category_code
+                         FROM assets a
+                         LEFT JOIN asset_categories c ON c.id = a.category_id
+                         WHERE a.asset_code = ? OR a.barcode_qr = ? OR a.serial_number = ?
+                         LIMIT 1",
+                        [$code, $code, $code]
+                    );
+                    if ($rawAsset && class_exists('AssetService')) {
+                        $asset = AssetService::getAssetById((int)$rawAsset['id']);
+                    } else {
+                        $asset = $rawAsset;
+                    }
+                }
+
+                if ($asset) {
+                    $matched = true;
+                    $itemType = 'Enterprise Equipment / Asset';
+                    $catName = $asset['category_name'] ?? 'Equipment & Machinery';
+                    $itemTitle = "Asset {$asset['asset_code']} — {$asset['name']}";
+
+                    // Resolve human-readable facility/location
+                    $locDisplay = $asset['location_display'] ?? null;
+                    if (!$locDisplay && class_exists('AssetService')) {
+                        $locDisplay = AssetService::resolveLocationName(
+                            $asset['location_type'] ?? 'PRODUCTION', 
+                            (int)($asset['location_id'] ?? 1)
+                        );
+                    }
+                    if (!$locDisplay) {
+                        $locDisplay = $asset['floor_area'] ?: 'Facility Equipment Store';
+                    }
+
+                    // Map status color
+                    $statusColorMap = [
+                        'IN_USE'         => 'success',
+                        'IDLE'           => 'secondary',
+                        'IN_MAINTENANCE' => 'warning',
+                        'DAMAGED'        => 'danger',
+                        'DISPOSED'       => 'dark',
+                        'WRITTEN_OFF'    => 'dark',
+                    ];
+                    $currentStatus = $asset['status'] ?? 'IN_USE';
+                    $statusColor = $statusColorMap[$currentStatus] ?? 'primary';
+                    $currentLocation = $locDisplay . (!empty($asset['floor_area']) ? " ({$asset['floor_area']})" : '');
+
+                    $details = [
+                        'Asset Code'       => $asset['asset_code'],
+                        'Asset Name'       => $asset['name'],
+                        'Category'         => $catName,
+                        'Allocated Unit'   => $locDisplay,
+                        'Floor / Bay'      => $asset['floor_area'] ?: 'Unassigned Floor',
+                        'Condition'        => $asset['condition_state'] ?? 'GOOD',
+                        'Current Book Val' => '₹ ' . number_format((float)($asset['current_book_value'] ?? 0), 2),
+                        'Original Cost'    => '₹ ' . number_format((float)($asset['purchase_cost'] ?? 0), 2),
+                        'Brand / Model'    => trim(($asset['brand'] ?? '') . ' ' . ($asset['model_number'] ?? '')) ?: 'N/A',
+                        'Serial Number'    => $asset['serial_number'] ?: 'N/A',
+                        'QR / Barcode'     => $asset['barcode_qr'] ?? $asset['asset_code'],
+                        'Custodian'        => $asset['custodian_name'] ?: 'Unit Operations In-Charge',
+                    ];
+
+                    // Timeline Step 1: Asset Registration
+                    $timeline[] = [
+                        'stage'       => 'ASSET_REGISTER',
+                        'title'       => 'Asset Registered in System',
+                        'timestamp'   => $asset['created_at'],
+                        'badge'       => 'REGISTERED',
+                        'badge_color' => 'primary',
+                        'icon'        => 'bi-cpu',
+                        'location'    => $locDisplay,
+                        'description' => "Asset '{$asset['name']}' ({$asset['asset_code']}) registered under {$catName}. Original Cost: ₹" . number_format((float)($asset['purchase_cost'] ?? 0), 2) . (!empty($asset['created_by_name']) ? " by {$asset['created_by_name']}." : '.'),
+                    ];
+
+                    // Timeline Step 2: Inter-Unit Allocation / Transfer History
+                    $transfers = $asset['transfers'] ?? [];
+                    if (empty($transfers) && !empty($asset['id'])) {
+                        $transfers = Database::fetchAll("
+                            SELECT t.*, u.full_name as transferred_by_name
+                            FROM asset_transfers t
+                            LEFT JOIN users u ON t.transferred_by = u.id
+                            WHERE t.asset_id = ?
+                            ORDER BY t.transfer_date ASC
+                        ", [(int)$asset['id']]);
+                        foreach ($transfers as &$tRef) {
+                            $tRef['from_display'] = class_exists('AssetService') 
+                                ? AssetService::resolveLocationName($tRef['from_location_type'], (int)$tRef['from_location_id']) 
+                                : 'Previous Facility';
+                            $tRef['to_display']   = class_exists('AssetService') 
+                                ? AssetService::resolveLocationName($tRef['to_location_type'], (int)$tRef['to_location_id']) 
+                                : 'Destination Facility';
+                        }
+                    }
+
+                    foreach ($transfers as $trf) {
+                        $fromUnit = $trf['from_display'] ?? 'Previous Location';
+                        $toUnit = $trf['to_display'] ?? 'Destination Location';
+                        $timeline[] = [
+                            'stage'       => 'ASSET_TRANSFER',
+                            'title'       => 'Inter-Unit Allocation: ' . ($trf['transfer_number'] ?? 'TRF'),
+                            'timestamp'   => $trf['transfer_date'] ?: $trf['created_at'],
+                            'badge'       => $trf['status'] ?? 'COMPLETED',
+                            'badge_color' => ($trf['status'] === 'COMPLETED') ? 'info' : 'warning',
+                            'icon'        => 'bi-arrow-left-right',
+                            'location'    => $toUnit . (!empty($trf['to_floor_area']) ? " ({$trf['to_floor_area']})" : ''),
+                            'description' => "Allocated from {$fromUnit} to {$toUnit}. Reason: " . ($trf['reason'] ?: 'Internal operational allocation') . (!empty($trf['challan_notes']) ? " | Challan: {$trf['challan_notes']}" : ''),
+                        ];
+                    }
+
+                    // Timeline Step 3: Maintenance & Service Logs
+                    $maintenanceLogs = $asset['maintenance_logs'] ?? [];
+                    if (empty($maintenanceLogs) && !empty($asset['id'])) {
+                        $maintenanceLogs = Database::fetchAll("
+                            SELECT m.*, u.full_name as logged_by_name
+                            FROM asset_maintenance_logs m
+                            LEFT JOIN users u ON m.created_by = u.id
+                            WHERE m.asset_id = ?
+                            ORDER BY m.service_date ASC
+                        ", [(int)$asset['id']]);
+                    }
+
+                    foreach ($maintenanceLogs as $mLog) {
+                        $st = str_replace('_', ' ', $mLog['service_type'] ?? 'MAINTENANCE');
+                        $timeline[] = [
+                            'stage'       => 'ASSET_MAINTENANCE',
+                            'title'       => 'Maintenance Log: ' . ($mLog['log_number'] ?? 'LOG') . " ({$st})",
+                            'timestamp'   => ($mLog['service_date'] ?? date('Y-m-d')) . ' 10:00:00',
+                            'badge'       => $mLog['status'] ?? 'COMPLETED',
+                            'badge_color' => ($mLog['status'] === 'COMPLETED') ? 'success' : 'danger',
+                            'icon'        => 'bi-wrench-adjustable',
+                            'location'    => $locDisplay,
+                            'description' => "Service: {$st}. Issue: " . ($mLog['issue_description'] ?: 'Routine service') . ". Action: " . ($mLog['action_taken'] ?: 'Inspected') . ". Cost: ₹" . number_format((float)($mLog['service_cost'] ?? 0), 2) . (!empty($mLog['serviced_by_vendor']) ? " by {$mLog['serviced_by_vendor']}" : ''),
+                        ];
+                    }
+                }
+            } catch (Throwable $e) {
+                error_log("QrFinderService asset trace error: " . $e->getMessage());
             }
         }
 
         if (!$matched) {
             return [
                 'success' => false,
-                'message' => "No records found in any module for QR / Barcode: {$code}. Please check the code and try again.",
+                'message' => "This QR code ({$code}) is not in any inventory sections.",
             ];
         }
 
@@ -819,5 +935,13 @@ class QrFinderService {
             'timeline' => $timeline,
             'timeline_count' => count($timeline),
         ];
+    } catch (Throwable $e) {
+        error_log("QrFinderService trace error: " . $e->getMessage());
+        return [
+            'success' => false,
+            'message' => "This QR code ({$code}) is not in any inventory sections.",
+            'code' => $code,
+        ];
     }
+}
 }
