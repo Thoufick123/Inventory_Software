@@ -2730,24 +2730,32 @@ class WarehouseController {
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
         $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
+        $defaultWhId = $scopedWarehouseId !== null ? $scopedWarehouseId : (!empty($warehouses) ? (int)$warehouses[0]['id'] : 0);
         $variants = Database::fetchAll(
-            "SELECT pv.*, p.name as product_name, p.code as product_code,
-                    COALESCE(wc.name, cat.name) as category_name,
-                    COALESCE(wsc.name, subcat.name) as subcategory_name,
-                    COALESCE(wssc.name, subsubcat.name) as sub_subcategory_name,
-                    s.name as size_name, c.name as color_name
+            "SELECT pv.id, pv.sku, pv.qr_code as barcode, pv.mrp, pv.selling_price, pv.purchase_price,
+                    pv.qr_type, pv.pack_quantity, pv.series_start_code, pv.series_end_code,
+                    GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary, p.is_complementary as prod_is_comp,
+                    CASE
+                        WHEN GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) = 1 THEN 'COMPLEMENTARY'
+                        WHEN UPPER(COALESCE(wc.category_type, '')) = 'COMPLEMENTARY' THEN 'COMPLEMENTARY'
+                        WHEN UPPER(COALESCE(pv.qr_type, '')) = 'SERIES_BATCH' THEN 'SERIES'
+                        WHEN UPPER(COALESCE(wc.category_type, '')) IN ('SERIES', 'NORMAL') THEN UPPER(wc.category_type)
+                        ELSE 'NORMAL'
+                    END as category_type,
+                    p.id as product_id, p.name as product_name, p.code as product_code, p.category_id, p.subcategory_id, p.sub_subcategory_id,
+                    sz.name as size_name, c.name as color_name,
+                    COALESCE(wc.name, cat.name) as category_name, subcat.name as subcategory_name, subsub.name as sub_subcategory_name,
+                    COALESCE((SELECT SUM(quantity) FROM stock_balances WHERE variant_id = pv.id AND location_type = 'WAREHOUSE' " . ($defaultWhId > 0 ? "AND location_id = {$defaultWhId}" : "") . " AND stock_state = 'AVAILABLE'), 0) as total_warehouse_stock
              FROM product_variants pv
              JOIN products p ON pv.product_id = p.id
              LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
-             LEFT JOIN warehouse_subcategories wsc ON p.warehouse_subcategory_id = wsc.id
-             LEFT JOIN warehouse_sub_subcategories wssc ON p.warehouse_sub_subcategory_id = wssc.id
              LEFT JOIN categories cat ON p.category_id = cat.id
              LEFT JOIN subcategories subcat ON p.subcategory_id = subcat.id
-             LEFT JOIN sub_subcategories subsubcat ON p.sub_subcategory_id = subsubcat.id
-             LEFT JOIN sizes s ON pv.size_id = s.id
+             LEFT JOIN sub_subcategories subsub ON p.sub_subcategory_id = subsub.id
+             LEFT JOIN sizes sz ON pv.size_id = sz.id
              LEFT JOIN colors c ON pv.color_id = c.id
              WHERE pv.is_active = 1
-             ORDER BY p.name ASC, pv.sku ASC"
+             ORDER BY p.name ASC, sz.sort_order ASC"
         );
 
         Response::view('warehouse.damage.create', [
@@ -3130,35 +3138,54 @@ class WarehouseController {
             exit;
         }
 
-        // Clean raw input (strip surrounding quotes, spaces, control characters)
+        // Clean raw input (strip surrounding quotes, whitespace, control characters)
         $rawCode = trim($rawCode, " \t\n\r\0\x0B\"'");
 
         $extractedTag = $rawCode;
         $candidateCodes = [$rawCode];
+        $parsedSeriesQty = null;
 
-        // 1. If JSON payload (e.g. {"tag":"HHH102605","sku":"..."})
+        // 1. JSON Payload parsing
         if (str_starts_with($rawCode, '{') && str_ends_with($rawCode, '}')) {
             $decoded = json_decode($rawCode, true);
             if (is_array($decoded)) {
-                $extractedTag = $decoded['tag'] ?? $decoded['tag_code'] ?? $decoded['code'] ?? $decoded['qr_code'] ?? $decoded['batch_number'] ?? $rawCode;
+                $extractedTag = $decoded['tag'] ?? $decoded['tag_code'] ?? $decoded['code'] ?? $rawCode;
                 if (!empty($decoded['sku'])) $candidateCodes[] = trim($decoded['sku']);
                 if (!empty($decoded['tag'])) $candidateCodes[] = trim($decoded['tag']);
                 if (!empty($decoded['tag_code'])) $candidateCodes[] = trim($decoded['tag_code']);
                 if (!empty($decoded['code'])) $candidateCodes[] = trim($decoded['code']);
                 if (!empty($decoded['qr_code'])) $candidateCodes[] = trim($decoded['qr_code']);
-                if (!empty($decoded['batch_number'])) $candidateCodes[] = trim($decoded['batch_number']);
+                if (!empty($decoded['qty'])) $parsedSeriesQty = (int)$decoded['qty'];
             }
         }
-        // 2. If Pipe-delimited QR payload (e.g. "BCT102601|BCT0303-12Y-BLK|MRP:999|Disc:599")
+        // 2. Pipe-delimited QR payload (e.g. "SERIES|Brand|SKU|start-end|QTY:50|..." or "TTS092601|SKU|...")
         elseif (strpos($rawCode, '|') !== false) {
             $parts = array_map('trim', explode('|', $rawCode));
             $extractedTag = $parts[0];
-            
-            foreach ($parts as $part) {
-                if (stripos($part, 'MRP:') === 0 || stripos($part, 'Disc:') === 0 || stripos($part, 'Cost:') === 0 || stripos($part, 'Price:') === 0) {
-                    continue;
+
+            if (strtoupper($parts[0]) === 'SERIES') {
+                foreach ($parts as $p) {
+                    if (stripos($p, 'QTY:') === 0) {
+                        $parsedSeriesQty = (int)substr($p, 4);
+                    } elseif (stripos($p, 'MRP:') === false && stripos($p, 'Disc:') === false && stripos($p, 'Cost:') === false && stripos($p, 'Price:') === false && stripos($p, 'Sell:') === false && stripos($p, 'COMP:') === false && stripos($p, 'PO:') === false) {
+                        $candidateCodes[] = $p;
+                        if (strpos($p, '-') !== false) {
+                            $cleanSub = preg_replace('/-\d{2,4}$/', '', $p);
+                            if ($cleanSub && $cleanSub !== $p) $candidateCodes[] = $cleanSub;
+                        }
+                    }
                 }
-                $candidateCodes[] = $part;
+            } else {
+                foreach ($parts as $part) {
+                    if (stripos($part, 'MRP:') === 0 || stripos($part, 'Disc:') === 0 || stripos($part, 'Cost:') === 0 || stripos($part, 'Price:') === 0 || stripos($part, 'Sell:') === 0) {
+                        continue;
+                    }
+                    if (stripos($part, 'QTY:') === 0) {
+                        $parsedSeriesQty = (int)substr($part, 4);
+                        continue;
+                    }
+                    $candidateCodes[] = $part;
+                }
             }
 
             if (isset($parts[1]) && !empty($parts[1])) {
@@ -3168,7 +3195,7 @@ class WarehouseController {
                 $candidateCodes[] = $parts[2];
             }
         }
-        // 3. If URL encoded with query params
+        // 3. URL encoded with query params
         elseif (strpos($rawCode, 'http') === 0 && (strpos($rawCode, '?') !== false || strpos($rawCode, '/') !== false)) {
             $parsedUrl = parse_url($rawCode);
             if (!empty($parsedUrl['query'])) {
@@ -3181,6 +3208,26 @@ class WarehouseController {
                 $pathSegments = explode('/', trim($parsedUrl['path'], '/'));
                 $candidateCodes[] = end($pathSegments);
             }
+        }
+
+        // 4. Series Range code (e.g. "TP-CHOCO-RED-247-001 - TP-CHOCO-RED-247-050" or "WOMM102601 - WOMM102620")
+        if (strpos($rawCode, ' - ') !== false) {
+            $rangeParts = array_map('trim', explode(' - ', $rawCode));
+            foreach ($rangeParts as $rp) {
+                $candidateCodes[] = $rp;
+                $cleanSub = preg_replace('/-\d{2,4}$/', '', $rp);
+                if ($cleanSub && $cleanSub !== $rp) $candidateCodes[] = $cleanSub;
+            }
+        } elseif (preg_match('/^(.+)-(\d{2,4})$/', $rawCode, $mSku)) {
+            $candidateCodes[] = $mSku[1];
+        }
+
+        // 5. Concatenated multi-tag scans without delimiter (e.g. "SSS102602SSS102612")
+        if (preg_match_all('/([A-Za-z_-]{2,6}\d{5,8})/i', $rawCode, $multiTags) && count($multiTags[0]) > 1) {
+            foreach ($multiTags[0] as $mt) {
+                $candidateCodes[] = strtoupper(trim($mt));
+            }
+            $extractedTag = strtoupper(trim($multiTags[0][0]));
         }
 
         $candidateCodes = array_values(array_unique(array_filter($candidateCodes)));
@@ -3197,151 +3244,410 @@ class WarehouseController {
                 ]);
                 exit;
             }
+
+            // Damage Module Check: Check if this piece tag is actively recorded as DAMAGED
+            $dmgCheck = Database::fetchOne(
+                "SELECT wd.id, wd.damage_number, wd.damage_reason, wd.defect_type, wd.status, wd.quantity as damaged_qty,
+                        p.name as product_name, pv.id as variant_id, pv.sku
+                 FROM warehouse_damages wd
+                 JOIN product_variants pv ON wd.variant_id = pv.id
+                 JOIN products p ON pv.product_id = p.id
+                 WHERE (wd.tag_code = ? OR wd.tag_code LIKE ? OR wd.tag_code LIKE ? OR wd.tag_code LIKE ?)
+                   AND wd.status NOT IN ('REPAIRED', 'RESTOCKED', 'SALVAGED', 'WRITTEN_OFF')
+                 LIMIT 1",
+                [$scannedPieceTag, $scannedPieceTag . ',%', '%,' . $scannedPieceTag, '%,' . $scannedPieceTag . ',%']
+            );
+            if ($dmgCheck) {
+                $dmgVar = Database::fetchOne(
+                    "SELECT pv.id, pv.qr_type, pv.pack_quantity,
+                            COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
+                            COALESCE(wc.category_type, 'NORMAL') as cat_type
+                     FROM product_variants pv 
+                     JOIN products p ON pv.product_id = p.id 
+                     LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+                     LEFT JOIN categories cat ON p.category_id = cat.id
+                     WHERE pv.id = ?",
+                    [$dmgCheck['variant_id']]
+                );
+                $isMasterOrComp = ($dmgVar && (
+                    $dmgVar['qr_type'] === 'SERIES_BATCH'
+                    || strtoupper($dmgVar['cat_type'] ?? '') === 'SERIES'
+                    || strtoupper($dmgVar['cat_type'] ?? '') === 'COMPLEMENTARY'
+                    || (int)($dmgVar['pack_quantity'] ?? 0) > 1
+                    || !empty($dmgVar['is_comp'])
+                ));
+
+                if ($isMasterOrComp) {
+                    $availStockRow = Database::fetchOne(
+                        "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                         WHERE variant_id = ? AND location_type = 'WAREHOUSE' " . ($warehouseId > 0 ? "AND location_id = {$warehouseId}" : "") . " AND stock_state = 'AVAILABLE'",
+                        [$dmgCheck['variant_id']]
+                    );
+                    $remStock = (float)($availStockRow['qty'] ?? 0);
+                    if ($remStock > 0) {
+                        continue;
+                    }
+                }
+
+                echo json_encode([
+                    'success'            => false,
+                    'is_already_damaged' => true,
+                    'damage_number'      => $dmgCheck['damage_number'],
+                    'damage_reason'      => $dmgCheck['damage_reason'],
+                    'product_name'       => $dmgCheck['product_name'],
+                    'sku'                => $dmgCheck['sku'],
+                    'tag_code'           => $scannedPieceTag,
+                    'message'            => "Piece Tag '{$scannedPieceTag}' has ALREADY been logged as damaged in Case #{$dmgCheck['damage_number']} ({$dmgCheck['status']}) - Reason: {$dmgCheck['damage_reason']}! The same piece cannot be damaged twice."
+                ]);
+                exit;
+            }
+        }
+
+        // Guardrail: Check if this piece tag or candidate code is already allocated in ANY active/dispatched/delivered allocation
+        foreach ($candidateCodes as $codeToCheck) {
+            if (empty($codeToCheck) || strlen($codeToCheck) < 3) continue;
+            $alreadyAlloc = Database::fetchOne(
+                "SELECT ai.id, wa.id as allocation_id, wa.allocation_number, wa.status,
+                        w.name as warehouse_name,
+                        p.name as product_name, pv.sku, pv.id as variant_id,
+                        col.name as color_name, sz.name as size_name
+                 FROM allocation_items ai
+                 JOIN warehouse_allocations wa ON ai.allocation_id = wa.id
+                 JOIN product_variants pv ON ai.variant_id = pv.id
+                 JOIN products p ON pv.product_id = p.id
+                 LEFT JOIN warehouses w ON wa.warehouse_id = w.id
+                 LEFT JOIN colors col ON pv.color_id = col.id
+                 LEFT JOIN sizes sz ON pv.size_id = sz.id
+                 WHERE (
+                     ai.selected_qr_codes = ? 
+                     OR ai.selected_qr_codes LIKE ? 
+                     OR ai.selected_qr_codes LIKE ? 
+                     OR ai.selected_qr_codes LIKE ?
+                 )
+                 AND wa.status NOT IN ('CANCELLED', 'REJECTED')
+                 LIMIT 1",
+                [$codeToCheck, $codeToCheck . ',%', '%,' . $codeToCheck, '%,' . $codeToCheck . ',%']
+            );
+
+            if ($alreadyAlloc) {
+                $allocVar = Database::fetchOne(
+                    "SELECT pv.id, pv.qr_type, pv.pack_quantity,
+                            COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
+                            COALESCE(wc.category_type, 'NORMAL') as cat_type
+                     FROM product_variants pv 
+                     JOIN products p ON pv.product_id = p.id 
+                     LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+                     LEFT JOIN categories cat ON p.category_id = cat.id
+                     WHERE pv.id = ?",
+                    [$alreadyAlloc['variant_id']]
+                );
+                $isMasterOrComp = ($allocVar && (
+                    $allocVar['qr_type'] === 'SERIES_BATCH'
+                    || strtoupper($allocVar['cat_type'] ?? '') === 'SERIES'
+                    || (int)($allocVar['pack_quantity'] ?? 0) > 1
+                    || !empty($allocVar['is_comp'])
+                ));
+
+                if ($isMasterOrComp) {
+                    $availStockRow = Database::fetchOne(
+                        "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                         WHERE variant_id = ? AND location_type = 'WAREHOUSE' " . ($warehouseId > 0 ? "AND location_id = {$warehouseId}" : "") . " AND stock_state = 'AVAILABLE'",
+                        [$alreadyAlloc['variant_id']]
+                    );
+                    $remStock = (float)($availStockRow['qty'] ?? 0);
+                    if ($remStock > 0) {
+                        continue;
+                    }
+                }
+
+                echo json_encode([
+                    'success'              => false,
+                    'is_already_allocated' => true,
+                    'allocation_number'    => $alreadyAlloc['allocation_number'],
+                    'allocation_id'        => $alreadyAlloc['allocation_id'],
+                    'allocation_status'    => $alreadyAlloc['status'],
+                    'allocated_warehouse'  => $alreadyAlloc['warehouse_name'] ?? 'Warehouse',
+                    'allocated_product'    => ($alreadyAlloc['product_name'] ?? '') . ' (' . ($alreadyAlloc['sku'] ?? '') . ')',
+                    'tag_code'             => $codeToCheck,
+                    'message'              => "Piece Tag '{$codeToCheck}' has ALREADY been allocated/dispatched in Pass #{$alreadyAlloc['allocation_number']} (Status: {$alreadyAlloc['status']}) at {$alreadyAlloc['warehouse_name']}! This piece is not in available warehouse stock."
+                ]);
+                exit;
+            }
         }
 
         $variant = null;
 
-        // Strategy 1: Exact match on candidate codes against product_variants (sku, qr_code, id) or products (code, qr_code_prefix)
+        $baseVariantSql = "
+            SELECT pv.*, 
+                   p.id as product_id, p.name as product_name, p.code as product_code, p.image_url as product_image,
+                   GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
+                   p.qr_code_prefix, p.category_code, p.subcategory_code, p.sub_subcategory_code,
+                   p.category_id, p.subcategory_id, p.sub_subcategory_id,
+                   CASE
+                       WHEN GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) = 1 THEN 'COMPLEMENTARY'
+                       WHEN UPPER(COALESCE(wc.category_type, '')) = 'COMPLEMENTARY' THEN 'COMPLEMENTARY'
+                       WHEN UPPER(COALESCE(pv.qr_type, '')) = 'SERIES_BATCH' THEN 'SERIES'
+                       WHEN UPPER(COALESCE(wc.category_type, '')) IN ('SERIES', 'NORMAL') THEN UPPER(wc.category_type)
+                       ELSE 'NORMAL'
+                   END as category_type,
+                   s.name as size_name, s.code as size_code,
+                   col.name as color_name, col.hex_code as color_hex,
+                   COALESCE(wc.name, cat.name) as category_name,
+                   COALESCE(wsc.name, subcat.name) as subcategory_name,
+                   COALESCE(wssc.name, subsubcat.name) as sub_subcategory_name
+            FROM product_variants pv
+            JOIN products p ON pv.product_id = p.id
+            LEFT JOIN sizes s ON pv.size_id = s.id
+            LEFT JOIN colors col ON pv.color_id = col.id
+            LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+            LEFT JOIN warehouse_subcategories wsc ON p.warehouse_subcategory_id = wsc.id
+            LEFT JOIN warehouse_sub_subcategories wssc ON p.warehouse_sub_subcategory_id = wssc.id
+            LEFT JOIN categories cat ON p.category_id = cat.id
+            LEFT JOIN subcategories subcat ON p.subcategory_id = subcat.id
+            LEFT JOIN sub_subcategories subsubcat ON p.sub_subcategory_id = subsubcat.id
+        ";
+
+        // Strategy 0: Direct Match in warehouse_qr_codes (handles Series, Complementary, 3rd-Party & Return QR tags)
         foreach ($candidateCodes as $c) {
             if (empty($c)) continue;
-            $variant = Database::fetchOne(
-                "SELECT pv.*, 
-                        p.id as product_id, p.name as product_name, p.code as product_code, p.image_url as product_image,
-                        COALESCE(p.gst_percentage, 5.0) as gst_rate, p.gst_percentage,
-                        p.qr_code_prefix, p.category_code, p.subcategory_code, p.sub_subcategory_code,
-                        p.category_id, p.subcategory_id, p.sub_subcategory_id,
-                        s.name as size_name, s.code as size_code,
-                        col.name as color_name, col.hex_code as color_hex,
-                        COALESCE(wc.name, cat.name) as category_name,
-                        COALESCE(wsc.name, subcat.name) as subcategory_name,
-                        COALESCE(wssc.name, subsubcat.name) as sub_subcategory_name
-                 FROM product_variants pv
-                 JOIN products p ON pv.product_id = p.id
-                 LEFT JOIN sizes s ON pv.size_id = s.id
-                 LEFT JOIN colors col ON pv.color_id = col.id
-                 LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
-                 LEFT JOIN warehouse_subcategories wsc ON p.warehouse_subcategory_id = wsc.id
-                 LEFT JOIN warehouse_sub_subcategories wssc ON p.warehouse_sub_subcategory_id = wssc.id
-                 LEFT JOIN categories cat ON p.category_id = cat.id
-                 LEFT JOIN subcategories subcat ON p.subcategory_id = subcat.id
-                 LEFT JOIN sub_subcategories subsubcat ON p.sub_subcategory_id = subsubcat.id
-                 WHERE pv.sku = ? 
-                    OR pv.qr_code = ? 
-                    OR p.code = ?
-                    OR p.qr_code_prefix = ?
-                    OR (pv.id = ? AND ? > 0)
-                    OR EXISTS (
-                        SELECT 1 FROM warehouse_qr_codes scan_qr
-                        WHERE scan_qr.variant_id = pv.id
-                          AND UPPER(scan_qr.qr_code) = UPPER(?)
-                    )
+            $whQr = Database::fetchOne(
+                "SELECT wq.variant_id, wq.qr_code, wq.warehouse_id 
+                 FROM warehouse_qr_codes wq 
+                 WHERE UPPER(wq.qr_code) = UPPER(?) 
                  LIMIT 1",
-                [$c, $c, $c, $c, is_numeric($c) ? (int)$c : 0, is_numeric($c) ? (int)$c : 0, $c]
+                [$c]
             );
-            if ($variant) break;
-        }
-
-        // Strategy 2: Historical Inward GRN / Stock transactions / Purchase Items tag search
-        if (!$variant) {
-            foreach ($candidateCodes as $c) {
-                if (empty($c) || strlen($c) < 3) continue;
-                $tx = Database::fetchOne(
-                    "SELECT pv.*, 
-                            p.id as product_id, p.name as product_name, p.code as product_code, p.image_url as product_image,
-                            p.qr_code_prefix, p.category_code, p.subcategory_code, p.sub_subcategory_code,
-                            p.category_id, p.subcategory_id, p.sub_subcategory_id,
-                            s.name as size_name, s.code as size_code,
-                            col.name as color_name, col.hex_code as color_hex,
-                            COALESCE(wc.name, cat.name) as category_name,
-                            COALESCE(wsc.name, subcat.name) as subcategory_name,
-                            COALESCE(wssc.name, subsubcat.name) as sub_subcategory_name
-                     FROM stock_transactions st
-                     JOIN product_variants pv ON st.variant_id = pv.id
-                     JOIN products p ON pv.product_id = p.id
-                     LEFT JOIN sizes s ON pv.size_id = s.id
-                     LEFT JOIN colors col ON pv.color_id = col.id
-                     LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
-                     LEFT JOIN warehouse_subcategories wsc ON p.warehouse_subcategory_id = wsc.id
-                     LEFT JOIN warehouse_sub_subcategories wssc ON p.warehouse_sub_subcategory_id = wssc.id
-                     LEFT JOIN categories cat ON p.category_id = cat.id
-                     LEFT JOIN subcategories subcat ON p.subcategory_id = subcat.id
-                     LEFT JOIN sub_subcategories subsubcat ON p.sub_subcategory_id = subsubcat.id
-                     LEFT JOIN stock_balances sb ON sb.variant_id = pv.id AND sb.location_type = 'WAREHOUSE' " . ($warehouseId > 0 ? "AND sb.location_id = {$warehouseId}" : "") . " AND sb.stock_state = 'AVAILABLE'
-                     WHERE st.notes LIKE ? OR st.notes LIKE ?
-                     ORDER BY sb.quantity DESC, st.id DESC
-                     LIMIT 1",
-                    ['%' . $c . '%', '%Tags: ' . $c . '%']
-                );
-                if ($tx) {
-                    $variant = $tx;
-                    break;
-                }
-
-                $pi = Database::fetchOne(
-                    "SELECT pv.*, 
-                            p.id as product_id, p.name as product_name, p.code as product_code, p.image_url as product_image,
-                            p.qr_code_prefix, p.category_code, p.subcategory_code, p.sub_subcategory_code,
-                            p.category_id, p.subcategory_id, p.sub_subcategory_id,
-                            s.name as size_name, s.code as size_code,
-                            col.name as color_name, col.hex_code as color_hex,
-                            COALESCE(wc.name, cat.name) as category_name,
-                            COALESCE(wsc.name, subcat.name) as subcategory_name,
-                            COALESCE(wssc.name, subsubcat.name) as sub_subcategory_name
-                     FROM purchase_items pi
-                     JOIN product_variants pv ON pi.variant_id = pv.id
-                     JOIN products p ON pv.product_id = p.id
-                     LEFT JOIN sizes s ON pv.size_id = s.id
-                     LEFT JOIN colors col ON pv.color_id = col.id
-                     LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
-                     LEFT JOIN warehouse_subcategories wsc ON p.warehouse_subcategory_id = wsc.id
-                     LEFT JOIN warehouse_sub_subcategories wssc ON p.warehouse_sub_subcategory_id = wssc.id
-                     LEFT JOIN categories cat ON p.category_id = cat.id
-                     LEFT JOIN subcategories subcat ON p.subcategory_id = subcat.id
-                     LEFT JOIN sub_subcategories subsubcat ON p.sub_subcategory_id = subsubcat.id
-                     LEFT JOIN stock_balances sb ON sb.variant_id = pv.id AND sb.location_type = 'WAREHOUSE' " . ($warehouseId > 0 ? "AND sb.location_id = {$warehouseId}" : "") . " AND sb.stock_state = 'AVAILABLE'
-                     WHERE pi.batch_lot_no LIKE ? OR pi.notes LIKE ?
-                     ORDER BY sb.quantity DESC, pi.id DESC
-                     LIMIT 1",
-                    ['%' . $c . '%', '%' . $c . '%']
-                );
-                if ($pi) {
-                    $variant = $pi;
+            if ($whQr && !empty($whQr['variant_id'])) {
+                $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [(int)$whQr['variant_id']]);
+                if ($variant) {
+                    $extractedTag = $whQr['qr_code'];
                     break;
                 }
             }
         }
 
-        // Strategy 3: Lookup from QC Items recorded tag_code
+        // Strategy 1: Exact match on candidate codes against product_variants or products
+        foreach ($candidateCodes as $c) {
+            if (empty($c)) continue;
+            $variant = Database::fetchOne(
+                $baseVariantSql . "
+                 WHERE pv.sku = ? 
+                    OR pv.qr_code = ? 
+                    OR pv.series_start_code = ?
+                    OR pv.series_end_code = ?
+                    OR p.code = ?
+                    OR p.qr_code_prefix = ?
+                    OR (pv.id = ? AND ? > 0)
+                 ORDER BY is_complementary ASC
+                 LIMIT 1",
+                [$c, $c, $c, $c, $c, $c, is_numeric($c) ? (int)$c : 0, is_numeric($c) ? (int)$c : 0]
+            );
+            if ($variant) break;
+        }
+
+        // Strategy 2: Series Range Check directly on product_variants (series_start_code <= code <= series_end_code)
+        if (!$variant) {
+            foreach ($candidateCodes as $c) {
+                if (preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $c, $mTag)) {
+                    $tagPfx = strtoupper($mTag[1]);
+                    $tagNum = (int)$mTag[2];
+                    $tagLen = strlen($mTag[2]);
+
+                    $seriesVariants = Database::fetchAll(
+                        $baseVariantSql . "
+                         WHERE pv.series_start_code IS NOT NULL AND pv.series_end_code IS NOT NULL AND pv.is_active = 1
+                         ORDER BY is_complementary ASC, pv.id ASC
+                        "
+                    );
+                    foreach ($seriesVariants as $sv) {
+                        if (preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $sv['series_start_code'], $mS) &&
+                            preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $sv['series_end_code'], $mE)) {
+                            if (strtoupper($mS[1]) === $tagPfx && strtoupper($mE[1]) === $tagPfx) {
+                                $sNum = (int)$mS[2];
+                                $eNum = (int)$mE[2];
+                                if ($tagNum >= $sNum && $tagNum <= $eNum && strlen($mS[2]) === $tagLen) {
+                                    $variant = $sv;
+                                    break 2;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Strategy 3: Resolve received production QR tags against their recorded variant
+        if (!$variant) {
+            foreach ($candidateCodes as $candidateCode) {
+                if ($candidateCode === '') continue;
+
+                $receivedTagRows = Database::fetchAll(
+                    "SELECT pbi.variant_id, pbi.received_qr_codes,
+                            COALESCE(po.warehouse_id, pb.destination_warehouse_id) as warehouse_id,
+                            w.name as warehouse_name
+                     FROM production_batch_items pbi
+                     JOIN production_batches pb ON pb.id = pbi.production_batch_id
+                     LEFT JOIN production_outwards po ON (pb.production_outward_id = po.id OR po.production_batch_id = pb.id)
+                     LEFT JOIN warehouses w ON w.id = COALESCE(po.warehouse_id, pb.destination_warehouse_id)
+                     WHERE pb.status IN ('RECEIVED', 'DISPATCHED')
+                       AND pbi.received_qr_codes LIKE ?",
+                    ['%' . $candidateCode . '%']
+                );
+
+                $matchingVariants = [];
+                $exactTagFound = false;
+                $mismatchedWarehouses = [];
+                foreach ($receivedTagRows as $receivedTagRow) {
+                    $receivedTags = array_map('trim', explode(',', (string)$receivedTagRow['received_qr_codes']));
+                    $hasExactTag = false;
+                    foreach ($receivedTags as $receivedTag) {
+                        if (strcasecmp($receivedTag, $candidateCode) === 0) {
+                            $hasExactTag = true;
+                            break;
+                        }
+                    }
+
+                    if (!$hasExactTag) continue;
+                    $exactTagFound = true;
+
+                    $tagWarehouseId = (int)($receivedTagRow['warehouse_id'] ?? 0);
+                    if ($warehouseId > 0 && $tagWarehouseId > 0 && $tagWarehouseId !== $warehouseId) {
+                        $mismatchedWarehouses[] = $receivedTagRow['warehouse_name'] ?? 'another warehouse';
+                        continue;
+                    }
+
+                    $matchingVariants[(int)$receivedTagRow['variant_id']] = true;
+                }
+
+                if ($exactTagFound && $warehouseId > 0 && empty($matchingVariants)) {
+                    echo json_encode([
+                        'success' => false,
+                        'is_no_stock' => true,
+                        'message' => "QR tag '{$candidateCode}' belongs to " . implode(', ', array_unique($mismatchedWarehouses)) . ', not the selected source warehouse.'
+                    ]);
+                    exit;
+                }
+
+                if (count($matchingVariants) > 1) {
+                    echo json_encode([
+                        'success' => false,
+                        'is_ambiguous' => true,
+                        'message' => "QR tag '{$candidateCode}' is assigned to multiple product variants. Resolve the duplicate QR assignment before logging damage."
+                    ]);
+                    exit;
+                }
+
+                if (count($matchingVariants) === 1) {
+                    $variantId = (int)array_key_first($matchingVariants);
+                    $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [$variantId]);
+                    if ($variant) {
+                        $extractedTag = $candidateCode;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Strategy 4: Historical Inward GRN / Stock transactions / Purchase Items tag search
+        if (!$variant) {
+            foreach ($candidateCodes as $c) {
+                if (empty($c) || strlen($c) < 3) continue;
+
+                $tx = Database::fetchOne(
+                    "SELECT st.variant_id 
+                     FROM stock_transactions st
+                     JOIN product_variants pv ON st.variant_id = pv.id
+                     JOIN products p ON pv.product_id = p.id
+                     WHERE (st.notes LIKE ? OR st.notes LIKE ? OR st.notes LIKE ?)
+                     ORDER BY COALESCE(pv.is_complementary, p.is_complementary, 0) ASC, st.id DESC LIMIT 1",
+                    ['%' . $c . ',%', '%, ' . $c . '%', '%Tags: ' . $c . '%']
+                );
+                if ($tx && !empty($tx['variant_id'])) {
+                    $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [$tx['variant_id']]);
+                    if ($variant) break;
+                }
+
+                if (preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $c, $mTag)) {
+                    $tagPfx = strtoupper($mTag[1]);
+                    $tagNum = (int)$mTag[2];
+                    $tagLen = strlen($mTag[2]);
+
+                    $txRows = Database::fetchAll(
+                        "SELECT st.variant_id, st.notes, COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp
+                         FROM stock_transactions st
+                         JOIN product_variants pv ON st.variant_id = pv.id
+                         JOIN products p ON pv.product_id = p.id
+                         WHERE st.notes LIKE '%Tags:%' 
+                         ORDER BY is_comp ASC, st.id DESC LIMIT 50"
+                    );
+                    foreach ($txRows as $tr) {
+                        $notes = $tr['notes'] ?? '';
+                        if (preg_match('/Tags:\s*([A-Za-z0-9]+)\s*-\s*([A-Za-z0-9]+)/i', $notes, $mRange)) {
+                            if (preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $mRange[1], $mS) &&
+                                preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $mRange[2], $mE)) {
+                                if (strtoupper($mS[1]) === $tagPfx && strtoupper($mE[1]) === $tagPfx) {
+                                    $sNum = (int)$mS[2];
+                                    $eNum = (int)$mE[2];
+                                    if ($tagNum >= $sNum && $tagNum <= $eNum && strlen($mS[2]) === $tagLen) {
+                                        $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [$tr['variant_id']]);
+                                        if ($variant) break 2;
+                                    }
+                                }
+                            }
+                        } elseif (preg_match('/Tags:\s*([A-Za-z0-9]+).*?\(total\s+(\d+)\)/i', $notes, $mTotal)) {
+                            if (preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $mTotal[1], $mS)) {
+                                if (strtoupper($mS[1]) === $tagPfx) {
+                                    $sNum = (int)$mS[2];
+                                    $totCount = (int)$mTotal[2];
+                                    $eNum = $sNum + $totCount - 1;
+                                    if ($tagNum >= $sNum && $tagNum <= $eNum && strlen($mS[2]) === $tagLen) {
+                                        $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [$tr['variant_id']]);
+                                        if ($variant) break 2;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                $pi = Database::fetchOne(
+                    "SELECT pi.variant_id 
+                     FROM purchase_items pi
+                     JOIN product_variants pv ON pi.variant_id = pv.id
+                     JOIN products p ON pv.product_id = p.id
+                     WHERE pi.batch_lot_no = ? OR pi.notes LIKE ?
+                     ORDER BY COALESCE(pv.is_complementary, p.is_complementary, 0) ASC, pi.id DESC LIMIT 1",
+                    [$c, '%' . $c . '%']
+                );
+                if ($pi && !empty($pi['variant_id'])) {
+                    $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [$pi['variant_id']]);
+                    if ($variant) break;
+                }
+            }
+        }
+
+        // Strategy 5: Lookup from QC Items recorded tag_code
         if (!$variant) {
             foreach ($candidateCodes as $c) {
                 $qc = Database::fetchOne(
-                    "SELECT variant_id, tag_code FROM qc_items WHERE tag_code = ? ORDER BY id DESC LIMIT 1",
+                    "SELECT qi.variant_id, qi.tag_code, pb.destination_warehouse_id, w.name as dest_warehouse_name 
+                     FROM qc_items qi 
+                     LEFT JOIN production_batches pb ON qi.qc_batch_id = pb.qc_batch_id 
+                     LEFT JOIN warehouses w ON pb.destination_warehouse_id = w.id
+                     WHERE qi.tag_code = ? ORDER BY qi.id DESC LIMIT 1",
                     [$c]
                 );
                 if ($qc && !empty($qc['variant_id'])) {
-                    $variant = Database::fetchOne(
-                        "SELECT pv.*, 
-                                p.id as product_id, p.name as product_name, p.code as product_code, p.image_url as product_image,
-                                p.qr_code_prefix, p.category_code, p.subcategory_code, p.sub_subcategory_code,
-                                p.category_id, p.subcategory_id, p.sub_subcategory_id,
-                                s.name as size_name, s.code as size_code,
-                                col.name as color_name, col.hex_code as color_hex,
-                                COALESCE(wc.name, cat.name) as category_name,
-                                COALESCE(wsc.name, subcat.name) as subcategory_name,
-                                COALESCE(wssc.name, subsubcat.name) as sub_subcategory_name
-                         FROM product_variants pv
-                         JOIN products p ON pv.product_id = p.id
-                         LEFT JOIN sizes s ON pv.size_id = s.id
-                         LEFT JOIN colors col ON pv.color_id = col.id
-                         LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
-                         LEFT JOIN warehouse_subcategories wsc ON p.warehouse_subcategory_id = wsc.id
-                         LEFT JOIN warehouse_sub_subcategories wssc ON p.warehouse_sub_subcategory_id = wssc.id
-                         LEFT JOIN categories cat ON p.category_id = cat.id
-                         LEFT JOIN subcategories subcat ON p.subcategory_id = subcat.id
-                         LEFT JOIN sub_subcategories subsubcat ON p.sub_subcategory_id = subsubcat.id
-                         WHERE pv.id = ? LIMIT 1",
-                        [$qc['variant_id']]
-                    );
+                    if ($warehouseId > 0 && !empty($qc['destination_warehouse_id']) && (int)$qc['destination_warehouse_id'] !== $warehouseId) {
+                        echo json_encode([
+                            'success' => false,
+                            'is_no_stock' => true,
+                            'message' => "QR Code '{$qc['tag_code']}' physically belongs to '{$qc['dest_warehouse_name']}', not the selected Source Warehouse! Please check the physical stock."
+                        ]);
+                        exit;
+                    }
+
+                    $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [$qc['variant_id']]);
                     if ($variant) {
                         $extractedTag = $qc['tag_code'] ?: $extractedTag;
                         break;
@@ -3350,7 +3656,7 @@ class WarehouseController {
             }
         }
 
-        // Strategy 4: Lookup by Production Batch Number (e.g. PB-2026-001, BAT-20260919-0001)
+        // Strategy 6: Lookup by Production Batch Number
         if (!$variant) {
             foreach ($candidateCodes as $c) {
                 $batchItem = Database::fetchOne(
@@ -3362,127 +3668,13 @@ class WarehouseController {
                     [$c, '%' . $c . '%']
                 );
                 if ($batchItem && !empty($batchItem['variant_id'])) {
-                    $variant = Database::fetchOne(
-                        "SELECT pv.*, 
-                                p.id as product_id, p.name as product_name, p.code as product_code, p.image_url as product_image,
-                                p.qr_code_prefix, p.category_code, p.subcategory_code, p.sub_subcategory_code,
-                                p.category_id, p.subcategory_id, p.sub_subcategory_id,
-                                s.name as size_name, s.code as size_code,
-                                col.name as color_name, col.hex_code as color_hex,
-                                COALESCE(wc.name, cat.name) as category_name,
-                                COALESCE(wsc.name, subcat.name) as subcategory_name,
-                                COALESCE(wssc.name, subsubcat.name) as sub_subcategory_name
-                         FROM product_variants pv
-                         JOIN products p ON pv.product_id = p.id
-                         LEFT JOIN sizes s ON pv.size_id = s.id
-                         LEFT JOIN colors col ON pv.color_id = col.id
-                         LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
-                         LEFT JOIN warehouse_subcategories wsc ON p.warehouse_subcategory_id = wsc.id
-                         LEFT JOIN warehouse_sub_subcategories wssc ON p.warehouse_sub_subcategory_id = wssc.id
-                         LEFT JOIN categories cat ON p.category_id = cat.id
-                         LEFT JOIN subcategories subcat ON p.subcategory_id = subcat.id
-                         LEFT JOIN sub_subcategories subsubcat ON p.sub_subcategory_id = subsubcat.id
-                         WHERE pv.id = ? LIMIT 1",
-                        [$batchItem['variant_id']]
-                    );
+                    $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [$batchItem['variant_id']]);
                     if ($variant) break;
                 }
             }
         }
 
-        // Strategy 5: Lookup from previous damage records with this tag_code
-        if (!$variant) {
-            $dmgTag = Database::fetchOne(
-                "SELECT variant_id FROM warehouse_damages WHERE tag_code = ? OR damage_number = ? ORDER BY id DESC LIMIT 1",
-                [$extractedTag, $rawCode]
-            );
-            if ($dmgTag && !empty($dmgTag['variant_id'])) {
-                $variant = Database::fetchOne(
-                    "SELECT pv.*, 
-                            p.id as product_id, p.name as product_name, p.code as product_code, p.image_url as product_image,
-                            p.qr_code_prefix, p.category_code, p.subcategory_code, p.sub_subcategory_code,
-                            p.category_id, p.subcategory_id, p.sub_subcategory_id,
-                            s.name as size_name, s.code as size_code,
-                            col.name as color_name, col.hex_code as color_hex,
-                            COALESCE(wc.name, cat.name) as category_name,
-                            COALESCE(wsc.name, subcat.name) as subcategory_name,
-                            COALESCE(wssc.name, subsubcat.name) as sub_subcategory_name
-                     FROM product_variants pv
-                     JOIN products p ON pv.product_id = p.id
-                     LEFT JOIN sizes s ON pv.size_id = s.id
-                     LEFT JOIN colors col ON pv.color_id = col.id
-                     LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
-                     LEFT JOIN warehouse_subcategories wsc ON p.warehouse_subcategory_id = wsc.id
-                     LEFT JOIN warehouse_sub_subcategories wssc ON p.warehouse_sub_subcategory_id = wssc.id
-                     LEFT JOIN categories cat ON p.category_id = cat.id
-                     LEFT JOIN subcategories subcat ON p.subcategory_id = subcat.id
-                     LEFT JOIN sub_subcategories subsubcat ON p.sub_subcategory_id = subsubcat.id
-                     WHERE pv.id = ? LIMIT 1",
-                    [$dmgTag['variant_id']]
-                );
-            }
-        }
-
-        // Resolve individual tags within a configured series range before trying fuzzy product matching.
-        if (!$variant && preg_match('/^(.*?)(\d+)$/', trim($extractedTag), $scannedSeriesTag)) {
-            $rangeStockLocationClause = $warehouseId > 0 ? ' AND available_sb.location_id = ?' : '';
-            $rangeParams = [];
-            if ($warehouseId > 0) {
-                $rangeParams[] = $warehouseId;
-            }
-            $rangeVariants = Database::fetchAll(
-                "SELECT pv.*,
-                        p.id AS product_id, p.name AS product_name, p.code AS product_code, p.image_url AS product_image,
-                        p.qr_code_prefix, p.category_code, p.subcategory_code, p.sub_subcategory_code,
-                        p.category_id, p.subcategory_id, p.sub_subcategory_id,
-                        s.name AS size_name, s.code AS size_code,
-                        col.name AS color_name, col.hex_code AS color_hex,
-                        COALESCE(wc.name, cat.name) AS category_name,
-                        COALESCE(wsc.name, subcat.name) AS subcategory_name,
-                        COALESCE(wssc.name, subsubcat.name) AS sub_subcategory_name
-                 FROM product_variants pv
-                 JOIN products p ON p.id = pv.product_id
-                 LEFT JOIN sizes s ON s.id = pv.size_id
-                 LEFT JOIN colors col ON col.id = pv.color_id
-                 LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
-                 LEFT JOIN warehouse_subcategories wsc ON wsc.id = p.warehouse_subcategory_id
-                 LEFT JOIN warehouse_sub_subcategories wssc ON wssc.id = p.warehouse_sub_subcategory_id
-                 LEFT JOIN categories cat ON cat.id = p.category_id
-                 LEFT JOIN subcategories subcat ON subcat.id = p.subcategory_id
-                 LEFT JOIN sub_subcategories subsubcat ON subsubcat.id = p.sub_subcategory_id
-                 WHERE pv.is_active = 1
-                   AND pv.series_start_code IS NOT NULL
-                   AND pv.series_end_code IS NOT NULL
-                   AND EXISTS (
-                       SELECT 1 FROM stock_balances available_sb
-                       WHERE available_sb.variant_id = pv.id
-                         AND available_sb.location_type = 'WAREHOUSE'
-                         AND available_sb.stock_state = 'AVAILABLE'
-                         AND available_sb.quantity > 0{$rangeStockLocationClause}
-                   )
-                 ORDER BY pv.id DESC",
-                $rangeParams
-            );
-
-            foreach ($rangeVariants as $rangeVariant) {
-                if (!preg_match('/^(.*?)(\d+)$/', trim((string)$rangeVariant['series_start_code']), $rangeStart)
-                    || !preg_match('/^(.*?)(\d+)$/', trim((string)$rangeVariant['series_end_code']), $rangeEnd)) {
-                    continue;
-                }
-                if (strcasecmp($rangeStart[1], $rangeEnd[1]) !== 0
-                    || strcasecmp($rangeStart[1], $scannedSeriesTag[1]) !== 0) {
-                    continue;
-                }
-
-                $sequence = (int)$scannedSeriesTag[2];
-                if ($sequence >= (int)$rangeStart[2] && $sequence <= (int)$rangeEnd[2]) {
-                    $variant = $rangeVariant;
-                    break;
-                }
-            }
-        }
-
-        // Strategy 6: Dynamic Piece Tag Decomposition & Reverse Prefix/Sequence Matching
+        // Strategy 7: Dynamic Piece Tag Decomposition & Reverse Prefix/Sequence Matching
         if (!$variant) {
             if (preg_match('/^([A-Za-z_-]{2,6})(\d{4})(\d{1,5})$/i', $extractedTag, $matches)) {
                 $prefix = strtoupper($matches[1]);
@@ -3526,7 +3718,13 @@ class WarehouseController {
                     foreach ($allVariants as $v) {
                         $prefixes = [];
                         if (!empty($v['qr_code_prefix'])) {
-                            $prefixes[] = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $v['qr_code_prefix']));
+                            $rawQp = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $v['qr_code_prefix']));
+                            $prefixes[] = $rawQp;
+                            if (strlen($rawQp) === 9) {
+                                $prefixes[] = $rawQp[0] . $rawQp[3] . $rawQp[6];
+                            } elseif (strlen($rawQp) > 4) {
+                                $prefixes[] = substr($rawQp, 0, 3);
+                            }
                         }
                         if (!empty($v['product_code'])) {
                             $prefixes[] = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', explode('-', $v['product_code'])[0]));
@@ -3545,27 +3743,24 @@ class WarehouseController {
                         }
 
                         $stock = (float)$v['wh_stock'];
-                        $isExactPrefixMatch = false;
-                        $isPrefixStartMatch = false;
+                        $isPrefixMatch = false;
 
                         foreach ($prefixes as $pfx) {
                             if (empty($pfx)) continue;
-                            if ($prefix === $pfx) {
-                                $isExactPrefixMatch = true;
+                            if ($prefix === $pfx || str_starts_with($prefix, $pfx) || str_starts_with($pfx, $prefix)) {
+                                $isPrefixMatch = true;
                                 break;
-                            } elseif (str_starts_with($prefix, $pfx) || str_starts_with($pfx, $prefix)) {
-                                $isPrefixStartMatch = true;
                             }
                         }
 
-                        if ($isExactPrefixMatch) {
-                            $score = 300 + min(50, (int)$stock);
+                        if ($isPrefixMatch) {
+                            $score = ($stock > 0 ? 200 : 50) + min(20, (int)$stock);
                             if ($score > $bestScore) {
                                 $bestScore = $score;
                                 $bestMatch = $v;
                             }
-                        } elseif ($isPrefixStartMatch) {
-                            $score = 150 + min(50, (int)$stock);
+                        } elseif ($prefix === 'TTS' && $stock > 0) {
+                            $score = 30 + min(50, (int)$stock);
                             if ($score > $bestScore) {
                                 $bestScore = $score;
                                 $bestMatch = $v;
@@ -3573,37 +3768,19 @@ class WarehouseController {
                         }
                     }
 
-                    if ($bestMatch) {
+                    if ($bestMatch && $bestScore > 0) {
                         $variant = $bestMatch;
                     }
                 }
             }
         }
 
-        // Strategy 7: Fuzzy search LIKE on SKU, Product Name, Code, Color, Size
+        // Strategy 8: Fuzzy search LIKE on SKU, Product Name, Code
         if (!$variant) {
             foreach ($candidateCodes as $c) {
                 if (strlen($c) < 2) continue;
                 $variant = Database::fetchOne(
-                    "SELECT pv.*, 
-                            p.id as product_id, p.name as product_name, p.code as product_code, p.image_url as product_image,
-                            p.qr_code_prefix, p.category_code, p.subcategory_code, p.sub_subcategory_code,
-                            p.category_id, p.subcategory_id, p.sub_subcategory_id,
-                            s.name as size_name, s.code as size_code,
-                            col.name as color_name, col.hex_code as color_hex,
-                            COALESCE(wc.name, cat.name) as category_name,
-                            COALESCE(wsc.name, subcat.name) as subcategory_name,
-                            COALESCE(wssc.name, subsubcat.name) as sub_subcategory_name
-                     FROM product_variants pv
-                     JOIN products p ON pv.product_id = p.id
-                     LEFT JOIN sizes s ON pv.size_id = s.id
-                     LEFT JOIN colors col ON pv.color_id = col.id
-                     LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
-                     LEFT JOIN warehouse_subcategories wsc ON p.warehouse_subcategory_id = wsc.id
-                     LEFT JOIN warehouse_sub_subcategories wssc ON p.warehouse_sub_subcategory_id = wssc.id
-                     LEFT JOIN categories cat ON p.category_id = cat.id
-                     LEFT JOIN subcategories subcat ON p.subcategory_id = subcat.id
-                     LEFT JOIN sub_subcategories subsubcat ON p.sub_subcategory_id = subsubcat.id
+                    $baseVariantSql . "
                      WHERE pv.sku LIKE ? OR p.name LIKE ? OR p.code LIKE ? OR col.name LIKE ?
                      LIMIT 1",
                     ['%' . $c . '%', '%' . $c . '%', '%' . $c . '%', '%' . $c . '%']
@@ -3612,213 +3789,118 @@ class WarehouseController {
             }
         }
 
-        // Also fetch multiple suggestions / matches if searching (for live dropdown)
-        $searchTerms = '%' . $rawCode . '%';
-        $matchesList = Database::fetchAll(
-            "SELECT pv.*, 
-                    p.id as product_id, p.name as product_name, p.code as product_code, p.image_url as product_image,
-                    s.name as size_name, col.name as color_name,
-                    COALESCE(wc.name, cat.name) as category_name,
-                    COALESCE(wsc.name, subcat.name) as subcategory_name,
-                    COALESCE(wssc.name, subsubcat.name) as sub_subcategory_name,
-                    COALESCE((
-                        SELECT SUM(sb.quantity)
-                        FROM stock_balances sb
-                        WHERE sb.variant_id = pv.id
-                          AND sb.location_type = 'WAREHOUSE' " . ($warehouseId > 0 ? "AND sb.location_id = {$warehouseId}" : "") . "
-                          AND sb.stock_state = 'AVAILABLE'
-                    ), 0) as available_stock
-             FROM product_variants pv
-             JOIN products p ON pv.product_id = p.id
-             LEFT JOIN sizes s ON pv.size_id = s.id
-             LEFT JOIN colors col ON pv.color_id = col.id
-             LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
-             LEFT JOIN warehouse_subcategories wsc ON p.warehouse_subcategory_id = wsc.id
-             LEFT JOIN warehouse_sub_subcategories wssc ON p.warehouse_sub_subcategory_id = wssc.id
-             LEFT JOIN categories cat ON p.category_id = cat.id
-             LEFT JOIN subcategories subcat ON p.subcategory_id = subcat.id
-             LEFT JOIN sub_subcategories subsubcat ON p.sub_subcategory_id = subsubcat.id
-             WHERE (pv.sku LIKE ? OR p.name LIKE ? OR p.code LIKE ? OR pv.qr_code LIKE ? OR col.name LIKE ? OR s.name LIKE ?)
-               AND EXISTS (
-                    SELECT 1
-                    FROM stock_balances available_sb
-                    WHERE available_sb.variant_id = pv.id
-                      AND available_sb.location_type = 'WAREHOUSE'
-                      AND available_sb.stock_state = 'AVAILABLE'
-                      AND available_sb.quantity > 0 " . ($warehouseId > 0 ? "AND available_sb.location_id = {$warehouseId}" : "") . "
-               )
-             ORDER BY available_stock DESC, pv.id ASC
-             LIMIT 10",
-            [$searchTerms, $searchTerms, $searchTerms, $searchTerms, $searchTerms, $searchTerms]
-        );
-
-        $formattedMatches = [];
-        foreach ($matchesList as $m) {
-            $catH = implode(' › ', array_filter([$m['category_name'] ?? '', $m['subcategory_name'] ?? '', $m['sub_subcategory_name'] ?? '']));
-            $mCost = (float)(
-                (!empty($m['selling_price']) && (float)$m['selling_price'] > 0) ? $m['selling_price'] :
-                ((!empty($m['mrp']) && (float)$m['mrp'] > 0) ? $m['mrp'] :
-                ((!empty($m['purchase_price']) && (float)$m['purchase_price'] > 0) ? $m['purchase_price'] :
-                ((!empty($m['production_cost']) && (float)$m['production_cost'] > 0) ? $m['production_cost'] : 0.0)))
-            );
-            $formattedMatches[] = [
-                'id'                 => (int)$m['id'],
-                'sku'                => $m['sku'],
-                'product_name'       => $m['product_name'],
-                'product_code'       => $m['product_code'],
-                'category_hierarchy' => $catH,
-                'size_name'          => $m['size_name'] ?? 'Free Size',
-                'color_name'         => $m['color_name'] ?? 'Standard',
-                'available_stock'    => (int)($m['available_stock'] ?? 0),
-                'cost_per_unit'      => $mCost,
-                'mrp'                => (float)($m['mrp'] ?? $m['selling_price'] ?? 0),
-                'tag_code'           => $m['sku']
-            ];
-        }
-
         if (!$variant) {
             echo json_encode([
                 'success' => false,
-                'message' => 'No matching product variant found for code "' . htmlspecialchars($rawCode) . '"',
-                'matches' => $formattedMatches
+                'message' => 'No matching product variant found for scanned code "' . htmlspecialchars($rawCode) . '"'
             ]);
             exit;
         }
 
-        $damageScanInfo = Database::fetchOne(
-            "SELECT pv.qr_code, pv.qr_type, pv.pack_quantity, pv.series_start_code, pv.series_end_code,
-                    pv.is_complementary, p.is_complementary AS product_is_complementary,
-                    wc.category_type
-             FROM product_variants pv
-             JOIN products p ON p.id = pv.product_id
-             LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
-             WHERE pv.id = ?",
+        // Normalize metadata
+        $variant = Database::fetchOne(
+            $baseVariantSql . " WHERE pv.id = ? LIMIT 1",
             [(int)$variant['id']]
-        ) ?? [];
-        $catTypeUpper = strtoupper((string)($damageScanInfo['category_type'] ?? ''));
-        $isSeriesProduct = $catTypeUpper === 'SERIES'
-            || strtoupper((string)($damageScanInfo['qr_type'] ?? '')) === 'SERIES_BATCH'
-            || (int)($damageScanInfo['pack_quantity'] ?? 1) > 1;
-        $isComplementaryProduct = $catTypeUpper === 'COMPLEMENTARY'
-            || !empty($damageScanInfo['is_complementary'])
-            || !empty($damageScanInfo['product_is_complementary']);
-        $isPackProduct = $isSeriesProduct || $isComplementaryProduct;
-        $productType = $isComplementaryProduct ? 'COMPLEMENTARY' : ($isSeriesProduct ? 'SERIES' : 'NORMAL');
-        $isQtyEditable = ($isSeriesProduct || $isComplementaryProduct);
-        $storedWarehouseQr = !empty($extractedTag) ? Database::fetchOne(
-            "SELECT qr_code FROM warehouse_qr_codes
-             WHERE variant_id = ? AND UPPER(qr_code) = UPPER(?)
-             LIMIT 1",
-            [(int)$variant['id'], trim((string)$extractedTag)]
-        ) : null;
-        $isMasterPackScan = $isPackProduct
-            && (
-                (!empty($damageScanInfo['qr_code'])
-                    && strcasecmp(trim((string)$extractedTag), trim((string)$damageScanInfo['qr_code'])) === 0)
-                || !empty($storedWarehouseQr['qr_code'])
-            );
-        $packQuantity = max(1, (int)($damageScanInfo['pack_quantity'] ?? 1));
-        if ($isSeriesProduct && $packQuantity === 1
-            && preg_match('/^(.*?)(\d+)$/', trim((string)($damageScanInfo['series_start_code'] ?? '')), $seriesStart)
-            && preg_match('/^(.*?)(\d+)$/', trim((string)($damageScanInfo['series_end_code'] ?? '')), $seriesEnd)
-            && strcasecmp($seriesStart[1], $seriesEnd[1]) === 0
-        ) {
-            $packQuantity = max(1, (int)$seriesEnd[2] - (int)$seriesStart[2] + 1);
+        );
+        if (!$variant) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'The scanned product variant is no longer available. Please scan the QR code again.'
+            ]);
+            exit;
         }
-        $damageQuantity = $isMasterPackScan ? $packQuantity : 1;
-        $variantIdentifiers = array_filter([
-            trim((string)($variant['sku'] ?? '')),
-            trim((string)($variant['product_code'] ?? '')),
-            trim((string)($variant['qr_code_prefix'] ?? '')),
-        ]);
-        $isVariantIdentifierScan = false;
-        foreach ($variantIdentifiers as $identifier) {
-            if (strcasecmp(trim((string)$extractedTag), $identifier) === 0) {
-                $isVariantIdentifierScan = true;
+
+        // Fetch Source Warehouse name
+        $warehouseName = 'Warehouse';
+        if ($warehouseId > 0) {
+            $whRow = Database::fetchOne("SELECT name FROM warehouses WHERE id = ?", [$warehouseId]);
+            if ($whRow && !empty($whRow['name'])) {
+                $warehouseName = $whRow['name'];
+            }
+        }
+
+        // Fetch Live Stock Balances in this warehouse
+        if ($warehouseId > 0) {
+            $avail = Database::fetchOne(
+                "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                 WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND location_id = ? AND stock_state = 'AVAILABLE'",
+                [$variant['id'], $warehouseId]
+            );
+            $res = Database::fetchOne(
+                "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                 WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND location_id = ? AND stock_state = 'RESERVED'",
+                [$variant['id'], $warehouseId]
+            );
+            $dmg = Database::fetchOne(
+                "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                 WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND location_id = ? AND stock_state = 'DAMAGED'",
+                [$variant['id'], $warehouseId]
+            );
+        } else {
+            $avail = Database::fetchOne(
+                "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                 WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND stock_state = 'AVAILABLE'",
+                [$variant['id']]
+            );
+            $res = Database::fetchOne(
+                "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                 WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND stock_state = 'RESERVED'",
+                [$variant['id']]
+            );
+            $dmg = Database::fetchOne(
+                "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                 WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND stock_state = 'DAMAGED'",
+                [$variant['id']]
+            );
+        }
+
+        $availableStock = (float)($avail['qty'] ?? 0);
+        $reservedStock  = (float)($res['qty'] ?? 0);
+        $damagedStock   = (float)($dmg['qty'] ?? 0);
+        $totalStock     = $availableStock + $reservedStock;
+
+        if ($warehouseId > 0 && $availableStock <= 0) {
+            echo json_encode([
+                'success'     => false,
+                'is_no_stock' => true,
+                'message'     => "Product '{$variant['product_name']}' ({$variant['sku']}) has 0 AVAILABLE stock in {$warehouseName}! Cannot log damage for out-of-stock inventory."
+            ]);
+            exit;
+        }
+
+        // Fetch/generate piece QR items for this variant
+        $qrPieces = $this->generateVariantQrPieces($variant, (int)$availableStock, $warehouseId > 0 ? $warehouseId : null);
+
+        $tagExistsInPieces = false;
+        foreach ($qrPieces as $qp) {
+            if ($qp['qr_code'] === $extractedTag) {
+                $tagExistsInPieces = true;
                 break;
             }
         }
-        $tagIsUnique = $isMasterPackScan || !$isVariantIdentifierScan;
 
-        // Fetch Stock Balances in this warehouse
-        $stockSql = "SELECT 
-                        COALESCE(SUM(CASE WHEN stock_state = 'AVAILABLE' THEN quantity ELSE 0 END), 0) as available_qty,
-                        COALESCE(SUM(CASE WHEN stock_state = 'DAMAGED' THEN quantity ELSE 0 END), 0) as damaged_qty,
-                        COALESCE(SUM(CASE WHEN stock_state = 'RESERVED' THEN quantity ELSE 0 END), 0) as reserved_qty
-                     FROM stock_balances
-                     WHERE variant_id = ? AND location_type = 'WAREHOUSE'";
-        $stockParams = [$variant['id']];
-        if ($warehouseId > 0) {
-            $stockSql .= " AND location_id = ?";
-            $stockParams[] = $warehouseId;
-        }
-        $stock = Database::fetchOne($stockSql, $stockParams);
-
-        if ((float)($stock['available_qty'] ?? 0) <= 0) {
-            echo json_encode([
-                'success' => false,
-                'message' => 'This product has no available stock in the selected warehouse and cannot be added to damage.'
+        if (!$tagExistsInPieces && !empty($extractedTag) && $extractedTag !== $variant['sku']) {
+            array_unshift($qrPieces, [
+                'piece_no'      => 1,
+                'qr_code'       => $extractedTag,
+                'sku'           => $variant['sku'],
+                'size'          => $variant['size_name'] ?? 'Free',
+                'color'         => $variant['color_name'] ?? '',
+                'product'       => $variant['product_name'],
+                'mrp'           => (float)($variant['mrp'] ?? 0),
+                'selling_price' => (float)($variant['selling_price'] ?? 0),
             ]);
-            exit;
-        }
-        if ($damageQuantity > (float)$stock['available_qty']) {
-            if ($isMasterPackScan || $isPackProduct) {
-                // For pack/series products with partial stock remaining, cap to remaining available stock
-                $damageQuantity = max(1, (int)$stock['available_qty']);
-            } else {
-                echo json_encode([
-                    'success' => false,
-                    'message' => "This scan represents {$damageQuantity} pcs, but only {$stock['available_qty']} pcs are available in the selected warehouse."
-                ]);
-                exit;
-            }
         }
 
-        if (!empty($extractedTag) && (!$isVariantIdentifierScan || $isMasterPackScan)) {
-            $allocatedTag = $this->findAllocatedWarehouseTag($extractedTag);
-            if ($allocatedTag) {
-                if ($isPackProduct && (float)($stock['available_qty'] ?? 0) > 0) {
-                    // Pack product still has remaining available stock in warehouse
-                } else {
-                    echo json_encode([
-                        'success' => false,
-                        'message' => ((int)$allocatedTag['variant_id'] !== (int)$variant['id'] ? 'This QR tag belongs to a different product. ' : '') . "QR tag '" . htmlspecialchars($extractedTag, ENT_QUOTES, 'UTF-8') . "' is allocated in Pass #" . htmlspecialchars($allocatedTag['allocation_number'], ENT_QUOTES, 'UTF-8') . " (" . htmlspecialchars($allocatedTag['status'], ENT_QUOTES, 'UTF-8') . ") and is not available in warehouse stock."
-                    ]);
-                    exit;
-                }
-            }
+        $catHierarchy = trim(($variant['category_name'] ?? '') . ' > ' . ($variant['subcategory_name'] ?? '') . ($variant['sub_subcategory_name'] ? ' > ' . $variant['sub_subcategory_name'] : ''), ' >');
 
-            $soldTag = $this->findDirectPurchaseSoldTag($extractedTag);
-            if ($soldTag) {
-                if ($isPackProduct && (float)($stock['available_qty'] ?? 0) > 0) {
-                    // Pack product still has remaining available stock in warehouse
-                } else {
-                    echo json_encode([
-                        'success' => false,
-                        'message' => ((int)$soldTag['variant_id'] !== (int)$variant['id'] ? 'This QR tag belongs to a different product. ' : '') . "QR tag '" . htmlspecialchars($extractedTag, ENT_QUOTES, 'UTF-8') . "' was already sold in Direct Purchase #" . htmlspecialchars($soldTag['po_number'], ENT_QUOTES, 'UTF-8') . " (" . htmlspecialchars($soldTag['status'], ENT_QUOTES, 'UTF-8') . ") and cannot be damaged from warehouse stock."
-                    ]);
-                    exit;
-                }
-            }
-
-            $outwardTag = $this->findDispatchedWhatsappTag($extractedTag, $warehouseId);
-            if ($outwardTag && (
-                empty($outwardTag['is_pack_product'])
-                || (float)$outwardTag['available_qty'] <= 0
-                || (int)$outwardTag['variant_id'] !== (int)$variant['id']
-            )) {
-                $reason = (int)$outwardTag['variant_id'] !== (int)$variant['id']
-                    ? 'This QR tag belongs to a different product.'
-                    : (empty($outwardTag['is_pack_product'])
-                        ? 'Normal individual-product QR tags cannot be added again after dispatch.'
-                        : 'No available pack stock remains in this warehouse.');
-                echo json_encode([
-                    'success' => false,
-                    'message' => "QR tag '" . htmlspecialchars($extractedTag, ENT_QUOTES, 'UTF-8') . "' was already dispatched to WhatsApp in Outward #" . htmlspecialchars($outwardTag['outward_number'], ENT_QUOTES, 'UTF-8') . " (" . htmlspecialchars($outwardTag['channel_name'], ENT_QUOTES, 'UTF-8') . "). {$reason}"
-                ]);
-                exit;
-            }
-        }
+        $categoryType = strtoupper(trim((string)($variant['category_type'] ?? 'NORMAL')));
+        $isSeries = ($categoryType === 'SERIES' || strtoupper($variant['qr_type'] ?? '') === 'SERIES_BATCH');
+        $isComplementary = ($categoryType === 'COMPLEMENTARY');
+        $packQty = (int)(!empty($variant['pack_quantity']) ? $variant['pack_quantity'] : ($isSeries || $isComplementary ? $availableStock : 1));
+        if ($packQty <= 0) $packQty = 1;
+        $scanQty = ($isSeries || $isComplementary) ? (int)(!empty($parsedSeriesQty) ? $parsedSeriesQty : min($packQty, (int)$availableStock)) : 1;
+        if ($scanQty <= 0) $scanQty = 1;
 
         $cost = (float)(
             (!empty($variant['selling_price']) && (float)$variant['selling_price'] > 0) ? $variant['selling_price'] :
@@ -3827,50 +3909,48 @@ class WarehouseController {
             ((!empty($variant['production_cost']) && (float)$variant['production_cost'] > 0) ? $variant['production_cost'] : 0.0)))
         );
 
-        $catHierarchy = implode(' › ', array_filter([
-            $variant['category_name'] ?? '',
-            $variant['subcategory_name'] ?? '',
-            $variant['sub_subcategory_name'] ?? ''
-        ]));
+        $responseData = [
+            'success'              => true,
+            'warehouse_id'         => $warehouseId,
+            'tag_code'             => $extractedTag,
+            'variant_id'           => (int)$variant['id'],
+            'sku'                  => $variant['sku'],
+            'product_id'           => (int)$variant['product_id'],
+            'product_name'         => $variant['product_name'],
+            'product_code'         => $variant['product_code'],
+            'category_id'          => (int)($variant['category_id'] ?? 0),
+            'subcategory_id'       => (int)($variant['subcategory_id'] ?? 0),
+            'sub_subcategory_id'   => (int)($variant['sub_subcategory_id'] ?? 0),
+            'category_name'        => $variant['category_name'] ?? '',
+            'category_type'        => $categoryType,
+            'subcategory_name'     => $variant['subcategory_name'] ?? '',
+            'sub_subcategory_name' => $variant['sub_subcategory_name'] ?? '',
+            'hierarchy'            => $catHierarchy,
+            'category_hierarchy'   => $catHierarchy,
+            'size_name'            => $variant['size_name'] ?? 'Free Size',
+            'color_name'           => $variant['color_name'] ?? '',
+            'color_hex'            => $variant['color_hex'] ?? '#333333',
+            'product_image'        => $variant['product_image'] ?? null,
+            'total_stock'          => $totalStock,
+            'reserved_stock'       => $reservedStock,
+            'available_stock'      => $availableStock,
+            'damaged_stock'        => $damagedStock,
+            'cost_per_unit'        => $cost,
+            'mrp'                  => (float)($variant['mrp'] ?? $variant['selling_price'] ?? 0),
+            'selling_price'        => (float)($variant['selling_price'] ?? 0),
+            'is_series'            => $isSeries,
+            'is_complementary'     => $isComplementary,
+            'qr_type'              => $variant['qr_type'] ?? 'INDIVIDUAL',
+            'pack_quantity'        => $packQty,
+            'scan_qty'             => $scanQty,
+            'damage_quantity'      => $scanQty,
+            'series_start_code'    => $variant['series_start_code'] ?? null,
+            'series_end_code'      => $variant['series_end_code'] ?? null,
+            'qr_pieces'            => $qrPieces,
+        ];
+        $responseData['variant'] = $responseData;
 
-        echo json_encode([
-            'success' => true,
-            'variant' => [
-                'id'                   => (int)$variant['id'],
-                'sku'                  => $variant['sku'],
-                'product_id'           => (int)$variant['product_id'],
-                'product_name'         => $variant['product_name'],
-                'product_code'         => $variant['product_code'],
-                'category_id'          => $variant['category_id'] ?? null,
-                'subcategory_id'       => $variant['subcategory_id'] ?? null,
-                'sub_subcategory_id'   => $variant['sub_subcategory_id'] ?? null,
-                'category_name'        => $variant['category_name'] ?? 'General',
-                'subcategory_name'     => $variant['subcategory_name'] ?? '',
-                'sub_subcategory_name' => $variant['sub_subcategory_name'] ?? '',
-                'category_hierarchy'   => $catHierarchy,
-                'size_name'            => $variant['size_name'] ?? 'Free Size',
-                'color_name'           => $variant['color_name'] ?? 'Standard',
-                'color_hex'            => $variant['color_hex'] ?? '#333333',
-                'product_image'        => $variant['product_image'] ?? null,
-                'cost_per_unit'        => $cost,
-                'mrp'                  => (float)($variant['mrp'] ?? $variant['selling_price'] ?? 0),
-                'selling_price'        => (float)($variant['selling_price'] ?? 0),
-                'tag_code'             => $extractedTag,
-                'category_type'        => $damageScanInfo['category_type'] ?? 'NORMAL',
-                'product_type'         => $productType,
-                'is_series'            => $isSeriesProduct,
-                'is_complementary'     => $isComplementaryProduct,
-                'is_pack_product'      => $isPackProduct,
-                'is_qty_editable'      => $isQtyEditable,
-                'pack_quantity'        => $packQuantity,
-                'damage_quantity'      => $damageQuantity,
-                'tag_is_unique'        => $tagIsUnique,
-                'available_stock'      => (int)($stock['available_qty'] ?? 0),
-                'damaged_stock'        => (int)($stock['damaged_qty'] ?? 0),
-                'reserved_stock'       => (int)($stock['reserved_qty'] ?? 0),
-            ],
-            'matches' => $formattedMatches
-        ]);
+        echo json_encode($responseData);
         exit;
     }
 

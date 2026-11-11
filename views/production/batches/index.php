@@ -322,6 +322,44 @@
                         </div>
                     </div>
 
+                    <!-- Multiple Batch Selection & Combined QC Batches -->
+                    <div class="p-3 rounded-3 bg-light border mb-4" id="editBatchMultiBatchCard">
+                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                            <label class="form-label small fw-bold text-dark mb-0">
+                                <i class="bi bi-collection text-primary me-1"></i>Multiple Batch Selection (Combined QC Batches)
+                            </label>
+                            <span class="badge bg-primary text-white" id="editBatchMultiCountBadge" style="display: none;">
+                                <i class="bi bi-patch-check me-1"></i><span id="editBatchCombinedCount">1</span> QC Batches Combined
+                            </span>
+                        </div>
+                        
+                        <!-- Combined Batches Chips Display -->
+                        <div class="mb-2">
+                            <span class="small text-muted fw-semibold d-block mb-1">Batches Combined in this Pack:</span>
+                            <div class="d-flex flex-wrap gap-1 align-items-center" id="editBatchCombinedChips">
+                                <span class="badge bg-primary text-white border" id="editBatchPrimaryBadge">
+                                    <i class="bi bi-check-circle me-1"></i>Primary: QC #—
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Additional QC Batches Multi-Select Dropdown -->
+                        <div class="mt-2 pt-2 border-top" id="editBatchCombineSelectArea">
+                            <label class="form-label small fw-bold text-secondary mb-1">
+                                <i class="bi bi-plus-circle me-1 text-primary"></i>Combine Additional QC Batches:
+                            </label>
+                            <select name="additional_qc_batch_ids[]" id="editBatchAdditionalQcSelect" class="form-select form-select-sm" multiple size="3" onchange="onEditBatchMultiSelectChange()">
+                                <!-- Dynamically populated -->
+                            </select>
+                            <div class="form-text small text-muted mt-1" style="font-size: 11px;">
+                                <i class="bi bi-info-circle me-1"></i>Hold <kbd>Ctrl</kbd> (or <kbd>Cmd</kbd>) to select or unselect multiple QC batches to combine into this pack.
+                            </div>
+                            <div id="editBatchNoEligibleMsg" class="small text-muted mt-1 fst-italic" style="display: none;">
+                                <i class="bi bi-check2-circle text-success me-1"></i>No other pending QC batches available for this program.
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="row g-3 mb-4">
                         <div class="col-md-6">
                             <label class="form-label small fw-bold text-dark">Destination Warehouse <span class="text-danger">*</span></label>
@@ -361,7 +399,7 @@
                                 <thead class="table-light">
                                     <tr>
                                         <th style="width: 40px;">#</th>
-                                        <th>SKU / Variant</th>
+                                        <th><i class="bi bi-qr-code me-1 text-primary"></i>QR Code</th>
                                         <th>Size</th>
                                         <th>Color</th>
                                         <th class="text-end" style="width: 140px;">Quantity (pcs)</th>
@@ -427,6 +465,39 @@ function recalcEditBatchTotal() {
     if (totalEl) totalEl.textContent = total;
 }
 
+let currentEditBatchQcId = null;
+
+function onEditBatchMultiSelectChange() {
+    const select = document.getElementById('editBatchAdditionalQcSelect');
+    const chipsContainer = document.getElementById('editBatchCombinedChips');
+    const multiCountBadge = document.getElementById('editBatchMultiCountBadge');
+    const countSpan = document.getElementById('editBatchCombinedCount');
+    if (!chipsContainer || !select) return;
+
+    let selectedOptions = Array.from(select.selectedOptions);
+    let count = 1 + selectedOptions.length;
+
+    // Base Primary Badge
+    let chipsHtml = `<span class="badge bg-primary text-white border" id="editBatchPrimaryBadge">
+        <i class="bi bi-check-circle me-1"></i>Primary: QC #${currentEditBatchQcId || '—'}
+    </span>`;
+
+    selectedOptions.forEach(opt => {
+        chipsHtml += `<span class="badge bg-info-subtle text-dark border border-info">
+            <i class="bi bi-collection me-1"></i>${escapeHtml(opt.text.split('[')[0].trim())}
+        </span>`;
+    });
+
+    chipsContainer.innerHTML = chipsHtml;
+
+    if (selectedOptions.length > 0) {
+        if (multiCountBadge) multiCountBadge.style.display = 'inline-block';
+        if (countSpan) countSpan.textContent = count;
+    } else {
+        if (multiCountBadge) multiCountBadge.style.display = 'none';
+    }
+}
+
 function openEditBatchModal(batch) {
     if (!batch) return;
     const form = document.getElementById('editBatchForm');
@@ -486,15 +557,79 @@ function openEditBatchModal(batch) {
                         if (driverContactInput) driverContactInput.value = data.outward.driver_contact || '';
                     }
 
+                    // Populate Multiple QC Batches
+                    currentEditBatchQcId = batch.qc_batch_id || (data.qc_batch ? data.qc_batch.id : null);
+                    const primaryBadge = document.getElementById('editBatchPrimaryBadge');
+                    if (primaryBadge) {
+                        primaryBadge.innerHTML = `<i class="bi bi-check-circle me-1"></i>Primary: QC #${currentEditBatchQcId || '—'}`;
+                    }
+
+                    const addSelect = document.getElementById('editBatchAdditionalQcSelect');
+                    const noEligibleMsg = document.getElementById('editBatchNoEligibleMsg');
+                    const selectedAddIds = Array.isArray(data.additional_qc_ids) ? data.additional_qc_ids.map(Number) : [];
+
+                    if (addSelect) {
+                        addSelect.innerHTML = '';
+                        const batchMap = new Map();
+                        if (data.multi_qc_batches && Array.isArray(data.multi_qc_batches)) {
+                            data.multi_qc_batches.forEach(b => {
+                                if (b && b.id && Number(b.id) !== Number(currentEditBatchQcId)) {
+                                    batchMap.set(Number(b.id), b);
+                                }
+                            });
+                        }
+                        if (data.eligible_qc_batches && Array.isArray(data.eligible_qc_batches)) {
+                            data.eligible_qc_batches.forEach(b => {
+                                if (b && b.id && Number(b.id) !== Number(currentEditBatchQcId)) {
+                                    if (!batchMap.has(Number(b.id))) {
+                                        batchMap.set(Number(b.id), b);
+                                    }
+                                }
+                            });
+                        }
+
+                        if (batchMap.size > 0) {
+                            if (noEligibleMsg) noEligibleMsg.style.display = 'none';
+                            addSelect.style.display = 'block';
+                            batchMap.forEach((qb, qbId) => {
+                                const opt = document.createElement('option');
+                                opt.value = qbId;
+                                const isSel = selectedAddIds.includes(qbId);
+                                opt.selected = isSel;
+                                const prog = qb.program_number ? (qb.program_number + ' — ') : '';
+                                const prod = qb.product_name ? (qb.product_name + ' ') : '';
+                                const qty = qb.passed_qty || qb.total_qc_passed || 0;
+                                opt.textContent = `QC #${qbId} (${prog}${prod}) [${qty} pcs]`;
+                                addSelect.appendChild(opt);
+                            });
+                        } else {
+                            if (noEligibleMsg) noEligibleMsg.style.display = 'block';
+                            addSelect.style.display = 'none';
+                        }
+
+                        onEditBatchMultiSelectChange();
+                    }
+
                     if (data.items && data.items.length) {
                         let html = '';
                         let runTotal = 0;
                         data.items.forEach((it, idx) => {
                             const q = parseInt(it.quantity || 0, 10);
                             runTotal += q;
+                            const qrCodeVal = (it.qr_code && it.qr_code.trim() !== '') ? it.qr_code : (it.sku || '—');
+                            const skuVal = it.sku || '';
+                            const hasDifferentSku = skuVal && skuVal !== qrCodeVal;
+
                             html += `<tr>
                                 <td class="small text-muted">${idx + 1}</td>
-                                <td class="fw-semibold small">${escapeHtml(it.sku || it.product_name || 'Variant')}</td>
+                                <td>
+                                    <div class="d-flex align-items-center gap-1">
+                                        <span class="badge bg-light text-dark border font-monospace fw-bold" style="font-size: 11.5px; letter-spacing: 0.5px;">
+                                            <i class="bi bi-qr-code text-primary me-1"></i>${escapeHtml(qrCodeVal)}
+                                        </span>
+                                    </div>
+                                    ${hasDifferentSku ? `<div class="text-muted small mt-0.5" style="font-size: 10.5px;">SKU: ${escapeHtml(skuVal)}</div>` : ''}
+                                </td>
                                 <td class="small"><span class="badge bg-light text-dark border">${escapeHtml(it.size_name || 'STD')}</span></td>
                                 <td class="small">${escapeHtml(it.color_name || 'Standard')}</td>
                                 <td class="text-end">
