@@ -7049,7 +7049,7 @@ class WarehouseController {
         }
 
         if ($warehouseId > 0) {
-            $sql = "SELECT pv.id, pv.sku, pv.qr_type, pv.pack_quantity,
+            $sql = "SELECT pv.id, pv.sku, pv.qr_type, pv.pack_quantity, pv.series_start_code, pv.series_end_code,
                            GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
                            UPPER(COALESCE(wc.category_type, 'NORMAL')) as category_type,
                            p.name as product_name, p.category_id, p.subcategory_id, p.sub_subcategory_id,
@@ -7068,7 +7068,7 @@ class WarehouseController {
                     WHERE pv.is_active = 1";
             $params = [$warehouseId, $warehouseId];
         } else {
-            $sql = "SELECT pv.id, pv.sku, pv.qr_type, pv.pack_quantity,
+            $sql = "SELECT pv.id, pv.sku, pv.qr_type, pv.pack_quantity, pv.series_start_code, pv.series_end_code,
                            GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
                            UPPER(COALESCE(wc.category_type, 'NORMAL')) as category_type,
                            p.name as product_name, p.category_id, p.subcategory_id, p.sub_subcategory_id,
@@ -7123,7 +7123,7 @@ class WarehouseController {
         }
 
         if (
-            in_array(strtoupper((string)($variant['category_type'] ?? 'NORMAL')), ['SERIES', 'COMPLEMENTARY'], true)
+            in_array(strtoupper((string)($variant['category_type'] ?? $variant['cat_type'] ?? 'NORMAL')), ['SERIES', 'COMPLEMENTARY'], true)
             && !empty($variant['series_start_code'])
             && !empty($variant['series_end_code'])
         ) {
@@ -7629,19 +7629,43 @@ class WarehouseController {
             if ($dmgCheck) {
                 // Check if this variant is a Series batch, Complementary pack, or Pack product with remaining available warehouse stock
                 $dmgVar = Database::fetchOne(
-                    "SELECT pv.id, pv.qr_type, pv.pack_quantity,
+                    "SELECT pv.id, pv.sku, pv.qr_code as barcode, pv.qr_type, pv.pack_quantity,
+                            pv.series_start_code, pv.series_end_code,
                             COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
-                            COALESCE(wc.category_type, 'NORMAL') as cat_type
+                            CASE
+                                WHEN GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) = 1 THEN 'COMPLEMENTARY'
+                                WHEN UPPER(COALESCE(wc.category_type, '')) = 'COMPLEMENTARY' THEN 'COMPLEMENTARY'
+                                WHEN UPPER(COALESCE(pv.qr_type, '')) = 'SERIES_BATCH' THEN 'SERIES'
+                                ELSE UPPER(COALESCE(wc.category_type, 'NORMAL'))
+                            END as cat_type
                      FROM product_variants pv 
                      JOIN products p ON pv.product_id = p.id 
                      LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
-                     LEFT JOIN categories cat ON p.category_id = cat.id
                      WHERE pv.id = ?",
                     [$dmgCheck['variant_id']]
                 );
                 $isMasterOrComp = $dmgVar && in_array(strtoupper($dmgVar['cat_type'] ?? ''), ['SERIES', 'COMPLEMENTARY'], true);
+                $isAggregateCode = $isMasterOrComp && $this->isAllocationVariantIdentifier($dmgVar, (string)$scannedPieceTag);
+                if (!$isAggregateCode && $isMasterOrComp) {
+                    $aggregateQr = Database::fetchOne(
+                        "SELECT id FROM warehouse_qr_codes
+                         WHERE variant_id = ? AND pack_quantity > 1
+                           AND UPPER(qr_code) = UPPER(?)
+                           AND inwarded_at IS NOT NULL
+                           AND (? <= 0 OR warehouse_id = ?)
+                         LIMIT 1",
+                        [(int)$dmgCheck['variant_id'], $scannedPieceTag, $warehouseId, $warehouseId]
+                    );
+                    $isAggregateCode = (bool)$aggregateQr;
+                }
 
-                if ($isMasterOrComp) {
+                $damagedTags = array_map(
+                    static fn(string $tag): string => strtoupper(trim($tag)),
+                    explode(',', (string)($dmgCheck['tag_code'] ?? ''))
+                );
+                $isScannedTagDamaged = in_array(strtoupper(trim($scannedPieceTag)), $damagedTags, true);
+
+                if ($isMasterOrComp && (!$isScannedTagDamaged || $isAggregateCode)) {
                     $availStockRow = Database::fetchOne(
                         "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
                          WHERE variant_id = ? AND location_type = 'WAREHOUSE' " . ($warehouseId > 0 ? "AND location_id = {$warehouseId}" : "") . " AND stock_state = 'AVAILABLE'",
@@ -8312,6 +8336,8 @@ class WarehouseController {
             exit;
         }
 
+        $categoryType = strtoupper(trim((string)($variant['category_type'] ?? 'NORMAL')));
+        $isAggregateAllocation = in_array($categoryType, ['SERIES', 'COMPLEMENTARY'], true);
         if ($availableStock <= 0) {
             echo json_encode([
                 'success'     => false,
@@ -8322,7 +8348,6 @@ class WarehouseController {
         }
 
         // Fetch/generate piece QR items for this variant
-        $categoryType = strtoupper(trim((string)($variant['category_type'] ?? 'NORMAL')));
         $qrPieces = $this->generateVariantQrPieces($variant, (int)$availableStock, $warehouseId > 0 ? $warehouseId : null, true);
         $tagExistsInPieces = false;
         $isKnownVariantCode = false;
@@ -8337,6 +8362,15 @@ class WarehouseController {
         }
         if (!$tagExistsInPieces) {
             $isKnownVariantCode = $this->isAllocationVariantIdentifier($variant, (string)$extractedTag);
+        }
+
+        if ($isAggregateAllocation && $isKnownVariantCode && !empty($parsedSeriesQty) && $parsedSeriesQty > $availableStock) {
+            echo json_encode([
+                'success' => false,
+                'is_no_stock' => true,
+                'message' => "Only {$availableStock} AVAILABLE pieces remain for this series/complementary product; the scanned code requests {$parsedSeriesQty}."
+            ]);
+            exit;
         }
 
         if (!$isKnownVariantCode && !$tagExistsInPieces) {
