@@ -268,7 +268,7 @@
                                     <!-- Actions -->
                                     <td class="text-center">
                                         <div class="btn-group btn-group-sm">
-                                            <button type="button" class="btn btn-outline-info" title="View Wastage Sale Details" aria-label="View Wastage Sale Details" onclick="openWastageReceipt(<?= (int)$s['id'] ?>)">
+                                            <button type="button" class="btn btn-outline-info" title="View Wastage Sale Details" aria-label="View Wastage Sale Details" onclick="openWastageDetails(<?= (int)$s['id'] ?>)">
                                                 <i class="bi bi-eye"></i>
                                             </button>
                                             <?php if (hasPermission('wastage', 'edit')): ?>
@@ -677,6 +677,157 @@
 </div>
 
 <!-- ========================================================================= -->
+<!-- 2.5. MODERN FABRIC & CUTTING WASTAGE SALE DETAILS VIEW MODAL              -->
+<!-- ========================================================================= -->
+<div class="modal fade" id="wastageDetailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content shadow-lg border-0">
+            <div class="modal-header bg-white border-bottom py-3">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="rounded-circle bg-primary-subtle text-primary p-2 d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                        <i class="bi bi-eye fs-5"></i>
+                    </div>
+                    <div>
+                        <h5 class="modal-title fw-bold text-dark mb-0">Fabric &amp; Cutting Wastage Sale Details</h5>
+                        <div class="d-flex align-items-center gap-2 mt-1">
+                            <span class="badge bg-primary-subtle text-primary border" id="viewWstSaleNo">WST-2026-0001</span>
+                            <span class="badge" id="viewWstStatusBadge">PAID</span>
+                        </div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4 bg-light-subtle">
+                <!-- Summary Metrics Ribbon -->
+                <div class="row g-3 mb-4">
+                    <div class="col-6 col-md-3">
+                        <div class="card border-0 shadow-sm p-3 h-100 bg-white">
+                            <span class="text-muted small fw-semibold">Quantity Sold</span>
+                            <h4 class="fw-bold text-dark mt-1 mb-0" id="viewWstQty">0.00 KG</h4>
+                            <span class="small text-muted" id="viewWstType">Fabric Scrap</span>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="card border-0 shadow-sm p-3 h-100 bg-white">
+                            <span class="text-muted small fw-semibold">Rate / Unit</span>
+                            <h4 class="fw-bold text-primary mt-1 mb-0" id="viewWstRate">₹0.00 / KG</h4>
+                            <span class="small text-muted">Per Unit Price</span>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="card border-0 shadow-sm p-3 h-100 bg-white">
+                            <span class="text-muted small fw-semibold">Total Amount</span>
+                            <h4 class="fw-bold text-success mt-1 mb-0" id="viewWstTotal">₹0.00</h4>
+                            <span class="small text-muted">Invoice Value</span>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="card border-0 shadow-sm p-3 h-100 bg-white">
+                            <span class="text-muted small fw-semibold">Balance Due</span>
+                            <h4 class="fw-bold text-danger mt-1 mb-0" id="viewWstDue">₹0.00</h4>
+                            <span class="small text-muted" id="viewWstPaidSub">Paid: ₹0.00</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2-Column Detail Cards -->
+                <div class="row g-3 mb-3">
+                    <!-- Left: Production & Batch Context -->
+                    <div class="col-md-6">
+                        <div class="card border-0 shadow-sm h-100 bg-white">
+                            <div class="card-header bg-white py-2.5 border-bottom">
+                                <h6 class="card-title mb-0 fw-bold text-dark">
+                                    <i class="bi bi-gear-wide-connected text-warning me-2"></i>Production &amp; Batch Origin
+                                </h6>
+                            </div>
+                            <div class="card-body p-3">
+                                <div class="mb-2.5">
+                                    <div class="text-muted small fw-semibold">Cutting Batch</div>
+                                    <div class="fw-bold text-dark" id="viewWstBatch">—</div>
+                                </div>
+                                <div class="mb-2.5">
+                                    <div class="text-muted small fw-semibold">Production Program</div>
+                                    <div class="text-dark" id="viewWstProgram">—</div>
+                                </div>
+                                <div class="mb-2.5">
+                                    <div class="text-muted small fw-semibold">Sale Date</div>
+                                    <div class="text-dark" id="viewWstDate">—</div>
+                                </div>
+                                <div>
+                                    <div class="text-muted small fw-semibold">Recorded By / Operator</div>
+                                    <div class="text-dark" id="viewWstCreator">—</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Buyer & Settlement Details -->
+                    <div class="col-md-6">
+                        <div class="card border-0 shadow-sm h-100 bg-white">
+                            <div class="card-header bg-white py-2.5 border-bottom">
+                                <h6 class="card-title mb-0 fw-bold text-dark">
+                                    <i class="bi bi-person-badge text-primary me-2"></i>Buyer &amp; Payment Settlement
+                                </h6>
+                            </div>
+                            <div class="card-body p-3">
+                                <div class="mb-2.5">
+                                    <div class="text-muted small fw-semibold">Buyer Name</div>
+                                    <div class="fw-bold text-dark" id="viewWstBuyer">—</div>
+                                </div>
+                                <div class="mb-2.5" id="viewWstCompanyRow">
+                                    <div class="text-muted small fw-semibold">Company / Business</div>
+                                    <div class="text-dark" id="viewWstCompany">—</div>
+                                </div>
+                                <div class="mb-2.5" id="viewWstPhoneRow">
+                                    <div class="text-muted small fw-semibold">Contact Phone</div>
+                                    <div class="text-dark" id="viewWstPhone">—</div>
+                                </div>
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <div class="text-muted small fw-semibold">Payment Mode</div>
+                                        <div class="text-dark fw-semibold" id="viewWstMethod">CASH</div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="text-muted small fw-semibold">Invoice / Ref #</div>
+                                        <div class="text-dark" id="viewWstRef">—</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Notes & Attachment Card -->
+                <div class="card border-0 shadow-sm bg-white" id="viewWstExtraCard">
+                    <div class="card-body p-3">
+                        <div id="viewWstNotesRow" class="mb-2">
+                            <div class="text-muted small fw-semibold">Remarks / Notes</div>
+                            <div class="text-dark bg-light p-2.5 rounded border small" id="viewWstNotes">—</div>
+                        </div>
+                        <div id="viewWstBillRow">
+                            <div class="text-muted small fw-semibold">Bill / Delivery Proof Attachment</div>
+                            <div class="mt-1" id="viewWstBillAttachment">
+                                <a href="#" target="_blank" class="btn btn-sm btn-outline-primary" id="viewWstBillLink">
+                                    <i class="bi bi-file-earmark-arrow-down me-1"></i>View Uploaded Document
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-white border-top py-2.5 d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-dark" id="btnWstPrintReceipt" onclick="openPrintFromWastageDetails()">
+                        <i class="bi bi-printer me-1"></i> Print Receipt Voucher
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
 <!-- 3. PRINTABLE RECEIPT SLIP MODAL                                           -->
 <!-- ========================================================================= -->
 <div class="modal fade" id="wastageReceiptModal" tabindex="-1" aria-hidden="true">
@@ -962,6 +1113,105 @@ function openEditWastageModal(data) {
 
     const modal = new bootstrap.Modal(document.getElementById('editWastageModal'));
     modal.show();
+}
+
+let currentWastageSaleId = null;
+
+function openWastageDetails(id) {
+    currentWastageSaleId = id;
+    fetch('<?= url('production/wastage/receipt') ?>/' + id)
+        .then(res => res.json())
+        .then(res => {
+            if (res.success && res.sale) {
+                const s = res.sale;
+                document.getElementById('viewWstSaleNo').textContent = s.sale_number || ('WST-' + s.id);
+
+                const statusBadge = document.getElementById('viewWstStatusBadge');
+                const status = (s.payment_status || 'PENDING').toUpperCase();
+                statusBadge.textContent = status;
+                if (status === 'PAID') {
+                    statusBadge.className = 'badge bg-success';
+                } else if (status === 'PARTIAL') {
+                    statusBadge.className = 'badge bg-warning text-dark';
+                } else if (status === 'CANCELLED') {
+                    statusBadge.className = 'badge bg-danger';
+                } else {
+                    statusBadge.className = 'badge bg-secondary';
+                }
+
+                // Summary metric cards
+                document.getElementById('viewWstQty').textContent = parseFloat(s.weight || 0).toFixed(2) + ' KG';
+                document.getElementById('viewWstType').textContent = (s.wastage_type || 'FABRIC SCRAP').replace(/_/g, ' ');
+                document.getElementById('viewWstRate').textContent = '₹' + parseFloat(s.rate_per_kg || 0).toFixed(2) + ' / KG';
+                document.getElementById('viewWstTotal').textContent = '₹' + parseFloat(s.total_amount || 0).toFixed(2);
+
+                const total = parseFloat(s.total_amount || 0);
+                const paid = parseFloat(s.paid_amount || 0);
+                const due = Math.max(0, total - paid);
+                document.getElementById('viewWstDue').textContent = '₹' + due.toFixed(2);
+                document.getElementById('viewWstPaidSub').textContent = 'Paid: ₹' + paid.toFixed(2);
+
+                // Origin & Context
+                document.getElementById('viewWstBatch').textContent = s.cutting_batch_number ? (s.cutting_batch_number + (s.cutting_batch_name ? ' (' + s.cutting_batch_name + ')' : '')) : 'Direct / Unlinked';
+                document.getElementById('viewWstProgram').textContent = s.program_number ? (s.program_number + (s.program_name ? ' (' + s.program_name + ')' : '')) : '—';
+                document.getElementById('viewWstDate').textContent = s.sale_date || s.created_at || '—';
+                document.getElementById('viewWstCreator').textContent = s.created_by_name || 'System Staff';
+
+                // Buyer & Settlement
+                document.getElementById('viewWstBuyer').textContent = s.buyer_name || '—';
+
+                if (s.buyer_company) {
+                    document.getElementById('viewWstCompanyRow').classList.remove('d-none');
+                    document.getElementById('viewWstCompany').textContent = s.buyer_company;
+                } else {
+                    document.getElementById('viewWstCompanyRow').classList.add('d-none');
+                }
+
+                if (s.buyer_phone) {
+                    document.getElementById('viewWstPhoneRow').classList.remove('d-none');
+                    document.getElementById('viewWstPhone').textContent = s.buyer_phone;
+                } else {
+                    document.getElementById('viewWstPhoneRow').classList.add('d-none');
+                }
+
+                document.getElementById('viewWstMethod').textContent = (s.payment_method || 'CASH').replace(/_/g, ' ');
+                document.getElementById('viewWstRef').textContent = s.payment_reference || s.invoice_number || '—';
+
+                // Notes
+                if (s.notes && s.notes.trim()) {
+                    document.getElementById('viewWstNotesRow').classList.remove('d-none');
+                    document.getElementById('viewWstNotes').textContent = s.notes;
+                } else {
+                    document.getElementById('viewWstNotesRow').classList.add('d-none');
+                }
+
+                // Bill proof attachment
+                if (s.photo_url) {
+                    document.getElementById('viewWstBillRow').classList.remove('d-none');
+                    document.getElementById('viewWstBillLink').href = '<?= url('') ?>/' + s.photo_url;
+                } else {
+                    document.getElementById('viewWstBillRow').classList.add('d-none');
+                }
+
+                const modal = new bootstrap.Modal(document.getElementById('wastageDetailsModal'));
+                modal.show();
+            }
+        })
+        .catch(err => {
+            console.error('Error fetching wastage details:', err);
+            alert('Failed to load sale details.');
+        });
+}
+
+function openPrintFromWastageDetails() {
+    const detailsModalEl = document.getElementById('wastageDetailsModal');
+    if (detailsModalEl) {
+        const modalInstance = bootstrap.Modal.getInstance(detailsModalEl);
+        if (modalInstance) modalInstance.hide();
+    }
+    if (currentWastageSaleId) {
+        openWastageReceipt(currentWastageSaleId);
+    }
 }
 
 function openWastageReceipt(id) {

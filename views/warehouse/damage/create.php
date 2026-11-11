@@ -1,170 +1,212 @@
-<div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
+<style>
+.custom-modal-scroll {
+    max-height: 220px;
+    overflow-y: auto !important;
+    overflow-x: hidden;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 #f1f5f9;
+}
+.custom-modal-scroll::-webkit-scrollbar {
+    width: 6px;
+}
+.custom-modal-scroll::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 4px;
+}
+.custom-modal-scroll::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+.custom-modal-scroll::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* Damage QR Scanner Styles - exact matching allocation scanner flow */
+.scanner-active-glow {
+    box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25) !important;
+    border-color: #dc3545 !important;
+}
+.card-duplicate-shake {
+    animation: duplicateShake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+    border-color: #dc3545 !important;
+    background-color: #f8d7da !important;
+}
+@keyframes duplicateShake {
+    10%, 90% { transform: translate3d(-2px, 0, 0); }
+    20%, 80% { transform: translate3d(3px, 0, 0); }
+    30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+    40%, 60% { transform: translate3d(4px, 0, 0); }
+}
+.row-scan-highlight {
+    animation: rowGlow 1.5s ease-out;
+}
+@keyframes rowGlow {
+    0% { background-color: rgba(25, 135, 84, 0.25); }
+    100% { background-color: transparent; }
+}
+#itemsTable th,
+#itemsTable td {
+    vertical-align: middle !important;
+}
+.fw-mono {
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+}
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h2 class="mb-1 text-dark fw-bold"><i class="bi bi-qr-code-scan me-2 text-danger"></i>Log Damaged Stock &amp; Returns Entry</h2>
-        <span class="text-muted">Scan piece QR/barcode tags, build multi-item return/damage batches, inspect style codes, and deduct inventory</span>
+        <h2 class="h3 mb-0 text-gray-800"><i class="bi bi-qr-code-scan me-2 text-danger"></i>Log Damaged Stock &amp; Returns Entry</h2>
+        <p class="text-muted small mb-0">Scan warehouse stock QR tags to dynamically look up styles, inspect available stock, and quarantine damaged pieces or dispatch to rework.</p>
     </div>
     <div class="d-flex gap-2">
-        <a href="<?= url('warehouse/damage') ?>" class="btn btn-outline-secondary shadow-sm">
+        <a href="<?= url('warehouse/damage') ?>" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i> Back to Damage List
         </a>
     </div>
 </div>
 
-<form method="POST" action="<?= url('warehouse/damage/store') ?>" enctype="multipart/form-data" id="damageEntryForm">
-    <?= CSRF::input() ?>
+<form method="POST" action="<?= url('warehouse/damage/store') ?>" enctype="multipart/form-data" id="damageEntryForm" class="card border-0 shadow-sm rounded-3 p-4">
+    <?= CSRF::field() ?>
     <input type="hidden" name="items" id="hiddenItemsJson" value="[]">
 
-    <!-- TOP SCANNER & WAREHOUSE SELECTION BAR -->
-    <div class="card border shadow-sm rounded-3 mb-4 bg-white">
-        <div class="card-body p-4">
-            <div class="row g-3 align-items-center">
-                <div class="col-lg-4">
-                    <label class="form-label text-dark small fw-bold text-uppercase mb-1 d-flex align-items-center gap-1">
-                        <i class="bi bi-geo-alt-fill text-danger"></i> <span>Warehouse Location</span> <span class="text-danger">*</span>
-                    </label>
-                    <select name="warehouse_id" id="warehouseSelect" class="form-select form-select-lg bg-white text-dark border fw-bold shadow-sm" style="color: #000000 !important; font-weight: 700 !important;" required <?= ((function_exists('currentWarehouseId') && currentWarehouseId() !== null) || count($warehouses) <= 1) ? 'disabled' : '' ?>>
-                        <?php foreach ($warehouses as $idx => $wh): ?>
-                            <option value="<?= $wh['id'] ?>" <?= $idx === 0 ? 'selected' : '' ?> style="background-color: #ffffff; color: #000000; font-weight: 600;">
-                                <?= e($wh['name']) ?><?= !empty($wh['code']) ? ' (' . e($wh['code']) . ')' : '' ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                    <?php if ((function_exists('currentWarehouseId') && currentWarehouseId() !== null) || count($warehouses) <= 1): ?>
-                        <input type="hidden" name="warehouse_id" value="<?= e($warehouses[0]['id'] ?? (function_exists('currentWarehouseId') ? currentWarehouseId() : '')) ?>">
-                    <?php endif; ?>
-                </div>
-
-                <div class="col-lg-8">
-                    <label class="form-label text-dark small fw-bold text-uppercase mb-1">
-                        <i class="bi bi-upc-scan text-danger me-1"></i> Scan Piece QR Tag / Barcode or Type Code / SKU / Batch #
-                    </label>
-                    <div class="position-relative">
-                        <div class="input-group input-group-lg shadow-sm">
-                            <span class="input-group-text bg-light border text-danger">
-                                <i class="bi bi-qr-code-scan fs-4"></i>
-                            </span>
-                            <input type="text" id="scanInput" class="form-control form-control-lg bg-white text-dark border fw-mono" 
-                                   placeholder="Type SKU, Product, Batch # or scan piece QR/barcode..." 
-                                   autocomplete="off" autofocus>
-                            <button type="button" class="btn btn-warning px-4 fw-bold d-flex align-items-center gap-1 text-dark shadow-sm" id="btnLookupScan" title="Lookup / Add to Queue">
-                                <i class="bi bi-plus-circle"></i> <span>Add / Lookup</span>
-                            </button>
-                        </div>
-                        <!-- Live Instant Auto-Suggest Dropdown on Typing -->
-                        <div id="liveSearchResults" class="position-absolute start-0 end-0 bg-white text-dark rounded-3 shadow-lg border mt-1 overflow-auto d-none" style="max-height: 380px; z-index: 1050;">
-                        </div>
-                    </div>
-                    <div class="d-flex justify-content-between align-items-center mt-2 flex-wrap gap-2">
-                        <small class="text-muted">
-                            <i class="bi bi-keyboard me-1 text-secondary"></i> Type any SKU, product name, or batch # &amp; hit <strong>Enter</strong> or click <strong>Add</strong>.
-                        </small>
-                        <a href="javascript:void(0)" class="small text-primary text-decoration-none fw-semibold" id="toggleManualDropdown">
-                            <i class="bi bi-list-ul me-1"></i> Manual SKU / Catalog Picker Fallback
-                        </a>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Optional Manual Variant Select Dropdown -->
-            <div class="mt-3 pt-3 border-top d-none" id="manualSelectContainer">
-                <label class="form-label text-dark small fw-bold text-uppercase">Pick Product Variant from Catalog</label>
-                <div class="input-group">
-                    <select id="variantSelectManual" class="form-select bg-white text-dark border">
-                        <option value="">-- Choose Product Style &amp; Variant SKU --</option>
-                        <?php foreach ($variants as $v): 
-                            $hParts = array_filter([$v['category_name'] ?? '', $v['subcategory_name'] ?? '', $v['sub_subcategory_name'] ?? '']);
-                            $hBadge = !empty($hParts) ? ('[' . implode(' › ', $hParts) . '] ') : '';
-                        ?>
-                            <option value="<?= $v['sku'] ?>" data-id="<?= $v['id'] ?>">
-                                <?= e($hBadge) ?>[<?= e($v['product_code'] ?? 'CODE') ?>] <?= e($v['product_name']) ?> | SKU: <?= e($v['sku']) ?> (<?= e($v['size_name'] ?? 'Std') ?> / <?= e($v['color_name'] ?? 'Std') ?>)
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                    <button type="button" class="btn btn-primary" id="btnAddManualVariant">
-                        <i class="bi bi-plus-lg me-1"></i> Add to Queue
-                    </button>
-                </div>
-            </div>
+    <!-- WAREHOUSE SELECTION -->
+    <div class="row g-2 mb-4">
+        <div class="col-md-4">
+            <label class="form-label fw-bold mb-1"><i class="bi bi-geo-alt-fill text-danger me-1"></i>Source Warehouse <span class="text-danger">*</span></label>
+            <select name="warehouse_id" class="form-select form-select-lg fw-bold" id="warehouseSelect" required <?= ((function_exists('currentWarehouseId') && currentWarehouseId() !== null) || count($warehouses) <= 1) ? 'disabled' : '' ?>>
+                <?php if (!function_exists('currentWarehouseId') || currentWarehouseId() === null && count($warehouses) > 1): ?>
+                    <option value="">-- Select Source Warehouse --</option>
+                <?php endif; ?>
+                <?php foreach ($warehouses as $idx => $wh): ?>
+                    <option value="<?= $wh['id'] ?>" <?= ($idx === 0 || (function_exists('currentWarehouseId') && currentWarehouseId() == $wh['id'])) ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($wh['name']) ?><?= !empty($wh['code']) ? ' (' . htmlspecialchars($wh['code']) . ')' : '' ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+            <?php if ((function_exists('currentWarehouseId') && currentWarehouseId() !== null) || count($warehouses) <= 1): ?>
+                <input type="hidden" name="warehouse_id" value="<?= htmlspecialchars((string)($warehouses[0]['id'] ?? (function_exists('currentWarehouseId') ? currentWarehouseId() : ''))) ?>">
+            <?php endif; ?>
         </div>
     </div>
 
-    <!-- SCAN STATUS FEEDBACK BANNER -->
-    <div id="scanFeedback" class="alert alert-info d-none align-items-center justify-content-between shadow-sm rounded-3 py-2 px-3 mb-4">
-        <div class="d-flex align-items-center gap-2">
-            <div class="spinner-border spinner-border-sm text-primary" role="status" id="scanSpinner"></div>
-            <span id="scanFeedbackMsg" class="fw-semibold">Looking up scanned piece tag...</span>
-        </div>
-        <button type="button" class="btn-close" onclick="document.getElementById('scanFeedback').classList.add('d-none')"></button>
-    </div>
-
-    <!-- 2. SCANNED DAMAGE & RETURNS BATCH LIST TABLE -->
-    <div class="card border-0 shadow-sm rounded-3 mb-4">
-        <div class="card-header bg-white py-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
-            <div class="d-flex align-items-center gap-2">
-                <h5 class="card-title mb-0 fw-bold text-dark">
-                    <i class="bi bi-list-check me-2 text-danger"></i>Scanned Items Queue
-                </h5>
-                <span class="badge bg-danger rounded-pill px-2.5 py-1" id="queueBadgeCount">0 items</span>
+    <!-- ========================================================================= -->
+    <!-- LIVE QR / BARCODE SCANNER BAR (EXACT ALLOCATION FLOW) -->
+    <!-- ========================================================================= -->
+    <div class="card border-0 shadow-sm mb-4 rounded-3" style="background: linear-gradient(135deg, rgba(220, 53, 69, 0.05) 0%, rgba(220, 53, 69, 0.12) 100%); border-left: 4px solid #dc3545 !important;">
+        <div class="card-body p-3">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-danger text-white p-2 rounded-circle shadow-sm">
+                        <i class="bi bi-qr-code-scan fs-5"></i>
+                    </span>
+                    <div>
+                        <h6 class="fw-bold mb-0 text-dark">Live QR Code &amp; Barcode Gun Scanner</h6>
+                        <small class="text-muted">Scan piece tag sticker or enter tag / SKU (e.g. <code>TTS092601</code>, <code>RMT092606</code>) to dynamically add product &amp; log damaged stock</small>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="autoFocusSwitch" checked role="switch">
+                        <label class="form-check-label small fw-bold text-muted" for="autoFocusSwitch">Continuous Auto-Focus</label>
+                    </div>
+                    <span class="badge bg-light text-dark border px-2.5 py-1.5 small shadow-sm" id="scanCounterBadge">
+                        <i class="bi bi-check2-circle text-success me-1"></i><span id="totalScannedCount" class="fw-bold">0</span> pieces scanned
+                    </span>
+                </div>
             </div>
-            <div class="d-flex align-items-center gap-2">
-                <button type="button" class="btn btn-sm btn-outline-danger" id="btnClearQueue" onclick="clearQueue()" style="display: none;">
-                    <i class="bi bi-trash3 me-1"></i> Clear All
+
+            <div class="input-group input-group-lg shadow-sm">
+                <span class="input-group-text bg-white border-danger border-opacity-25 text-danger">
+                    <i class="bi bi-upc-scan fs-4"></i>
+                </span>
+                <input type="text" 
+                       id="damage_qr_input" 
+                       class="form-control form-control-lg border-danger border-opacity-25 font-monospace fw-bold" 
+                       placeholder="Scan QR Code or Type Piece Tag / SKU (e.g. TTS092601, RMT092606)..." 
+                       autocomplete="off" 
+                       autofocus>
+                <button type="button" class="btn btn-danger px-4 fw-bold d-flex align-items-center gap-2" id="triggerScanBtn">
+                    <i class="bi bi-lightning-charge-fill"></i> Scan / Add
+                </button>
+                <button type="button" class="btn btn-outline-secondary px-3" id="clearScanInputBtn" title="Clear input">
+                    <i class="bi bi-x-lg"></i>
                 </button>
             </div>
-        </div>
-        
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0" id="queueTable">
-                <thead class="table-light">
-                    <tr>
-                        <th class="text-center py-3 text-uppercase fs-7 fw-bold text-muted" style="width: 48px;">#</th>
-                        <th class="text-start py-3 text-uppercase fs-7 fw-bold text-muted" style="min-width: 140px;">Piece Tag</th>
-                        <th class="text-start py-3 text-uppercase fs-7 fw-bold text-muted" style="min-width: 250px;">Product &amp; Style Codes</th>
-                        <th class="text-center py-3 text-uppercase fs-7 fw-bold text-muted" style="min-width: 120px;">Available Stock</th>
-                        <th class="text-start py-3 text-uppercase fs-7 fw-bold text-muted" style="min-width: 190px;">Damage Reason</th>
-                        <th class="text-center py-3 text-uppercase fs-7 fw-bold text-muted" style="width: 100px;">Qty (pcs)</th>
-                        <th class="text-center py-3 text-uppercase fs-7 fw-bold text-muted" style="width: 130px;">Unit Price (₹)</th>
-                        <th class="text-end py-3 text-uppercase fs-7 fw-bold text-muted" style="width: 120px;">Total Loss</th>
-                        <th class="text-center pe-3 py-3 text-uppercase fs-7 fw-bold text-muted" style="width: 70px;">Cancel</th>
-                    </tr>
-                </thead>
-                <tbody id="queueTableBody">
-                    <tr id="emptyQueueRow">
-                        <td colspan="9" class="text-center py-5 text-muted">
-                            <div class="bg-light d-inline-flex p-4 rounded-circle mb-3 shadow-xs">
-                                <i class="bi bi-upc-scan fs-1 text-danger"></i>
-                            </div>
-                            <h6 class="fw-bold text-dark mb-1">No items scanned in queue</h6>
-                            <p class="small text-muted mb-0">Point barcode scanner or scan piece QR tags above to log items into this damage batch.</p>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
 
-        <!-- BATCH SUMMARY FOOTER BAR -->
-        <div class="card-footer bg-light p-3 border-top d-flex align-items-center justify-content-between flex-wrap gap-3" id="queueSummaryFooter" style="display: none !important;">
-            <div class="d-flex align-items-center gap-4 flex-wrap">
+            <!-- Dynamic Scan Feedback / Duplicate Warning Alerts -->
+            <div id="scanStatusBanner" class="mt-2.5 d-none">
+                <!-- Injected via JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- DAMAGED / REWORK ITEMS TABLE -->
+    <!-- ========================================================================= -->
+    <div class="card border-0 shadow-sm rounded-3 mb-4">
+        <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-box-seam me-2 text-danger"></i>Damaged / Rework Items Queue</h5>
+            <span class="badge bg-danger rounded-pill px-2.5 py-1" id="queueBadgeCount">0 items</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" id="itemsTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 14%;">QR NO / SKU</th>
+                            <th style="width: 14%;">CATEGORY</th>
+                            <th style="width: 26%;">PRODUCT NAME / VARIANT <span class="text-danger">*</span></th>
+                            <th style="width: 8%;" class="text-center">SIZE</th>
+                            <th style="width: 9%;" class="text-center">AVAILABLE</th>
+                            <th style="width: 15%;">DAMAGE REASON <span class="text-danger">*</span></th>
+                            <th style="width: 8%;" class="text-center">QTY (PCS) <span class="text-danger">*</span></th>
+                            <th style="width: 6%;" class="text-center">UNIT (₹)</th>
+                            <th style="width: 6%;" class="text-end">LOSS (₹)</th>
+                            <th style="width: 4%;" class="text-center">ACTION</th>
+                        </tr>
+                    </thead>
+                    <tbody id="damageItemsContainer">
+                        <tr id="emptyRowPlaceholder">
+                            <td colspan="10" class="text-center py-5 text-muted">
+                                <div class="bg-light d-inline-flex p-4 rounded-circle mb-3 shadow-xs">
+                                    <i class="bi bi-upc-scan fs-1 text-danger"></i>
+                                </div>
+                                <h6 class="fw-bold text-dark mb-1">No items scanned in queue</h6>
+                                <p class="small text-muted mb-0">Point barcode gun scanner or enter piece QR tags above to add items into this damage batch.</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Bar -->
+    <div class="card border-0 shadow-sm rounded-3 p-3 mb-4 bg-light">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+            <div class="d-flex align-items-center gap-4">
                 <div>
-                    <span class="text-muted small text-uppercase fw-bold d-block">Total Unique Styles</span>
-                    <h5 class="fw-bold text-dark mb-0" id="summaryTotalStyles">0</h5>
+                    <small class="text-muted d-block fw-semibold">Total Unique Items</small>
+                    <span class="fw-bold text-dark fs-6" id="totalItemsDisplay">0 items</span>
                 </div>
                 <div>
-                    <span class="text-muted small text-uppercase fw-bold d-block">Total Units</span>
-                    <h5 class="fw-bold text-danger mb-0" id="summaryTotalQty">0 pcs</h5>
+                    <small class="text-muted d-block fw-semibold">Total Damaged Pieces</small>
+                    <span class="badge bg-danger fs-6 px-3 py-2" id="totalQtyDisplay">0 pcs</span>
                 </div>
                 <div>
-                    <span class="text-muted small text-uppercase fw-bold d-block">Total Valuation Loss</span>
-                    <h5 class="fw-bold text-danger mb-0" id="summaryTotalLoss">₹0.00</h5>
+                    <small class="text-muted d-block fw-semibold">Total Valuation Loss</small>
+                    <span class="fw-bold text-danger fs-6" id="totalLossDisplay">₹0.00</span>
                 </div>
             </div>
             <div class="text-muted small">
-                <i class="bi bi-shield-check text-success me-1"></i> Stock balances will be automatically adjusted for all items upon confirmation.
+                <i class="bi bi-shield-check text-success me-1"></i> 
+                <strong>Stock Deduction:</strong> Available warehouse inventory will be automatically deducted and quarantined into DAMAGED stock upon confirmation.
             </div>
         </div>
     </div>
 
-    <!-- 3. NOTES & DUAL EXECUTION ACTION BAR -->
+    <!-- Defect Notes & Photo Evidence -->
     <div class="card border-0 shadow-sm rounded-3 p-4 bg-white mb-4">
         <div class="row g-3 mb-4">
             <div class="col-md-8">
@@ -195,14 +237,14 @@
                     <i class="bi bi-x-circle me-1"></i> Cancel
                 </a>
 
-                <!-- 🟡 FACTORY REWORK BUTTON -->
-                <button type="submit" name="action_type" value="rework" class="btn btn-warning px-4 py-2.5 fw-bold text-dark shadow-sm d-inline-flex align-items-center gap-2" id="btnSubmitRework">
+                <!-- FACTORY REWORK BUTTON -->
+                <button type="submit" name="action_type" value="rework" class="btn btn-warning px-4 py-2.5 fw-bold text-dark shadow-sm d-inline-flex align-items-center gap-2" id="btnSubmitRework" disabled>
                     <i class="bi bi-arrow-repeat fs-5"></i>
                     <span>Send All to Factory Rework &amp; Deduct Stock</span>
                 </button>
 
-                <!-- 🔴 CONFIRM SCRAP / DAMAGE BUTTON -->
-                <button type="submit" name="action_type" value="damage" class="btn btn-danger px-4 py-2.5 fw-bold shadow-sm d-inline-flex align-items-center gap-2" id="btnSubmitDamage">
+                <!-- CONFIRM SCRAP / DAMAGE BUTTON -->
+                <button type="submit" name="action_type" value="damage" class="btn btn-danger px-4 py-2.5 fw-bold shadow-sm d-inline-flex align-items-center gap-2" id="btnSubmitDamage" disabled>
                     <i class="bi bi-slash-circle fs-5"></i>
                     <span>Log All Damage (Quarantine) &amp; Deduct Stock</span>
                 </button>
@@ -212,574 +254,652 @@
 </form>
 
 <script>
+// Available variants registry passed from backend
+const variantsList = <?= json_encode($variants ?? []) ?>;
+
+// Global tracking registries matching allocation scanner
+const SCANNED_DAMAGE_TAGS = new Set();
+const PENDING_DAMAGE_TAGS = new Set();
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function playSuccessSound() {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
+        osc.frequency.setValueAtTime(1200, audioCtx.currentTime + 0.08); // High chirp
+        gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.18);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.18);
+    } catch(e) {}
+}
+
+function playDuplicateSound() {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(280, audioCtx.currentTime);
+        osc.frequency.setValueAtTime(200, audioCtx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.18, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.28);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.28);
+    } catch(e) {}
+}
+
+function getRowScannedQrs(row) {
+    if (!row) return [];
+    try {
+        return JSON.parse(row.dataset.scannedQrs || '[]');
+    } catch(e) {
+        return [];
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
-    const scanInput = document.getElementById('scanInput');
     const warehouseSelect = document.getElementById('warehouseSelect');
-    const btnLookupScan = document.getElementById('btnLookupScan');
-    const liveSearchResults = document.getElementById('liveSearchResults');
-    const toggleManualDropdown = document.getElementById('toggleManualDropdown');
-    const manualSelectContainer = document.getElementById('manualSelectContainer');
-    const variantSelectManual = document.getElementById('variantSelectManual');
-    const btnAddManualVariant = document.getElementById('btnAddManualVariant');
-    
-    const scanFeedback = document.getElementById('scanFeedback');
-    const scanFeedbackMsg = document.getElementById('scanFeedbackMsg');
-    const scanSpinner = document.getElementById('scanSpinner');
-    
-    const queueTableBody = document.getElementById('queueTableBody');
-    const emptyQueueRow = document.getElementById('emptyQueueRow');
-    const queueBadgeCount = document.getElementById('queueBadgeCount');
-    const btnClearQueue = document.getElementById('btnClearQueue');
-    const queueSummaryFooter = document.getElementById('queueSummaryFooter');
-    const summaryTotalStyles = document.getElementById('summaryTotalStyles');
-    const summaryTotalQty = document.getElementById('summaryTotalQty');
-    const summaryTotalLoss = document.getElementById('summaryTotalLoss');
-    const hiddenItemsJson = document.getElementById('hiddenItemsJson');
-    const damageEntryForm = document.getElementById('damageEntryForm');
+    const scanInput = document.getElementById('damage_qr_input');
+    const triggerScanBtn = document.getElementById('triggerScanBtn');
+    const clearScanBtn = document.getElementById('clearScanInputBtn');
+    const autoFocusSwitch = document.getElementById('autoFocusSwitch');
+    const totalScannedBadge = document.getElementById('totalScannedCount');
+    const damageForm = document.getElementById('damageEntryForm');
 
-    // Scanned items in-memory queue
-    let queue = [];
-    let searchDebounceTimer = null;
-    let selectedSuggestionIndex = -1;
-
-    // Synthesize subtle audio beep on scan
-    function playBeep() {
-        try {
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.frequency.setValueAtTime(880, audioCtx.currentTime); // A5 tone
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            osc.start();
-            osc.stop(audioCtx.currentTime + 0.12);
-        } catch (e) {}
-    }
-
-    // Toggle manual dropdown fallback
-    toggleManualDropdown.addEventListener('click', function() {
-        manualSelectContainer.classList.toggle('d-none');
-    });
-
-    btnAddManualVariant.addEventListener('click', function() {
-        const val = variantSelectManual.value;
-        if (val) {
-            lookupProduct(val);
-            variantSelectManual.value = '';
-        }
-    });
-
-    // Hide live search results
-    function hideLiveSearch() {
-        if (liveSearchResults) {
-            liveSearchResults.classList.add('d-none');
-            liveSearchResults.innerHTML = '';
-            selectedSuggestionIndex = -1;
+    function updateGlobalScannedCounter() {
+        if (totalScannedBadge) {
+            totalScannedBadge.textContent = SCANNED_DAMAGE_TAGS.size;
         }
     }
 
-    // Render Live Search Dropdown Suggestions
-    function renderLiveSearch(matches, query) {
-        if (!liveSearchResults) return;
-        if (!matches || matches.length === 0) {
-            liveSearchResults.innerHTML = `
-                <div class="p-3 text-center text-muted">
-                    <i class="bi bi-search me-1"></i> No matching products found for "<strong>${escapeHtml(query)}</strong>".
+    function showScanAlert(type, message) {
+        const banner = document.getElementById('scanStatusBanner');
+        if (!banner) return;
+
+        let bgClass = 'alert-success border-success text-success-emphasis';
+        let icon = 'bi-check-circle-fill text-success';
+        if (type === 'duplicate' || type === 'warning') {
+            bgClass = 'alert-warning border-warning text-warning-emphasis';
+            icon = 'bi-exclamation-triangle-fill text-warning';
+        } else if (type === 'danger' || type === 'error') {
+            bgClass = 'alert-danger border-danger text-danger-emphasis';
+            icon = 'bi-x-circle-fill text-danger';
+        }
+
+        banner.className = `alert ${bgClass} py-2 px-3 mb-0 rounded-3 shadow-sm d-flex align-items-center justify-content-between`;
+        banner.innerHTML = `
+            <div class="d-flex align-items-center gap-2">
+                <i class="bi ${icon} fs-5"></i>
+                <div class="small">${message}</div>
+            </div>
+            <button type="button" class="btn-close btn-sm ms-2" onclick="this.closest('.alert').classList.add('d-none')"></button>
+        `;
+        banner.classList.remove('d-none');
+    }
+
+    function clearAndRefocusScanInput() {
+        if (scanInput) {
+            scanInput.value = '';
+            if (autoFocusSwitch && autoFocusSwitch.checked) {
+                scanInput.focus();
+            }
+        }
+    }
+
+    function supportsAdjustableDamageQty(product) {
+        if (!product) return false;
+        const categoryType = getProductType(product);
+        const qrType = String(product.qr_type || product.qrType || product.dataset?.qrType || '').trim().toUpperCase();
+        const isSeries = product.is_series === true || product.is_series === 1 || product.is_series === '1'
+            || product.isSeries === true || product.isSeries === 1 || product.isSeries === '1'
+            || product.dataset?.isSeries === '1';
+        const isComp = product.is_complementary === true || product.is_complementary === 1 || product.is_complementary === '1'
+            || product.isComplementary === true || product.isComplementary === 1 || product.isComplementary === '1'
+            || product.dataset?.isComplementary === '1';
+        const packQty = parseInt(product.pack_quantity || product.dataset?.packQuantity || 1) || 1;
+
+        return categoryType === 'SERIES'
+            || categoryType === 'COMPLEMENTARY'
+            || qrType === 'SERIES_BATCH'
+            || isSeries
+            || isComp
+            || packQty > 1;
+    }
+
+    function getProductType(product) {
+        const categoryType = String(product.category_type || product.categoryType || product.dataset?.categoryType || '').trim().toUpperCase();
+        const qrType = String(product.qr_type || product.qrType || product.dataset?.qrType || '').trim().toUpperCase();
+        const isComplementary = product.is_complementary === true
+            || product.is_complementary === 1
+            || product.is_complementary === '1'
+            || product.isComplementary === '1'
+            || product.dataset?.isComplementary === '1';
+        if (isComplementary || categoryType === 'COMPLEMENTARY') return 'COMPLEMENTARY';
+        if (qrType === 'SERIES_BATCH' || categoryType === 'SERIES') return 'SERIES';
+        return categoryType || 'NORMAL';
+    }
+
+    // =========================================================================
+    // TABLE ROW MANAGEMENT & DYNAMIC VARIANT SELECTION (EXACT ALLOCATION FLOW)
+    // =========================================================================
+    window.addDamageItemRow = function(selectedVariantId = null, initialTag = null, initialQty = 1, initialReason = 'Fabric Tear / Cut', unitCost = 0) {
+        const container = document.getElementById('damageItemsContainer');
+        if (!container) return null;
+
+        const emptyPlaceholder = document.getElementById('emptyRowPlaceholder');
+        if (emptyPlaceholder) {
+            emptyPlaceholder.remove();
+        }
+
+        let opts = '<option value="">-- Select Product Variant --</option>';
+        let selectedVariantObj = null;
+
+        variantsList.forEach(v => {
+            const isSel = (selectedVariantId && String(selectedVariantId) === String(v.id)) ? 'selected' : '';
+            if (isSel) {
+                selectedVariantObj = v;
+            }
+
+            const stock = parseFloat(v.total_warehouse_stock || 0);
+            const categoryType = getProductType(v);
+            const isComplementary = categoryType === 'COMPLEMENTARY';
+            const isSeries = categoryType === 'SERIES' || v.qr_type === 'SERIES_BATCH';
+
+            let catDisplay = v.sub_subcategory_name || v.subcategory_name || v.category_name || 'General';
+            let label = `${v.product_name} | SKU: ${v.sku} (${v.color_name ? v.color_name + ' | ' : ''}Size: ${v.size_name || 'Std'}, Stock: ${stock} pcs)`;
+
+            opts += `<option value="${v.id}" 
+                             data-sku="${v.sku || ''}" 
+                             data-qr="${v.barcode || v.sku || ''}"
+                             data-category="${escapeHtml(catDisplay)}"
+                             data-size="${escapeHtml(v.size_name || 'Free')}"
+                             data-category-type="${escapeHtml(categoryType)}"
+                             data-qr-type="${escapeHtml(v.qr_type || 'INDIVIDUAL')}"
+                             data-pack-quantity="${parseInt(v.pack_quantity || 1)}"
+                             data-is-series="${isSeries ? '1' : '0'}"
+                             data-is-complementary="${isComplementary ? '1' : '0'}"
+                             data-stock="${stock}" ${isSel}>
+                        ${escapeHtml(label)}
+                     </option>`;
+        });
+
+        const rowQty = parseInt(initialQty) > 0 ? parseInt(initialQty) : 1;
+        const cost = parseFloat(unitCost) > 0 ? parseFloat(unitCost) : 
+            (selectedVariantObj ? parseFloat(selectedVariantObj.selling_price || selectedVariantObj.mrp || 0) : 0);
+        const canAdjustQty = selectedVariantObj ? supportsAdjustableDamageQty(selectedVariantObj) : false;
+        const availableStock = selectedVariantObj ? parseFloat(selectedVariantObj.total_warehouse_stock || 0) : 0;
+        const catDisplay = selectedVariantObj ? (selectedVariantObj.sub_subcategory_name || selectedVariantObj.subcategory_name || selectedVariantObj.category_name || 'General') : '-';
+        const sizeDisplay = selectedVariantObj ? (selectedVariantObj.size_name || 'Free Size') : '-';
+
+        const tr = document.createElement('tr');
+        tr.className = 'item-row align-middle';
+        tr.innerHTML = `
+            <td class="qr-sku-cell">
+                <span class="badge bg-dark font-monospace text-warning px-2.5 py-1.5 shadow-xs d-inline-flex align-items-center gap-1 qr-badge">
+                    <i class="bi bi-qr-code"></i> ${initialTag ? escapeHtml(initialTag) : 'No Tag'}
+                </span>
+                <input type="hidden" name="selected_qr_codes[]" class="scanned-qrs-input" value="${initialTag ? escapeHtml(initialTag) : ''}">
+                <input type="hidden" name="tag_codes[]" class="tag-code-input" value="${initialTag ? escapeHtml(initialTag) : ''}">
+            </td>
+            <td>
+                <span class="badge bg-secondary-subtle text-secondary category-badge">${escapeHtml(catDisplay)}</span>
+            </td>
+            <td>
+                <input type="hidden" name="variant_ids[]" class="variant-id-input" value="${selectedVariantId || ''}">
+                <select class="form-select variant-select form-select-sm" aria-label="Selected product variant" disabled>
+                    ${opts}
+                </select>
+            </td>
+            <td class="text-center">
+                <span class="fw-bold text-dark size-badge">${escapeHtml(sizeDisplay)}</span>
+            </td>
+            <td class="text-center">
+                <span class="badge bg-success-subtle text-success border border-success-subtle fw-bold fs-6 total-stock-badge">${availableStock} pcs</span>
+            </td>
+            <td>
+                <select name="damage_reasons[]" class="form-select form-select-sm damage-reason-select" onchange="calculateGrandTotal()">
+                    <option value="Fabric Tear / Cut" ${initialReason === 'Fabric Tear / Cut' ? 'selected' : ''}>Fabric Tear / Cut</option>
+                    <option value="Stitching / Seam Opening" ${initialReason === 'Stitching / Seam Opening' ? 'selected' : ''}>Stitching / Seam Opening</option>
+                    <option value="Water / Moisture Contamination" ${initialReason === 'Water / Moisture Contamination' ? 'selected' : ''}>Water / Moisture</option>
+                    <option value="Stain / Oil Contamination" ${initialReason === 'Stain / Oil Contamination' ? 'selected' : ''}>Stain / Oil</option>
+                    <option value="Color Bleed / Discoloration" ${initialReason === 'Color Bleed / Discoloration' ? 'selected' : ''}>Color Bleed</option>
+                    <option value="Broken Button / Zipper / Trims" ${initialReason === 'Broken Button / Zipper / Trims' ? 'selected' : ''}>Broken Button/Zipper</option>
+                    <option value="Crushed / Compromised Packaging" ${initialReason === 'Crushed / Compromised Packaging' ? 'selected' : ''}>Crushed Packaging</option>
+                    <option value="Transit Physical Impact" ${initialReason === 'Transit Physical Impact' ? 'selected' : ''}>Transit Impact</option>
+                    <option value="Other Defect" ${initialReason === 'Other Defect' ? 'selected' : ''}>Other Defect</option>
+                </select>
+            </td>
+            <td class="text-center">
+                <div class="input-group input-group-sm mx-auto shadow-xs" style="max-width: 100px;">
+                    <button type="button" class="btn btn-outline-secondary px-2 py-0 fw-bold qty-stepper ${canAdjustQty ? '' : 'd-none'}" onclick="changeRowQty(this, -1)" title="Decrease quantity">-</button>
+                    <input type="number" 
+                           name="requested_qty[]" 
+                           class="form-control text-center fw-bold qty-input fs-6 px-1" 
+                           value="${rowQty}" 
+                           min="1" 
+                           max="${availableStock > 0 ? availableStock : 9999}"
+                           ${canAdjustQty ? '' : 'readonly'}
+                           required 
+                           oninput="updateRowStockCalculations(this.closest('tr'))" 
+                           onchange="updateRowStockCalculations(this.closest('tr'))">
+                    <button type="button" class="btn btn-outline-secondary px-2 py-0 fw-bold qty-stepper ${canAdjustQty ? '' : 'd-none'}" onclick="changeRowQty(this, 1)" title="Increase quantity">+</button>
                 </div>
-            `;
-            liveSearchResults.classList.remove('d-none');
+                ${!canAdjustQty ? '<small class="text-muted d-block mt-0.5 text-center" style="font-size: 0.65rem;"><i class="bi bi-lock-fill me-0.5"></i>1 pc fixed</small>' : ''}
+            </td>
+            <td class="text-center">
+                <span class="fw-semibold text-muted unit-cost-badge">₹${cost.toFixed(2)}</span>
+                <input type="hidden" name="cost_per_units[]" class="cost-per-unit-input" value="${cost.toFixed(2)}">
+            </td>
+            <td class="text-end pe-2">
+                <span class="fw-bold text-danger total-loss-badge">₹${(rowQty * cost).toFixed(2)}</span>
+                <input type="hidden" name="total_losses[]" class="total-loss-input" value="${(rowQty * cost).toFixed(2)}">
+            </td>
+            <td class="text-center">
+                <button type="button" class="btn btn-sm btn-outline-danger remove-row" onclick="removeDamageItemRow(this)" title="Remove item">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        `;
+
+        container.appendChild(tr);
+
+        if (initialTag) {
+            tr.dataset.scannedQrs = JSON.stringify([initialTag]);
+        }
+
+        updateRowStockCalculations(tr);
+        calculateGrandTotal();
+        return tr;
+    };
+
+    window.changeRowQty = function(btn, delta) {
+        const row = btn.closest('tr');
+        if (!row) return;
+        const input = row.querySelector('.qty-input');
+        if (!input) return;
+        const sel = row.querySelector('.variant-select');
+        const opt = sel ? sel.options[sel.selectedIndex] : null;
+        if (!opt || !supportsAdjustableDamageQty(opt.dataset)) return;
+        let currentVal = parseInt(input.value) || 0;
+        let newVal = Math.max(1, currentVal + delta);
+
+        if (opt.value) {
+            const maxAllowed = parseFloat(input.max || opt.dataset.stock || '0');
+            if (maxAllowed > 0 && newVal > maxAllowed) {
+                newVal = maxAllowed;
+            }
+        }
+        input.value = newVal;
+        updateRowStockCalculations(row);
+        calculateGrandTotal();
+    };
+
+    window.removeDamageItemRow = function(btn) {
+        const container = document.getElementById('damageItemsContainer');
+        const row = btn.closest('tr');
+
+        if (row) {
+            let scannedQrs = getRowScannedQrs(row);
+            scannedQrs.forEach(q => SCANNED_DAMAGE_TAGS.delete(q));
+            row.remove();
+
+            const remainingRows = container.querySelectorAll('tr.item-row');
+            if (remainingRows.length === 0) {
+                container.innerHTML = `
+                    <tr id="emptyRowPlaceholder">
+                        <td colspan="10" class="text-center py-5 text-muted">
+                            <div class="bg-light d-inline-flex p-4 rounded-circle mb-3 shadow-xs">
+                                <i class="bi bi-upc-scan fs-1 text-danger"></i>
+                            </div>
+                            <h6 class="fw-bold text-dark mb-1">No items scanned in queue</h6>
+                            <p class="small text-muted mb-0">Point barcode gun scanner or enter piece QR tags above to add items into this damage batch.</p>
+                        </td>
+                    </tr>
+                `;
+            }
+
+            calculateGrandTotal();
+            updateGlobalScannedCounter();
+        }
+    };
+
+    window.updateRowStockCalculations = function(row) {
+        if (!row) return;
+        const qtyInput = row.querySelector('.qty-input');
+        const costInput = row.querySelector('.cost-per-unit-input');
+        const lossBadge = row.querySelector('.total-loss-badge');
+        const lossInput = row.querySelector('.total-loss-input');
+
+        const qty = parseInt(qtyInput ? qtyInput.value : 1) || 1;
+        const unitCost = parseFloat(costInput ? costInput.value : 0) || 0;
+        const totalLoss = qty * unitCost;
+
+        if (lossBadge) lossBadge.textContent = '₹' + totalLoss.toFixed(2);
+        if (lossInput) lossInput.value = totalLoss.toFixed(2);
+    };
+
+    function calculateGrandTotal() {
+        const rows = document.querySelectorAll('#damageItemsContainer tr.item-row');
+        let totalItems = 0;
+        let totalPieces = 0;
+        let totalLoss = 0.0;
+        const itemsQueue = [];
+
+        rows.forEach(r => {
+            const vId = r.querySelector('.variant-id-input')?.value;
+            const tagCode = r.querySelector('.tag-code-input')?.value || '';
+            const qtyInput = r.querySelector('.qty-input');
+            const costInput = r.querySelector('.cost-per-unit-input');
+            const lossInput = r.querySelector('.total-loss-input');
+            const reasonSelect = r.querySelector('.damage-reason-select');
+
+            const qty = parseInt(qtyInput ? qtyInput.value : 0) || 0;
+            const cost = parseFloat(costInput ? costInput.value : 0) || 0;
+            const loss = parseFloat(lossInput ? lossInput.value : (qty * cost)) || 0;
+            const reason = reasonSelect ? reasonSelect.value : 'Fabric Tear / Cut';
+
+            if (vId && qty > 0) {
+                totalItems++;
+                totalPieces += qty;
+                totalLoss += loss;
+
+                itemsQueue.push({
+                    variant_id: parseInt(vId),
+                    tag_code: tagCode,
+                    quantity: qty,
+                    cost_per_unit: cost,
+                    total_loss: loss,
+                    damage_reason: reason,
+                    source_type: 'STORAGE_HANDLING',
+                    defect_notes: ''
+                });
+            }
+        });
+
+        const itemsDisplay = document.getElementById('totalItemsDisplay');
+        const qtyDisplay = document.getElementById('totalQtyDisplay');
+        const lossDisplay = document.getElementById('totalLossDisplay');
+        const queueBadge = document.getElementById('queueBadgeCount');
+        const btnSubmitDamage = document.getElementById('btnSubmitDamage');
+        const btnSubmitRework = document.getElementById('btnSubmitRework');
+        const hiddenJson = document.getElementById('hiddenItemsJson');
+
+        if (itemsDisplay) itemsDisplay.textContent = `${totalItems} items`;
+        if (qtyDisplay) qtyDisplay.textContent = `${totalPieces} pcs`;
+        if (lossDisplay) lossDisplay.textContent = '₹' + totalLoss.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        if (queueBadge) queueBadge.textContent = `${totalItems} items`;
+        if (hiddenJson) hiddenJson.value = JSON.stringify(itemsQueue);
+
+        const hasValid = totalItems > 0;
+        if (btnSubmitDamage) btnSubmitDamage.disabled = !hasValid;
+        if (btnSubmitRework) btnSubmitRework.disabled = !hasValid;
+    }
+
+    // =========================================================================
+    // LIVE QR & BARCODE GUN SCANNER HANDLER (EXACT ALLOCATION FLOW)
+    // =========================================================================
+    function handleQrScanInput(rawCode) {
+        rawCode = (rawCode || '').trim();
+        if (!rawCode) return;
+
+        const whId = (warehouseSelect && warehouseSelect.value ? warehouseSelect.value : '') 
+                  || (document.querySelector('input[name="warehouse_id"]') ? document.querySelector('input[name="warehouse_id"]').value : '') 
+                  || '1';
+
+        if (!whId) {
+            playDuplicateSound();
+            showScanAlert('warning', '⚠️ <strong>Select Source Warehouse First:</strong> Please choose a Source Warehouse at top before scanning QR codes.');
+            if (warehouseSelect) {
+                warehouseSelect.focus();
+                warehouseSelect.classList.add('scanner-active-glow');
+                setTimeout(() => warehouseSelect.classList.remove('scanner-active-glow'), 2500);
+            }
             return;
         }
 
-        let html = `
-            <div class="p-2 border-bottom bg-light d-flex justify-content-between align-items-center">
-                <small class="fw-bold text-muted text-uppercase" style="font-size: 0.75rem;">
-                    <i class="bi bi-lightning-charge-fill text-warning me-1"></i>Matching Products &amp; Variants (${matches.length})
-                </small>
-                <small class="text-muted" style="font-size: 0.72rem;">Click or press Enter to add</small>
-            </div>
-            <div class="list-group list-group-flush">
-        `;
+        // Extract potential tag code for duplicate check
+        let tagCode = rawCode;
+        if (rawCode.startsWith('{') && rawCode.endsWith('}')) {
+            try {
+                const j = JSON.parse(rawCode);
+                tagCode = j.tag || j.tag_code || j.code || j.sku || rawCode;
+            } catch(e) {}
+        } else if (rawCode.includes('|')) {
+            const parts = rawCode.split('|').map(p => p.trim());
+            if (parts[0].toUpperCase() === 'SERIES') {
+                tagCode = parts[3] || parts[2] || rawCode;
+            } else {
+                tagCode = parts[0];
+            }
+        }
+        tagCode = tagCode.toUpperCase();
 
-        matches.forEach((m, idx) => {
-            html += `
-                <a href="javascript:void(0)" class="list-group-item list-group-item-action p-2.5 d-flex align-items-center justify-content-between suggestion-item" data-index="${idx}">
-                    <div class="me-2 text-truncate">
-                        <div class="d-flex align-items-center gap-1 mb-0.5">
-                            <span class="fw-bold text-dark text-truncate" style="max-width: 320px;">${escapeHtml(m.product_name)}</span>
-                            ${m.category_hierarchy ? `<span class="badge bg-light text-primary border small font-monospace px-1.5 py-0.5" style="font-size: 0.68rem;">${escapeHtml(m.category_hierarchy)}</span>` : ''}
-                        </div>
-                        <div class="d-flex align-items-center gap-1 flex-wrap">
-                            <span class="badge bg-dark text-white font-monospace small px-1.5 py-0.5">${escapeHtml(m.sku)}</span>
-                            <span class="badge bg-light text-secondary border small px-1.5 py-0.5">${escapeHtml(m.size_name || 'Free')} / ${escapeHtml(m.color_name || 'Std')}</span>
-                            <span class="badge bg-success-subtle text-success border border-success-subtle small px-1.5 py-0.5 fw-bold"><i class="bi bi-boxes me-1"></i>${m.available_stock} pcs in WH</span>
-                        </div>
-                    </div>
-                    <div class="text-end flex-shrink-0">
-                        <div class="fw-bold text-danger small">₹${parseFloat(m.cost_per_unit || 0).toFixed(2)}</div>
-                        <button type="button" class="btn btn-xs btn-primary fw-semibold px-2 py-0.5 mt-1 btn-add-suggest" data-sku="${escapeHtml(m.sku)}">
-                            <i class="bi bi-plus"></i> Add
-                        </button>
-                    </div>
-                </a>
-            `;
-        });
+        if (PENDING_DAMAGE_TAGS.has(tagCode)) {
+            playDuplicateSound();
+            showScanAlert('duplicate', `⚠️ <strong>Scan in Progress:</strong> Piece Tag <code>${tagCode}</code> is already being processed.`);
+            clearAndRefocusScanInput();
+            return;
+        }
 
-        html += '</div>';
-        liveSearchResults.innerHTML = html;
-        liveSearchResults.classList.remove('d-none');
-
-        // Add click events to suggestion items
-        liveSearchResults.querySelectorAll('.suggestion-item').forEach(item => {
-            item.addEventListener('click', function(e) {
-                e.preventDefault();
-                const idx = parseInt(this.getAttribute('data-index'));
-                if (matches[idx]) {
-                    lookupProduct(matches[idx].sku);
+        // 1. DUPLICATE CHECK IN SCANNED ITEMS
+        if (SCANNED_DAMAGE_TAGS.has(tagCode)) {
+            let existingPackRow = null;
+            const rows = document.querySelectorAll('#damageItemsContainer tr.item-row');
+            rows.forEach(r => {
+                let scannedQrs = getRowScannedQrs(r);
+                if (scannedQrs.map(s => s.toUpperCase()).includes(tagCode)) {
+                    const sel = r.querySelector('.variant-select');
+                    const vId = sel ? sel.value : null;
+                    const vObj = variantsList.find(v => String(v.id) === String(vId));
+                    const opt = sel ? sel.options[sel.selectedIndex] : null;
+                    if ((vObj && supportsAdjustableDamageQty(vObj)) || (opt && supportsAdjustableDamageQty(opt.dataset))) {
+                        existingPackRow = r;
+                    }
                 }
             });
-        });
-    }
 
-    // Lookup function via AJAX (supports both single exact scan and manual typed search)
-    function lookupProduct(code) {
-        let query = (code || scanInput.value || '').trim();
-        if (!query) return;
+            if (existingPackRow) {
+                const qtyInput = existingPackRow.querySelector('.qty-input');
+                const sel = existingPackRow.querySelector('.variant-select');
+                const opt = sel ? sel.options[sel.selectedIndex] : null;
+                const totalStock = opt ? parseFloat(opt.getAttribute('data-stock') || 0) : 0;
+                let currentVal = parseInt(qtyInput ? qtyInput.value : 1) || 1;
 
-        hideLiveSearch();
-        scanInput.value = '';
-        scanInput.focus();
-
-        const warehouseId = warehouseSelect.value;
-        
-        // Show loading status
-        scanFeedback.classList.remove('d-none', 'alert-danger', 'alert-success', 'alert-secondary', 'alert-warning');
-        scanFeedback.classList.add('alert-info');
-        scanSpinner.classList.remove('d-none');
-        scanFeedbackMsg.innerText = 'Looking up code: ' + query + '...';
-
-        fetch('<?= url("api/warehouse/damage/lookup-scan") ?>?code=' + encodeURIComponent(query) + '&warehouse_id=' + warehouseId)
-            .then(res => res.json())
-            .then(data => {
-                scanSpinner.classList.add('d-none');
-                if (data.success && data.variant) {
-                    playBeep();
-                    const v = data.variant;
-                    
-                    // Add or increment in queue
-                    if (addItemToQueue(v)) {
-                        scanFeedback.classList.remove('alert-info', 'alert-danger', 'alert-warning', 'alert-secondary');
-                        scanFeedback.classList.add('alert-success');
-                        scanFeedbackMsg.innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i> Added to list: <strong>' + v.product_name + '</strong> (SKU: <code>' + v.sku + '</code> | Available: <strong>' + v.available_stock + ' pcs</strong>)' + (v.tag_code ? ' [Tag: <strong>' + v.tag_code + '</strong>]' : '');
-                    }
+                if (currentVal + 1 <= totalStock) {
+                    qtyInput.value = currentVal + 1;
+                    updateRowStockCalculations(existingPackRow);
+                    calculateGrandTotal();
+                    playSuccessSound();
+                    showScanAlert('success', `📦 Pack QR <code>${tagCode}</code> re-scanned: Damage quantity increased to <strong>${currentVal + 1} pcs</strong> (Remaining in warehouse: ${totalStock - (currentVal + 1)} pcs).`);
+                    existingPackRow.classList.add('row-scan-highlight');
+                    setTimeout(() => existingPackRow.classList.remove('row-scan-highlight'), 1500);
+                    existingPackRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 } else {
-                    scanFeedback.classList.remove('alert-info', 'alert-success');
-                    scanFeedback.classList.add('alert-danger');
-                    scanFeedbackMsg.innerHTML = '<i class="bi bi-exclamation-octagon-fill text-danger me-1"></i> ' + (data.message || 'Variant not found');
+                    playDuplicateSound();
+                    showScanAlert('warning', `⚠️ <strong>Warehouse Stock Limit:</strong> Series Tag <code>${tagCode}</code> has only <strong>${totalStock} pcs</strong> available in this warehouse. All available pieces are already added!`);
+                }
+                clearAndRefocusScanInput();
+                return;
+            }
+
+            playDuplicateSound();
+            showScanAlert('duplicate', `⚠️ <strong>Duplicate Scan Blocked:</strong> Piece Tag <code>${tagCode}</code> has already been added in this damage entry!`);
+            clearAndRefocusScanInput();
+            return;
+        }
+
+        // Helper to apply matched variant to table
+        function applyScannedVariant(data, resolvedTag) {
+            resolvedTag = (resolvedTag || tagCode).toUpperCase();
+
+            const isSeriesOrComp = supportsAdjustableDamageQty(data);
+
+            if (SCANNED_DAMAGE_TAGS.has(resolvedTag) && !isSeriesOrComp) {
+                playDuplicateSound();
+                showScanAlert('duplicate', `⚠️ <strong>Duplicate Scan Blocked:</strong> Piece Tag <code>${resolvedTag}</code> has already been added in this damage entry!`);
+                clearAndRefocusScanInput();
+                return;
+            }
+
+            const vId = data.variant_id || data.id;
+            const packQty = parseInt(data.scan_qty || data.damage_quantity || data.pack_quantity || 1);
+            const targetQty = isSeriesOrComp ? (data.is_series ? 1 : packQty) : 1;
+            const unitCost = parseFloat(data.cost_per_unit || data.selling_price || data.mrp || 0);
+
+            let cachedVariant = variantsList.find(v => String(v.id) === String(vId));
+            const scannedVariantData = {
+                id: vId,
+                sku: data.sku || '',
+                barcode: data.barcode || data.sku || '',
+                product_name: data.product_name || data.sku || '',
+                size_name: data.size_name || 'Free',
+                color_name: data.color_name || '',
+                category_name: data.category_name || '',
+                subcategory_name: data.subcategory_name || '',
+                sub_subcategory_name: data.sub_subcategory_name || '',
+                category_type: getProductType(data),
+                is_complementary: getProductType(data) === 'COMPLEMENTARY' ? 1 : 0,
+                total_warehouse_stock: parseFloat(data.available_stock ?? data.total_stock ?? 0),
+                is_series: (getProductType(data) === 'SERIES' || data.qr_type === 'SERIES_BATCH') ? 1 : 0,
+                qr_type: data.qr_type || 'INDIVIDUAL',
+                pack_quantity: packQty
+            };
+            if (cachedVariant) {
+                Object.assign(cachedVariant, scannedVariantData);
+            } else {
+                variantsList.push(scannedVariantData);
+            }
+
+            const targetRow = addDamageItemRow(vId, resolvedTag, targetQty, 'Fabric Tear / Cut', unitCost);
+
+            SCANNED_DAMAGE_TAGS.add(resolvedTag);
+
+            if (targetRow) {
+                targetRow.dataset.scannedQrs = JSON.stringify([resolvedTag]);
+                targetRow.classList.add('row-scan-highlight');
+                setTimeout(() => targetRow.classList.remove('row-scan-highlight'), 1500);
+                targetRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+            playSuccessSound();
+            const packBadge = isSeriesOrComp ? ` <span class="badge bg-danger ms-1">📦 Pack (${data.available_stock || packQty} Pcs in Warehouse)</span>` : '';
+            const quantityMessage = isSeriesOrComp
+                ? 'You can adjust/split the damaged quantity as needed.'
+                : 'Individual QR quantity is fixed at 1.';
+            showScanAlert('success', `✅ Scanned <strong class="font-monospace">${resolvedTag}</strong> &rarr; ${data.product_name || data.sku} (${data.size_name || 'Std'})${packBadge} added! ${quantityMessage}`);
+            updateGlobalScannedCounter();
+            clearAndRefocusScanInput();
+        }
+
+        // 2. Fetch backend API matcher with client-side fallback
+        PENDING_DAMAGE_TAGS.add(tagCode);
+        fetch(`<?= url("api/warehouse/damage/lookup-scan") ?>?warehouse_id=${whId}&code=${encodeURIComponent(rawCode)}`)
+            .then(res => {
+                if (!res.ok) throw new Error('API lookup failed');
+                return res.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    applyScannedVariant(data, (data.tag_code || tagCode).toUpperCase());
+                } else if (data.is_already_damaged) {
+                    playDuplicateSound();
+                    showScanAlert('duplicate', `🚫 <strong>Piece Already Damaged:</strong> ${data.message}`);
+                    clearAndRefocusScanInput();
+                } else if (data.is_already_allocated) {
+                    playDuplicateSound();
+                    showScanAlert('duplicate', `🚫 <strong>Piece Already Allocated:</strong> Tag <code class="fw-bold">${data.tag_code || tagCode}</code> has ALREADY been allocated in Pass <strong>#${data.allocation_number}</strong> (${data.allocation_status}) at <em>${data.allocated_warehouse || 'Warehouse'}</em> for ${data.allocated_product || 'item'}. Cannot damage an allocated piece.`);
+                    clearAndRefocusScanInput();
+                } else if (data.is_exchanged_out) {
+                    playDuplicateSound();
+                    showScanAlert('danger', `🚫 <strong>Piece Exchanged Out:</strong> ${data.message}`);
+                    clearAndRefocusScanInput();
+                } else if (data.is_no_stock) {
+                    playDuplicateSound();
+                    showScanAlert('danger', `❌ <strong>Scan Failed:</strong> ${data.message}`);
+                    clearAndRefocusScanInput();
+                } else if (data.is_ambiguous) {
+                    playDuplicateSound();
+                    showScanAlert('danger', `❌ <strong>Scan Failed:</strong> ${data.message}`);
+                    clearAndRefocusScanInput();
+                } else {
+                    throw new Error(data.message || 'Variant not found');
                 }
             })
             .catch(err => {
-                scanSpinner.classList.add('d-none');
-                scanFeedback.classList.remove('alert-info', 'alert-success');
-                scanFeedback.classList.add('alert-danger');
-                scanFeedbackMsg.innerText = 'Network error looking up product. Please try again.';
+                // Client-side fallback matching
+                const clean = tagCode.replace(/[-_]\d+$/, '');
+                let local = variantsList.find(v => (v.sku || '').toUpperCase() === tagCode || (v.barcode || '').toUpperCase() === tagCode);
+                if (!local) local = variantsList.find(v => (v.sku || '').toUpperCase() === clean || (v.barcode || '').toUpperCase() === clean);
+                if (!local) local = variantsList.find(v => tagCode.startsWith((v.sku || '').toUpperCase()) || (v.sku && clean.startsWith((v.sku || '').toUpperCase())));
+
+                if (local) {
+                    if (parseFloat(local.total_warehouse_stock || 0) <= 0) {
+                        playDuplicateSound();
+                        showScanAlert('danger', `❌ <strong>Scan Failed:</strong> Product <strong>${local.product_name || local.sku}</strong> is out of stock in this warehouse.`);
+                        clearAndRefocusScanInput();
+                        return;
+                    }
+                    applyScannedVariant(local, tagCode);
+                } else {
+                    playDuplicateSound();
+                    showScanAlert('danger', `❌ <strong>Scan Failed:</strong> No product variant found matching <code>${tagCode}</code>.`);
+                    clearAndRefocusScanInput();
+                }
+            })
+            .finally(() => {
+                PENDING_DAMAGE_TAGS.delete(tagCode);
             });
     }
 
-    // Add Item to queue
-    function addItemToQueue(variant) {
-        const tagCode = variant.tag_code || '';
-        const tagIsUnique = Boolean(tagCode) && variant.tag_is_unique !== false;
-        const qty = Math.max(1, parseInt(variant.damage_quantity, 10) || 1);
-        const availableStock = Number(variant.available_stock) || 0;
+    window.handleQrScanInput = handleQrScanInput;
 
-        if (tagIsUnique) {
-            const existingTagIdx = queue.findIndex(item => item.tag_code && item.tag_code.toUpperCase() === variant.tag_code.toUpperCase());
-            if (existingTagIdx !== -1) {
-                scanFeedback.classList.remove('alert-info', 'alert-danger', 'alert-success', 'alert-secondary');
-                scanFeedback.classList.add('alert-warning');
-                scanFeedbackMsg.innerHTML = '<i class="bi bi-exclamation-triangle-fill text-warning me-1"></i> Piece tag <strong>' + variant.tag_code + '</strong> is already added to the queue (Row #' + (existingTagIdx + 1) + ').';
-                return false;
-            }
-        }
-
-        const unitPrice = parseFloat(
-            variant.selling_price > 0 ? variant.selling_price : 
-            (variant.cost_per_unit > 0 ? variant.cost_per_unit : 
-            (variant.mrp > 0 ? variant.mrp : 
-            (variant.purchase_price || 0)))
-        ) || 0;
-        const queuedQty = queue
-            .filter(item => item.variant_id === variant.id)
-            .reduce((total, item) => total + (Number(item.quantity) || 0), 0);
-        if (queuedQty + qty > availableStock) {
-            scanFeedback.classList.remove('alert-info', 'alert-success', 'alert-warning', 'alert-secondary');
-            scanFeedback.classList.add('alert-danger');
-            scanFeedbackMsg.innerText = `This scan would add ${qty} pcs. The queue already contains ${queuedQty} pcs and only ${availableStock} pcs are available in the selected warehouse.`;
-            return false;
-        }
-
-        if (!tagIsUnique) {
-            const existingVariantIdx = queue.findIndex(item => !item.tag_is_unique && item.variant_id === variant.id);
-            if (existingVariantIdx !== -1) {
-                queue[existingVariantIdx].quantity += qty;
-                queue[existingVariantIdx].available_stock = availableStock;
-                queue[existingVariantIdx].total_loss = queue[existingVariantIdx].quantity * queue[existingVariantIdx].cost_per_unit;
-                renderQueue();
-                return true;
-            }
-        }
-
-        const isSeries = Boolean(
-            variant.is_series ||
-            (variant.category_type && String(variant.category_type).toUpperCase() === 'SERIES') ||
-            (variant.qr_type && String(variant.qr_type).toUpperCase() === 'SERIES_BATCH')
-        );
-        const isComplementary = Boolean(
-            variant.is_complementary ||
-            (variant.category_type && String(variant.category_type).toUpperCase() === 'COMPLEMENTARY')
-        );
-        const isQtyEditable = Boolean(variant.is_qty_editable !== undefined ? variant.is_qty_editable : (isSeries || isComplementary));
-        const effectiveQty = isQtyEditable ? qty : 1;
-
-        queue.push({
-            variant_id: variant.id,
-            product_name: variant.product_name,
-            product_code: variant.product_code || 'CODE',
-            sku: variant.sku,
-            size_name: variant.size_name || 'Free',
-            color_name: variant.color_name || 'Std',
-            tag_code: tagCode,
-            tag_is_unique: tagIsUnique,
-            category_name: variant.category_name || '',
-            subcategory_name: variant.subcategory_name || '',
-            sub_subcategory_name: variant.sub_subcategory_name || '',
-            category_hierarchy: variant.category_hierarchy || '',
-            available_stock: availableStock,
-            is_series: isSeries,
-            is_complementary: isComplementary,
-            is_qty_editable: isQtyEditable,
-            pack_quantity: Number(variant.pack_quantity) || 1,
-            quantity: effectiveQty,
-            mrp: parseFloat(variant.mrp || 0),
-            selling_price: parseFloat(variant.selling_price || 0),
-            cost_per_unit: unitPrice,
-            total_loss: effectiveQty * unitPrice,
-            source_type: 'STORAGE_HANDLING',
-            damage_reason: 'Fabric Tear / Cut',
-            defect_notes: ''
-        });
-
-        renderQueue();
-        return true;
-    }
-
-    // Render Queue Table
-    function renderQueue() {
-        if (queue.length === 0) {
-            emptyQueueRow.style.display = '';
-            queueBadgeCount.innerText = '0 items';
-            btnClearQueue.style.display = 'none';
-            queueSummaryFooter.style.setProperty('display', 'none', 'important');
-            hiddenItemsJson.value = '[]';
-            return;
-        }
-
-        emptyQueueRow.style.display = 'none';
-        queueBadgeCount.innerText = queue.length + (queue.length === 1 ? ' item' : ' items');
-        btnClearQueue.style.display = '';
-        queueSummaryFooter.style.setProperty('display', 'flex', 'important');
-
-        // Clear existing rows except emptyQueueRow
-        const rows = queueTableBody.querySelectorAll('.queue-item-row');
-        rows.forEach(r => r.remove());
-
-        let totalUnits = 0;
-        let totalValuation = 0;
-
-        queue.forEach((item, index) => {
-            const isQtyEditable = Boolean(item.is_qty_editable !== undefined ? item.is_qty_editable : (item.is_series || item.is_complementary));
-            const itemQty = isQtyEditable ? (parseInt(item.quantity) || 1) : 1;
-            item.quantity = itemQty;
-            item.total_loss = itemQty * (parseFloat(item.cost_per_unit) || 0);
-
-            totalUnits += itemQty;
-            totalValuation += parseFloat(item.total_loss) || 0;
-
-            const tr = document.createElement('tr');
-            tr.className = 'queue-item-row';
-            tr.innerHTML = `
-                <td class="text-center text-muted fw-bold">${index + 1}</td>
-                <td class="text-start text-nowrap">
-                    ${item.tag_code ? `<span class="badge bg-dark font-monospace text-warning px-2.5 py-1.5 shadow-xs d-inline-flex align-items-center gap-1"><i class="bi bi-qr-code"></i> ${item.tag_code}</span>` : `<span class="badge bg-light text-muted border text-nowrap"><i class="bi bi-dash me-1"></i>No Tag</span>`}
-                </td>
-                <td class="text-start">
-                    <div class="fw-bold text-dark mb-1" style="font-size: 0.92rem; line-height: 1.35; max-width: 270px;">
-                        ${item.product_name}
-                    </div>
-                    ${(item.category_hierarchy || item.category_name) ? `<div class="mb-1"><span class="badge bg-light text-primary border font-monospace small px-2 py-0.5"><i class="bi bi-diagram-3-fill me-1 text-warning"></i>${item.category_hierarchy || item.category_name}</span></div>` : ''}
-                    <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
-                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace small px-2 py-0.5">Code: ${item.product_code}</span>
-                        <span class="badge bg-dark-subtle text-dark-emphasis font-monospace border small px-2 py-0.5">${item.sku}</span>
-                        <span class="badge bg-light text-secondary border small px-2 py-0.5">${item.size_name} / ${item.color_name}</span>
-                    </div>
-                    <div class="d-flex flex-wrap align-items-center gap-1">
-                        <span class="badge bg-light text-muted border small px-2 py-0.5"><i class="bi bi-tag-fill me-1 text-muted"></i>MRP: ₹${parseFloat(item.mrp || 0).toFixed(2)}</span>
-                        ${item.selling_price > 0 ? `<span class="badge bg-light text-secondary border small px-2 py-0.5">Sale: ₹${parseFloat(item.selling_price || 0).toFixed(2)}</span>` : ''}
-                        ${item.is_series ? `<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle small px-2 py-0.5"><i class="bi bi-collection me-1"></i>Series</span>` : ''}
-                        ${item.is_complementary ? `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle small px-2 py-0.5"><i class="bi bi-gift me-1"></i>Complementary</span>` : ''}
-                    </div>
-                </td>
-                <td class="text-center text-nowrap">
-                    <span class="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1 fw-bold">
-                        <i class="bi bi-boxes me-1"></i>${item.available_stock} pcs
-                    </span>
-                </td>
-                <td class="text-start">
-                    <select class="form-select form-select-sm" style="min-width: 185px;" onchange="updateItemField(${index}, 'damage_reason', this.value)">
-                        <option value="Fabric Tear / Cut" ${item.damage_reason === 'Fabric Tear / Cut' ? 'selected' : ''}>Fabric Tear / Cut</option>
-                        <option value="Stitching / Seam Opening" ${item.damage_reason === 'Stitching / Seam Opening' ? 'selected' : ''}>Stitching / Seam Opening</option>
-                        <option value="Water / Moisture Contamination" ${item.damage_reason === 'Water / Moisture Contamination' ? 'selected' : ''}>Water / Moisture</option>
-                        <option value="Stain / Oil Contamination" ${item.damage_reason === 'Stain / Oil Contamination' ? 'selected' : ''}>Stain / Oil</option>
-                        <option value="Color Bleed / Discoloration" ${item.damage_reason === 'Color Bleed / Discoloration' ? 'selected' : ''}>Color Bleed</option>
-                        <option value="Broken Button / Zipper / Trims" ${item.damage_reason === 'Broken Button / Zipper / Trims' ? 'selected' : ''}>Broken Button/Zipper</option>
-                        <option value="Crushed / Compromised Packaging" ${item.damage_reason === 'Crushed / Compromised Packaging' ? 'selected' : ''}>Crushed Packaging</option>
-                        <option value="Transit Physical Impact" ${item.damage_reason === 'Transit Physical Impact' ? 'selected' : ''}>Transit Impact</option>
-                        <option value="Other Defect" ${item.damage_reason === 'Other Defect' ? 'selected' : ''}>Other Defect</option>
-                    </select>
-                </td>
-                <td class="text-center">
-                    ${isQtyEditable ? `
-                        <div class="d-inline-flex flex-column align-items-center">
-                            <input type="number" min="1" max="${parseInt(item.available_stock, 10) || 1}" class="form-control form-control-sm fw-bold text-center mx-auto text-primary" style="max-width: 75px;" value="${item.quantity}" oninput="updateItemQty(${index}, this.value)" onchange="updateItemQty(${index}, this.value)">
-                            <small class="text-primary d-block mt-0.5 fw-semibold" style="font-size: 0.65rem;">
-                                ${item.is_series ? '<i class="bi bi-collection me-0.5"></i>Series' : '<i class="bi bi-gift me-0.5"></i>Comp'}
-                            </small>
-                        </div>
-                    ` : `
-                        <div class="d-inline-flex flex-column align-items-center" title="Normal product piece QR tags are single individual pieces (quantity is fixed at 1 pc)">
-                            <input type="number" value="1" readonly tabindex="-1" class="form-control form-control-sm fw-bold text-center mx-auto bg-light text-muted" style="max-width: 75px; cursor: not-allowed; border-color: #cbd5e1; user-select: none;">
-                            <small class="text-muted d-block mt-0.5" style="font-size: 0.65rem;"><i class="bi bi-lock-fill me-0.5"></i>1 pc fixed</small>
-                        </div>
-                    `}
-                </td>
-                <td class="text-center">
-                    <div class="input-group input-group-sm mx-auto shadow-xs" style="min-width: 125px; max-width: 135px;">
-                        <span class="input-group-text bg-light fw-bold text-muted px-2">₹</span>
-                        <input type="text" class="form-control form-control-sm fw-bold text-end pe-2 bg-light text-dark" value="${parseFloat(item.cost_per_unit).toFixed(2)}" readonly tabindex="-1" style="background-color: #f1f5f9 !important; cursor: not-allowed; font-weight: 700;">
-                    </div>
-                    <small class="text-muted d-block mt-0.5" style="font-size: 0.68rem;">(Selling Price)</small>
-                </td>
-                <td class="text-end text-nowrap pe-2">
-                    <span class="fw-bold text-danger fs-6">₹${parseFloat(item.total_loss).toFixed(2)}</span>
-                </td>
-                <td class="text-center pe-3 text-nowrap">
-                    <button type="button" class="btn btn-sm btn-outline-danger px-2 py-1 shadow-xs" onclick="removeQueueItem(${index})" title="Cancel / Remove this item">
-                        <i class="bi bi-trash3-fill"></i>
-                    </button>
-                </td>
-            `;
-            queueTableBody.appendChild(tr);
-        });
-
-        summaryTotalStyles.innerText = queue.length;
-        summaryTotalQty.innerText = totalUnits + ' pcs';
-        summaryTotalLoss.innerText = '₹' + totalValuation.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        hiddenItemsJson.value = JSON.stringify(queue);
-    }
-
-    // Update item field
-    window.updateItemField = function(index, field, value) {
-        if (queue[index]) {
-            queue[index][field] = value;
-            hiddenItemsJson.value = JSON.stringify(queue);
-        }
-    };
-
-    // Update quantity
-    window.updateItemQty = function(index, value) {
-        if (!queue[index]) return;
-        const item = queue[index];
-        const isEditable = Boolean(item.is_qty_editable !== undefined ? item.is_qty_editable : (item.is_series || item.is_complementary));
-        if (!isEditable) {
-            item.quantity = 1;
-            item.total_loss = 1 * (parseFloat(item.cost_per_unit) || 0);
-            renderQueue();
-            return;
-        }
-
-        let qty = parseInt(value, 10);
-        if (isNaN(qty) || qty < 1) qty = 1;
-        const maxStock = Math.max(1, parseInt(item.available_stock, 10) || 1);
-        if (qty > maxStock) {
-            qty = maxStock;
-        }
-        item.quantity = qty;
-        item.total_loss = qty * (parseFloat(item.cost_per_unit) || 0);
-        renderQueue();
-    };
-            queue[index].total_loss = qty * (parseFloat(queue[index].cost_per_unit) || 0);
-            renderQueue();
-        }
-    };
-
-    // Update cost
-    window.updateItemCost = function(index, value) {
-        const cost = Math.max(0, parseFloat(value) || 0);
-        if (queue[index]) {
-            queue[index].cost_per_unit = cost;
-            queue[index].total_loss = (parseInt(queue[index].quantity) || 1) * cost;
-            renderQueue();
-        }
-    };
-
-    // Remove single item from queue
-    window.removeQueueItem = function(index) {
-        if (queue[index]) {
-            const removed = queue.splice(index, 1)[0];
-            renderQueue();
-            scanFeedback.classList.remove('alert-info', 'alert-success', 'alert-danger');
-            scanFeedback.classList.add('alert-secondary');
-            scanFeedbackMsg.innerHTML = '<i class="bi bi-trash me-1"></i> Removed: <strong>' + removed.product_name + '</strong> from queue.';
-        }
-    };
-
-    // Clear all items from queue
-    window.clearQueue = function() {
-        if (queue.length > 0 && confirm('Are you sure you want to clear all ' + queue.length + ' scanned items from the list?')) {
-            queue = [];
-            renderQueue();
-            scanFeedback.classList.add('d-none');
-            scanInput.focus();
-        }
-    };
-
-    // Utility: escape HTML for safe rendering in suggestions
-    function escapeHtml(str) {
-        if (!str) return '';
-        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-    }
-
-    // Auto-lookup on paste
-    scanInput.addEventListener('paste', function(e) {
-        setTimeout(() => {
-            lookupProduct(this.value);
-        }, 50);
-    });
-
-    // Debounced live search suggestions while typing manually
-    scanInput.addEventListener('input', function(e) {
-        const val = this.value.trim();
-        clearTimeout(searchDebounceTimer);
-        
-        if (val.length < 2) {
-            hideLiveSearch();
-            return;
-        }
-
-        searchDebounceTimer = setTimeout(() => {
-            const warehouseId = warehouseSelect.value;
-            fetch('<?= url("api/warehouse/damage/lookup-scan") ?>?code=' + encodeURIComponent(val) + '&warehouse_id=' + warehouseId)
-                .then(res => res.json())
-                .then(data => {
-                    if (data.matches && data.matches.length > 0) {
-                        renderLiveSearch(data.matches, val);
-                    } else if (data.success && data.variant) {
-                        renderLiveSearch([data.variant], val);
-                    } else {
-                        renderLiveSearch([], val);
-                    }
-                })
-                .catch(() => {
-                    hideLiveSearch();
-                });
-        }, 220);
-    });
-
-    // Keyboard navigation (Arrow Up, Arrow Down, Escape, Enter)
-    scanInput.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            hideLiveSearch();
-            return;
-        }
-
-        const items = liveSearchResults ? liveSearchResults.querySelectorAll('.suggestion-item') : [];
-        if (e.key === 'ArrowDown') {
-            if (items.length > 0) {
+    if (scanInput) {
+        scanInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
                 e.preventDefault();
-                selectedSuggestionIndex = (selectedSuggestionIndex + 1) % items.length;
-                updateSuggestionHighlight(items);
+                handleQrScanInput(this.value);
             }
-            return;
-        }
-
-        if (e.key === 'ArrowUp') {
-            if (items.length > 0) {
-                e.preventDefault();
-                selectedSuggestionIndex = (selectedSuggestionIndex - 1 + items.length) % items.length;
-                updateSuggestionHighlight(items);
-            }
-            return;
-        }
-
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            if (selectedSuggestionIndex >= 0 && items[selectedSuggestionIndex]) {
-                items[selectedSuggestionIndex].click();
-            } else {
-                lookupProduct(this.value);
-            }
-        }
-    });
-
-    function updateSuggestionHighlight(items) {
-        items.forEach((it, idx) => {
-            if (idx === selectedSuggestionIndex) {
-                it.classList.add('active', 'bg-primary-subtle', 'text-primary');
-                it.scrollIntoView({ block: 'nearest' });
-            } else {
-                it.classList.remove('active', 'bg-primary-subtle', 'text-primary');
-            }
+        });
+        scanInput.addEventListener('paste', function(e) {
+            setTimeout(() => {
+                handleQrScanInput(this.value);
+            }, 50);
         });
     }
 
-    // Close suggestions when clicking outside
-    document.addEventListener('click', function(e) {
-        if (liveSearchResults && !liveSearchResults.contains(e.target) && e.target !== scanInput && e.target !== btnLookupScan) {
-            hideLiveSearch();
-        }
-    });
-
-    btnLookupScan.addEventListener('click', function() {
-        lookupProduct(scanInput.value);
-    });
-
-    // Form Submission Validation
-    damageEntryForm.addEventListener('submit', function(e) {
-        if (queue.length === 0) {
+    if (triggerScanBtn) {
+        triggerScanBtn.addEventListener('click', function(e) {
             e.preventDefault();
-            alert('Please scan or add at least one product to the list before submitting.');
-            scanInput.focus();
-            return false;
-        }
-
-        // Strictly normalize quantities: Normal products are locked to 1 pc
-        queue.forEach(item => {
-            const isEditable = Boolean(item.is_qty_editable !== undefined ? item.is_qty_editable : (item.is_series || item.is_complementary));
-            if (!isEditable) {
-                item.quantity = 1;
-                item.total_loss = 1 * (parseFloat(item.cost_per_unit) || 0);
-            } else {
-                let q = parseInt(item.quantity, 10) || 1;
-                const maxStock = Math.max(1, parseInt(item.available_stock, 10) || 1);
-                item.quantity = Math.min(maxStock, Math.max(1, q));
-                item.total_loss = item.quantity * (parseFloat(item.cost_per_unit) || 0);
-            }
+            if (scanInput) handleQrScanInput(scanInput.value);
         });
+    }
 
-        hiddenItemsJson.value = JSON.stringify(queue);
-    });
+    if (clearScanBtn) {
+        clearScanBtn.addEventListener('click', function() {
+            if (scanInput) {
+                scanInput.value = '';
+                scanInput.focus();
+            }
+            const banner = document.getElementById('scanStatusBanner');
+            if (banner) banner.classList.add('d-none');
+        });
+    }
 
     // Photo preview listener
     const photoInput = document.getElementById('damagePhotoInput');
@@ -807,5 +927,18 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Form submit validation
+    if (damageForm) {
+        damageForm.addEventListener('submit', function(e) {
+            calculateGrandTotal();
+            const rows = document.querySelectorAll('#damageItemsContainer tr.item-row');
+            if (rows.length === 0) {
+                e.preventDefault();
+                alert('Please scan or add at least one product before submitting.');
+                if (scanInput) scanInput.focus();
+                return false;
+            }
+        });
+    }
 });
 </script>

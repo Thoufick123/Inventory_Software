@@ -206,9 +206,6 @@ $canDeleteCutting = hasPermission('cutting', 'delete');
                         <small class="text-muted">Enter actual cut pieces per variant</small>
                     </div>
                     <div class="d-flex align-items-center gap-2">
-                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="addCustomVariantRow()">
-                            <i class="bi bi-plus-lg me-1"></i> Add Row
-                        </button>
                         <span class="badge bg-success fs-6 px-3 py-2" id="totalCutBadge"><?= number_format((int)$batch['cut_qty']) ?> Cut pcs</span>
                     </div>
                 </div>
@@ -1016,14 +1013,6 @@ function updateRollCatalogBadge(rowIdx) {
     if (badge) {
         badge.innerText = parts.length > 0 ? parts.join(' › ') : 'Select Catalog';
     }
-}
-
-function addCustomVariantRow() {
-    const activeBtn = document.querySelector('#rollVariantNavTabs .btn.active');
-    const activeGroup = activeBtn ? activeBtn.getAttribute('data-target-group') : 'all';
-    const rollId = (activeGroup && activeGroup !== 'all') ? activeGroup.replace('roll_', '') : '';
-    appendVariantRow('XL', 'STANDARD', '', '', 0, rollId, activeGroup !== 'all' ? activeGroup : '');
-    calculateMetrics();
 }
 
 function removeVariantRow(id) {
