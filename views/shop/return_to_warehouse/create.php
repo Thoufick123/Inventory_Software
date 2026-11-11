@@ -1458,7 +1458,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const qtyInput = document.querySelector(`.return-qty[data-idx="${idx}"]`);
         const maxQty = parseInt(row.getAttribute('data-max-stock')) || 1;
         const categoryType = (row.getAttribute('data-category-type') || 'NORMAL').toUpperCase();
-        const allowMultiple = categoryType === 'SERIES'
+        const allowMultiple = ['SERIES', 'COMPLEMENTARY'].includes(categoryType)
             || row.getAttribute('data-complementary') === '1'
             || (row.getAttribute('data-qr-type') || '').toUpperCase() === 'SERIES_BATCH'
             || parseInt(row.getAttribute('data-pack-quantity')) > 1;
@@ -1505,6 +1505,40 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
         const normalizedCandidates = [...new Set(scanCandidates.map(candidate => candidate.toLowerCase()))];
+        if (selectedStockPool === 'AVAILABLE') {
+            const availableAggregateRow = rows.find(candidate => {
+                if ((candidate.getAttribute('data-stock-state') || '').toUpperCase() !== 'AVAILABLE') return false;
+                const categoryType = (candidate.getAttribute('data-category-type') || 'NORMAL').toUpperCase();
+                const allowsMultiple = ['SERIES', 'COMPLEMENTARY'].includes(categoryType)
+                    || candidate.getAttribute('data-complementary') === '1'
+                    || (candidate.getAttribute('data-qr-type') || '').toUpperCase() === 'SERIES_BATCH'
+                    || parseInt(candidate.getAttribute('data-pack-quantity') || '1', 10) > 1;
+                if (!allowsMultiple) return false;
+                const aggregateCodes = [
+                    candidate.getAttribute('data-sku'),
+                    candidate.getAttribute('data-code'),
+                    candidate.getAttribute('data-qr-code')
+                ].filter(Boolean).map(value => value.trim().toLowerCase());
+                const poolTags = [
+                    ...(candidate.getAttribute('data-piece-tags') || '').split('|'),
+                    ...JSON.parse(candidate.getAttribute('data-damaged-piece-tags') || '[]')
+                ].map(tag => String(tag).trim().toLowerCase()).filter(Boolean);
+                const maxStock = parseInt(candidate.getAttribute('data-max-stock') || '0', 10);
+                return maxStock > 0 && (
+                    aggregateCodes.some(code => normalizedCandidates.includes(code))
+                    || poolTags.some(tag => normalizedCandidates.includes(tag))
+                );
+            });
+            if (availableAggregateRow) {
+                const scannedCode = scanCandidates.find(code =>
+                    [availableAggregateRow.getAttribute('data-sku'), availableAggregateRow.getAttribute('data-code'), availableAggregateRow.getAttribute('data-qr-code')]
+                        .filter(Boolean)
+                        .some(aggregateCode => aggregateCode.trim().toLowerCase() === code.toLowerCase())
+                );
+                selectScannedRow(availableAggregateRow, scannedCode || rawCode);
+                return;
+            }
+        }
         const damagedTagRows = rows.filter(candidate => {
             const tags = JSON.parse(candidate.getAttribute('data-damaged-piece-tags') || '[]')
                 .map(tag => String(tag).trim().toLowerCase());
@@ -1547,7 +1581,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (selectedStockPool === 'DAMAGED' && (candidate.getAttribute('data-category-type') || 'NORMAL').toUpperCase() === 'NORMAL'
                 && JSON.parse(candidate.getAttribute('data-damaged-piece-tags') || '[]').length > 0) return false;
             const categoryType = (candidate.getAttribute('data-category-type') || 'NORMAL').toUpperCase();
-            const allowsMultiple = categoryType === 'SERIES'
+            const allowsMultiple = ['SERIES', 'COMPLEMENTARY'].includes(categoryType)
                 || candidate.getAttribute('data-complementary') === '1'
                 || (candidate.getAttribute('data-qr-type') || '').toUpperCase() === 'SERIES_BATCH'
                 || parseInt(candidate.getAttribute('data-pack-quantity') || '1', 10) > 1;
@@ -1647,7 +1681,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const variantId = row.getAttribute('data-variant-id') || '';
             const maxStock = parseInt(row.getAttribute('data-max-stock')) || 0;
             const categoryType = (row.getAttribute('data-category-type') || 'NORMAL').toUpperCase();
-            const allowMultiple = categoryType === 'SERIES'
+            const allowMultiple = ['SERIES', 'COMPLEMENTARY'].includes(categoryType)
                 || row.getAttribute('data-complementary') === '1'
                 || (row.getAttribute('data-qr-type') || '').toUpperCase() === 'SERIES_BATCH'
                 || parseInt(row.getAttribute('data-pack-quantity')) > 1;
@@ -1699,7 +1733,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const thumbnailHtml = imgRaw 
                     ? `<img src="${escapeHtml(imgRaw)}" class="rounded border shadow-sm flex-shrink-0" style="width: 38px; height: 38px; object-fit: cover;">`
                     : `<div class="rounded bg-success bg-opacity-10 text-success d-flex align-items-center justify-content-center flex-shrink-0 shadow-sm" style="width: 38px; height: 38px;"><i class="bi bi-box-seam fs-6"></i></div>`;
-                const productTypeLabel = row.getAttribute('data-complementary') === '1'
+                const productTypeLabel = row.getAttribute('data-complementary') === '1' || categoryType === 'COMPLEMENTARY'
                     ? 'Complementary Product'
                     : (categoryType === 'SERIES' || (row.getAttribute('data-qr-type') || '').toUpperCase() === 'SERIES_BATCH' || parseInt(row.getAttribute('data-pack-quantity')) > 1)
                         ? 'Series Product'

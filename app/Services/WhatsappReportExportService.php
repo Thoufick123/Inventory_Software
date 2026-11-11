@@ -1,16 +1,16 @@
 <?php
 
 class WhatsappReportExportService {
-    public static function downloadCsv(string $title, array $rows, string $filename): void {
+    public static function downloadCsv(string $title, array $rows, string $filename, bool $formatDates = false): void {
         header('Content-Type: text/csv; charset=UTF-8');
         header('Content-Disposition: attachment; filename="' . self::safeFilename($filename, 'csv') . '"');
         header('Cache-Control: private, no-store, max-age=0');
 
-        echo self::buildCsv($title, $rows);
+        echo self::buildCsv($title, $rows, $formatDates);
         exit;
     }
 
-    public static function buildCsv(string $title, array $rows): string {
+    public static function buildCsv(string $title, array $rows, bool $formatDates = false): string {
         $output = fopen('php://temp', 'r+');
         if ($output === false) {
             throw new RuntimeException('Unable to open the report output stream.');
@@ -18,14 +18,16 @@ class WhatsappReportExportService {
 
         fprintf($output, chr(0xEF) . chr(0xBB) . chr(0xBF));
         fputcsv($output, [$title]);
-        fputcsv($output, ['Generated', date('Y-m-d H:i:s')]);
+        fputcsv($output, ['Generated', $formatDates ? "\t" . date('d/m/Y') : date('Y-m-d H:i:s')]);
         fputcsv($output, []);
 
         $columns = $rows ? array_keys($rows[0]) : ['No records'];
         fputcsv($output, array_map([self::class, 'humanizeColumn'], $columns));
         foreach ($rows as $row) {
             fputcsv($output, array_map(
-                static fn(string $column) => self::csvSafeValue($row[$column] ?? ''),
+                static fn(string $column) => self::csvSafeValue($formatDates
+                    ? self::formatDateColumnValue($column, $row[$column] ?? '')
+                    : ($row[$column] ?? '')),
                 $columns
             ));
         }
@@ -38,8 +40,8 @@ class WhatsappReportExportService {
         return $csv;
     }
 
-    public static function downloadPdf(string $title, array $rows, string $filename): void {
-        $pdf = self::buildPdf($title, $rows);
+    public static function downloadPdf(string $title, array $rows, string $filename, string $footerLabel = 'WhatsApp Report', bool $formatDates = false): void {
+        $pdf = self::buildPdf($title, $rows, $footerLabel, $formatDates);
         header('Content-Type: application/pdf');
         header('Content-Disposition: attachment; filename="' . self::safeFilename($filename, 'pdf') . '"');
         header('Content-Length: ' . strlen($pdf));
@@ -48,7 +50,7 @@ class WhatsappReportExportService {
         exit;
     }
 
-    public static function buildPdf(string $title, array $rows): string {
+    public static function buildPdf(string $title, array $rows, string $footerLabel = 'WhatsApp Report', bool $formatDates = false): string {
         $columns = $rows ? array_keys($rows[0]) : ['No records'];
         $columnGroups = array_chunk($columns, 6);
         $pages = [];
@@ -63,7 +65,9 @@ class WhatsappReportExportService {
             foreach ($rows as $rowIndex => $row) {
                 $wrappedCells = [];
                 foreach ($group as $column) {
-                    $value = self::pdfText(self::valueToString($row[$column] ?? ''));
+                    $value = self::pdfText(self::valueToString($formatDates
+                        ? self::formatDateColumnValue($column, $row[$column] ?? '')
+                        : ($row[$column] ?? '')));
                     $columnWidth = (842 - 56) / (count($group) + 1);
                     $maxChars = max(8, (int)floor(($columnWidth - 10) / 3.8));
                     $wrappedCells[] = self::wrapPdfText($value, $maxChars);
@@ -111,7 +115,7 @@ class WhatsappReportExportService {
             $stream = "0.12 0.18 0.32 rg\n";
             $stream .= self::drawPdfText($title, 28, 565, 14, true);
             $stream .= self::drawPdfText(
-                'Generated: ' . date('Y-m-d H:i:s') . '    Records: ' . count($rows),
+                'Generated: ' . ($formatDates ? date('d/m/Y') : date('Y-m-d H:i:s')) . '    Records: ' . count($rows),
                 28,
                 547,
                 8,
@@ -183,7 +187,7 @@ class WhatsappReportExportService {
                 $y -= $rowHeight;
             }
             $stream .= "0.45 0.50 0.60 RG 0.5 w 28 24 m 814 24 l S\n";
-            $stream .= self::drawPdfText('WhatsApp Report', 28, 13, 7, false);
+            $stream .= self::drawPdfText($footerLabel, 28, 13, 7, false);
             $streamLength = strlen($stream);
             $objects[$pageObjectId] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ' . $contentObjectId . ' 0 R >>';
             $objects[$contentObjectId] = "<< /Length {$streamLength} >>\nstream\n{$stream}endstream";
@@ -263,10 +267,25 @@ class WhatsappReportExportService {
         if (!is_string($value)) {
             return $value;
         }
+
         if (preg_match('/^-?\d+(?:\.\d+)?$/', $value)) {
             return $value;
         }
         return preg_match('/^[\s]*[=+\-@]/u', $value) ? "'" . $value : $value;
+    }
+
+    private static function formatDateColumnValue(string $column, $value) {
+        if (!is_string($value) || trim($value) === '' || !preg_match('/(?:date|time|_at)/i', $column)) {
+            return $value;
+        }
+
+        $dateValue = substr(trim($value), 0, 10);
+        $date = DateTimeImmutable::createFromFormat('!Y-m-d', $dateValue);
+        if (!$date || $date->format('Y-m-d') !== $dateValue) {
+            return $value;
+        }
+
+        return "\t" . $date->format('d/m/Y');
     }
 
     private static function valueToString($value): string {

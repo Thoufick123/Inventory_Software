@@ -7,6 +7,7 @@ $userRoleSlug = strtolower($authUser['role_slug'] ?? ($isSuperAdminUser ? 'super
 $userDept = $authUser['department'] ?? '';
 $isAdminRole = $isSuperAdminUser || ($authUser['role_id'] ?? 0) === 1 || str_contains($userRoleSlug, 'admin');
 $whatsappReportModule = null;
+$shopReportModule = null;
 $requestPath = (string)(parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?? '');
 $whatsappRoutePosition = strrpos($requestPath, '/warehouse/whatsapp-orders');
 if ($whatsappRoutePosition !== false) {
@@ -53,6 +54,51 @@ $whatsappReportPermissions = [
 ];
 $canDownloadWhatsappReport = $whatsappReportModule !== null
     && hasPermission($whatsappReportPermissions[$whatsappReportModule], 'view');
+$shopRoutePosition = strrpos($requestPath, '/shop/');
+if ($shopRoutePosition !== false) {
+    $shopRouteTail = trim(substr($requestPath, $shopRoutePosition + strlen('/shop/')), '/');
+    if ($shopRouteTail === 'dashboard') {
+        $shopReportModule = 'dashboard';
+    } elseif (str_starts_with($shopRouteTail, 'inventory/adjustments')) {
+        $shopReportModule = 'adjustments';
+    } elseif (str_starts_with($shopRouteTail, 'inventory')) {
+        $shopReportModule = 'inventory';
+    } elseif (str_starts_with($shopRouteTail, 'inward')) {
+        $shopReportModule = 'inward';
+    } elseif (str_starts_with($shopRouteTail, 'sales')) {
+        $shopReportModule = 'sales';
+    } elseif (str_starts_with($shopRouteTail, 'returns/returned-products')) {
+        $shopReportModule = 'returned-products';
+    } elseif (str_starts_with($shopRouteTail, 'returns')) {
+        $shopReportModule = 'returns';
+    } elseif (str_starts_with($shopRouteTail, 'exchanges')) {
+        $shopReportModule = 'exchanges';
+    } elseif (str_starts_with($shopRouteTail, 'return-to-warehouse')) {
+        $shopReportModule = 'return-to-warehouse';
+    } elseif (str_starts_with($shopRouteTail, 'customers')) {
+        $shopReportModule = 'customers';
+    } elseif (str_starts_with($shopRouteTail, 'damage')) {
+        $shopReportModule = 'damage';
+    } elseif (str_starts_with($shopRouteTail, 'cash')) {
+        $shopReportModule = 'cash';
+    }
+}
+$shopReportPermissions = [
+    'dashboard' => 'shop',
+    'inventory' => 'shop_stock',
+    'adjustments' => 'shop_stock',
+    'inward' => 'shop_inward',
+    'sales' => 'sales',
+    'returns' => 'shop_returns',
+    'exchanges' => 'shop_returns',
+    'returned-products' => 'shop_returns',
+    'return-to-warehouse' => 'return_to_warehouse',
+    'customers' => 'customers',
+    'damage' => 'shop_damage',
+    'cash' => 'shop_cash',
+];
+$canDownloadShopReport = $shopReportModule !== null
+    && hasPermission($shopReportPermissions[$shopReportModule], 'view');
 
 // Extract all assigned units defined by admin
 $userAssignedUnits = [];
@@ -659,8 +705,10 @@ if (!empty($authUser['shop_name'])) {
                     <?php endforeach; ?>
                 <?php endforeach; ?>
 
-                <?php if ($canDownloadWhatsappReport): ?>
-                    <form method="get" action="<?= url('warehouse/whatsapp-orders/reports/download/' . rawurlencode($whatsappReportModule)) ?>" class="whatsapp-report-toolbar card border shadow-sm mb-3">
+                <?php if ($canDownloadWhatsappReport || $canDownloadShopReport): ?>
+                    <?php $reportModule = $canDownloadShopReport ? $shopReportModule : $whatsappReportModule; ?>
+                    <?php $reportAction = $canDownloadShopReport ? 'shop/reports/download/' : 'warehouse/whatsapp-orders/reports/download/'; ?>
+                    <form method="get" action="<?= url($reportAction . rawurlencode($reportModule)) ?>" class="whatsapp-report-toolbar card border shadow-sm mb-3" <?= $canDownloadShopReport ? 'onsubmit="syncShopReportFilters(this)" data-shop-report-module="' . e($shopReportModule) . '"' : '' ?>>
                         <?php foreach ($_GET as $key => $value): ?>
                             <?php if (is_scalar($value) && !in_array($key, ['url', 'format', 'scope'], true)): ?>
                                 <input type="hidden" name="<?= e((string)$key) ?>" value="<?= e((string)$value) ?>">
@@ -695,6 +743,38 @@ if (!empty($authUser['shop_name'])) {
                             </div>
                         </div>
                     </form>
+                    <?php if ($canDownloadShopReport): ?>
+                        <script>
+                            function syncShopReportFilters(form) {
+                                const setFilter = (name, value) => {
+                                    let field = form.querySelector(`[name="${name}"]`);
+                                    if (!field) {
+                                        field = document.createElement('input');
+                                        field.type = 'hidden';
+                                        field.name = name;
+                                        form.appendChild(field);
+                                    }
+                                    field.value = value || '';
+                                };
+                                if (form.dataset.shopReportModule === 'dashboard') {
+                                    const activePeriod = document.querySelector('#mainFilterBtnGroup button.active')?.dataset.period;
+                                    if (activePeriod) setFilter('period', activePeriod);
+                                    if (activePeriod === 'custom') {
+                                        setFilter('start_date', document.getElementById('filterStartDate')?.value);
+                                        setFilter('end_date', document.getElementById('filterEndDate')?.value);
+                                    }
+                                }
+                                if (form.dataset.shopReportModule === 'cash') {
+                                    setFilter('q', document.getElementById('cashTabSearchInput')?.value);
+                                }
+                                if (form.dataset.shopReportModule === 'inventory') {
+                                    const activeType = document.querySelector('.product-type-tab.active')?.dataset.productType;
+                                    if (activeType) setFilter('product_type', activeType);
+                                }
+                                return true;
+                            }
+                        </script>
+                    <?php endif; ?>
                 <?php endif; ?>
 
                 <!-- Main Content from child view -->

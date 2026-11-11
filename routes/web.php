@@ -798,6 +798,7 @@ class Router {
         $this->get('api/shop/dashboard/metrics', 'ShopController', 'ajaxFilterMetrics', ['AuthMiddleware', ['PermissionMiddleware', 'shop', 'view']]);
         $this->get('shop/reports/export', 'ShopController', 'exportReports', ['AuthMiddleware', ['PermissionMiddleware', 'shop', 'view']]);
         $this->post('shop/reports/export', 'ShopController', 'exportReports', ['AuthMiddleware', ['PermissionMiddleware', 'shop', 'view']]);
+        $this->get('shop/reports/download/{module}', 'ShopController', 'downloadShopReport', ['AuthMiddleware']);
 
         // POS / Billing
         $this->get('shop/pos', 'ShopController', 'posInterface', ['AuthMiddleware', ['PermissionMiddleware', 'pos', 'view']]);

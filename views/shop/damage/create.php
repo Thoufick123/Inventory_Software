@@ -28,7 +28,7 @@
             <div class="row g-3 align-items-center">
                 <div class="col-12">
                     <label class="form-label text-white-50 small fw-bold text-uppercase mb-1">
-                        <i class="bi bi-upc-scan text-warning me-1"></i> Scan Piece QR Tag / Barcode or Type SKU / Product Name
+                        <i class="bi bi-upc-scan text-warning me-1"></i> Scan Eligible Stock QR / Product Code
                     </label>
                     <div class="position-relative">
                         <div class="input-group input-group-lg shadow-sm">
@@ -36,7 +36,7 @@
                                 <i class="bi bi-qr-code-scan fs-4"></i>
                             </span>
                             <input type="text" id="scanInput" class="form-control form-control-lg bg-dark text-white border-secondary font-monospace" 
-                                   placeholder="Type SKU, Product name, or scan barcode gun..." 
+                                   placeholder="Normal: exact piece QR · Series/complementary: SKU or QR · Returned: printed R QR"
                                    autocomplete="off" autofocus>
                             <button type="button" class="btn btn-warning px-4 fw-bold d-flex align-items-center gap-1" id="btnLookupScan" title="Lookup / Add to Queue">
                                 <i class="bi bi-plus-circle"></i> <span>Add to Queue</span>
@@ -48,7 +48,7 @@
                     </div>
                     <div class="d-flex justify-content-between align-items-center mt-2 flex-wrap gap-2">
                         <small class="text-white-50">
-                            <i class="bi bi-keyboard me-1 text-warning"></i> Type any SKU or piece tag &amp; hit <strong>Enter</strong> or click <strong>Add</strong>.
+                            <i class="bi bi-info-circle me-1 text-warning"></i> Normal products require an unbilled good-stock piece QR. Series/complementary products require available quantity. Returned products must use their printed R-prefixed QR.
                         </small>
                     </div>
                 </div>
@@ -285,7 +285,7 @@
         const isComplementary = Boolean(parseInt(prod.is_complementary, 10)) || categoryType === 'COMPLEMENTARY';
         const isSeries = !isComplementary && (
             categoryType === 'SERIES'
-            || String(prod.qr_type || '').toUpperCase() === 'SERIES_BATCH'
+            || ['SERIES_BATCH', 'SERIES'].includes(String(prod.qr_type || '').toUpperCase())
             || (parseInt(prod.pack_quantity, 10) || 1) > 1
         );
         const productType = isComplementary ? 'COMPLEMENTARY' : (isSeries ? 'SERIES' : 'NORMAL');
