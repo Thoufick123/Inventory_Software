@@ -16603,13 +16603,32 @@ class WarehouseController {
                 );
             }
 
-            foreach ($attributes as $idx => $attr) {
+            $seenSaveAttrNames = [];
+            $cleanSaveSort = 1;
+            foreach ($attributes as $attr) {
                 $attrName = mb_strtoupper(trim($attr['attr_name'] ?? ''));
                 if (empty($attrName)) continue;
+                if (isset($seenSaveAttrNames[$attrName])) {
+                    Database::rollBack();
+                    Response::json(['success' => false, 'message' => "Duplicate attribute name '{$attrName}' detected. Each attribute must have a unique name."], 400);
+                    return;
+                }
+                $seenSaveAttrNames[$attrName] = true;
+
                 $attrType = in_array($attr['attr_type'] ?? '', ['TEXT', 'NUMBER', 'SELECT', 'MULTI_SELECT']) ? $attr['attr_type'] : 'SELECT';
-                $attrOptions = !empty($attr['attr_options']) ? mb_strtoupper(is_array($attr['attr_options']) ? implode(',', $attr['attr_options']) : trim($attr['attr_options'])) : null;
+
+                $rawOptions = $attr['attr_options'] ?? '';
+                $optionList = is_array($rawOptions) ? $rawOptions : explode(',', (string)$rawOptions);
+                $uniqueOptions = [];
+                foreach ($optionList as $opt) {
+                    $t = mb_strtoupper(trim((string)$opt));
+                    if ($t !== '' && !in_array($t, $uniqueOptions, true)) {
+                        $uniqueOptions[] = $t;
+                    }
+                }
+                $attrOptions = !empty($uniqueOptions) ? implode(',', $uniqueOptions) : null;
                 $isRequired = !empty($attr['is_required']) ? 1 : 0;
-                $sortOrder = (int)($attr['sort_order'] ?? ($idx + 1));
+                $sortOrder = $cleanSaveSort++;
 
                 Database::execute(
                     "INSERT INTO wh_category_attributes (category_id, subcategory_id, sub_subcategory_id, attr_name, attr_type, attr_options, is_required, sort_order, is_active, created_at)
@@ -17743,10 +17762,7 @@ class WarehouseController {
     public function ajaxCreateFullHierarchy(): void {
         try {
             $catName = mb_strtoupper(trim($_POST['category_name'] ?? ''));
-            $categoryType = strtoupper(trim($_POST['category_type'] ?? 'NORMAL'));
-            if (!in_array($categoryType, ['NORMAL', 'COMPLEMENTARY', 'SERIES'])) {
-                $categoryType = 'NORMAL';
-            }
+            $categoryType = 'NORMAL';
             $hsnCode = mb_strtoupper(trim($_POST['hsn_code'] ?? ''));
             $gstRate = isset($_POST['gst_rate']) && is_numeric($_POST['gst_rate']) ? max(0.0, (float)$_POST['gst_rate']) : 5.00;
             $subcatName = mb_strtoupper(trim($_POST['subcategory_name'] ?? ''));
@@ -17759,6 +17775,16 @@ class WarehouseController {
 
             if (empty($catName)) {
                 Response::json(['success' => false, 'message' => 'Main Category name is required.'], 400);
+                return;
+            }
+
+            // Cross-check: Hierarchy collisions
+            if (!empty($subcatName) && $subcatName === $catName) {
+                Response::json(['success' => false, 'message' => "Subcategory name cannot be identical to Main Category ('{$catName}')."], 400);
+                return;
+            }
+            if (!empty($subSubcatName) && ($subSubcatName === $subcatName || $subSubcatName === $catName)) {
+                Response::json(['success' => false, 'message' => "Sub-Subcategory name cannot be identical to Subcategory or Main Category."], 400);
                 return;
             }
 
@@ -17791,7 +17817,7 @@ class WarehouseController {
             if ($existingCat) {
                 $catId = (int)$existingCat['id'];
                 $catName = $existingCat['name'];
-                Database::execute("UPDATE warehouse_categories SET is_active = 1, category_type = ?, hsn_code = COALESCE(NULLIF(?, ''), hsn_code), gst_rate = COALESCE(?, gst_rate), updated_at = NOW() WHERE id = ?", [$categoryType, $hsnCode, $gstRate, $catId]);
+                Database::execute("UPDATE warehouse_categories SET is_active = 1, hsn_code = COALESCE(NULLIF(?, ''), hsn_code), gst_rate = COALESCE(?, gst_rate), updated_at = NOW() WHERE id = ?", [$hsnCode, $gstRate, $catId]);
             } else {
                 $maxSort = Database::fetchOne("SELECT MAX(sort_order) as m FROM warehouse_categories")['m'] ?? 0;
                 $codeBase = strtoupper(substr(preg_replace('/[^a-zA-Z0-9]/', '', $catName), 0, 3)) ?: 'CAT';
@@ -17806,8 +17832,8 @@ class WarehouseController {
                     $catSlug = $catSlugBase . '-' . $counter++;
                 }
                 Database::execute(
-                    "INSERT INTO warehouse_categories (name, category_type, code, slug, hsn_code, gst_rate, sort_order, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW())",
-                    [$catName, $categoryType, $code, $catSlug, ($hsnCode ?: null), $gstRate, ((int)$maxSort + 1)]
+                    "INSERT INTO warehouse_categories (name, category_type, code, slug, hsn_code, gst_rate, sort_order, is_active, created_at) VALUES (?, 'NORMAL', ?, ?, ?, ?, ?, 1, NOW())",
+                    [$catName, $code, $catSlug, ($hsnCode ?: null), $gstRate, ((int)$maxSort + 1)]
                 );
                 $catId = (int)Database::lastInsertId();
             }
@@ -17906,15 +17932,34 @@ class WarehouseController {
                 }
             }
 
-            // 4. Save Pre-set Attributes (if provided)
+            // 4. Save Pre-set Attributes (if provided) - with deduplication & option cleaning
             if (!empty($attributes)) {
-                foreach ($attributes as $idx => $attr) {
+                $seenAttrNames = [];
+                $cleanSort = 1;
+                foreach ($attributes as $attr) {
                     $attrName = mb_strtoupper(trim($attr['attr_name'] ?? ''));
                     if (empty($attrName)) continue;
+                    if (isset($seenAttrNames[$attrName])) {
+                        Database::rollBack();
+                        Response::json(['success' => false, 'message' => "Duplicate attribute name '{$attrName}' detected. Each attribute must have a unique name."], 400);
+                        return;
+                    }
+                    $seenAttrNames[$attrName] = true;
+
                     $attrType = in_array($attr['attr_type'] ?? '', ['TEXT', 'NUMBER', 'SELECT', 'MULTI_SELECT']) ? $attr['attr_type'] : 'SELECT';
-                    $attrOptions = !empty($attr['attr_options']) ? mb_strtoupper(is_array($attr['attr_options']) ? implode(',', $attr['attr_options']) : trim($attr['attr_options'])) : null;
+
+                    $rawOptions = $attr['attr_options'] ?? '';
+                    $optionList = is_array($rawOptions) ? $rawOptions : explode(',', (string)$rawOptions);
+                    $uniqueOptions = [];
+                    foreach ($optionList as $opt) {
+                        $t = mb_strtoupper(trim((string)$opt));
+                        if ($t !== '' && !in_array($t, $uniqueOptions, true)) {
+                            $uniqueOptions[] = $t;
+                        }
+                    }
+                    $attrOptions = !empty($uniqueOptions) ? implode(',', $uniqueOptions) : null;
                     $isRequired = !empty($attr['is_required']) ? 1 : 0;
-                    $sortOrder = (int)($attr['sort_order'] ?? ($idx + 1));
+                    $sortOrder = $cleanSort++;
 
                     Database::execute(
                         "INSERT INTO wh_category_attributes (category_id, subcategory_id, sub_subcategory_id, attr_name, attr_type, attr_options, is_required, sort_order, is_active, created_at)
@@ -17950,10 +17995,6 @@ class WarehouseController {
         try {
             $catId = (int)($_POST['category_id'] ?? 0);
             $catName = mb_strtoupper(trim($_POST['category_name'] ?? ''));
-            $categoryType = strtoupper(trim($_POST['category_type'] ?? 'NORMAL'));
-            if (!in_array($categoryType, ['NORMAL', 'COMPLEMENTARY', 'SERIES'])) {
-                $categoryType = 'NORMAL';
-            }
             $hsnCode = mb_strtoupper(trim($_POST['hsn_code'] ?? ''));
             $gstRate = isset($_POST['gst_rate']) && is_numeric($_POST['gst_rate']) ? max(0.0, (float)$_POST['gst_rate']) : 5.00;
             $subcatName = mb_strtoupper(trim($_POST['subcategory_name'] ?? ''));
@@ -17963,6 +18004,16 @@ class WarehouseController {
 
             if ($catId <= 0 || empty($catName)) {
                 Response::json(['success' => false, 'message' => 'Valid Category ID and Name are required.'], 400);
+                return;
+            }
+
+            // Cross-check: Hierarchy collisions
+            if (!empty($subcatName) && $subcatName === $catName) {
+                Response::json(['success' => false, 'message' => "Subcategory name cannot be identical to Main Category ('{$catName}')."], 400);
+                return;
+            }
+            if (!empty($subSubcatName) && ($subSubcatName === $subcatName || $subSubcatName === $catName)) {
+                Response::json(['success' => false, 'message' => "Sub-Subcategory name cannot be identical to Subcategory or Main Category."], 400);
                 return;
             }
 
@@ -17977,8 +18028,8 @@ class WarehouseController {
             }
 
             Database::execute(
-                "UPDATE warehouse_categories SET name = ?, category_type = ?, slug = ?, hsn_code = ?, gst_rate = ?, updated_at = NOW() WHERE id = ?",
-                [$catName, $categoryType, $catSlug, ($hsnCode ?: null), $gstRate, $catId]
+                "UPDATE warehouse_categories SET name = ?, slug = ?, hsn_code = ?, gst_rate = ?, updated_at = NOW() WHERE id = ?",
+                [$catName, $catSlug, ($hsnCode ?: null), $gstRate, $catId]
             );
 
             // 2. Handle Subcategory (Level 2)
@@ -18075,13 +18126,32 @@ class WarehouseController {
                     [$catId]
                 );
 
-                foreach ($attributes as $idx => $attr) {
+                $seenEditAttrNames = [];
+                $cleanEditSort = 1;
+                foreach ($attributes as $attr) {
                     $attrName = mb_strtoupper(trim($attr['attr_name'] ?? ''));
                     if (empty($attrName)) continue;
+                    if (isset($seenEditAttrNames[$attrName])) {
+                        Database::rollBack();
+                        Response::json(['success' => false, 'message' => "Duplicate attribute name '{$attrName}' detected. Each attribute must have a unique name."], 400);
+                        return;
+                    }
+                    $seenEditAttrNames[$attrName] = true;
+
                     $attrType = in_array($attr['attr_type'] ?? '', ['TEXT', 'NUMBER', 'SELECT', 'MULTI_SELECT']) ? $attr['attr_type'] : 'SELECT';
-                    $attrOptions = !empty($attr['attr_options']) ? mb_strtoupper(is_array($attr['attr_options']) ? implode(',', $attr['attr_options']) : trim($attr['attr_options'])) : null;
+
+                    $rawOptions = $attr['attr_options'] ?? '';
+                    $optionList = is_array($rawOptions) ? $rawOptions : explode(',', (string)$rawOptions);
+                    $uniqueOptions = [];
+                    foreach ($optionList as $opt) {
+                        $t = mb_strtoupper(trim((string)$opt));
+                        if ($t !== '' && !in_array($t, $uniqueOptions, true)) {
+                            $uniqueOptions[] = $t;
+                        }
+                    }
+                    $attrOptions = !empty($uniqueOptions) ? implode(',', $uniqueOptions) : null;
                     $isRequired = !empty($attr['is_required']) ? 1 : 0;
-                    $sortOrder = (int)($attr['sort_order'] ?? ($idx + 1));
+                    $sortOrder = $cleanEditSort++;
 
                     Database::execute(
                         "INSERT INTO wh_category_attributes (category_id, subcategory_id, sub_subcategory_id, attr_name, attr_type, attr_options, is_required, sort_order, is_active, created_at)

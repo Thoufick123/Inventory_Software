@@ -374,10 +374,10 @@ $canDeleteCatalog = hasPermission('wh_catalog', 'delete');
                                 <div class="form-text text-muted" id="unifiedSubSubcatHelpText" style="font-size:.72rem;">Belongs strictly to selected subcategory</div>
                             </div>
 
-                            <!-- 4. HSN CODE, GST RATE & CATEGORY TYPE -->
+                            <!-- 4. HSN CODE & GST RATE -->
                             <div class="col-12 pt-2 border-top">
                                 <div class="row g-2 align-items-end">
-                                    <div class="col-md-5">
+                                    <div class="col-md-7">
                                         <div class="d-flex align-items-center justify-content-between mb-1">
                                             <label class="form-label small fw-bold text-dark mb-0">
                                                 <i class="bi bi-upc-scan text-primary me-1"></i>HSN Code <span class="text-muted fw-normal">(Optional)</span>
@@ -397,7 +397,7 @@ $canDeleteCatalog = hasPermission('wh_catalog', 'delete');
                                         </div>
                                         <div class="form-text text-muted" style="font-size:.72rem;">Default HSN code for products in this category</div>
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col-md-5">
                                         <label class="form-label small fw-bold text-dark mb-1">
                                             <i class="bi bi-percent text-success me-1"></i>GST Rate (%)
                                         </label>
@@ -409,16 +409,6 @@ $canDeleteCatalog = hasPermission('wh_catalog', 'delete');
                                             <option value="28.00">28.00%</option>
                                         </select>
                                         <div class="form-text text-muted" style="font-size:.72rem;">Default GST tax rate</div>
-                                    </div>
-                                    <div class="col-md-4">
-                                        <label class="form-label small fw-bold text-dark mb-1">
-                                            <i class="bi bi-tag text-info me-1"></i>Category Type
-                                        </label>
-                                        <select id="unifiedCategoryType" class="form-select form-select-sm fw-semibold">
-                                            <option value="NORMAL">Normal / Finished Goods</option>
-                                            <option value="FABRIC">Fabric / Raw Material</option>
-                                        </select>
-                                        <div class="form-text text-muted" style="font-size:.72rem;">Category classification</div>
                                     </div>
                                 </div>
                             </div>
@@ -562,10 +552,10 @@ $canDeleteCatalog = hasPermission('wh_catalog', 'delete');
                                     <div class="form-text text-muted" id="editSubSubcatHelpText" style="font-size:.72rem;">Pick from dropdown or click + Add New</div>
                                 </div>
 
-                                <!-- 4. HSN CODE, GST RATE & CATEGORY TYPE -->
+                                <!-- 4. HSN CODE & GST RATE -->
                                 <div class="col-12 pt-2 border-top">
                                     <div class="row g-2 align-items-end">
-                                        <div class="col-md-5">
+                                        <div class="col-md-7">
                                             <div class="d-flex align-items-center justify-content-between mb-1">
                                                 <label class="form-label small fw-semibold text-muted mb-0">
                                                     <i class="bi bi-upc-scan text-primary me-1"></i>HSN Code
@@ -585,7 +575,7 @@ $canDeleteCatalog = hasPermission('wh_catalog', 'delete');
                                             </div>
                                             <div class="form-text text-muted" style="font-size:.72rem;">Default HSN code for products in this category</div>
                                         </div>
-                                        <div class="col-md-3">
+                                        <div class="col-md-5">
                                             <label class="form-label small fw-semibold text-muted mb-1">
                                                 <i class="bi bi-percent text-success me-1"></i>GST Rate (%)
                                             </label>
@@ -597,16 +587,6 @@ $canDeleteCatalog = hasPermission('wh_catalog', 'delete');
                                                 <option value="28.00">28.00%</option>
                                             </select>
                                             <div class="form-text text-muted" style="font-size:.72rem;">Default GST tax rate</div>
-                                        </div>
-                                        <div class="col-md-4">
-                                            <label class="form-label small fw-semibold text-muted mb-1">
-                                                <i class="bi bi-tag text-info me-1"></i>Category Type
-                                            </label>
-                                            <select id="editFullCategoryType" class="form-select form-select-sm fw-semibold">
-                                                <option value="NORMAL">Normal / Finished Goods</option>
-                                                <option value="FABRIC">Fabric / Raw Material</option>
-                                            </select>
-                                            <div class="form-text text-muted" style="font-size:.72rem;">Category classification</div>
                                         </div>
                                     </div>
                                 </div>
@@ -1728,7 +1708,6 @@ function openAddCategoryModal() {
     addUnifiedAttributeRow();
     if (document.getElementById('unifiedCatHsn')) document.getElementById('unifiedCatHsn').value = '';
     if (document.getElementById('unifiedCatGstRate')) document.getElementById('unifiedCatGstRate').value = '5.00';
-    if (document.getElementById('unifiedCategoryType')) document.getElementById('unifiedCategoryType').value = 'NORMAL';
 
     // Populate Category Dropdown with existing category names
     const catSel = document.getElementById('unifiedCatSelect');
@@ -1780,7 +1759,6 @@ function onUnifiedCatSelectChange() {
         populateUnifiedSubcategories(null);
         if (document.getElementById('unifiedCatHsn')) document.getElementById('unifiedCatHsn').value = '';
         if (document.getElementById('unifiedCatGstRate')) document.getElementById('unifiedCatGstRate').value = '5.00';
-        if (document.getElementById('unifiedCategoryType')) document.getElementById('unifiedCategoryType').value = 'NORMAL';
         return;
     }
 
@@ -1792,9 +1770,6 @@ function onUnifiedCatSelectChange() {
         }
         if (document.getElementById('unifiedCatGstRate') && catObj.gst_rate) {
             document.getElementById('unifiedCatGstRate').value = parseFloat(catObj.gst_rate).toFixed(2);
-        }
-        if (document.getElementById('unifiedCategoryType') && catObj.category_type) {
-            document.getElementById('unifiedCategoryType').value = (catObj.category_type || 'NORMAL').toUpperCase();
         }
     }
 }
@@ -2085,16 +2060,72 @@ function quickAddUnifiedAttr(name, type, opts) {
     addUnifiedAttributeRow({ attr_name: name, attr_type: type, attr_options: opts });
 }
 
+function checkUnifiedAttributeDuplicates() {
+    const rows = document.querySelectorAll('#unifiedAttributesTableBody tr.ua-row');
+    const seen = new Map();
+    let hasDup = false;
+
+    rows.forEach(r => {
+        const inp = r.querySelector('.ua-name');
+        if (!inp) return;
+        const val = inp.value.trim().toUpperCase();
+        if (!val) {
+            inp.classList.remove('is-invalid');
+            const feed = r.querySelector('.ua-name-feedback');
+            if (feed) feed.style.display = 'none';
+            return;
+        }
+        if (seen.has(val)) {
+            hasDup = true;
+            inp.classList.add('is-invalid');
+            let feed = r.querySelector('.ua-name-feedback');
+            if (!feed) {
+                feed = document.createElement('div');
+                feed.className = 'invalid-feedback ua-name-feedback small d-block';
+                inp.parentNode.appendChild(feed);
+            }
+            feed.textContent = `Duplicate attribute name "${val}"`;
+            feed.style.display = 'block';
+
+            const prevInp = seen.get(val);
+            prevInp.classList.add('is-invalid');
+            const prevRow = prevInp.closest('tr');
+            let prevFeed = prevRow.querySelector('.ua-name-feedback');
+            if (!prevFeed) {
+                prevFeed = document.createElement('div');
+                prevFeed.className = 'invalid-feedback ua-name-feedback small d-block';
+                prevInp.parentNode.appendChild(prevFeed);
+            }
+            prevFeed.textContent = `Duplicate attribute name "${val}"`;
+            prevFeed.style.display = 'block';
+        } else {
+            seen.set(val, inp);
+            inp.classList.remove('is-invalid');
+            const feed = r.querySelector('.ua-name-feedback');
+            if (feed) feed.style.display = 'none';
+        }
+    });
+
+    return !hasDup;
+}
+
 function addUnifiedAttributeRow(attr = null) {
     const tb = document.getElementById('unifiedAttributesTableBody');
     const a = attr || { attr_name: '', attr_options: '' };
     const tr = document.createElement('tr'); tr.className = 'ua-row';
     tr.innerHTML = `
-        <td><input type="text" class="form-control form-control-sm ua-name fw-semibold text-uppercase" value="${esc(a.attr_name)}" placeholder="e.g. Size, Fabric, Collar" oninput="this.value=this.value.toUpperCase()" required></td>
-        <td><input type="text" class="form-control form-control-sm ua-opts text-uppercase" value="${esc(a.attr_options || '')}" placeholder="e.g. S, M, L, XL or Red, Blue" oninput="this.value=this.value.toUpperCase()"></td>
-        <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="this.closest('tr').remove()"><i class="bi bi-trash"></i></button></td>
+        <td>
+            <input type="text" class="form-control form-control-sm ua-name fw-semibold text-uppercase" value="${esc(a.attr_name)}" placeholder="e.g. Size, Fabric, Collar" oninput="this.value=this.value.toUpperCase();checkUnifiedAttributeDuplicates();" required>
+        </td>
+        <td>
+            <input type="text" class="form-control form-control-sm ua-opts text-uppercase" value="${esc(a.attr_options || '')}" placeholder="e.g. S, M, L, XL or Red, Blue" oninput="this.value=this.value.toUpperCase()">
+        </td>
+        <td class="text-center">
+            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="this.closest('tr').remove();checkUnifiedAttributeDuplicates();"><i class="bi bi-trash"></i></button>
+        </td>
     `;
     tb.appendChild(tr);
+    checkUnifiedAttributeDuplicates();
 }
 
 function submitUnifiedCategoryForm(e) {
@@ -2122,17 +2153,23 @@ function submitUnifiedCategoryForm(e) {
         }
         return;
     }
-    const selectedCategory = catInputWrap && catInputWrap.style.display !== 'none'
-        ? (categoryTreeData || []).find(category =>
-            (category.name || '').trim().toLowerCase() === cat.toLowerCase() ||
-            normalizeUnifiedHierarchyName(category.name) === normalizeUnifiedHierarchyName(cat)
-        )
-        : (categoryTreeData || []).find(category => String(category.id) === String(catSelect?.value || ''));
-    if (catInputWrap && catInputWrap.style.display !== 'none' && selectedCategory) {
+
+    // Cross-check: Main Category duplicate validation
+    const catNorm = normalizeUnifiedHierarchyName(cat);
+    const isNewCatInput = catInputWrap && catInputWrap.style.display !== 'none';
+    const existingCatMatch = (categoryTreeData || []).find(category =>
+        (category.name || '').trim().toLowerCase() === cat.toLowerCase() ||
+        normalizeUnifiedHierarchyName(category.name) === catNorm
+    );
+
+    if (isNewCatInput && existingCatMatch) {
+        alert(`Main Category "${cat}" already exists!\nPlease select it from the existing categories dropdown instead of creating a duplicate.`);
         onUnifiedCatNameInput();
         catInput?.focus();
         return;
     }
+
+    const selectedCategory = isNewCatInput ? null : existingCatMatch;
 
     const subcatInputWrap = document.getElementById('unifiedSubcatInputWrap');
     const subcatInput = document.getElementById('unifiedSubcatName');
@@ -2145,17 +2182,33 @@ function submitUnifiedCategoryForm(e) {
     } else if (subcatInput && subcatInput.value.trim()) {
         subcat = subcatInput.value.trim();
     }
-    const selectedSubcategory = subcatInputWrap && subcatInputWrap.style.display !== 'none'
-        ? (selectedCategory?.subcategories || []).find(subcategory =>
-            (subcategory.name || '').trim().toLowerCase() === subcat.toLowerCase() ||
-            normalizeUnifiedHierarchyName(subcategory.name) === normalizeUnifiedHierarchyName(subcat)
-        )
-        : (selectedCategory?.subcategories || []).find(subcategory => String(subcategory.id) === String(subcatSelect?.value || ''));
-    if (subcatInputWrap && subcatInputWrap.style.display !== 'none' && subcat && selectedSubcategory) {
-        onUnifiedSubcatNameInput();
-        subcatInput?.focus();
-        return;
+
+    // Cross-check: Sub Category duplicate validation & collision with Main Category
+    const isNewSubcatInput = subcatInputWrap && subcatInputWrap.style.display !== 'none';
+    if (subcat) {
+        if (subcat.toLowerCase() === cat.toLowerCase()) {
+            alert(`Sub Category cannot have the same name as Main Category ("${cat}").`);
+            subcatInput?.focus();
+            return;
+        }
+
+        const parentCategoryForSub = selectedCategory || existingCatMatch;
+        if (isNewSubcatInput && parentCategoryForSub) {
+            const subcatNorm = normalizeUnifiedHierarchyName(subcat);
+            const existingSubMatch = (parentCategoryForSub.subcategories || []).find(subcategory =>
+                (subcategory.name || '').trim().toLowerCase() === subcat.toLowerCase() ||
+                normalizeUnifiedHierarchyName(subcategory.name) === subcatNorm
+            );
+            if (existingSubMatch) {
+                alert(`Sub Category "${subcat}" already exists under "${parentCategoryForSub.name}".\nPlease select it from the dropdown instead of creating a duplicate.`);
+                onUnifiedSubcatNameInput();
+                subcatInput?.focus();
+                return;
+            }
+        }
     }
+
+    const selectedSubcategory = (isNewSubcatInput || !selectedCategory) ? null : (selectedCategory.subcategories || []).find(s => String(s.id) === String(subcatSelect?.value || ''));
 
     const subSubcatInputWrap = document.getElementById('unifiedSubSubcatInputWrap');
     const subSubcatInput = document.getElementById('unifiedSubSubcatName');
@@ -2168,28 +2221,85 @@ function submitUnifiedCategoryForm(e) {
     } else if (subSubcatInput && subSubcatInput.value.trim()) {
         subSubcat = subSubcatInput.value.trim();
     }
-    const selectedSubSubcategory = subSubcatInputWrap && subSubcatInputWrap.style.display !== 'none'
-        ? (selectedSubcategory?.sub_subcategories || []).find(subSubcategory =>
-            (subSubcategory.name || '').trim().toLowerCase() === subSubcat.toLowerCase() ||
-            normalizeUnifiedHierarchyName(subSubcategory.name) === normalizeUnifiedHierarchyName(subSubcat)
-        )
-        : (selectedSubcategory?.sub_subcategories || []).find(subSubcategory => String(subSubcategory.id) === String(subSubcatSelect?.value || ''));
-    if (subSubcatInputWrap && subSubcatInputWrap.style.display !== 'none' && subSubcat && selectedSubSubcategory) {
-        onUnifiedSubSubcatNameInput();
-        subSubcatInput?.focus();
-        return;
+
+    // Cross-check: Sub-Sub Category duplicate validation & collision
+    const isNewSubSubcatInput = subSubcatInputWrap && subSubcatInputWrap.style.display !== 'none';
+    if (subSubcat) {
+        if (subcat && subSubcat.toLowerCase() === subcat.toLowerCase()) {
+            alert(`Sub-Sub Category cannot have the same name as Sub Category ("${subcat}").`);
+            subSubcatInput?.focus();
+            return;
+        }
+        if (subSubcat.toLowerCase() === cat.toLowerCase()) {
+            alert(`Sub-Sub Category cannot have the same name as Main Category ("${cat}").`);
+            subSubcatInput?.focus();
+            return;
+        }
+
+        const parentSubForSubSub = selectedSubcategory || findUnifiedSelectedSubcategory();
+        if (isNewSubSubcatInput && parentSubForSubSub) {
+            const subSubcatNorm = normalizeUnifiedHierarchyName(subSubcat);
+            const existingSubSubMatch = (parentSubForSubSub.sub_subcategories || []).find(subSub =>
+                (subSub.name || '').trim().toLowerCase() === subSubcat.toLowerCase() ||
+                normalizeUnifiedHierarchyName(subSub.name) === subSubcatNorm
+            );
+            if (existingSubSubMatch) {
+                alert(`Sub-Sub Category "${subSubcat}" already exists under "${parentSubForSubSub.name}".\nPlease select it from the dropdown instead of creating a duplicate.`);
+                onUnifiedSubSubcatNameInput();
+                subSubcatInput?.focus();
+                return;
+            }
+        }
     }
 
+    const selectedSubSubcategory = (isNewSubSubcatInput || !selectedSubcategory) ? null : (selectedSubcategory.sub_subcategories || []).find(ss => String(ss.id) === String(subSubcatSelect?.value || ''));
+
+    // Validate Pre-set Attributes (Deduplication & Option formatting)
     const attrs = [];
-    document.querySelectorAll('#unifiedAttributesTableBody tr.ua-row').forEach((r, i) => {
-        const n = r.querySelector('.ua-name').value.trim(); if (!n) return;
+    const seenAttrNames = new Set();
+    const rows = document.querySelectorAll('#unifiedAttributesTableBody tr.ua-row');
+
+    for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const nameInp = r.querySelector('.ua-name');
+        const optsInp = r.querySelector('.ua-opts');
+        const n = (nameInp ? nameInp.value : '').trim().toUpperCase();
+        const rawOpts = (optsInp ? optsInp.value : '').trim();
+
+        // Skip completely empty row
+        if (!n && !rawOpts) continue;
+
+        if (!n && rawOpts) {
+            alert(`Attribute Name is required on attribute row #${i + 1}.`);
+            nameInp?.focus();
+            return;
+        }
+
+        if (seenAttrNames.has(n)) {
+            nameInp?.classList.add('is-invalid');
+            alert(`Duplicate attribute name "${n}" detected on row #${i + 1}!\nEach attribute name must be unique.`);
+            nameInp?.focus();
+            return;
+        }
+        seenAttrNames.add(n);
+        nameInp?.classList.remove('is-invalid');
+
+        // Deduplicate and clean options within this attribute
+        let cleanOptsStr = '';
+        if (rawOpts) {
+            const optParts = rawOpts.split(',').map(s => s.trim().toUpperCase()).filter(s => s.length > 0);
+            const uniqueOpts = Array.from(new Set(optParts));
+            cleanOptsStr = uniqueOpts.join(', ');
+            if (optsInp) optsInp.value = cleanOptsStr;
+        }
+
         attrs.push({
             attr_name: n,
             attr_type: 'SELECT',
-            attr_options: r.querySelector('.ua-opts').value.trim(),
-            sort_order: i + 1
+            attr_options: cleanOptsStr,
+            sort_order: attrs.length + 1
         });
-    });
+    }
 
     const btn = document.getElementById('btnSubmitUnifiedCat');
     const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
@@ -2197,7 +2307,6 @@ function submitUnifiedCategoryForm(e) {
     const p = new URLSearchParams();
     p.append('_csrf_token', CSRF_TOKEN);
     p.append('category_name', cat);
-    p.append('category_type', document.getElementById('unifiedCategoryType') ? document.getElementById('unifiedCategoryType').value : 'NORMAL');
     p.append('hsn_code', document.getElementById('unifiedCatHsn') ? document.getElementById('unifiedCatHsn').value.trim() : '');
     p.append('gst_rate', document.getElementById('unifiedCatGstRate') ? document.getElementById('unifiedCatGstRate').value.trim() : '5.00');
     if (selectedCategory) p.append('category_id', selectedCategory.id);
@@ -2243,9 +2352,6 @@ function openFullEditCategoryModal(e, catId, targetSubcatId = null, targetSubSub
     if (document.getElementById('editFullCatGstRate')) {
         document.getElementById('editFullCatGstRate').value = cat.gst_rate ? parseFloat(cat.gst_rate).toFixed(2) : '5.00';
     }
-    if (document.getElementById('editFullCategoryType')) {
-        document.getElementById('editFullCategoryType').value = (cat.category_type || 'NORMAL').toUpperCase();
-    }
 
     // Populate subcategories for THIS category
     populateEditSubcategories(cat, targetSubcatId, targetSubSubcatId);
@@ -2280,22 +2386,72 @@ function openFullEditCategoryModal(e, catId, targetSubcatId = null, targetSubSub
     new bootstrap.Modal(document.getElementById('modalUnifiedEditCategory')).show();
 }
 
+function checkEditAttributeDuplicates() {
+    const rows = document.querySelectorAll('#editAttributesTableBody tr.edit-attr-row');
+    const seen = new Map();
+    let hasDup = false;
+
+    rows.forEach(r => {
+        const inp = r.querySelector('.ea-name');
+        if (!inp) return;
+        const val = inp.value.trim().toUpperCase();
+        if (!val) {
+            inp.classList.remove('is-invalid');
+            const feed = r.querySelector('.ea-name-feedback');
+            if (feed) feed.style.display = 'none';
+            return;
+        }
+        if (seen.has(val)) {
+            hasDup = true;
+            inp.classList.add('is-invalid');
+            let feed = r.querySelector('.ea-name-feedback');
+            if (!feed) {
+                feed = document.createElement('div');
+                feed.className = 'invalid-feedback ea-name-feedback small d-block';
+                inp.parentNode.appendChild(feed);
+            }
+            feed.textContent = `Duplicate attribute name "${val}"`;
+            feed.style.display = 'block';
+
+            const prevInp = seen.get(val);
+            prevInp.classList.add('is-invalid');
+            const prevRow = prevInp.closest('tr');
+            let prevFeed = prevRow.querySelector('.ea-name-feedback');
+            if (!prevFeed) {
+                prevFeed = document.createElement('div');
+                prevFeed.className = 'invalid-feedback ea-name-feedback small d-block';
+                prevInp.parentNode.appendChild(prevFeed);
+            }
+            prevFeed.textContent = `Duplicate attribute name "${val}"`;
+            prevFeed.style.display = 'block';
+        } else {
+            seen.set(val, inp);
+            inp.classList.remove('is-invalid');
+            const feed = r.querySelector('.ea-name-feedback');
+            if (feed) feed.style.display = 'none';
+        }
+    });
+
+    return !hasDup;
+}
+
 function addEditAttributeRow(attr = null) {
     const tb = document.getElementById('editAttributesTableBody');
     const a = attr || { attr_name: '', attr_options: '' };
     const tr = document.createElement('tr');
     tr.className = 'edit-attr-row';
     tr.innerHTML = `
-        <td><input type="text" class="form-control form-control-sm ea-name fw-semibold text-uppercase" value="${esc(a.attr_name || '')}" placeholder="Attribute Name (e.g. Size, Fabric, Fit)" oninput="this.value=this.value.toUpperCase()" required></td>
+        <td><input type="text" class="form-control form-control-sm ea-name fw-semibold text-uppercase" value="${esc(a.attr_name || '')}" placeholder="Attribute Name (e.g. Size, Fabric, Fit)" oninput="this.value=this.value.toUpperCase();checkEditAttributeDuplicates();" required></td>
         <td><input type="text" class="form-control form-control-sm ea-opts text-uppercase" value="${esc(a.attr_options || '')}" placeholder="Options comma-separated (e.g. S, M, L, XL or Red, Blue)" oninput="this.value=this.value.toUpperCase()"></td>
         <td class="text-center">
-            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="this.closest('tr').remove();updateEditAttrBadge();">
+            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="this.closest('tr').remove();updateEditAttrBadge();checkEditAttributeDuplicates();">
                 <i class="bi bi-trash"></i>
             </button>
         </td>
     `;
     tb.appendChild(tr);
     updateEditAttrBadge();
+    checkEditAttributeDuplicates();
 }
 
 function quickAddEditAttr(name, type, opts) {
@@ -2585,18 +2741,67 @@ function submitUnifiedEditCategoryForm(e) {
         subSubcatName = subSubcatInput.value.trim();
     }
 
-    // Collect attributes
+    // Cross-check: Hierarchy collisions
+    if (subcatName && subcatName.toLowerCase() === catName.toLowerCase()) {
+        alert(`Subcategory cannot have the same name as Main Category ("${catName}").`);
+        document.getElementById('editFullSubcatName')?.focus();
+        return;
+    }
+    if (subSubcatName && subcatName && subSubcatName.toLowerCase() === subcatName.toLowerCase()) {
+        alert(`Sub-Subcategory cannot have the same name as Subcategory ("${subcatName}").`);
+        document.getElementById('editFullSubSubcatName')?.focus();
+        return;
+    }
+    if (subSubcatName && subSubcatName.toLowerCase() === catName.toLowerCase()) {
+        alert(`Sub-Subcategory cannot have the same name as Main Category ("${catName}").`);
+        document.getElementById('editFullSubSubcatName')?.focus();
+        return;
+    }
+
+    // Collect & validate attributes (deduplication & cleaning)
     const attributes = [];
-    document.querySelectorAll('#editAttributesTableBody tr.edit-attr-row').forEach((row, idx) => {
-        const name = row.querySelector('.ea-name').value.trim();
-        if (!name) return;
+    const seenEditAttrNames = new Set();
+    const editRows = document.querySelectorAll('#editAttributesTableBody tr.edit-attr-row');
+
+    for (let idx = 0; idx < editRows.length; idx++) {
+        const row = editRows[idx];
+        const nameInp = row.querySelector('.ea-name');
+        const optsInp = row.querySelector('.ea-opts');
+        const name = (nameInp ? nameInp.value : '').trim().toUpperCase();
+        const rawOpts = (optsInp ? optsInp.value : '').trim();
+
+        if (!name && !rawOpts) continue;
+
+        if (!name && rawOpts) {
+            alert(`Attribute Name is required on attribute row #${idx + 1}.`);
+            nameInp?.focus();
+            return;
+        }
+
+        if (seenEditAttrNames.has(name)) {
+            nameInp?.classList.add('is-invalid');
+            alert(`Duplicate attribute name "${name}" detected on row #${idx + 1}!\nEach attribute name must be unique.`);
+            nameInp?.focus();
+            return;
+        }
+        seenEditAttrNames.add(name);
+        nameInp?.classList.remove('is-invalid');
+
+        let cleanOptsStr = '';
+        if (rawOpts) {
+            const optParts = rawOpts.split(',').map(s => s.trim().toUpperCase()).filter(s => s.length > 0);
+            const uniqueOpts = Array.from(new Set(optParts));
+            cleanOptsStr = uniqueOpts.join(', ');
+            if (optsInp) optsInp.value = cleanOptsStr;
+        }
+
         attributes.push({
             attr_name: name,
             attr_type: 'SELECT',
-            attr_options: row.querySelector('.ea-opts').value.trim(),
-            sort_order: idx + 1
+            attr_options: cleanOptsStr,
+            sort_order: attributes.length + 1
         });
-    });
+    }
 
     const btn = document.getElementById('btnSubmitFullEditCat');
     const orig = btn.innerHTML;
@@ -2607,7 +2812,6 @@ function submitUnifiedEditCategoryForm(e) {
     p.append('_csrf_token', CSRF_TOKEN);
     p.append('category_id', catId);
     p.append('category_name', catName);
-    p.append('category_type', document.getElementById('editFullCategoryType') ? document.getElementById('editFullCategoryType').value : 'NORMAL');
     p.append('hsn_code', document.getElementById('editFullCatHsn') ? document.getElementById('editFullCatHsn').value.trim() : '');
     p.append('gst_rate', document.getElementById('editFullCatGstRate') ? document.getElementById('editFullCatGstRate').value.trim() : '5.00');
     p.append('subcategory_id', subcatId);
@@ -3371,41 +3575,92 @@ function onEditCatHsnChange() {
 .view-summary-stat { min-height: 82px; }
 .btn-xs { padding: 0.15rem 0.5rem; font-size: 0.72rem; line-height: 1.3; border-radius: 4px; }
 
-/* Modal horizontal scrollbars & responsive overflow */
+/* Modal vertical & horizontal scrollbars & responsive overflow */
+#modalUnifiedEditCategory .modal-dialog,
+#modalUnifiedCategory .modal-dialog,
+#modalConfigAttributes .modal-dialog {
+    max-height: 92vh;
+}
+#modalUnifiedEditCategory .modal-content,
+#modalUnifiedCategory .modal-content,
+#modalConfigAttributes .modal-content {
+    max-height: 92vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+#modalUnifiedEditCategory form,
+#modalUnifiedCategory form {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    overflow: hidden;
+    min-height: 0;
+    max-height: calc(92vh - 60px);
+}
 #modalUnifiedEditCategory .modal-body,
 #modalUnifiedCategory .modal-body,
 #modalConfigAttributes .modal-body {
-    overflow-x: auto !important;
+    flex: 1 1 auto;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    max-height: calc(92vh - 140px);
+    scrollbar-width: thin;
+    scrollbar-color: #94a3b8 #f1f5f9;
+}
+#modalUnifiedEditCategory .modal-footer,
+#modalUnifiedCategory .modal-footer {
+    flex-shrink: 0;
 }
 #modalUnifiedEditCategory .table-responsive,
 #modalUnifiedCategory .table-responsive,
 #modalConfigAttributes .table-responsive {
+    overflow-y: auto !important;
     overflow-x: auto !important;
+    max-height: 280px;
     scrollbar-width: thin;
+    scrollbar-color: #94a3b8 #f1f5f9;
+}
+#modalUnifiedCategory .table-responsive thead th,
+#modalUnifiedEditCategory .table-responsive thead th {
+    position: sticky;
+    top: 0;
+    background: #f8fafc;
+    z-index: 2;
 }
 #modalUnifiedEditCategory .table-responsive::-webkit-scrollbar,
 #modalUnifiedEditCategory .modal-body::-webkit-scrollbar,
 #modalUnifiedCategory .table-responsive::-webkit-scrollbar,
-#modalConfigAttributes .table-responsive::-webkit-scrollbar {
+#modalUnifiedCategory .modal-body::-webkit-scrollbar,
+#modalConfigAttributes .table-responsive::-webkit-scrollbar,
+#modalConfigAttributes .modal-body::-webkit-scrollbar {
     height: 8px;
     width: 8px;
 }
 #modalUnifiedEditCategory .table-responsive::-webkit-scrollbar-track,
 #modalUnifiedEditCategory .modal-body::-webkit-scrollbar-track,
 #modalUnifiedCategory .table-responsive::-webkit-scrollbar-track,
-#modalConfigAttributes .table-responsive::-webkit-scrollbar-track {
+#modalUnifiedCategory .modal-body::-webkit-scrollbar-track,
+#modalConfigAttributes .table-responsive::-webkit-scrollbar-track,
+#modalConfigAttributes .modal-body::-webkit-scrollbar-track {
     background: #f1f5f9;
     border-radius: 4px;
 }
 #modalUnifiedEditCategory .table-responsive::-webkit-scrollbar-thumb,
 #modalUnifiedEditCategory .modal-body::-webkit-scrollbar-thumb,
 #modalUnifiedCategory .table-responsive::-webkit-scrollbar-thumb,
-#modalConfigAttributes .table-responsive::-webkit-scrollbar-thumb {
+#modalUnifiedCategory .modal-body::-webkit-scrollbar-thumb,
+#modalConfigAttributes .table-responsive::-webkit-scrollbar-thumb,
+#modalConfigAttributes .modal-body::-webkit-scrollbar-thumb {
     background: #94a3b8;
     border-radius: 4px;
 }
 #modalUnifiedEditCategory .table-responsive::-webkit-scrollbar-thumb:hover,
-#modalUnifiedEditCategory .modal-body::-webkit-scrollbar-thumb:hover {
+#modalUnifiedEditCategory .modal-body::-webkit-scrollbar-thumb:hover,
+#modalUnifiedCategory .table-responsive::-webkit-scrollbar-thumb:hover,
+#modalUnifiedCategory .modal-body::-webkit-scrollbar-thumb:hover,
+#modalConfigAttributes .table-responsive::-webkit-scrollbar-thumb:hover,
+#modalConfigAttributes .modal-body::-webkit-scrollbar-thumb:hover {
     background: #64748b;
 }
 </style>
