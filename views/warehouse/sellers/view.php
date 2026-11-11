@@ -982,11 +982,15 @@ function submitEditSupplierProduct(e) {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
 
     const formData = new FormData(document.getElementById('formEditSupplierProduct'));
+    formData.append('_csrf_token', '<?= CSRF::token() ?>');
     formData.append('csrf_token', '<?= CSRF::token() ?>');
 
     fetch('<?= url("warehouse/sellers/update-product") ?>', {
         method: 'POST',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        headers: { 
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': '<?= CSRF::token() ?>'
+        },
         body: formData
     })
     .then(res => res.json())
@@ -1052,6 +1056,7 @@ function submitEditSupplierProduct(e) {
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <form id="formEditSupplierProduct" onsubmit="submitEditSupplierProduct(event)">
+                <?= CSRF::field() ?>
                 <input type="hidden" id="editSpProductId" name="product_id">
                 <input type="hidden" id="editSpVariantId" name="variant_id">
                 <input type="hidden" id="editSpRowId" name="row_id">

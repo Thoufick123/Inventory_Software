@@ -1187,25 +1187,32 @@ class WarehouseController {
             }
         }
 
-        if ($activeTab === 'returned') {
-            $prodAvailableQty = 0;
-            $prodValuation = 0.0;
-            foreach ($returnedItems as $returnedItem) {
-                if (($returnedItem['stock_state'] ?? '') === 'AVAILABLE') {
-                    $prodAvailableQty += (float)($returnedItem['quantity'] ?? 0);
-                    $prodValuation += (float)($returnedItem['valuation'] ?? 0);
-                }
-            }
-        }
+        $activeTabItems = $productionItems;
+        $activeTabAvailableQty = $prodAvailableQty;
+        $activeTabValuation = $prodValuation;
 
         if ($activeTab === 'series') {
-            $productionItems = $seriesItems;
-            $prodAvailableQty = $seriesAvailableQty;
-            $prodValuation = $seriesValuation;
-            $thirdPartyItems = [];
+            $activeTabItems = $seriesItems;
+            $activeTabAvailableQty = $seriesAvailableQty;
+            $activeTabValuation = $seriesValuation;
         } elseif ($activeTab === 'returned') {
-            $productionItems = $returnedItems;
-            $thirdPartyItems = [];
+            $activeTabItems = $returnedItems;
+            $activeTabAvailableQty = 0;
+            $activeTabValuation = 0.0;
+            foreach ($returnedItems as $returnedItem) {
+                if (($returnedItem['stock_state'] ?? '') === 'AVAILABLE') {
+                    $activeTabAvailableQty += (float)($returnedItem['quantity'] ?? 0);
+                    $activeTabValuation += (float)($returnedItem['valuation'] ?? 0);
+                }
+            }
+        } elseif ($activeTab === 'third_party') {
+            $activeTabItems = $thirdPartyItems;
+            $activeTabAvailableQty = $tpAvailableQty;
+            $activeTabValuation = $tpValuation;
+        } elseif ($activeTab === 'complementary') {
+            $activeTabItems = $complementaryItems;
+            $activeTabAvailableQty = $compAvailableQty;
+            $activeTabValuation = $compValuation;
         }
 
         // Complementary Sales (Realized sales from sale_items)
@@ -1252,6 +1259,9 @@ class WarehouseController {
             'activeModule'           => 'warehouse',
             'activeMenu'             => 'wh-stock',
             'stockItems'             => $stockItems,
+            'activeTabItems'         => $activeTabItems,
+            'activeTabAvailableQty'  => $activeTabAvailableQty,
+            'activeTabValuation'     => $activeTabValuation,
             'productionItems'        => $productionItems,
             'thirdPartyItems'        => $thirdPartyItems,
             'complementaryItems'     => $complementaryItems,
@@ -15285,7 +15295,14 @@ class WarehouseController {
             return;
         }
 
-        if (!hasPermission('wh_sellers', 'edit')) {
+        $hasEditPerm = hasPermission('wh_sellers', 'edit') 
+            || hasPermission('wh_sellers', 'create') 
+            || hasPermission('purchases', 'create') 
+            || hasPermission('purchases', 'edit') 
+            || hasPermission('warehouse', 'edit')
+            || hasPermission('wh_catalog', 'edit');
+
+        if (!$hasEditPerm) {
             Response::json(['success' => false, 'message' => 'Access denied.'], 403);
             return;
         }
