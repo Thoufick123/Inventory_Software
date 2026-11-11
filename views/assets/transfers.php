@@ -14,9 +14,9 @@
                 <a href="<?= url('asset/list') ?>" class="btn btn-outline-secondary btn-sm rounded-circle p-2 d-inline-flex align-items-center justify-content-center" style="width: 34px; height: 34px;">
                     <i class="bi bi-arrow-left"></i>
                 </a>
-                Inter-Unit Asset Movement Manifest
+                Inter-Unit Asset Transfers &amp; Allocation Logs
             </h3>
-            <p class="text-muted small mb-0">Audit history of equipment transfers between Production plants, Warehouses, and Retail outlets.</p>
+            <p class="text-muted small mb-0">Audit history of equipment tracking &amp; unit allocations — maintains logs of which module/facility equipment is allocated to without outwarding goods inventory.</p>
         </div>
         <div>
             <button type="button" class="btn btn-primary d-inline-flex align-items-center gap-2 shadow-sm" data-bs-toggle="modal" data-bs-target="#newTransferModal">

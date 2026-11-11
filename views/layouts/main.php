@@ -540,17 +540,17 @@ if (!empty($authUser['shop_name'])) {
                             <?php if (hasPermission('asset_register', 'view') || hasPermission('assets', 'view')): ?>
                             <li><a href="<?= url('asset/list') ?>" class="<?= in_array(($activeMenu ?? ''), ['asset-list', 'asset-create']) ? 'active' : '' ?>"><i class="bi bi-table me-1 text-success"></i> Asset Register</a></li>
                             <?php endif; ?>
+                            <?php if (hasPermission('asset_bulk_labels', 'view')): ?>
+                            <li><a href="<?= url('asset/bulk-labels') ?>" class="<?= ($activeMenu ?? '') === 'asset-bulk-labels' ? 'active' : '' ?>"><i class="bi bi-qr-code me-1 text-secondary"></i> Print QR Labels</a></li>
+                            <?php endif; ?>
                             <?php if (hasPermission('asset_scanner', 'view')): ?>
                             <li><a href="<?= url('asset/scanner') ?>" class="<?= ($activeMenu ?? '') === 'asset-scanner' ? 'active' : '' ?>"><i class="bi bi-qr-code-scan me-1 text-info"></i> Scan Assets</a></li>
-                            <?php endif; ?>
-                            <?php if (hasPermission('asset_transfers', 'view')): ?>
-                            <li><a href="<?= url('asset/transfers') ?>" class="<?= ($activeMenu ?? '') === 'asset-transfers' ? 'active' : '' ?>"><i class="bi bi-arrow-left-right me-1 text-warning"></i> Transfers</a></li>
                             <?php endif; ?>
                             <?php if (hasPermission('asset_maintenance', 'view')): ?>
                             <li><a href="<?= url('asset/maintenance') ?>" class="<?= ($activeMenu ?? '') === 'asset-maintenance' ? 'active' : '' ?>"><i class="bi bi-wrench-adjustable me-1 text-danger"></i> Maintenance</a></li>
                             <?php endif; ?>
-                            <?php if (hasPermission('asset_bulk_labels', 'view')): ?>
-                            <li><a href="<?= url('asset/bulk-labels') ?>"><i class="bi bi-qr-code me-1 text-secondary"></i> Print QR Labels</a></li>
+                            <?php if (hasPermission('asset_transfers', 'view')): ?>
+                            <li><a href="<?= url('asset/transfers') ?>" class="<?= ($activeMenu ?? '') === 'asset-transfers' ? 'active' : '' ?>" title="Equipment Allocation Logs"><i class="bi bi-arrow-left-right me-1 text-warning"></i> Transfers</a></li>
                             <?php endif; ?>
                         </ul>
                     </li>
