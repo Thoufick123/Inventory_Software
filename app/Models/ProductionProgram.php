@@ -590,10 +590,11 @@ class ProductionProgram {
             }
 
             $allocatedQrCodes = !empty($r['allocated_qr_codes']) ? trim((string)$r['allocated_qr_codes']) : null;
+            $attrData = !empty($r['attributes']) ? (is_array($r['attributes']) ? json_encode($r['attributes']) : trim((string)$r['attributes'])) : null;
             Database::execute(
-                "INSERT INTO production_program_rolls (program_id, production_program_id, seller_roll_id, seller_id, category_id, subcategory_id, sub_subcategory_id, roll_qty, roll_weight, roll_price, roll_color, roll_design, allocated_qr_codes)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [$programId, $programId, $rollId, $sellerId, $categoryId, $subcategoryId, $subSubcategoryId, $rollQty, $rollWeight, $rollPrice, $color, $design, $allocatedQrCodes]
+                "INSERT INTO production_program_rolls (program_id, production_program_id, seller_roll_id, seller_id, category_id, subcategory_id, sub_subcategory_id, roll_qty, roll_weight, roll_price, roll_color, roll_design, allocated_qr_codes, attributes)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [$programId, $programId, $rollId, $sellerId, $categoryId, $subcategoryId, $subSubcategoryId, $rollQty, $rollWeight, $rollPrice, $color, $design, $allocatedQrCodes, $attrData]
             );
         }
     }

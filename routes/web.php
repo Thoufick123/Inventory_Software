@@ -255,6 +255,8 @@ class Router {
         $this->post('api/sub-subcategories/quick-add', 'ProductionController', 'ajaxQuickAddSubSubcategory', ['AuthMiddleware']);
         $this->post('api/sub-subcategories/update/{id}', 'ProductionController', 'ajaxUpdateSubSubcategory', ['AuthMiddleware']);
         $this->post('api/sub-subcategories/delete/{id}', 'ProductionController', 'ajaxDeleteSubSubcategory', ['AuthMiddleware']);
+        $this->get('api/categories/attributes/{category_id}', 'ProductionController', 'ajaxGetCategoryAttributes', ['AuthMiddleware']);
+        $this->post('api/categories/attributes/quick-add', 'ProductionController', 'ajaxQuickAddCategoryAttribute', ['AuthMiddleware']);
 
         // Warehouse Category Routes
         $this->get('api/warehouse-categories', 'WarehouseController', 'ajaxCategories', ['AuthMiddleware', ['PermissionMiddleware', 'wh_catalog', 'view']]);

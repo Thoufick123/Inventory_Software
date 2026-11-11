@@ -76,6 +76,9 @@
                         <small class="text-muted">Assign fabric rolls and configure 3-tier catalog categories for each roll</small>
                     </div>
                     <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-success fw-semibold" id="btnScanRoll" onclick="openScanRollModal()">
+                            <i class="bi bi-qr-code-scan me-1"></i> Scan Roll
+                        </button>
                         <button type="button" class="btn btn-sm btn-outline-primary" id="btnMultiSelectRolls" onclick="openMultiRollModal()">
                             <i class="bi bi-check2-square me-1"></i> Multi-Select Rolls
                         </button>
@@ -85,6 +88,31 @@
                     </div>
                 </div>
                 <div class="card-body p-4">
+                    <!-- Quick Barcode / Roll QR Gun Scanner Input Bar -->
+                    <div class="p-2.5 bg-light rounded-3 border mb-3">
+                        <div class="d-flex align-items-center justify-content-between mb-1.5 flex-wrap gap-2">
+                            <span class="small fw-bold text-dark d-flex align-items-center gap-1.5" style="font-size: 12px;">
+                                <i class="bi bi-upc-scan text-success fs-6"></i>
+                                <span>Scan Fabric Roll Barcode / QR Tag</span>
+                                <span class="badge bg-success-subtle text-success border" style="font-size: 10px;">Auto-Add Ready</span>
+                            </span>
+                            <small class="text-muted" style="font-size: 11px;">Hardware Gun &amp; Camera Scanner (e.g. <code>FB1126141</code>, <code>ROLL #1</code>)</small>
+                        </div>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text bg-white text-success border-end-0">
+                                <i class="bi bi-qr-code"></i>
+                            </span>
+                            <input type="text" id="quickRollScanInput" class="form-control border-start-0 font-monospace fw-semibold" placeholder="Scan roll QR or type piece tag (e.g. FB1126141) and press Enter to auto-add..." autocomplete="off">
+                            <button type="button" class="btn btn-success fw-semibold px-3" onclick="triggerQuickRollScan()">
+                                <i class="bi bi-plus-circle me-1"></i> Scan / Add
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" onclick="openScanRollModal()" title="Open Camera Scanner">
+                                <i class="bi bi-camera-video me-1"></i> Camera Scanner
+                            </button>
+                        </div>
+                        <div id="quickScanFeedbackAlert" class="small mt-1.5 d-none p-1.5 px-2.5 rounded-2" role="status"></div>
+                    </div>
+
                     <!-- Container for dynamic roll items -->
                     <div id="programRollsContainer" class="d-flex flex-column gap-3 mb-3">
                         <!-- Dynamically populated by JS with independent Catalog Dropdowns -->
@@ -302,6 +330,105 @@
                     </button>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- HTML5-QRCode Library for Web & Mobile Camera Scanning -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<!-- Camera Scanner Modal for Program Rolls -->
+<div class="modal fade" id="scanRollCameraModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width: 460px;">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-success text-white py-2.5 px-3">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-qr-code-scan fs-5"></i>
+                    <h6 class="modal-title fw-bold mb-0">Camera QR Roll Scanner</h6>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" onclick="stopCameraScanner()"></button>
+            </div>
+            <div class="modal-body p-3 text-center">
+                <div id="cameraScannerPreview" style="width: 100%; min-height: 240px; background: #000; border-radius: 8px; overflow: hidden;" class="mb-2"></div>
+                <small class="text-muted d-block mb-2">Aim camera at Fabric Roll QR label or piece tag (e.g. <code>FB1126141</code>)</small>
+                <div id="cameraScanFeedback" class="small p-2 rounded-2 d-none"></div>
+            </div>
+            <div class="modal-footer bg-light py-2 px-3 justify-content-between">
+                <span class="text-muted small" id="cameraScannedRollsCount">Auto-adds to roll table</span>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal" onclick="stopCameraScanner()">Done / Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Add Category Attribute Modal -->
+<div class="modal fade" id="modalQuickAddCategoryAttribute" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width: 480px;">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-white border-bottom py-3 px-4">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="rounded-circle bg-primary-subtle text-primary d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
+                        <i class="bi bi-sliders fs-5"></i>
+                    </div>
+                    <div>
+                        <h6 class="modal-title fw-bold mb-0 text-dark">Quick Add Category Attribute</h6>
+                        <small class="text-muted" style="font-size: 11px;">Configure specifications &amp; options for this catalog level</small>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="formQuickAddCategoryAttribute" onsubmit="handleSaveCategoryAttribute(event)">
+                <?= CSRF::field() ?>
+                <div class="modal-body p-4">
+                    <!-- Target Level Info Pill -->
+                    <div class="p-2.5 px-3 bg-light rounded-3 border mb-3">
+                        <div class="small text-muted text-uppercase fw-semibold mb-0.5" style="font-size: 10px;">Target Catalog Level:</div>
+                        <div class="fw-bold text-primary small d-flex align-items-center gap-1 text-truncate" id="attrModalTargetBreadcrumb">
+                            Main Category
+                        </div>
+                    </div>
+
+                    <input type="hidden" id="attrModalTargetRowIdx" value="">
+                    <input type="hidden" id="attrModalCategoryId" name="category_id" value="">
+                    <input type="hidden" id="attrModalSubcategoryId" name="subcategory_id" value="">
+                    <input type="hidden" id="attrModalSubSubcategoryId" name="sub_subcategory_id" value="">
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-dark required">Attribute Name <span class="text-danger">*</span></label>
+                        <input type="text" name="attr_name" id="attrModalName" class="form-control text-uppercase" placeholder="E.G. FABRIC TYPE, GSM, WEAVE, FINISH, PATTERN" required maxlength="100">
+                        <div class="form-text text-muted" style="font-size: 11px;">Specification name (e.g. GSM, Fabric Type, Weave, Shrinkage).</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-dark required">Input Type <span class="text-danger">*</span></label>
+                        <select name="attr_type" id="attrModalType" class="form-select form-select-sm" onchange="handleAttrTypeChange(this.value)">
+                            <option value="SELECT" selected>Dropdown Select (Single Option)</option>
+                            <option value="MULTI_SELECT">Multiple Options (Pill Selection)</option>
+                            <option value="TEXT">Free Text Input</option>
+                            <option value="NUMBER">Numeric Value</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3" id="attrModalOptionsGroup">
+                        <label class="form-label small fw-bold text-dark required">
+                            Attribute Options <span class="text-danger">*</span>
+                        </label>
+                        <textarea name="attr_options" id="attrModalOptions" class="form-control text-uppercase" rows="2" placeholder="E.G. COTTON, RAYON, LINEN, POLYESTER, SILK"></textarea>
+                        <div class="form-text text-muted" style="font-size: 11px;">Enter options separated by commas (e.g. Cotton, Linen, Rayon, Polyester).</div>
+                    </div>
+
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" name="is_required" id="attrModalRequired" value="1">
+                        <label class="form-check-label small fw-semibold text-dark" for="attrModalRequired">Required in production program</label>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2.5 px-4 justify-content-between">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary btn-sm px-4 fw-semibold shadow-sm" id="btnSubmitAttrModal">
+                        <i class="bi bi-check2-circle me-1"></i> Save Attribute
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -529,8 +656,8 @@ function addProgramRollRow(rollData = null) {
         </div>
 
         <!-- 3-Tier Catalog Selection for THIS specific Roll -->
-        <div class="p-2 bg-light-subtle rounded border mt-2">
-            <div class="d-flex align-items-center justify-content-between mb-2">
+        <div class="p-2.5 bg-light-subtle rounded border mt-2">
+            <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-1">
                 <span class="small fw-semibold text-primary"><i class="bi bi-diagram-3 me-1"></i>Catalog Hierarchy for this Roll</span>
                 <span class="badge bg-secondary-subtle text-secondary border small roll-catalog-badge" id="roll_cat_badge_${idx}">Catalog</span>
             </div>
@@ -554,6 +681,23 @@ function addProgramRollRow(rollData = null) {
                     </select>
                 </div>
             </div>
+
+            <!-- Dynamic Category Attributes & Specifications -->
+            <div class="mt-2.5 pt-2 border-top" id="roll_attrs_box_${idx}">
+                <div class="d-flex align-items-center justify-content-between mb-1.5 flex-wrap gap-1">
+                    <span class="small fw-semibold text-dark" style="font-size: 11px;">
+                        <i class="bi bi-sliders me-1 text-primary"></i>Category Attributes &amp; Specifications
+                    </span>
+                    <button type="button" class="btn btn-xs btn-outline-primary py-0 px-2 fw-semibold btn-add-attr-trigger" style="font-size: 11px;" onclick="openAddAttributeModal(${idx})" title="Add new attribute for this category level">
+                        <i class="bi bi-plus-circle me-1"></i>+ Add Attribute
+                    </button>
+                </div>
+                <div id="roll_attrs_container_${idx}" class="roll-attributes-container">
+                    <div class="text-muted small py-1 px-2 bg-white rounded border border-dashed fst-italic" style="font-size: 11px;">
+                        <i class="bi bi-info-circle me-1"></i>Select a Main Category above to view and assign category attributes.
+                    </div>
+                </div>
+            </div>
         </div>
     `;
 
@@ -567,8 +711,10 @@ function addProgramRollRow(rollData = null) {
 
     if (catId) {
         loadRollSubcategories(idx, catId, subcatId, subSubcatId);
+        loadRollCategoryAttributes(idx, catId, subcatId, subSubcatId, rollData?.attributes);
     } else {
         updateRollCatalogBadge(idx);
+        loadRollCategoryAttributes(idx, '', '', '');
     }
 
     syncRollStockAllocations();
@@ -867,6 +1013,7 @@ function handleRollCategoryChange(counterId, catId) {
             subSubcatSelect.disabled = true;
         }
         updateRollCatalogBadge(counterId);
+        loadRollCategoryAttributes(counterId, '', '', '');
         return;
     }
 
@@ -879,6 +1026,7 @@ function handleRollCategoryChange(counterId, catId) {
         subSubcatSelect.disabled = true;
     }
     updateRollCatalogBadge(counterId);
+    loadRollCategoryAttributes(counterId, catId, '', '');
 
     // Fetch via API to ensure latest catalog sync
     fetch(`${baseUrl}/api/subcategories/${catId}`)
@@ -903,6 +1051,7 @@ function handleRollCategoryChange(counterId, catId) {
 
 function handleRollSubcategoryChange(counterId, subcatId) {
     const subSubcatSelect = document.getElementById('roll_subsubcat_' + counterId);
+    const currentCatId = document.getElementById('roll_cat_' + counterId)?.value || '';
 
     if (!subcatId) {
         if (subSubcatSelect) {
@@ -910,6 +1059,7 @@ function handleRollSubcategoryChange(counterId, subcatId) {
             subSubcatSelect.disabled = true;
         }
         updateRollCatalogBadge(counterId);
+        loadRollCategoryAttributes(counterId, currentCatId, '', '');
         return;
     }
 
@@ -918,6 +1068,7 @@ function handleRollSubcategoryChange(counterId, subcatId) {
         subSubcatSelect.innerHTML = buildSubSubcategoryOptionsHtml(subcatId);
     }
     updateRollCatalogBadge(counterId);
+    loadRollCategoryAttributes(counterId, currentCatId, subcatId, '');
 
     // Fetch via API to ensure latest catalog sync
     fetch(`${baseUrl}/api/sub-subcategories/${subcatId}`)
@@ -942,6 +1093,9 @@ function handleRollSubcategoryChange(counterId, subcatId) {
 
 function handleRollSubSubcategoryChange(counterId, subSubcatId) {
     updateRollCatalogBadge(counterId);
+    const currentCatId = document.getElementById('roll_cat_' + counterId)?.value || '';
+    const currentSubcatId = document.getElementById('roll_subcat_' + counterId)?.value || '';
+    loadRollCategoryAttributes(counterId, currentCatId, currentSubcatId, subSubcatId);
 }
 
 function loadRollSubcategories(counterId, catId, selectedSubcatId = '', selectedSubSubcatId = '') {
@@ -1271,6 +1425,17 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize with 1 empty roll row
     addProgramRollRow();
 
+    // Setup Enter key on quick scan input
+    const scanInp = document.getElementById('quickRollScanInput');
+    if (scanInp) {
+        scanInp.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                triggerQuickRollScan();
+            }
+        });
+    }
+
     // Form submission validation
     const form = document.getElementById('programForm');
     if (form) {
@@ -1329,6 +1494,433 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+// =========================================================================
+// ROLL QR & BARCODE SCANNER LOGIC
+// =========================================================================
+let html5ProgramScanner = null;
+let isProgramCameraActive = false;
+
+function triggerQuickRollScan() {
+    const input = document.getElementById('quickRollScanInput');
+    if (!input) return;
+    const val = input.value.trim();
+    if (!val) {
+        showScanFeedback('Please enter or scan a roll QR / piece barcode.', 'warning');
+        input.focus();
+        return;
+    }
+    const success = processScannedRollCode(val);
+    if (success) {
+        input.value = '';
+    }
+    input.focus();
+}
+
+function showScanFeedback(message, type = 'info') {
+    const el = document.getElementById('quickScanFeedbackAlert');
+    if (!el) return;
+    el.className = `small mt-1.5 p-1.5 px-2.5 rounded-2 alert alert-${type} mb-0 d-block`;
+    el.innerHTML = message;
+    el.classList.remove('d-none');
+    setTimeout(() => {
+        el.classList.add('d-none');
+    }, 4500);
+}
+
+function processScannedRollCode(rawCode) {
+    if (!rawCode) return false;
+    const code = rawCode.trim().toUpperCase();
+
+    if (!availableSellerRolls || !Array.isArray(availableSellerRolls) || availableSellerRolls.length === 0) {
+        showScanFeedback('No raw material fabric rolls available in inventory stock.', 'danger');
+        return false;
+    }
+
+    // Match by QR code, roll_number, start_code, end_code, or piece code
+    let matchedPiece = null;
+    let matchedRoll = availableSellerRolls.find(r => {
+        if (r.qr_code && r.qr_code.toUpperCase() === code) return true;
+        if (r.roll_number && r.roll_number.toUpperCase() === code) return true;
+        if (r.start_code && r.start_code.toUpperCase() === code) return true;
+        if (r.end_code && r.end_code.toUpperCase() === code) return true;
+        if (String(r.id) === code) return true;
+        if (r.pieces && Array.isArray(r.pieces)) {
+            const foundPiece = r.pieces.find(p => p.code && p.code.toUpperCase() === code);
+            if (foundPiece) {
+                matchedPiece = foundPiece;
+                return true;
+            }
+        }
+        return false;
+    });
+
+    if (!matchedRoll) {
+        showScanFeedback(`No active raw material roll found matching "<strong>${escapeHtml(rawCode)}</strong>".`, 'danger');
+        return false;
+    }
+
+    // Check available stock
+    const availStock = (matchedRoll.available_quantity !== undefined && matchedRoll.available_quantity !== null)
+        ? parseInt(matchedRoll.available_quantity)
+        : parseInt(matchedRoll.quantity || 0);
+
+    if (availStock <= 0) {
+        showScanFeedback(`Roll #${matchedRoll.roll_number} is OUT OF STOCK (0 pcs available).`, 'warning');
+        return false;
+    }
+
+    // Check existing cards
+    let existingCard = null;
+    let emptyCard = null;
+    document.querySelectorAll('.program-roll-card').forEach(card => {
+        const sel = card.querySelector('.roll-select');
+        if (sel) {
+            if (String(sel.value) === String(matchedRoll.id)) {
+                existingCard = card;
+            } else if (!sel.value && !emptyCard) {
+                emptyCard = card;
+            }
+        }
+    });
+
+    if (existingCard) {
+        const cardIdMatch = existingCard.id.match(/\d+$/);
+        const idx = cardIdMatch ? parseInt(cardIdMatch[0]) : 1;
+        showScanFeedback(`Roll <strong>${escapeHtml(matchedRoll.roll_number)}</strong> is already added in Roll #${idx}.`, 'warning');
+        existingCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        existingCard.classList.add('border-primary', 'bg-primary-subtle');
+        setTimeout(() => existingCard.classList.remove('border-primary', 'bg-primary-subtle'), 1800);
+        return true;
+    }
+
+    if (emptyCard) {
+        const cardIdMatch = emptyCard.id.match(/\d+$/);
+        const idx = cardIdMatch ? parseInt(cardIdMatch[0]) : 1;
+        const sel = emptyCard.querySelector('.roll-select');
+        if (sel) {
+            sel.value = matchedRoll.id;
+            handleRollRowChange(sel, idx, true);
+            showScanFeedback(`✓ Scanned Roll <strong>${escapeHtml(matchedRoll.roll_number)}</strong> (${escapeHtml(matchedRoll.color || 'Standard')}) auto-assigned to Roll #${idx}!`, 'success');
+            emptyCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            emptyCard.classList.add('border-success', 'bg-success-subtle');
+            setTimeout(() => emptyCard.classList.remove('border-success', 'bg-success-subtle'), 1800);
+            return true;
+        }
+    }
+
+    // Otherwise, automatically create a new roll row
+    addProgramRollRow({
+        seller_roll_id: matchedRoll.id,
+        roll_qty: 1,
+        roll_weight: matchedRoll.weight,
+        roll_price: matchedRoll.price
+    });
+    showScanFeedback(`✓ Scanned Roll <strong>${escapeHtml(matchedRoll.roll_number)}</strong> (${escapeHtml(matchedRoll.color || 'Standard')}) added as Roll #${rollCounter}!`, 'success');
+    const newCard = document.getElementById('program_roll_card_' + rollCounter);
+    if (newCard) {
+        newCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        newCard.classList.add('border-success', 'bg-success-subtle');
+        setTimeout(() => newCard.classList.remove('border-success', 'bg-success-subtle'), 1800);
+    }
+    return true;
+}
+
+function openScanRollModal() {
+    const modalEl = document.getElementById('scanRollCameraModal');
+    if (!modalEl) return;
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+    setTimeout(startCameraScanner, 350);
+}
+
+function startCameraScanner() {
+    if (typeof Html5Qrcode === 'undefined') {
+        const fb = document.getElementById('cameraScanFeedback');
+        if (fb) {
+            fb.className = 'small p-2 rounded alert alert-warning d-block';
+            fb.textContent = 'Camera scanner library not loaded. Please use the Quick Scan input bar.';
+        }
+        return;
+    }
+
+    if (isProgramCameraActive) return;
+
+    try {
+        html5ProgramScanner = new Html5Qrcode('cameraScannerPreview');
+        const config = { fps: 12, qrbox: { width: 220, height: 220 } };
+
+        Html5Qrcode.getCameras().then(devices => {
+            if (devices && devices.length > 0) {
+                const backCam = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('rear')) || devices[0];
+                html5ProgramScanner.start(
+                    backCam.id,
+                    config,
+                    (decodedText) => {
+                        const fb = document.getElementById('cameraScanFeedback');
+                        if (fb) {
+                            fb.className = 'small p-2 rounded alert alert-success d-block';
+                            fb.innerHTML = `Scanned: <strong>${escapeHtml(decodedText)}</strong>`;
+                        }
+                        const ok = processScannedRollCode(decodedText);
+                        if (ok) {
+                            setTimeout(() => {
+                                stopCameraScanner();
+                                const modal = bootstrap.Modal.getInstance(document.getElementById('scanRollCameraModal'));
+                                if (modal) modal.hide();
+                            }, 800);
+                        }
+                    },
+                    () => {}
+                ).then(() => {
+                    isProgramCameraActive = true;
+                }).catch(err => {
+                    console.warn('Camera start error:', err);
+                    const fb = document.getElementById('cameraScanFeedback');
+                    if (fb) {
+                        fb.className = 'small p-2 rounded alert alert-danger d-block';
+                        fb.textContent = 'Camera permission denied or camera not found.';
+                    }
+                });
+            } else {
+                const fb = document.getElementById('cameraScanFeedback');
+                if (fb) {
+                    fb.className = 'small p-2 rounded alert alert-warning d-block';
+                    fb.textContent = 'No camera device detected.';
+                }
+            }
+        }).catch(err => {
+            console.error('getCameras error:', err);
+        });
+    } catch (e) {
+        console.error('Camera init error:', e);
+    }
+}
+
+function stopCameraScanner() {
+    if (html5ProgramScanner && isProgramCameraActive) {
+        html5ProgramScanner.stop().then(() => {
+            html5ProgramScanner.clear();
+            isProgramCameraActive = false;
+        }).catch(err => {
+            console.warn('Camera stop error:', err);
+            isProgramCameraActive = false;
+        });
+    }
+}
+
+// =========================================================================
+// DYNAMIC CATEGORY ATTRIBUTES & SPECIFICATIONS LOGIC
+// =========================================================================
+function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '', savedValues = null) {
+    const container = document.getElementById('roll_attrs_container_' + idx);
+    if (!container) return;
+
+    if (!catId) {
+        container.innerHTML = `<div class="text-muted small py-1.5 px-2 bg-white rounded border border-dashed fst-italic" style="font-size: 11px;">
+            <i class="bi bi-info-circle me-1"></i>Select a Main Category above to view and assign category attributes.
+        </div>`;
+        return;
+    }
+
+    container.innerHTML = `<div class="py-2 text-center text-muted small" style="font-size: 11px;">
+        <span class="spinner-border spinner-border-sm text-primary me-1" role="status"></span> Loading attributes...
+    </div>`;
+
+    let url = `${baseUrl}/api/categories/attributes/${encodeURIComponent(catId)}`;
+    const qParams = [];
+    if (subcatId) qParams.push('subcategory_id=' + encodeURIComponent(subcatId));
+    if (subSubcatId) qParams.push('sub_subcategory_id=' + encodeURIComponent(subSubcatId));
+    if (qParams.length > 0) url += '?' + qParams.join('&');
+
+    fetch(url)
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success || !data.attributes || data.attributes.length === 0) {
+                container.innerHTML = `
+                    <div class="p-2 bg-white rounded text-center small text-muted border border-dashed" style="font-size: 11px;">
+                        <i class="bi bi-sliders me-1 text-secondary"></i>No pre-set attributes for this category level yet. 
+                        <a href="javascript:void(0)" onclick="openAddAttributeModal(${idx})" class="fw-semibold text-primary text-decoration-none ms-1">
+                            <i class="bi bi-plus-circle"></i> + Add Attribute
+                        </a>
+                    </div>
+                `;
+                return;
+            }
+
+            let parsedSaved = savedValues;
+            if (typeof parsedSaved === 'string') {
+                try { parsedSaved = JSON.parse(parsedSaved); } catch(e) { parsedSaved = {}; }
+            }
+
+            let html = '<div class="row g-2">';
+            data.attributes.forEach(attr => {
+                const isReq = attr.is_required == 1;
+                const reqBadge = isReq ? '<span class="text-danger">*</span>' : '';
+                let curVal = '';
+                if (parsedSaved && typeof parsedSaved === 'object') {
+                    curVal = parsedSaved[attr.attr_name] || parsedSaved[attr.id] || '';
+                }
+
+                html += `<div class="col-6">
+                    <label class="form-label small text-muted mb-0.5 fw-semibold" style="font-size: 10px;">
+                        ${escapeHtml(attr.attr_name)} ${reqBadge}
+                    </label>`;
+
+                const opts = attr.attr_options ? attr.attr_options.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+                if (attr.attr_type === 'SELECT' || (opts.length > 0 && attr.attr_type !== 'TEXT' && attr.attr_type !== 'NUMBER')) {
+                    html += `<select name="rolls[${idx}][attributes][${escapeHtml(attr.attr_name)}]" class="form-select form-select-sm" style="font-size: 11px; height: 32px;" ${isReq ? 'required' : ''}>
+                        <option value="">-- Choose ${escapeHtml(attr.attr_name)} --</option>`;
+                    opts.forEach(opt => {
+                        const isSel = (String(curVal).toUpperCase() === opt.toUpperCase()) ? 'selected' : '';
+                        html += `<option value="${escapeHtml(opt)}" ${isSel}>${escapeHtml(opt)}</option>`;
+                    });
+                    html += `</select>`;
+                } else if (attr.attr_type === 'NUMBER') {
+                    html += `<input type="number" step="any" name="rolls[${idx}][attributes][${escapeHtml(attr.attr_name)}]" class="form-control form-control-sm" style="font-size: 11px; height: 32px;" value="${escapeHtml(curVal)}" placeholder="Enter ${escapeHtml(attr.attr_name)}" ${isReq ? 'required' : ''}>`;
+                } else {
+                    html += `<input type="text" name="rolls[${idx}][attributes][${escapeHtml(attr.attr_name)}]" class="form-control form-control-sm" style="font-size: 11px; height: 32px;" value="${escapeHtml(curVal)}" placeholder="Enter ${escapeHtml(attr.attr_name)}" ${isReq ? 'required' : ''}>`;
+                }
+
+                html += `</div>`;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        })
+        .catch(err => {
+            console.error('Error loading attributes:', err);
+            container.innerHTML = `<div class="text-danger small py-1" style="font-size: 11px;">Failed to load attributes.</div>`;
+        });
+}
+
+function openAddAttributeModal(idx) {
+    const card = document.getElementById('program_roll_card_' + idx);
+    if (!card) return;
+
+    const catSelect = card.querySelector('.roll-cat-select');
+    const subcatSelect = card.querySelector('.roll-subcat-select');
+    const subsubcatSelect = card.querySelector('.roll-subsubcat-select');
+
+    const catId = catSelect ? catSelect.value : '';
+    const subcatId = subcatSelect ? subcatSelect.value : '';
+    const subsubcatId = subsubcatSelect ? subsubcatSelect.value : '';
+
+    if (!catId) {
+        alert('Please select a Main Category for this Roll first before adding attributes.');
+        if (catSelect) catSelect.focus();
+        return;
+    }
+
+    const catName = catSelect.options[catSelect.selectedIndex]?.text || 'Main Category';
+    let breadcrumb = `<strong>${escapeHtml(catName)}</strong>`;
+    if (subcatId && subcatSelect.options[subcatSelect.selectedIndex]) {
+        breadcrumb += ' &rsaquo; ' + escapeHtml(subcatSelect.options[subcatSelect.selectedIndex].text);
+    }
+    if (subsubcatId && subsubcatSelect.options[subsubcatSelect.selectedIndex]) {
+        breadcrumb += ' &rsaquo; ' + escapeHtml(subsubcatSelect.options[subsubcatSelect.selectedIndex].text);
+    }
+
+    document.getElementById('attrModalTargetRowIdx').value = idx;
+    document.getElementById('attrModalCategoryId').value = catId;
+    document.getElementById('attrModalSubcategoryId').value = subcatId;
+    document.getElementById('attrModalSubSubcategoryId').value = subsubcatId;
+    document.getElementById('attrModalTargetBreadcrumb').innerHTML = breadcrumb;
+
+    document.getElementById('attrModalName').value = '';
+    document.getElementById('attrModalType').value = 'SELECT';
+    document.getElementById('attrModalOptions').value = '';
+    document.getElementById('attrModalOptionsGroup').style.display = '';
+    document.getElementById('attrModalRequired').checked = false;
+
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalQuickAddCategoryAttribute'));
+    modal.show();
+}
+
+function handleAttrTypeChange(type) {
+    const group = document.getElementById('attrModalOptionsGroup');
+    const optInput = document.getElementById('attrModalOptions');
+    if (type === 'SELECT' || type === 'MULTI_SELECT') {
+        group.style.display = '';
+        if (optInput) optInput.setAttribute('required', 'required');
+    } else {
+        group.style.display = 'none';
+        if (optInput) optInput.removeAttribute('required');
+    }
+}
+
+function handleSaveCategoryAttribute(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btnSubmitAttrModal');
+    const catId = document.getElementById('attrModalCategoryId').value;
+    const subcatId = document.getElementById('attrModalSubcategoryId').value;
+    const subsubcatId = document.getElementById('attrModalSubSubcategoryId').value;
+    const name = document.getElementById('attrModalName').value.trim();
+    const type = document.getElementById('attrModalType').value;
+    const options = document.getElementById('attrModalOptions').value.trim();
+    const isReq = document.getElementById('attrModalRequired').checked ? 1 : 0;
+
+    if (!name) {
+        alert('Attribute name is required.');
+        return;
+    }
+    if ((type === 'SELECT' || type === 'MULTI_SELECT') && !options) {
+        alert('Please enter at least one attribute option.');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+
+    const formData = new FormData();
+    formData.append('category_id', catId);
+    if (subcatId) formData.append('subcategory_id', subcatId);
+    if (subsubcatId) formData.append('sub_subcategory_id', subsubcatId);
+    formData.append('attr_name', name);
+    formData.append('attr_type', type);
+    formData.append('attr_options', options);
+    formData.append('is_required', isReq);
+
+    fetch(`${baseUrl}/api/categories/attributes/quick-add`, {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(res => res.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check2-circle me-1"></i> Save Attribute';
+
+        if (data.success) {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('modalQuickAddCategoryAttribute'));
+            if (modal) modal.hide();
+
+            // Dynamically refresh attributes for all roll cards sharing this category hierarchy!
+            document.querySelectorAll('.program-roll-card').forEach(card => {
+                const cMatch = card.id.match(/\d+$/);
+                if (cMatch) {
+                    const cIdx = parseInt(cMatch[0]);
+                    const cCat = card.querySelector('.roll-cat-select')?.value;
+                    const cSub = card.querySelector('.roll-subcat-select')?.value;
+                    const cSubSub = card.querySelector('.roll-subsubcat-select')?.value;
+                    if (String(cCat) === String(catId)) {
+                        loadRollCategoryAttributes(cIdx, cCat, cSub, cSubSub);
+                    }
+                }
+            });
+        } else {
+            alert(data.message || 'Error saving category attribute.');
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check2-circle me-1"></i> Save Attribute';
+        console.error('Error saving attribute:', err);
+        alert('Network error while saving attribute.');
+    });
+}
 </script>
 <style>
 .roll-field-label {
