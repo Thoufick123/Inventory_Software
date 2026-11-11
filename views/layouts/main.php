@@ -523,8 +523,7 @@ if (!empty($authUser['shop_name'])) {
                         || hasPermission('assets', 'view')
                         || hasPermission('asset_scanner', 'view')
                         || hasPermission('asset_transfers', 'view')
-                        || hasPermission('asset_maintenance', 'view')
-                        || hasPermission('asset_bulk_labels', 'view');
+                        || hasPermission('asset_maintenance', 'view');
                     ?>
                     <?php if ($canViewAssets): ?>
                     <li class="nav-item has-submenu">
@@ -539,9 +538,6 @@ if (!empty($authUser['shop_name'])) {
                             <?php endif; ?>
                             <?php if (hasPermission('asset_register', 'view') || hasPermission('assets', 'view')): ?>
                             <li><a href="<?= url('asset/list') ?>" class="<?= in_array(($activeMenu ?? ''), ['asset-list', 'asset-create']) ? 'active' : '' ?>"><i class="bi bi-table me-1 text-success"></i> Asset Register</a></li>
-                            <?php endif; ?>
-                            <?php if (hasPermission('asset_bulk_labels', 'view')): ?>
-                            <li><a href="<?= url('asset/bulk-labels') ?>" class="<?= ($activeMenu ?? '') === 'asset-bulk-labels' ? 'active' : '' ?>"><i class="bi bi-qr-code me-1 text-secondary"></i> Print QR Labels</a></li>
                             <?php endif; ?>
                             <?php if (hasPermission('asset_scanner', 'view')): ?>
                             <li><a href="<?= url('asset/scanner') ?>" class="<?= ($activeMenu ?? '') === 'asset-scanner' ? 'active' : '' ?>"><i class="bi bi-qr-code-scan me-1 text-info"></i> Scan Assets</a></li>

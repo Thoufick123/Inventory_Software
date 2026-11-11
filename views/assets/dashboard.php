@@ -57,9 +57,6 @@ $serviceDue = $metrics['serviceDue'] ?? [];
         <a href="<?= url('asset/list') ?>" class="btn btn-outline-secondary d-inline-flex align-items-center gap-1">
             <i class="bi bi-table me-1 text-success"></i> Asset Register
         </a>
-        <a href="<?= url('asset/bulk-labels') ?>" target="_blank" class="btn btn-outline-dark d-inline-flex align-items-center gap-1">
-            <i class="bi bi-qr-code me-1 text-secondary"></i> Print QR Labels
-        </a>
         <a href="<?= url('asset/scanner') ?>" class="btn btn-outline-info d-inline-flex align-items-center gap-1">
             <i class="bi bi-qr-code-scan me-1 text-info"></i> Scan Assets
         </a>
