@@ -670,15 +670,38 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    function getAllocationProductType(product) {
+        if (!product) return 'NORMAL';
+        const categoryType = String(product.category_type || product.categoryType || product.dataset?.categoryType || '').trim().toUpperCase();
+        const qrType = String(product.qr_type || product.qrType || product.dataset?.qrType || '').trim().toUpperCase();
+        const isComplementary = product.is_complementary === true
+            || product.is_complementary === 1
+            || product.is_complementary === '1'
+            || product.isComplementary === '1'
+            || product.dataset?.isComplementary === '1';
+        if (isComplementary || categoryType === 'COMPLEMENTARY') return 'COMPLEMENTARY';
+        if (qrType === 'SERIES_BATCH' || categoryType === 'SERIES') return 'SERIES';
+        return categoryType || 'NORMAL';
+    }
+
     function supportsAdjustableAllocationQty(product) {
         if (!product) return false;
         const categoryType = getAllocationProductType(product);
-        return categoryType === 'SERIES' || categoryType === 'COMPLEMENTARY';
-    }
+        const qrType = String(product.qr_type || product.qrType || product.dataset?.qrType || '').trim().toUpperCase();
+        const isSeries = product.is_series === true || product.is_series === 1 || product.is_series === '1'
+            || product.isSeries === true || product.isSeries === 1 || product.isSeries === '1'
+            || product.dataset?.isSeries === '1';
+        const isComp = product.is_complementary === true || product.is_complementary === 1 || product.is_complementary === '1'
+            || product.isComplementary === true || product.isComplementary === 1 || product.isComplementary === '1'
+            || product.dataset?.isComplementary === '1';
+        const packQty = parseInt(product.pack_quantity || product.dataset?.packQuantity || 1) || 1;
 
-    function getAllocationProductType(product) {
-        const categoryType = String(product.category_type || product.categoryType || product.dataset?.categoryType || '').trim().toUpperCase();
-        return categoryType || 'NORMAL';
+        return categoryType === 'SERIES'
+            || categoryType === 'COMPLEMENTARY'
+            || qrType === 'SERIES_BATCH'
+            || isSeries
+            || isComp
+            || packQty > 1;
     }
 
     // =========================================================================
@@ -755,6 +778,7 @@ document.addEventListener('DOMContentLoaded', function() {
                            onchange="updateRowStockCalculations(this.closest('tr'))">
                     <button type="button" class="btn btn-outline-secondary px-2 py-0 fw-bold qty-stepper d-none" onclick="changeRowQty(this, 1)" title="Increase quantity">+</button>
                 </div>
+                <div class="qty-helper-container text-center"></div>
             </td>
             <td class="text-center">
                 <span class="badge bg-success-subtle text-success border border-success-subtle fw-bold fs-6 available-stock-badge">0 pcs</span>
@@ -868,9 +892,46 @@ document.addEventListener('DOMContentLoaded', function() {
                 qtyInput.setAttribute('aria-readonly', canAdjustQty ? 'false' : 'true');
             }
             qtySteppers.forEach(button => button.classList.toggle('d-none', !canAdjustQty));
+
+            const qtyHelper = row.querySelector('.qty-helper-container');
+            if (qtyHelper) {
+                if (!canAdjustQty) {
+                    qtyHelper.innerHTML = '<small class="text-muted d-block mt-0.5 text-center" style="font-size: 0.65rem;"><i class="bi bi-lock-fill me-0.5"></i>1 pc (One-by-One)</small>';
+                } else {
+                    qtyHelper.innerHTML = `<small class="text-primary fw-semibold d-block mt-0.5 text-center" style="font-size: 0.65rem;"><i class="bi bi-boxes me-0.5"></i>Max: ${availableStock} pcs</small>`;
+                }
+            }
+
+            let typeBadge = row.querySelector('.product-type-badge');
+            if (!typeBadge && catBadge) {
+                typeBadge = document.createElement('span');
+                typeBadge.className = 'product-type-badge font-monospace d-block mt-1';
+                typeBadge.style.fontSize = '0.68rem';
+                catBadge.parentNode.appendChild(typeBadge);
+            }
+            if (typeBadge) {
+                const pType = getAllocationProductType(opt.dataset);
+                if (pType === 'COMPLEMENTARY') {
+                    typeBadge.className = 'product-type-badge badge bg-warning text-dark border border-warning font-monospace d-block mt-1';
+                    typeBadge.style.fontSize = '0.68rem';
+                    typeBadge.innerHTML = '<i class="bi bi-gift-fill me-1"></i>COMPLEMENTARY';
+                } else if (pType === 'SERIES') {
+                    typeBadge.className = 'product-type-badge badge bg-info text-dark border border-info font-monospace d-block mt-1';
+                    typeBadge.style.fontSize = '0.68rem';
+                    typeBadge.innerHTML = '<i class="bi bi-collection-fill me-1"></i>SERIES';
+                } else {
+                    typeBadge.className = 'product-type-badge badge bg-light text-secondary border font-monospace d-block mt-1';
+                    typeBadge.style.fontSize = '0.68rem';
+                    typeBadge.innerHTML = '<i class="bi bi-tag-fill me-1"></i>NORMAL';
+                }
+            }
         } else {
             if (catBadge) catBadge.textContent = '-';
             if (sizeBadge) sizeBadge.textContent = '-';
+            const qtyHelper = row.querySelector('.qty-helper-container');
+            if (qtyHelper) qtyHelper.innerHTML = '';
+            const typeBadge = row.querySelector('.product-type-badge');
+            if (typeBadge) typeBadge.remove();
             if (qtyInput) {
                 qtyInput.value = 1;
                 qtyInput.readOnly = true;
@@ -1304,8 +1365,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     playDuplicateSound();
                     showScanAlert('danger', `❌ <strong>Scan Failed:</strong> ${data.message}`);
                     clearAndRefocusScanInput();
+                } else if (data.is_already_sold) {
+                    playDuplicateSound();
+                    showScanAlert('danger', `🚫 <strong>Already Outed to Customer:</strong> QR Code <code class="fw-bold">${data.tag_code || tagCode}</code> has ALREADY been purchased / outwarded by customer <strong>"${data.customer_name || 'Customer'}"</strong> (Invoice <strong>#${data.invoice_number || 'N/A'}</strong> on ${data.sale_date || 'N/A'}). Cannot allocate an already sold piece!`);
+                    clearAndRefocusScanInput();
                 } else {
-                    throw new Error(data.message || 'Variant not found');
+                    playDuplicateSound();
+                    showScanAlert('danger', `❌ <strong>Scan Failed:</strong> ${data.message || 'Variant not found'}`);
+                    clearAndRefocusScanInput();
                 }
             })
             .catch(err => {

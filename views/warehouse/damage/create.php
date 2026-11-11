@@ -875,29 +875,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     showScanAlert('danger', `❌ <strong>Scan Failed:</strong> ${data.message}`);
                     clearAndRefocusScanInput();
                 } else {
-                    throw new Error(data.message || 'Variant not found');
+                    playDuplicateSound();
+                    showScanAlert('danger', `❌ <strong>Scan Failed:</strong> ${data.message || 'Product variant not found.'}`);
+                    clearAndRefocusScanInput();
                 }
             })
             .catch(err => {
-                // Client-side fallback matching
-                const clean = tagCode.replace(/[-_]\d+$/, '');
-                let local = variantsList.find(v => (v.sku || '').toUpperCase() === tagCode || (v.barcode || '').toUpperCase() === tagCode);
-                if (!local) local = variantsList.find(v => (v.sku || '').toUpperCase() === clean || (v.barcode || '').toUpperCase() === clean);
-                if (!local) local = variantsList.find(v => tagCode.startsWith((v.sku || '').toUpperCase()) || (v.sku && clean.startsWith((v.sku || '').toUpperCase())));
-
-                if (local) {
-                    if (parseFloat(local.total_warehouse_stock || 0) <= 0) {
-                        playDuplicateSound();
-                        showScanAlert('danger', `❌ <strong>Scan Failed:</strong> Product <strong>${local.product_name || local.sku}</strong> is out of stock in this warehouse.`);
-                        clearAndRefocusScanInput();
-                        return;
-                    }
-                    applyScannedVariant(local, tagCode);
-                } else {
-                    playDuplicateSound();
-                    showScanAlert('danger', `❌ <strong>Scan Failed:</strong> No product variant found matching <code>${tagCode}</code>.`);
-                    clearAndRefocusScanInput();
-                }
+                console.error('Damage scan lookup error:', err);
+                playDuplicateSound();
+                showScanAlert('danger', `❌ <strong>Scan Error:</strong> Could not verify QR code with server (${err.message || 'Network error'}).`);
+                clearAndRefocusScanInput();
             })
             .finally(() => {
                 PENDING_DAMAGE_TAGS.delete(tagCode);
