@@ -90,16 +90,16 @@
                 </div>
                 <div class="card-body p-4">
                     <!-- Quick Barcode / Roll QR Gun Scanner Input Bar -->
-                    <div class="p-2.5 bg-light rounded-3 border mb-3">
-                        <div class="d-flex align-items-center justify-content-between mb-1.5 flex-wrap gap-2">
-                            <span class="small fw-bold text-dark d-flex align-items-center gap-1.5" style="font-size: 12px;">
-                                <i class="bi bi-upc-scan text-success fs-6"></i>
+                    <div class="p-3 bg-light rounded-3 border mb-4 shadow-xs">
+                        <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+                            <span class="small fw-bold text-dark d-flex align-items-center gap-2" style="font-size: 13px;">
+                                <i class="bi bi-upc-scan text-success fs-5"></i>
                                 <span>Scan Fabric Roll Barcode / QR Tag</span>
-                                <span class="badge bg-success-subtle text-success border" style="font-size: 10px;">Auto-Add Ready</span>
+                                <span class="badge bg-success-subtle text-success border px-2 py-1" style="font-size: 10px;">Auto-Add Ready</span>
                             </span>
                             <small class="text-muted" style="font-size: 11px;">Hardware Gun &amp; Camera Scanner (e.g. <code>FB1126141</code>, <code>ROLL #1</code>)</small>
                         </div>
-                        <div class="input-group input-group-sm">
+                        <div class="input-group">
                             <span class="input-group-text bg-white text-success border-end-0">
                                 <i class="bi bi-qr-code"></i>
                             </span>
@@ -107,15 +107,15 @@
                             <button type="button" class="btn btn-success fw-semibold px-3" onclick="triggerQuickRollScan()">
                                 <i class="bi bi-plus-circle me-1"></i> Scan / Add
                             </button>
-                            <button type="button" class="btn btn-outline-secondary" onclick="openScanRollModal()" title="Open Camera Scanner">
+                            <button type="button" class="btn btn-outline-secondary px-3" onclick="openScanRollModal()" title="Open Camera Scanner">
                                 <i class="bi bi-camera-video me-1"></i> Camera Scanner
                             </button>
                         </div>
-                        <div id="quickScanFeedbackAlert" class="small mt-1.5 d-none p-1.5 px-2.5 rounded-2" role="status"></div>
+                        <div id="quickScanFeedbackAlert" class="small mt-2 d-none p-2 px-3 rounded-2" role="status"></div>
                     </div>
 
                     <!-- Container for dynamic roll items -->
-                    <div id="programRollsContainer" class="d-flex flex-column gap-3 mb-3">
+                    <div id="programRollsContainer" class="d-flex flex-column gap-4 mb-4">
                         <!-- Dynamically populated by JS with independent Catalog Dropdowns -->
                     </div>
 
@@ -404,8 +404,8 @@
                     <div class="mb-3">
                         <label class="form-label small fw-bold text-dark required">Input Type <span class="text-danger">*</span></label>
                         <select name="attr_type" id="attrModalType" class="form-select form-select-sm" onchange="handleAttrTypeChange(this.value)">
-                            <option value="SELECT" selected>Dropdown Select (Single Option)</option>
-                            <option value="MULTI_SELECT">Multiple Options (Pill Selection)</option>
+                            <option value="MULTI_SELECT" selected>Multiple Checkbox Pills / Sizes (Image 2 style)</option>
+                            <option value="SELECT">Dropdown Select (Single Option)</option>
                             <option value="TEXT">Free Text Input</option>
                             <option value="NUMBER">Numeric Value</option>
                         </select>
@@ -562,7 +562,7 @@ function addProgramRollRow(rollData = null) {
     const idx = rollCounter;
     const container = document.getElementById('programRollsContainer');
     const rowDiv = document.createElement('div');
-    rowDiv.className = 'p-3 bg-white rounded border shadow-sm program-roll-card mb-2';
+    rowDiv.className = 'p-3.5 bg-white rounded-3 border shadow-sm program-roll-card mb-4';
     rowDiv.id = 'program_roll_card_' + idx;
 
     const optionsHtml = buildRollOptionsHtml(rollData ? (rollData.seller_roll_id || rollData.id) : '', idx);
@@ -579,24 +579,25 @@ function addProgramRollRow(rollData = null) {
     const subSubcategoryOptionsHtml = buildSubSubcategoryOptionsHtml(subcatId, subSubcatId);
 
     rowDiv.innerHTML = `
-        <div class="d-flex align-items-center justify-content-between mb-2 pb-1 border-bottom">
-            <span class="badge bg-primary-subtle text-primary border fw-semibold roll-badge-num">Roll #${idx}</span>
-            <button type="button" class="btn btn-sm btn-outline-danger p-1 px-2 btn-remove-roll" onclick="removeProgramRollRow(${idx})" title="Remove Roll">
-                <i class="bi bi-trash"></i> Remove
+        <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+            <span class="badge bg-primary-subtle text-primary border fw-semibold roll-badge-num px-2.5 py-1.5" style="font-size: 12px;">Roll #${idx}</span>
+            <button type="button" class="btn btn-sm btn-outline-danger p-1 px-2.5 btn-remove-roll fw-semibold" onclick="removeProgramRollRow(${idx})" title="Remove Roll">
+                <i class="bi bi-trash me-1"></i> Remove
             </button>
         </div>
 
-        <div class="mb-2">
-            <label class="form-label small fw-semibold text-dark mb-1">Select Raw Material Roll <span class="text-danger">*</span></label>
+        <div class="mb-3">
+            <label class="form-label small fw-semibold text-dark mb-1.5">Select Raw Material Roll <span class="text-danger">*</span></label>
             <select name="rolls[${idx}][seller_roll_id]" class="form-select roll-select" required onchange="handleRollRowChange(this, ${idx})">
                 ${optionsHtml}
             </select>
         </div>
 
-        <div class="row g-2 mb-2">
-            <div class="col-md-4">
-                <label class="form-label small fw-semibold text-muted mb-1">
-                    Roll Qty (pcs) <span class="badge bg-light text-secondary border ms-1" id="disp_avail_qty_${idx}" style="font-size: 10px;">Stock: 0</span>
+        <div class="row g-3 mb-3 align-items-start">
+            <div class="col-12 col-sm-4">
+                <label for="roll_qty_${idx}" class="form-label small fw-semibold text-muted mb-1 roll-field-label">
+                    <span class="roll-field-label-text">Roll Qty (pcs)</span>
+                    <span class="roll-field-meta"><span class="badge bg-light text-secondary border" id="disp_avail_qty_${idx}" style="font-size: 10px;">Stock: 0</span></span>
                 </label>
                 <div class="input-group input-group-sm">
                     <span class="input-group-text bg-light"><i class="bi bi-box-seam"></i></span>
@@ -605,16 +606,22 @@ function addProgramRollRow(rollData = null) {
                 </div>
                 <div id="roll_qty_warning_${idx}" class="text-danger small mt-1 fw-semibold d-none" style="font-size: 11px;"></div>
             </div>
-            <div class="col-md-4">
-                <label class="form-label small fw-semibold text-muted mb-1">Roll Weight (kg)</label>
+            <div class="col-12 col-sm-4">
+                <label for="roll_weight_${idx}" class="form-label small fw-semibold text-muted mb-1 roll-field-label">
+                    <span class="roll-field-label-text">Roll Weight (kg)</span>
+                    <span class="roll-field-meta" aria-hidden="true">&nbsp;</span>
+                </label>
                 <div class="input-group input-group-sm">
                     <span class="input-group-text bg-light"><i class="bi bi-speedometer2"></i></span>
                     <input type="number" step="0.01" min="0" name="rolls[${idx}][roll_weight]" id="roll_weight_${idx}" class="form-control fw-bold roll-weight-input bg-light" placeholder="0.00" value="${initWeight}" readonly style="cursor: not-allowed;" required>
                     <span class="input-group-text bg-light">kg</span>
                 </div>
             </div>
-            <div class="col-md-4">
-                <label class="form-label small fw-semibold text-muted mb-1">Roll Price (₹)</label>
+            <div class="col-12 col-sm-4">
+                <label for="roll_price_${idx}" class="form-label small fw-semibold text-muted mb-1 roll-field-label">
+                    <span class="roll-field-label-text">Roll Price (₹)</span>
+                    <span class="roll-field-meta" aria-hidden="true">&nbsp;</span>
+                </label>
                 <div class="input-group input-group-sm">
                     <span class="input-group-text bg-light">₹</span>
                     <input type="number" step="0.01" min="0" name="rolls[${idx}][roll_price]" id="roll_price_${idx}" class="form-control fw-bold text-primary roll-price-input bg-light" placeholder="0.00" value="${initPrice}" readonly style="cursor: not-allowed;" required>
@@ -622,14 +629,14 @@ function addProgramRollRow(rollData = null) {
             </div>
         </div>
 
-        <div id="roll_specs_${idx}" class="p-2 bg-light rounded small text-muted d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2 ${rollData ? '' : 'd-none'}">
+        <div id="roll_specs_${idx}" class="p-2.5 bg-light rounded-3 small text-muted d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3 ${rollData ? '' : 'd-none'}">
             <div><i class="bi bi-building text-primary me-1"></i> <span id="roll_supplier_${idx}">-</span></div>
             <div><i class="bi bi-palette text-primary me-1"></i> <span id="roll_color_${idx}">-</span></div>
             <div><i class="bi bi-brush text-primary me-1"></i> <span id="roll_design_${idx}">-</span></div>
         </div>
 
         <!-- Individual Piece QR Codes Area for THIS Roll -->
-        <div id="roll_pieces_section_${idx}" class="p-2.5 bg-white rounded border mb-2 shadow-sm ${rollData ? '' : 'd-none'}">
+        <div id="roll_pieces_section_${idx}" class="p-3 bg-white rounded-3 border mb-3 shadow-sm ${rollData ? '' : 'd-none'}">
             <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                 <span class="small fw-bold text-dark d-flex align-items-center gap-1.5">
                     <i class="bi bi-qr-code text-primary fs-6"></i>
@@ -651,26 +658,26 @@ function addProgramRollRow(rollData = null) {
         </div>
 
         <!-- 3-Tier Catalog Selection for THIS specific Roll -->
-        <div class="p-2.5 bg-light-subtle rounded border mt-2">
-            <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-1">
-                <span class="small fw-semibold text-primary"><i class="bi bi-diagram-3 me-1"></i>Catalog Hierarchy for this Roll</span>
+        <div class="p-3.5 bg-light-subtle rounded-3 border my-3 shadow-xs">
+            <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-1 pb-2 border-bottom">
+                <span class="small fw-bold text-primary"><i class="bi bi-diagram-3 me-1"></i>Catalog Hierarchy for this Roll</span>
                 <span class="badge bg-secondary-subtle text-secondary border small roll-catalog-badge" id="roll_cat_badge_${idx}">Catalog</span>
             </div>
-            <div class="row g-2">
+            <div class="row g-3 mb-3">
                 <div class="col-12 mb-1">
-                    <label class="form-label small text-muted mb-0" style="font-size: 11px;">Main Category</label>
+                    <label class="form-label small text-muted mb-1 fw-semibold" style="font-size: 11px;">Main Category</label>
                     <select name="rolls[${idx}][category_id]" class="form-select form-select-sm fw-semibold roll-cat-select" id="roll_cat_${idx}" onchange="handleRollCategoryChange(${idx}, this.value)">
                         ${categoryOptionsHtml}
                     </select>
                 </div>
                 <div class="col-6">
-                    <label class="form-label small text-muted mb-0" style="font-size: 11px;">Sub Category</label>
+                    <label class="form-label small text-muted mb-1 fw-semibold" style="font-size: 11px;">Sub Category</label>
                     <select name="rolls[${idx}][subcategory_id]" class="form-select form-select-sm roll-subcat-select" id="roll_subcat_${idx}" onchange="handleRollSubcategoryChange(${idx}, this.value)" ${catId ? '' : 'disabled'}>
                         ${subcategoryOptionsHtml}
                     </select>
                 </div>
                 <div class="col-6">
-                    <label class="form-label small text-muted mb-0" style="font-size: 11px;">Sub Sub Category</label>
+                    <label class="form-label small text-muted mb-1 fw-semibold" style="font-size: 11px;">Sub Sub Category</label>
                     <select name="rolls[${idx}][sub_subcategory_id]" class="form-select form-select-sm roll-subsubcat-select" id="roll_subsubcat_${idx}" onchange="handleRollSubSubcategoryChange(${idx}, this.value)" ${subcatId ? '' : 'disabled'}>
                         ${subSubcategoryOptionsHtml}
                     </select>
@@ -678,17 +685,18 @@ function addProgramRollRow(rollData = null) {
             </div>
 
             <!-- Dynamic Category Attributes & Specifications -->
-            <div class="mt-2.5 pt-2 border-top" id="roll_attrs_box_${idx}">
-                <div class="d-flex align-items-center justify-content-between mb-1.5 flex-wrap gap-1">
-                    <span class="small fw-semibold text-dark" style="font-size: 11px;">
-                        <i class="bi bi-sliders me-1 text-primary"></i>Category Attributes &amp; Specifications
+            <div class="mt-3 pt-3 border-top" id="roll_attrs_box_${idx}">
+                <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+                    <span class="small fw-bold text-dark d-flex align-items-center gap-1.5" style="font-size: 12px;">
+                        <i class="bi bi-sliders text-primary"></i>
+                        <span>Category Attributes &amp; Specifications</span>
                     </span>
-                    <button type="button" class="btn btn-xs btn-outline-primary py-0 px-2 fw-semibold btn-add-attr-trigger" style="font-size: 11px;" onclick="openAddAttributeModal(${idx})" title="Add new attribute for this category level">
+                    <button type="button" class="btn btn-xs btn-outline-primary py-1 px-2.5 fw-semibold btn-add-attr-trigger" style="font-size: 11px;" onclick="openAddAttributeModal(${idx})" title="Add new attribute for this category level">
                         <i class="bi bi-plus-circle me-1"></i>+ Add Attribute
                     </button>
                 </div>
-                <div id="roll_attrs_container_${idx}" class="roll-attributes-container">
-                    <div class="text-muted small py-1 px-2 bg-white rounded border border-dashed fst-italic" style="font-size: 11px;">
+                <div id="roll_attrs_container_${idx}" class="roll-attributes-container d-flex flex-column gap-3">
+                    <div class="text-muted small py-2.5 px-3 bg-white rounded border border-dashed fst-italic" style="font-size: 11px;">
                         <i class="bi bi-info-circle me-1"></i>Select a Main Category above to view and assign category attributes.
                     </div>
                 </div>
@@ -1715,14 +1723,14 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
     if (!container) return;
 
     if (!catId) {
-        container.innerHTML = `<div class="text-muted small py-1.5 px-2 bg-white rounded border border-dashed fst-italic" style="font-size: 11px;">
-            <i class="bi bi-info-circle me-1"></i>Select a Main Category above to view and assign category attributes.
+        container.innerHTML = `<div class="text-muted small py-2.5 px-3 bg-white rounded-3 border border-dashed fst-italic" style="font-size: 11px;">
+            <i class="bi bi-info-circle me-1 text-secondary"></i>Select a Main Category above to view and assign category attributes.
         </div>`;
         return;
     }
 
-    container.innerHTML = `<div class="py-2 text-center text-muted small" style="font-size: 11px;">
-        <span class="spinner-border spinner-border-sm text-primary me-1" role="status"></span> Loading attributes...
+    container.innerHTML = `<div class="py-3 text-center text-muted small" style="font-size: 11px;">
+        <span class="spinner-border spinner-border-sm text-primary me-1" role="status"></span> Loading category attributes &amp; sizes...
     </div>`;
 
     let url = `${baseUrl}/api/categories/attributes/${encodeURIComponent(catId)}`;
@@ -1736,7 +1744,7 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
         .then(data => {
             if (!data.success || !data.attributes || data.attributes.length === 0) {
                 container.innerHTML = `
-                    <div class="p-2 bg-white rounded text-center small text-muted border border-dashed" style="font-size: 11px;">
+                    <div class="p-3 bg-white rounded-3 text-center small text-muted border border-dashed" style="font-size: 11px;">
                         <i class="bi bi-sliders me-1 text-secondary"></i>No pre-set attributes for this category level yet. 
                         <a href="javascript:void(0)" onclick="openAddAttributeModal(${idx})" class="fw-semibold text-primary text-decoration-none ms-1">
                             <i class="bi bi-plus-circle"></i> + Add Attribute
@@ -1751,45 +1759,195 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
                 try { parsedSaved = JSON.parse(parsedSaved); } catch(e) { parsedSaved = {}; }
             }
 
-            let html = '<div class="row g-2">';
+            let html = '';
             data.attributes.forEach(attr => {
                 const isReq = attr.is_required == 1;
-                const reqBadge = isReq ? '<span class="text-danger">*</span>' : '';
+                const cleanAttrName = attr.attr_name.replace(/[^a-zA-Z0-9_]/g, '_');
+                const isSize = (attr.attr_name.toUpperCase() === 'SIZE');
+                const opts = attr.attr_options ? attr.attr_options.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+                // Retrieve saved value/values for this attribute
                 let curVal = '';
                 if (parsedSaved && typeof parsedSaved === 'object') {
                     curVal = parsedSaved[attr.attr_name] || parsedSaved[attr.id] || '';
                 }
-
-                html += `<div class="col-6">
-                    <label class="form-label small text-muted mb-0.5 fw-semibold" style="font-size: 10px;">
-                        ${escapeHtml(attr.attr_name)} ${reqBadge}
-                    </label>`;
-
-                const opts = attr.attr_options ? attr.attr_options.split(',').map(s => s.trim()).filter(Boolean) : [];
-
-                if (attr.attr_type === 'SELECT' || (opts.length > 0 && attr.attr_type !== 'TEXT' && attr.attr_type !== 'NUMBER')) {
-                    html += `<select name="rolls[${idx}][attributes][${escapeHtml(attr.attr_name)}]" class="form-select form-select-sm" style="font-size: 11px; height: 32px;" ${isReq ? 'required' : ''}>
-                        <option value="">-- Choose ${escapeHtml(attr.attr_name)} --</option>`;
-                    opts.forEach(opt => {
-                        const isSel = (String(curVal).toUpperCase() === opt.toUpperCase()) ? 'selected' : '';
-                        html += `<option value="${escapeHtml(opt)}" ${isSel}>${escapeHtml(opt)}</option>`;
-                    });
-                    html += `</select>`;
-                } else if (attr.attr_type === 'NUMBER') {
-                    html += `<input type="number" step="any" name="rolls[${idx}][attributes][${escapeHtml(attr.attr_name)}]" class="form-control form-control-sm" style="font-size: 11px; height: 32px;" value="${escapeHtml(curVal)}" placeholder="Enter ${escapeHtml(attr.attr_name)}" ${isReq ? 'required' : ''}>`;
-                } else {
-                    html += `<input type="text" name="rolls[${idx}][attributes][${escapeHtml(attr.attr_name)}]" class="form-control form-control-sm" style="font-size: 11px; height: 32px;" value="${escapeHtml(curVal)}" placeholder="Enter ${escapeHtml(attr.attr_name)}" ${isReq ? 'required' : ''}>`;
+                let curArr = [];
+                if (Array.isArray(curVal)) {
+                    curArr = curVal.map(v => String(v).toUpperCase().trim());
+                } else if (typeof curVal === 'string' && curVal !== '') {
+                    curArr = curVal.split(',').map(v => v.toUpperCase().trim());
                 }
 
-                html += `</div>`;
+                // If attribute has options, or is SIZE, or is MULTI_SELECT:
+                // Render with multi-checkbox pills/chips UI like Image 2!
+                if (isSize || attr.attr_type === 'MULTI_SELECT' || (opts.length > 0 && attr.attr_type !== 'TEXT' && attr.attr_type !== 'NUMBER')) {
+                    const attrLabelTitle = isSize ? 'Size Attributes:' : `${escapeHtml(attr.attr_name)} Attributes:`;
+                    const addBtnTitle = isSize ? '+ Add Size' : '+ Add Option';
+
+                    html += `
+                    <div class="p-3 bg-white rounded-3 border shadow-xs roll-attr-block mb-3" id="roll_attr_block_${idx}_${cleanAttrName}">
+                        <div class="d-flex justify-content-between align-items-center mb-2.5 flex-wrap gap-2">
+                            <label class="form-label fw-bold mb-0 text-dark small d-flex align-items-center gap-1.5" style="font-size: 12px;">
+                                <i class="bi bi-${isSize ? 'rulers' : 'tags'} text-primary"></i>
+                                <span>${attrLabelTitle}</span>
+                                ${isReq ? '<span class="text-danger">*</span>' : ''}
+                            </label>
+                            <div class="d-flex gap-1.5 align-items-center">
+                                <button type="button" class="btn btn-xs btn-outline-primary py-0.5 px-2.5 fw-semibold" style="font-size: 11px;" onclick="openQuickAddOptionModal(${idx}, '${escapeHtml(attr.attr_name)}', ${attr.id})">
+                                    <i class="bi bi-plus-circle me-1"></i> ${addBtnTitle}
+                                </button>
+                                <button type="button" class="btn btn-xs btn-outline-secondary py-0.5 px-2 fw-semibold" style="font-size: 11px;" onclick="selectAllAttrOptions(${idx}, '${cleanAttrName}')">Select All</button>
+                                <button type="button" class="btn btn-xs btn-outline-secondary py-0.5 px-2 fw-semibold" style="font-size: 11px;" onclick="clearAllAttrOptions(${idx}, '${cleanAttrName}')">Clear</button>
+                            </div>
+                        </div>
+                        <div class="p-2.5 border rounded-2 bg-light d-flex flex-wrap gap-2 align-items-center" id="attr_chips_container_${idx}_${cleanAttrName}" style="min-height: 48px;">`;
+
+                    if (opts.length === 0) {
+                        html += `
+                            <div class="w-100 text-center py-2 text-muted small empty-attr-prompt" style="font-size: 11px;">
+                                No ${escapeHtml(attr.attr_name)} options found. Click <strong>"${addBtnTitle}"</strong> above to create options.
+                            </div>
+                        `;
+                    } else {
+                        opts.forEach(opt => {
+                            const cleanOpt = opt.replace(/[^a-zA-Z0-9_]/g, '_');
+                            const isChecked = curArr.includes(opt.toUpperCase().trim());
+                            html += `
+                            <div class="btn-group btn-group-sm size-chip-group" id="attr_chip_${idx}_${cleanAttrName}_${cleanOpt}">
+                                <label class="btn btn-outline-dark size-check-btn d-flex align-items-center gap-1.5 py-1 px-2.5 bg-white text-dark border-secondary-subtle" style="cursor: pointer; font-size: 11px;">
+                                    <input type="checkbox" name="rolls[${idx}][attributes][${escapeHtml(attr.attr_name)}][]" class="form-check-input me-1 size-checkbox attr-cb-${idx}-${cleanAttrName}" value="${escapeHtml(opt)}" ${isChecked ? 'checked' : ''}>
+                                    <span class="fw-bold">${escapeHtml(opt)}</span>
+                                </label>
+                                <button type="button" class="btn btn-outline-danger btn-delete-size p-1 px-2" onclick="deleteRollAttrOption(${idx}, '${escapeHtml(attr.attr_name)}', '${escapeHtml(opt)}', ${attr.id})" title="Delete option">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>`;
+                        });
+                    }
+
+                    html += `
+                        </div>
+                    </div>`;
+                } else if (attr.attr_type === 'NUMBER') {
+                    html += `
+                    <div class="p-3 bg-white rounded-3 border shadow-xs roll-attr-block mb-3">
+                        <label class="form-label small text-muted mb-1 fw-semibold" style="font-size: 11px;">
+                            ${escapeHtml(attr.attr_name)} ${isReq ? '<span class="text-danger">*</span>' : ''}
+                        </label>
+                        <input type="number" step="any" name="rolls[${idx}][attributes][${escapeHtml(attr.attr_name)}]" class="form-control form-control-sm" style="font-size: 12px; height: 34px;" value="${escapeHtml(curVal)}" placeholder="Enter ${escapeHtml(attr.attr_name)}" ${isReq ? 'required' : ''}>
+                    </div>`;
+                } else {
+                    html += `
+                    <div class="p-3 bg-white rounded-3 border shadow-xs roll-attr-block mb-3">
+                        <label class="form-label small text-muted mb-1 fw-semibold" style="font-size: 11px;">
+                            ${escapeHtml(attr.attr_name)} ${isReq ? '<span class="text-danger">*</span>' : ''}
+                        </label>
+                        <input type="text" name="rolls[${idx}][attributes][${escapeHtml(attr.attr_name)}]" class="form-control form-control-sm" style="font-size: 12px; height: 34px;" value="${escapeHtml(curVal)}" placeholder="Enter ${escapeHtml(attr.attr_name)}" ${isReq ? 'required' : ''}>
+                    </div>`;
+                }
             });
-            html += '</div>';
+
             container.innerHTML = html;
         })
         .catch(err => {
             console.error('Error loading attributes:', err);
-            container.innerHTML = `<div class="text-danger small py-1" style="font-size: 11px;">Failed to load attributes.</div>`;
+            container.innerHTML = `<div class="text-danger small py-2" style="font-size: 11px;">Failed to load attributes.</div>`;
         });
+}
+
+function selectAllAttrOptions(idx, cleanAttrName) {
+    document.querySelectorAll(`.attr-cb-${idx}-${cleanAttrName}`).forEach(cb => cb.checked = true);
+}
+
+function clearAllAttrOptions(idx, cleanAttrName) {
+    document.querySelectorAll(`.attr-cb-${idx}-${cleanAttrName}`).forEach(cb => cb.checked = false);
+}
+
+function openQuickAddOptionModal(idx, attrName, attrId) {
+    const isSize = (attrName.toUpperCase() === 'SIZE');
+    const title = isSize ? 'Add Size(s)' : `Add ${attrName} Option(s)`;
+    const promptText = `Enter one or more ${title} separated by commas (e.g. ${isSize ? 'S, M, L, XL, XXL' : 'Cotton, Linen, Rayon'}):`;
+    const inputVal = prompt(promptText);
+    if (!inputVal || !inputVal.trim()) return;
+
+    const formData = new FormData();
+    formData.append('attribute_id', attrId);
+    formData.append('attr_name', attrName);
+    formData.append('options', inputVal.trim());
+
+    fetch(`${baseUrl}/api/categories/attributes/add-option`, {
+        method: 'POST',
+        body: formData,
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success && data.new_options && data.new_options.length > 0) {
+            const cleanAttrName = attrName.replace(/[^a-zA-Z0-9_]/g, '_');
+            const chipsBox = document.getElementById(`attr_chips_container_${idx}_${cleanAttrName}`);
+            if (chipsBox) {
+                const emptyPrompt = chipsBox.querySelector('.empty-attr-prompt');
+                if (emptyPrompt) emptyPrompt.remove();
+
+                data.new_options.forEach(opt => {
+                    const cleanOpt = opt.replace(/[^a-zA-Z0-9_]/g, '_');
+                    if (!document.getElementById(`attr_chip_${idx}_${cleanAttrName}_${cleanOpt}`)) {
+                        const chipDiv = document.createElement('div');
+                        chipDiv.className = 'btn-group btn-group-sm size-chip-group';
+                        chipDiv.id = `attr_chip_${idx}_${cleanAttrName}_${cleanOpt}`;
+                        chipDiv.innerHTML = `
+                            <label class="btn btn-outline-dark size-check-btn d-flex align-items-center gap-1.5 py-1 px-2.5 bg-white text-dark border-secondary-subtle" style="cursor: pointer; font-size: 11px;">
+                                <input type="checkbox" name="rolls[${idx}][attributes][${escapeHtml(attrName)}][]" class="form-check-input me-1 size-checkbox attr-cb-${idx}-${cleanAttrName}" value="${escapeHtml(opt)}" checked>
+                                <span class="fw-bold">${escapeHtml(opt)}</span>
+                            </label>
+                            <button type="button" class="btn btn-outline-danger btn-delete-size p-1 px-2" onclick="deleteRollAttrOption(${idx}, '${escapeHtml(attrName)}', '${escapeHtml(opt)}', ${attrId})" title="Delete option">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        `;
+                        chipsBox.appendChild(chipDiv);
+                    }
+                });
+            }
+        } else if (data.success) {
+            alert('Option(s) already exist.');
+        } else {
+            alert(data.message || 'Error adding option');
+        }
+    })
+    .catch(err => {
+        console.error('Error adding option:', err);
+        alert('Server error while adding option.');
+    });
+}
+
+function deleteRollAttrOption(idx, attrName, optionVal, attrId) {
+    if (!confirm(`Are you sure you want to remove "${optionVal}" from ${attrName}?`)) return;
+
+    const formData = new FormData();
+    formData.append('attribute_id', attrId);
+    formData.append('attr_name', attrName);
+    formData.append('option', optionVal);
+
+    fetch(`${baseUrl}/api/categories/attributes/delete-option`, {
+        method: 'POST',
+        body: formData,
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            const cleanAttrName = attrName.replace(/[^a-zA-Z0-9_]/g, '_');
+            const cleanOpt = optionVal.replace(/[^a-zA-Z0-9_]/g, '_');
+            const chip = document.getElementById(`attr_chip_${idx}_${cleanAttrName}_${cleanOpt}`);
+            if (chip) chip.remove();
+        } else {
+            alert(data.message || 'Error deleting option');
+        }
+    })
+    .catch(err => {
+        console.error('Error deleting option:', err);
+        alert('Server error while deleting option.');
+    });
 }
 
 function openAddAttributeModal(idx) {
@@ -1826,7 +1984,7 @@ function openAddAttributeModal(idx) {
     document.getElementById('attrModalTargetBreadcrumb').innerHTML = breadcrumb;
 
     document.getElementById('attrModalName').value = '';
-    document.getElementById('attrModalType').value = 'SELECT';
+    document.getElementById('attrModalType').value = 'MULTI_SELECT';
     document.getElementById('attrModalOptions').value = '';
     document.getElementById('attrModalOptionsGroup').style.display = '';
     document.getElementById('attrModalRequired').checked = false;
