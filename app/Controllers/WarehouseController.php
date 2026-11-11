@@ -8744,6 +8744,205 @@ class WarehouseController {
         }
     }
 
+    /**
+     * AJAX endpoint to fetch Outward Dispatch details and items breakdown
+     */
+    public function allocationOutwardDetailsAjax(string $id): void {
+        if (!hasPermission('allocation_outward', 'view') && !hasPermission('allocation', 'view') && !hasPermission('warehouse', 'view')) {
+            Response::json(['success' => false, 'message' => 'Access denied.'], 403);
+            return;
+        }
+
+        $outwardId = (int)$id;
+        $outward = Database::fetchOne("
+            SELECT ao.*, 
+                   wa.allocation_number, wa.destination_type as alloc_dest_type, wa.status as allocation_status,
+                   w.name as warehouse_name, w.code as warehouse_code,
+                   s.name as shop_name, sc.name as channel_name,
+                   u.full_name as created_by_name
+            FROM allocation_outwards ao
+            JOIN warehouse_allocations wa ON ao.allocation_id = wa.id
+            JOIN warehouses w ON ao.warehouse_id = w.id
+            LEFT JOIN shops s ON ao.shop_id = s.id
+            LEFT JOIN sales_channels sc ON ao.channel_id = sc.id
+            LEFT JOIN users u ON ao.dispatched_by = u.id
+            WHERE ao.id = ?
+        ", [$outwardId]);
+
+        if (!$outward) {
+            Response::json(['success' => false, 'message' => 'Outward dispatch record not found.'], 404);
+            return;
+        }
+
+        $items = AllocationItem::getByAllocationId((int)$outward['allocation_id']);
+
+        $dest = !empty($outward['shop_name']) ? $outward['shop_name'] : (!empty($outward['channel_name']) ? $outward['channel_name'] : ($outward['alloc_dest_type'] ?? 'Destination'));
+        $outward['destination_display'] = $dest;
+
+        Response::json([
+            'success' => true,
+            'outward' => $outward,
+            'items'   => $items,
+            'gatepass_url' => url('warehouse/allocation/gatepass/' . $outward['allocation_id']),
+            'allocation_view_url' => url('warehouse/allocation/view/' . $outward['allocation_id'])
+        ]);
+    }
+
+    /**
+     * Update an outward dispatch record (vehicle, transporter, driver, boxes, status, notes)
+     */
+    public function updateAllocationOutward(string $id): void {
+        if (!hasPermission('allocation_outward', 'edit') && !hasPermission('allocation', 'edit')) {
+            Session::flash('error', 'Access denied: You do not have permission to edit outward records.');
+            Response::redirect(url('warehouse/allocation/outward'));
+            return;
+        }
+
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token.');
+            Response::redirect(url('warehouse/allocation/outward'));
+            return;
+        }
+
+        $outwardId = (int)$id;
+        $outward = Database::fetchOne("SELECT * FROM allocation_outwards WHERE id = ?", [$outwardId]);
+        if (!$outward) {
+            Session::flash('error', 'Outward record not found.');
+            Response::redirect(url('warehouse/allocation/outward'));
+            return;
+        }
+
+        $vehicleNumber   = strtoupper(trim($_POST['vehicle_number'] ?? ''));
+        $driverName      = trim($_POST['driver_name'] ?? '');
+        $driverContact   = preg_replace('/[^0-9]/', '', trim($_POST['driver_contact'] ?? ''));
+        $transporterName = trim($_POST['transporter_name'] ?? '');
+        $lrNumber        = trim($_POST['lr_number'] ?? '');
+        $totalBoxes      = max(1, (int)($_POST['total_boxes'] ?? $outward['total_boxes'] ?? 1));
+        $dispatchDate    = !empty($_POST['dispatch_date']) ? $_POST['dispatch_date'] : ($outward['dispatch_date'] ?? date('Y-m-d H:i:s'));
+        $notes           = trim($_POST['notes'] ?? '');
+        $newStatus       = strtoupper(trim($_POST['status'] ?? $outward['status']));
+
+        if (!in_array($newStatus, ['DISPATCHED', 'DELIVERED'], true)) {
+            $newStatus = $outward['status'];
+        }
+
+        try {
+            Database::execute("
+                UPDATE allocation_outwards SET
+                    vehicle_number   = ?,
+                    driver_name      = ?,
+                    driver_contact   = ?,
+                    transporter_name = ?,
+                    lr_number        = ?,
+                    total_boxes      = ?,
+                    dispatch_date    = ?,
+                    status           = ?,
+                    notes            = ?,
+                    updated_at       = NOW()
+                WHERE id = ?
+            ", [
+                $vehicleNumber ?: null,
+                $driverName ?: null,
+                $driverContact ?: null,
+                $transporterName ?: null,
+                $lrNumber ?: null,
+                $totalBoxes,
+                $dispatchDate,
+                $newStatus,
+                $notes ?: null,
+                $outwardId
+            ]);
+
+            // If status changed to DELIVERED and wasn't before, trigger markOutwardDelivered logic
+            if ($newStatus === 'DELIVERED' && $outward['status'] !== 'DELIVERED') {
+                $this->markOutwardDelivered((string)$outwardId);
+                return;
+            }
+
+            AuditService::log('WAREHOUSE', 'UPDATE_OUTWARD', 'allocation_outwards', $outwardId, null, [
+                'outward_number' => $outward['outward_number'],
+                'vehicle_number' => $vehicleNumber,
+                'status'         => $newStatus
+            ]);
+
+            Session::flash('success', "Outward Dispatch #{$outward['outward_number']} updated successfully.");
+        } catch (Exception $e) {
+            Session::flash('error', 'Failed to update outward dispatch: ' . $e->getMessage());
+        }
+
+        Response::redirect(url('warehouse/allocation/outward'));
+    }
+
+    /**
+     * Delete an outward dispatch record and revert allocation status to Approved
+     */
+    public function deleteAllocationOutward(string $id): void {
+        if (!hasPermission('allocation_outward', 'delete') && !hasPermission('allocation', 'delete')) {
+            Session::flash('error', 'Access denied: You do not have permission to delete outward records.');
+            Response::redirect(url('warehouse/allocation/outward'));
+            return;
+        }
+
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token.');
+            Response::redirect(url('warehouse/allocation/outward'));
+            return;
+        }
+
+        $outwardId = (int)$id;
+        $outward = Database::fetchOne("SELECT * FROM allocation_outwards WHERE id = ?", [$outwardId]);
+        if (!$outward) {
+            Session::flash('error', 'Outward record not found.');
+            Response::redirect(url('warehouse/allocation/outward'));
+            return;
+        }
+
+        try {
+            $userId = Session::get('user_id') ?? 1;
+            $allocationId = (int)$outward['allocation_id'];
+            $warehouseId = (int)$outward['warehouse_id'];
+
+            // 1. Revert stock deduction back to available warehouse inventory
+            $items = AllocationItem::getByAllocationId($allocationId);
+            foreach ($items as $item) {
+                $dispatchedQty = (float)($item['dispatched_qty'] > 0 ? $item['dispatched_qty'] : ($item['packed_qty'] > 0 ? $item['packed_qty'] : $item['requested_qty']));
+                if ($dispatchedQty > 0 && !empty($item['variant_id'])) {
+                    StockService::increase(
+                        variantId: (int)$item['variant_id'],
+                        locationType: 'WAREHOUSE',
+                        locationId: $warehouseId,
+                        stockState: 'AVAILABLE',
+                        quantity: $dispatchedQty,
+                        transactionType: 'ALLOCATION_CANCEL',
+                        referenceType: 'allocation_outwards',
+                        referenceId: $outwardId,
+                        userId: $userId,
+                        notes: "Stock returned to available inventory due to deletion of Outward #{$outward['outward_number']}"
+                    );
+                }
+                // Reset dispatched_qty on allocation items
+                AllocationItem::updateQuantities($item['id'], ['dispatched_qty' => 0]);
+            }
+
+            // 2. Revert warehouse_allocations status back to APPROVED so it can be dispatched again
+            Database::execute("UPDATE warehouse_allocations SET status = 'APPROVED', updated_at = NOW() WHERE id = ?", [$allocationId]);
+
+            // 3. Delete the outward record
+            Database::execute("DELETE FROM allocation_outwards WHERE id = ?", [$outwardId]);
+
+            AuditService::log('WAREHOUSE', 'DELETE_OUTWARD', 'allocation_outwards', $outwardId, null, [
+                'outward_number' => $outward['outward_number'],
+                'allocation_id'  => $allocationId
+            ]);
+
+            Session::flash('success', "Outward Dispatch #{$outward['outward_number']} deleted and allocation reverted to Approved status successfully.");
+        } catch (Exception $e) {
+            Session::flash('error', 'Failed to delete outward dispatch: ' . $e->getMessage());
+        }
+
+        Response::redirect(url('warehouse/allocation/outward'));
+    }
+
     public function printAllocationGatePass(string $id): void {
         if (!hasPermission('allocation_outward', 'gatepass') && !hasPermission('allocation_outward', 'view') && !hasPermission('warehouse', 'view')) {
             Session::flash('error', 'Access denied.');
@@ -12826,7 +13025,15 @@ class WarehouseController {
      * Show create seller form.
      */
     public function createSeller(): void {
-        if (!hasPermission('wh_sellers', 'create') && !hasPermission('purchases', 'create') && !hasPermission('warehouse', 'create') && !hasPermission('wh_catalog', 'create')) {
+        $selectedSellerId = !empty($_GET['seller_id']) ? (int)$_GET['seller_id'] : 0;
+        $isEditMode = (!empty($_GET['mode']) && $_GET['mode'] === 'edit');
+        if ($selectedSellerId > 0 && ($isEditMode || hasPermission('wh_sellers', 'edit'))) {
+            Response::redirect(url('warehouse/sellers/edit/' . $selectedSellerId));
+            return;
+        }
+
+        $isEditModePost = (!empty($_POST['edit_supplier_mode']) && $_POST['edit_supplier_mode'] == '1') || !empty($_POST['existing_supplier_id']);
+        if (!hasPermission('wh_sellers', 'create') && !hasPermission('purchases', 'create') && !hasPermission('warehouse', 'create') && !hasPermission('wh_catalog', 'create') && !($isEditModePost && hasPermission('wh_sellers', 'edit'))) {
             Session::flash('error', 'Access denied.');
             Response::redirect(url('warehouse/sellers'));
             return;
@@ -13117,7 +13324,8 @@ class WarehouseController {
             return;
         }
 
-        if (!hasPermission('wh_sellers', 'create') && !hasPermission('purchases', 'create') && !hasPermission('warehouse', 'create') && !hasPermission('wh_catalog', 'create')) {
+        $isEditModePost = (!empty($_POST['edit_supplier_mode']) && $_POST['edit_supplier_mode'] == '1') || !empty($_POST['existing_supplier_id']);
+        if (!hasPermission('wh_sellers', 'create') && !hasPermission('purchases', 'create') && !hasPermission('warehouse', 'create') && !hasPermission('wh_catalog', 'create') && !($isEditModePost && hasPermission('wh_sellers', 'edit'))) {
             Session::flash('error', 'Access denied.');
             Response::redirect(url('warehouse/sellers'));
             return;
@@ -13894,7 +14102,7 @@ class WarehouseController {
 
         if (empty($name)) {
             Session::flash('error', 'Supplier name is required.');
-            Response::redirect(url("warehouse/sellers/{$id}/edit"));
+            Response::redirect(url("warehouse/sellers/edit/{$id}"));
             return;
         }
 
@@ -13902,14 +14110,14 @@ class WarehouseController {
             $cityStateErr = $this->validateCityAndState($city, $state);
             if ($cityStateErr !== null) {
                 Session::flash('error', $cityStateErr);
-                Response::redirect(url("warehouse/sellers/{$id}/edit"));
+                Response::redirect(url("warehouse/sellers/edit/{$id}"));
                 return;
             }
         }
 
         if ($address !== '' && (mb_strlen($address) < 6 || !preg_match('/[a-zA-Z]/', $address))) {
             Session::flash('error', 'Full Business Address must include valid street/door/area details (at least 6 characters).');
-            Response::redirect(url("warehouse/sellers/{$id}/edit"));
+            Response::redirect(url("warehouse/sellers/edit/{$id}"));
             return;
         }
 

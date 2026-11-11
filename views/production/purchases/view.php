@@ -38,11 +38,23 @@
 </div>
 
 <div class="card border shadow-sm mb-4">
-    <div class="card-header bg-white fw-bold">Purchased Items</div>
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+            <h5 class="mb-0 fw-bold"><i class="bi bi-box-seam me-2 text-primary"></i>Purchased Items</h5>
+            <span class="badge bg-secondary-subtle text-secondary border" id="itemCountBadge"><?= count($items) ?> Items</span>
+        </div>
+        <div class="d-flex align-items-center gap-2" style="max-width: 320px; width: 100%;">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                <input type="text" id="purchasedItemsSearch" class="form-control border-start-0" placeholder="Search item, roll, HSN, specs..." autocomplete="off">
+                <button type="button" class="btn btn-outline-secondary border-start-0 d-none" id="clearItemSearch" title="Clear search"><i class="bi bi-x-lg"></i></button>
+            </div>
+        </div>
+    </div>
     <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
+        <table class="table table-hover align-middle mb-0" id="purchasedItemsTable">
             <thead class="table-light"><tr><th>#</th><th>Item</th><th>HSN</th><th>Quantity</th><th class="text-end">Unit Price</th><th class="text-end">Subtotal</th><th>GST</th><th class="text-end">Tax</th><th class="text-end">Total</th></tr></thead>
-            <tbody>
+            <tbody id="purchasedItemsBody">
             <?php
                 $subtotal = 0.0;
                 $taxTotal = 0.0;
@@ -54,8 +66,23 @@
                     $taxType = $item['gst_type'] ?? 'LEGACY';
                     if ($taxType === 'BOTH') $taxType = 'SGST + CGST';
                     if ($taxType === 'LEGACY') $taxType = $tax > 0 ? 'Legacy SGST + CGST' : 'Exempted';
+                    $searchData = strtolower(implode(' ', [
+                        $item['item_name'] ?? '',
+                        $item['item_type'] ?? '',
+                        $item['roll_number'] ?? '',
+                        $item['color'] ?? '',
+                        $item['design_name'] ?? '',
+                        $item['start_code'] ?? '',
+                        $item['end_code'] ?? '',
+                        $item['hsn_code'] ?? '',
+                        $item['unit'] ?? '',
+                        $item['weight_kg'] ?? '',
+                        $item['unit_price'] ?? '',
+                        $item['total_price'] ?? '',
+                        $taxType
+                    ]));
             ?>
-                <tr>
+                <tr class="item-row" data-search="<?= htmlspecialchars($searchData, ENT_QUOTES) ?>">
                     <td><?= $index + 1 ?></td>
                     <td>
                         <span class="badge <?= $item['item_type'] === 'FABRIC_ROLL' ? 'bg-primary-subtle text-primary' : 'bg-secondary-subtle text-secondary' ?>"><?= $item['item_type'] === 'FABRIC_ROLL' ? 'Fabric Roll' : 'Supply' ?></span>
@@ -74,6 +101,11 @@
                     <td class="text-end fw-bold">₹<?= number_format((float)$item['total_price'], 2) ?></td>
                 </tr>
             <?php endforeach; ?>
+                <tr id="noItemsMatchRow" class="d-none">
+                    <td colspan="9" class="text-center text-muted py-4">
+                        <i class="bi bi-search me-1"></i> No matching purchased items found.
+                    </td>
+                </tr>
             </tbody>
             <tfoot class="table-light">
                 <tr><th colspan="5" class="text-end">Subtotal</th><th class="text-end">₹<?= number_format($subtotal, 2) ?></th><th colspan="2"></th><th></th></tr>
@@ -83,3 +115,47 @@
         </table>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const searchInput = document.getElementById('purchasedItemsSearch');
+    const clearBtn = document.getElementById('clearItemSearch');
+    const rows = document.querySelectorAll('#purchasedItemsBody .item-row');
+    const noMatchRow = document.getElementById('noItemsMatchRow');
+    const countBadge = document.getElementById('itemCountBadge');
+    const totalCount = rows.length;
+
+    if (searchInput) {
+        searchInput.addEventListener('input', function () {
+            const query = this.value.trim().toLowerCase();
+            if (clearBtn) {
+                clearBtn.classList.toggle('d-none', query.length === 0);
+            }
+
+            let visibleCount = 0;
+            rows.forEach(function (row) {
+                const searchData = (row.getAttribute('data-search') || '') + ' ' + (row.textContent || '').toLowerCase();
+                const matches = !query || searchData.includes(query);
+                row.classList.toggle('d-none', !matches);
+                if (matches) visibleCount++;
+            });
+
+            if (noMatchRow) {
+                noMatchRow.classList.toggle('d-none', visibleCount > 0);
+            }
+
+            if (countBadge) {
+                countBadge.textContent = query ? (visibleCount + ' of ' + totalCount + ' Items') : (totalCount + ' Items');
+            }
+        });
+
+        if (clearBtn) {
+            clearBtn.addEventListener('click', function () {
+                searchInput.value = '';
+                searchInput.dispatchEvent(new Event('input'));
+                searchInput.focus();
+            });
+        }
+    }
+});
+</script>

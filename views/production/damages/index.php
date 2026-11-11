@@ -598,7 +598,7 @@
 
 <!-- 3. Resolve / Supplier Return & Refund Modal -->
 <div class="modal fade" id="resolveModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-dialog modal-dialog-centered modal-xl">
         <div class="modal-content shadow-lg border-primary">
             <div class="modal-header bg-primary text-white py-3">
                 <h5 class="modal-title fw-bold fs-6">
@@ -606,7 +606,7 @@
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="POST" id="resolveDamageForm">
+            <form method="POST" id="resolveDamageForm" enctype="multipart/form-data">
                 <?= CSRF::field() ?>
                 <div class="modal-body p-4">
                     <!-- Damage Summary Banner -->
@@ -665,17 +665,96 @@
                             <input type="text" name="debit_note_number" id="inputDebitNote" class="form-control" placeholder="e.g. DN-2026-8841">
                         </div>
 
-                        <!-- 2. Replacement Fields (shown when Replacement Roll) -->
-                        <div class="col-md-6 res-field-replacement" id="fieldReplacementRoll" style="display: none;">
-                            <label class="form-label fw-bold text-primary">Replacement Roll Number / Tag</label>
-                            <input type="text" name="replacement_roll_number" id="inputReplacementRoll" class="form-control fw-bold border-primary" placeholder="e.g. ROLL-01-REPL">
-                        </div>
-                        <div class="col-md-6 res-field-replacement" id="fieldCreateRollOption" style="display: none;">
-                            <div class="form-check form-switch mt-4 pt-2">
-                                <input class="form-check-input" type="checkbox" name="create_replacement_roll" id="checkCreateReplacement" value="1" checked>
-                                <label class="form-check-label fw-semibold" for="checkCreateReplacement">
-                                     Automatically add this replacement roll to Supplier's active inventory
-                                </label>
+                        <!-- 2. Replacement Roll Full Specification Fields (shown when Replacement Roll) -->
+                        <div class="col-12 res-field-replacement" id="fieldReplacementBox" style="display: none;">
+                            <div class="card border border-primary-subtle shadow-sm rounded-3">
+                                <div class="card-header bg-primary-subtle text-primary py-2 px-3 d-flex justify-content-between align-items-center">
+                                    <span class="fw-bold small text-uppercase"><i class="bi bi-box-seam me-1"></i> Supplier Replacement Roll Details</span>
+                                    <span class="badge bg-primary text-white font-monospace">New Inward Roll</span>
+                                </div>
+                                <div class="card-body p-3">
+                                    <div class="row g-3">
+                                        <div class="col-lg-2 col-md-4">
+                                            <label class="form-label required small fw-bold">Roll No. / Code *</label>
+                                            <input type="text" name="replacement_roll_number" id="inputReplacementRoll" class="form-control text-uppercase" placeholder="ROLL #1" maxlength="50">
+                                        </div>
+                                        <div class="col-lg-2 col-md-4">
+                                            <label class="form-label required small fw-bold">Color / Shade *</label>
+                                            <input type="text" name="replacement_color" id="inputReplacementColor" class="form-control text-uppercase" placeholder="E.G. NAVY BLUE" maxlength="100">
+                                        </div>
+                                        <div class="col-lg-2 col-md-4">
+                                            <label class="form-label required small fw-bold">Design Name / Pattern *</label>
+                                            <input type="text" name="replacement_design_name" id="inputReplacementDesign" class="form-control text-uppercase" placeholder="E.G. FLORAL 01" maxlength="150">
+                                        </div>
+                                        <div class="col-lg-1 col-md-3">
+                                            <label class="form-label required small fw-bold">Designs *</label>
+                                            <input type="number" min="1" step="1" name="replacement_design_count" id="inputReplacementDesignCount" class="form-control" value="1">
+                                        </div>
+                                        <div class="col-lg-1 col-md-3">
+                                            <label class="form-label required small fw-bold">RQ *</label>
+                                            <input type="number" min="1" step="1" name="replacement_quantity" id="inputReplacementQuantity" class="form-control" value="1">
+                                        </div>
+                                        <div class="col-lg-2 col-md-3">
+                                            <label class="form-label required small fw-bold">Weight (kg) *</label>
+                                            <div class="input-group">
+                                                <input type="number" min="0.01" step="0.01" name="replacement_weight" id="inputReplacementWeight" class="form-control" placeholder="0.00">
+                                                <span class="input-group-text">kg</span>
+                                            </div>
+                                        </div>
+                                        <div class="col-lg-2 col-md-3">
+                                            <label class="form-label required small fw-bold">Price (₹) *</label>
+                                            <div class="input-group">
+                                                <span class="input-group-text">₹</span>
+                                                <input type="number" min="0" step="0.01" name="replacement_price" id="inputReplacementPrice" class="form-control" placeholder="0.00">
+                                            </div>
+                                        </div>
+
+                                        <div class="col-lg-3 col-md-4">
+                                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                                <label class="form-label mb-0 small fw-bold">HSN Code</label>
+                                                <button type="button" class="btn btn-link p-0 text-decoration-none small text-primary fw-semibold btn-add-hsn-trigger" style="font-size: 11px;" title="Add new HSN Code">
+                                                    <i class="bi bi-plus-circle me-0.5"></i>+ Add HSN
+                                                </button>
+                                            </div>
+                                            <div class="dropdown hsn-dropdown w-100 position-relative">
+                                                <input type="hidden" name="replacement_hsn_code" id="inputReplacementHsn" class="roll-hsn" value="">
+                                                <button type="button" class="form-select form-select-sm text-start d-flex justify-content-between align-items-center hsn-dropdown-btn font-monospace py-1.5 px-2" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" style="font-size: 0.82rem; height: 38px;">
+                                                    <span class="hsn-btn-text text-truncate">-- Select HSN --</span>
+                                                </button>
+                                                <div class="dropdown-menu shadow-lg p-2 hsn-dropdown-menu" style="min-width: 280px; max-width: 340px; z-index: 1055;">
+                                                    <div class="input-group input-group-sm mb-2">
+                                                        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                                                        <input type="text" class="form-control border-start-0 hsn-search-input" placeholder="Search HSN code or item..." autocomplete="off">
+                                                    </div>
+                                                    <div class="overflow-auto hsn-options-list" style="max-height: 200px;"></div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="col-lg-3 col-md-4">
+                                            <label class="form-label small fw-bold">GST</label>
+                                            <select name="replacement_gst_type" id="inputReplacementGstType" class="form-select">
+                                                <option value="EXEMPTED">Exempted</option>
+                                                <option value="SGST">SGST</option>
+                                                <option value="CGST">CGST</option>
+                                                <option value="IGST">IGST</option>
+                                                <option value="BOTH">Both (CGST and SGST)</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="col-lg-6 col-md-8">
+                                            <label class="form-label small fw-bold">Roll Sample Photo <small class="text-muted fw-normal">(Optional — JPG, PNG, WEBP)</small></label>
+                                            <input type="file" name="replacement_photo" id="inputReplacementPhoto" class="form-control" accept=".jpg,.jpeg,.png,.webp">
+                                        </div>
+
+                                        <div class="col-12 mt-2">
+                                            <div class="alert alert-info border-0 bg-info-subtle p-2.5 rounded-3 mb-0 small text-secondary">
+                                                <i class="bi bi-info-circle me-1 text-primary"></i>
+                                                This replacement roll will be automatically registered in <strong>Supplier Active Rolls</strong> and added to the <strong>Purchase Module</strong> with dynamic Roll QR barcodes generated.
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -695,6 +774,46 @@
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Quick Add HSN Code -->
+<div class="modal fade" id="modalQuickAddHsn" tabindex="-1" aria-labelledby="modalQuickAddHsnLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header bg-primary text-white py-3 px-4">
+                <h5 class="modal-title fs-6 fw-bold" id="modalQuickAddHsnLabel">
+                    <i class="bi bi-plus-circle me-1"></i> Add New HSN Code &amp; GST Rate
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="mb-3">
+                    <label class="form-label fw-bold small text-dark">HSN Code <span class="text-danger">*</span></label>
+                    <input type="text" id="quickHsnCodeInput" class="form-control text-uppercase fw-bold font-monospace" placeholder="e.g. 6206 or 61091000" maxlength="15" required>
+                    <small class="text-muted" style="font-size:0.75rem;">Harmonized System of Nomenclature code for invoices</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold small text-dark">Commodity / Description <span class="text-danger">*</span></label>
+                    <input type="text" id="quickHsnDescInput" class="form-control" placeholder="e.g. Cotton Woven Fabric / Sewing Thread / Buttons" maxlength="150" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold small text-dark">Default GST Rate (%) <span class="text-danger">*</span></label>
+                    <div class="input-group">
+                        <input type="number" step="0.01" min="0" max="28" id="quickHsnGstInput" class="form-control fw-bold" value="5.00" required>
+                        <span class="input-group-text">%</span>
+                    </div>
+                    <small class="text-muted" style="font-size:0.75rem;">Standard garment slab: 5.00%, 12.00%, 18.00%</small>
+                </div>
+                <div id="quickHsnAlert" class="alert alert-danger py-2 small d-none mb-0"></div>
+            </div>
+            <div class="modal-footer bg-light py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm fw-semibold" id="btnSaveQuickHsn">
+                    <i class="bi bi-check2-circle me-1"></i> Save &amp; Select HSN
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -1061,7 +1180,26 @@ function openResolveModal(damageData) {
     document.getElementById('resTypeSelect').value = (damageData.resolution_type && damageData.resolution_type !== 'NONE') ? damageData.resolution_type : '';
     document.getElementById('inputRefundAmount').value = damageData.refund_amount > 0 ? damageData.refund_amount : damageData.loss_amount;
     document.getElementById('inputDebitNote').value = damageData.debit_note_number || '';
-    document.getElementById('inputReplacementRoll').value = damageData.replacement_roll_number || (damageData.roll_number + '-REPL');
+
+    // Populate all replacement roll fields from damageData
+    document.getElementById('inputReplacementRoll').value = damageData.replacement_roll_number || (damageData.roll_number ? (damageData.roll_number + '-REPL') : 'ROLL #1-REPL');
+    document.getElementById('inputReplacementColor').value = damageData.roll_color || '';
+    document.getElementById('inputReplacementDesign').value = damageData.roll_design || '';
+    document.getElementById('inputReplacementDesignCount').value = damageData.roll_design_count || 1;
+    document.getElementById('inputReplacementQuantity').value = damageData.damaged_quantity || 1;
+    document.getElementById('inputReplacementWeight').value = damageData.damaged_weight || '';
+    document.getElementById('inputReplacementPrice').value = damageData.loss_amount || '';
+
+    const hsnVal = damageData.roll_hsn_code || '';
+    const hsnHidden = document.getElementById('inputReplacementHsn');
+    if (hsnHidden) {
+        hsnHidden.value = hsnVal;
+        const btnText = document.querySelector('#fieldReplacementBox .hsn-btn-text');
+        if (btnText) {
+            btnText.textContent = hsnVal ? hsnVal : '-- Select HSN --';
+        }
+    }
+    document.getElementById('inputReplacementGstType').value = 'EXEMPTED';
     document.getElementById('inputResolutionNotes').value = damageData.resolution_notes || '';
 
     handleResolutionStatusChange(document.getElementById('resStatusSelect').value);
@@ -1087,10 +1225,251 @@ function handleResolutionTypeChange(type) {
 
     refundFields.forEach(el => el.style.display = (type === 'SUPPLIER_REFUND' || type === 'RATE_CONCESSION') ? '' : 'none');
     replFields.forEach(el => el.style.display = (type === 'SUPPLIER_REPLACEMENT') ? '' : 'none');
+
+    const isRepl = (type === 'SUPPLIER_REPLACEMENT');
+    const replInputs = ['inputReplacementRoll', 'inputReplacementColor', 'inputReplacementDesign', 'inputReplacementDesignCount', 'inputReplacementQuantity', 'inputReplacementWeight', 'inputReplacementPrice'];
+    replInputs.forEach(id => {
+        const inp = document.getElementById(id);
+        if (inp) {
+            if (isRepl) {
+                inp.setAttribute('required', 'required');
+            } else {
+                inp.removeAttribute('required');
+            }
+        }
+    });
+}
+
+window.hsnCodesList = <?= json_encode($hsnCodes ?? [], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+let activeHsnTarget = null;
+
+function safeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
+function initHsnDropdown(container, hiddenSelector) {
+    const hiddenInput = container.querySelector(hiddenSelector);
+    const dropdownEl = container.querySelector('.hsn-dropdown');
+    if (!hiddenInput || !dropdownEl) return;
+
+    const btn = dropdownEl.querySelector('.hsn-dropdown-btn');
+    const btnText = dropdownEl.querySelector('.hsn-btn-text');
+    const searchInput = dropdownEl.querySelector('.hsn-search-input');
+    const optionsList = dropdownEl.querySelector('.hsn-options-list');
+
+    const triggerBtn = container.querySelector('.btn-add-hsn-trigger');
+    if (triggerBtn) {
+        triggerBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            activeHsnTarget = { hiddenInput, btnText, btn };
+            openQuickAddHsnModal(searchInput ? searchInput.value.trim() : '');
+        });
+    }
+
+    function renderOptions(query = '') {
+        const q = query.trim().toUpperCase();
+        const matches = (window.hsnCodesList || []).filter(h => {
+            if (!q) return true;
+            return (h.hsn_code && h.hsn_code.toUpperCase().includes(q)) ||
+                   (h.description && h.description.toUpperCase().includes(q));
+        });
+
+        let html = '';
+        html += `<div class="dropdown-item px-2 py-1.5 cursor-pointer small border-bottom select-hsn-item" data-code="" style="cursor:pointer;">
+            <span class="text-muted fst-italic">-- No HSN Code --</span>
+        </div>`;
+
+        if (matches.length === 0) {
+            html += `<div class="p-2 text-center text-muted small">No matching HSN codes found.</div>`;
+        } else {
+            matches.forEach(h => {
+                const isSelected = String(hiddenInput.value).toUpperCase() === String(h.hsn_code).toUpperCase();
+                html += `<div class="dropdown-item px-2 py-1.5 cursor-pointer d-flex justify-content-between align-items-center select-hsn-item ${isSelected ? 'bg-primary-subtle text-primary fw-bold' : ''}" data-code="${safeHtml(h.hsn_code)}" data-desc="${safeHtml(h.description || '')}" data-gst="${h.gst_rate || 0}" style="cursor:pointer; font-size: 0.82rem;">
+                    <div>
+                        <span class="font-monospace fw-semibold">${safeHtml(h.hsn_code)}</span>
+                        ${h.description ? `<small class="d-block text-muted text-truncate" style="max-width: 200px;">${safeHtml(h.description)}</small>` : ''}
+                    </div>
+                    <span class="badge bg-light text-dark border ms-1 font-monospace" style="font-size:10px;">${parseFloat(h.gst_rate || 0).toFixed(1)}%</span>
+                </div>`;
+            });
+        }
+
+        html += `<div class="p-1.5 border-top bg-light text-center">
+            <button type="button" class="btn btn-outline-primary btn-xs w-100 py-1 small fw-semibold btn-add-hsn-inline">
+                <i class="bi bi-plus-circle me-1"></i>+ Add New HSN Code
+            </button>
+        </div>`;
+
+        optionsList.innerHTML = html;
+
+        optionsList.querySelector('.btn-add-hsn-inline')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const bsDropdown = bootstrap.Dropdown.getInstance(btn);
+            if (bsDropdown) bsDropdown.hide();
+            activeHsnTarget = { hiddenInput, btnText, btn };
+            openQuickAddHsnModal(searchInput.value.trim());
+        });
+
+        optionsList.querySelectorAll('.select-hsn-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                const code = item.dataset.code || '';
+                const desc = item.dataset.desc || '';
+                hiddenInput.value = code;
+                if (!code) {
+                    btnText.textContent = '-- Select HSN --';
+                } else {
+                    btnText.innerHTML = `<span class="fw-bold text-primary">${safeHtml(code)}</span> ${desc ? `<span class="text-muted small">(${safeHtml(desc).slice(0, 16)}${desc.length > 16 ? '...' : ''})</span>` : ''}`;
+                }
+                const bsDropdown = bootstrap.Dropdown.getInstance(btn);
+                if (bsDropdown) bsDropdown.hide();
+                hiddenInput.dispatchEvent(new Event('input', { bubbles: true }));
+                hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+        });
+    }
+
+    dropdownEl.addEventListener('shown.bs.dropdown', () => {
+        renderOptions(searchInput.value);
+        setTimeout(() => searchInput.focus(), 50);
+    });
+
+    if (searchInput) {
+        searchInput.addEventListener('input', () => {
+            renderOptions(searchInput.value);
+        });
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const firstOption = optionsList.querySelector('.select-hsn-item[data-code]:not([data-code=""])');
+                if (firstOption) {
+                    firstOption.click();
+                } else if (searchInput.value.trim()) {
+                    const bsDropdown = bootstrap.Dropdown.getInstance(btn);
+                    if (bsDropdown) bsDropdown.hide();
+                    activeHsnTarget = { hiddenInput, btnText, btn };
+                    openQuickAddHsnModal(searchInput.value.trim());
+                }
+            }
+        });
+    }
+
+    renderOptions('');
+}
+
+function openQuickAddHsnModal(presetCode = '') {
+    const codeInp = document.getElementById('quickHsnCodeInput');
+    const descInp = document.getElementById('quickHsnDescInput');
+    const gstInp = document.getElementById('quickHsnGstInput');
+    const alertBox = document.getElementById('quickHsnAlert');
+    if (codeInp) codeInp.value = presetCode || '';
+    if (descInp) descInp.value = '';
+    if (gstInp) gstInp.value = '5.00';
+    if (alertBox) alertBox.classList.add('d-none');
+    const modalEl = document.getElementById('modalQuickAddHsn');
+    if (modalEl) {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+        setTimeout(() => {
+            if (presetCode && descInp) descInp.focus();
+            else if (codeInp) codeInp.focus();
+        }, 300);
+    }
+}
+
+function initQuickAddHsnModalHandler() {
+    const btnSave = document.getElementById('btnSaveQuickHsn');
+    if (!btnSave) return;
+    btnSave.addEventListener('click', () => {
+        const code = (document.getElementById('quickHsnCodeInput')?.value || '').trim().toUpperCase();
+        const desc = (document.getElementById('quickHsnDescInput')?.value || '').trim();
+        const gst = parseFloat(document.getElementById('quickHsnGstInput')?.value) || 0;
+        const alertBox = document.getElementById('quickHsnAlert');
+
+        if (!code || code.length < 2) {
+            if (alertBox) { alertBox.textContent = 'Please enter a valid HSN code (at least 2 characters).'; alertBox.classList.remove('d-none'); }
+            return;
+        }
+        if (!desc) {
+            if (alertBox) { alertBox.textContent = 'Please enter a commodity / item description.'; alertBox.classList.remove('d-none'); }
+            return;
+        }
+
+        btnSave.disabled = true;
+        btnSave.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+
+        const fd = new FormData();
+        fd.append('hsn_code', code);
+        fd.append('description', desc);
+        fd.append('gst_rate', gst.toFixed(2));
+        const csrf = document.querySelector('input[name="csrf_token"]');
+        if (csrf) fd.append('csrf_token', csrf.value);
+
+        fetch('<?= url("api/hsn-codes/store") ?>', {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: fd
+        })
+        .then(r => r.json())
+        .then(res => {
+            btnSave.disabled = false;
+            btnSave.innerHTML = '<i class="bi bi-check2-circle me-1"></i> Save &amp; Select HSN';
+
+            if (res.success && res.data) {
+                const newHsn = res.data;
+                const existingIdx = (window.hsnCodesList || []).findIndex(h => String(h.hsn_code).toUpperCase() === String(newHsn.hsn_code).toUpperCase());
+                if (existingIdx >= 0) {
+                    window.hsnCodesList[existingIdx] = newHsn;
+                } else {
+                    if (!window.hsnCodesList) window.hsnCodesList = [];
+                    window.hsnCodesList.push(newHsn);
+                }
+
+                if (activeHsnTarget && activeHsnTarget.hiddenInput) {
+                    activeHsnTarget.hiddenInput.value = newHsn.hsn_code;
+                    if (activeHsnTarget.btnText) {
+                        activeHsnTarget.btnText.innerHTML = `<span class="fw-bold text-primary">${safeHtml(newHsn.hsn_code)}</span> <span class="text-muted small">(${safeHtml(newHsn.description).slice(0, 16)}${newHsn.description.length > 16 ? '...' : ''})</span>`;
+                    }
+                    const bsDropdown = bootstrap.Dropdown.getInstance(activeHsnTarget.btn);
+                    if (bsDropdown) bsDropdown.hide();
+                    activeHsnTarget.hiddenInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    activeHsnTarget.hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+
+                const modalEl = document.getElementById('modalQuickAddHsn');
+                if (modalEl) {
+                    const modal = bootstrap.Modal.getInstance(modalEl);
+                    if (modal) modal.hide();
+                }
+            } else {
+                if (alertBox) {
+                    alertBox.textContent = res.message || 'Failed to save HSN Code.';
+                    alertBox.classList.remove('d-none');
+                }
+            }
+        })
+        .catch(err => {
+            btnSave.disabled = false;
+            btnSave.innerHTML = '<i class="bi bi-check2-circle me-1"></i> Save &amp; Select HSN';
+            if (alertBox) {
+                alertBox.textContent = 'Server error while saving HSN code.';
+                alertBox.classList.remove('d-none');
+            }
+        });
+    });
 }
 
 // Client-side form submit validation
 document.addEventListener('DOMContentLoaded', () => {
+    const replBox = document.getElementById('fieldReplacementBox');
+    if (replBox) {
+        initHsnDropdown(replBox, '#inputReplacementHsn');
+    }
+    initQuickAddHsnModalHandler();
+
     const scanInput = document.getElementById('damageRollQrScan');
     if (scanInput) {
         const damageModal = document.getElementById('reportDamageModal');
