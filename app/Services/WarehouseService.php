@@ -1515,27 +1515,25 @@ class WarehouseService {
 
         $targetWarehouseId = (int)($po['warehouse_id'] ?? $warehouseId);
 
-        $items = Database::fetchAll(
-            "SELECT pi.*, pv.sku, pv.qr_code, pv.product_id, pv.size_id, pv.color_id, 
-                    pv.selling_price as variant_selling_price, pv.mrp as variant_mrp,
-                    p.name as product_name, p.code as product_code, 
-                    sz.name as size_name, cl.name as color_name,
-                    COALESCE((SELECT SUM(ri.quantity) 
-                              FROM return_items ri 
-                              JOIN returns r ON ri.return_id = r.id 
-                              WHERE r.purchase_order_id = pi.purchase_order_id 
-                                AND ri.variant_id = pi.variant_id), 0) as already_returned_qty
-             FROM purchase_items pi
-             JOIN product_variants pv ON pi.variant_id = pv.id
-             JOIN products p ON pv.product_id = p.id
-             LEFT JOIN sizes sz ON pv.size_id = sz.id
-             LEFT JOIN colors cl ON pv.color_id = cl.id
-             WHERE pi.purchase_order_id = ?",
+        $items = PurchaseItem::getByPurchaseOrder((int)$po['id']);
+        $returnedQuantities = Database::fetchAll(
+            "SELECT ri.variant_id, COALESCE(SUM(ri.quantity), 0) AS already_returned_qty
+             FROM return_items ri
+             JOIN returns r ON ri.return_id = r.id
+             WHERE r.purchase_order_id = ?
+             GROUP BY ri.variant_id",
             [$po['id']]
         );
+        $returnedByVariant = [];
+        foreach ($returnedQuantities as $returnedQuantity) {
+            $returnedByVariant[(int)$returnedQuantity['variant_id']] = (int)$returnedQuantity['already_returned_qty'];
+        }
 
         foreach ($items as &$item) {
+            $item['already_returned_qty'] = $returnedByVariant[(int)$item['variant_id']] ?? 0;
             $item['returnable_qty'] = max(0, (int)$item['quantity'] - (int)$item['already_returned_qty']);
+            $item['variant_selling_price'] = $item['selling_price'] ?? 0;
+            $item['variant_mrp'] = $item['mrp'] ?? 0;
 
             // Effective paid unit price (tax-inclusive matching total paid on invoice)
             if ((int)$item['quantity'] > 0 && (float)($item['total_amount'] ?? 0) > 0) {
