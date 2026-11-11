@@ -915,7 +915,7 @@ class ShopService {
 
         $variant['scanned_piece_tag'] = $scannedTag;
 
-        $damageRecord = !empty($scannedTag)
+        $damageRecord = !empty($scannedTag) && !$isSeries && !$isComp
             ? self::findDamageForPieceTag((int)$variant['id'], $scannedTag)
             : null;
         if ($damageRecord) {
@@ -926,8 +926,8 @@ class ShopService {
         // Image priority: variant image -> product image -> null
         $variant['image'] = !empty($variant['variant_image']) ? $variant['variant_image'] : ($variant['product_image'] ?? null);
 
-        // Check if this specific piece tag was already sold in a previous invoice (bypass if SERIES QR)
-        if (!empty($scannedTag) && !$isSeries) {
+        // Aggregate QR codes can represent remaining stock after a partial sale.
+        if (!empty($scannedTag) && !$isSeries && !$isComp) {
             $alreadySold = Database::fetchOne(
                 "SELECT si.id, s.invoice_number 
                  FROM sale_items si
@@ -1104,7 +1104,7 @@ class ShopService {
                     ? round(($itemDiscount / ($mrp * $qty)) * 100, 2)
                     : 0.0;
 
-                // Extract piece tags string & validate against duplicate sales (bypassed if SERIES)
+                // Validate individual piece tags; aggregate codes represent available stock pools.
                 $scannedTagsStr = null;
                 if (!empty($item['scanned_tags'])) {
                     $tagsArray = is_array($item['scanned_tags']) ? $item['scanned_tags'] : explode(',', $item['scanned_tags']);
@@ -1113,12 +1113,14 @@ class ShopService {
                         $t = trim($t);
                         if (empty($t)) continue;
 
-                        $damageRecord = self::findDamageForPieceTag($variantId, $t);
+                        $damageRecord = (!$isSeries && !$isComp)
+                            ? self::findDamageForPieceTag($variantId, $t)
+                            : null;
                         if ($damageRecord) {
                             throw new RuntimeException("Piece QR '{$t}' is recorded as damaged in Damage #{$damageRecord['damage_number']}. Damaged products cannot be billed.");
                         }
                         
-                        if (!$isSeries) {
+                        if (!$isSeries && !$isComp) {
                             // Check if already sold in any past non-cancelled sale
                             $alreadySold = Database::fetchOne(
                                 "SELECT s.invoice_number FROM sale_items si 
@@ -2125,6 +2127,7 @@ class ShopService {
 
             $returnedProducts = ShopReturnedProduct::getForVariant($variantId, $shopId);
             $reissuedSourceTags = [];
+            $reissuedReturnedTags = [];
             foreach ($returnedProducts as $returnedProduct) {
                 $originalTag = strtoupper(trim((string)($returnedProduct['original_piece_tag'] ?? '')));
                 if ($originalTag !== '') {
@@ -2141,6 +2144,7 @@ class ShopService {
                 if ($returnedTag === '') {
                     continue;
                 }
+                $reissuedReturnedTags[$returnedTag] = true;
                 $savedTagsByKey[$returnedTag] = $returnedTag;
                 if (strtoupper((string)$returnedProduct['item_condition']) === 'GOOD') {
                     continue;
@@ -2177,7 +2181,8 @@ class ShopService {
                 $returnInfo = null;
                 $exchangeInfo = null;
 
-                if (!$isSingleQrProduct && isset($warehouseReturnedTagsMap[strtoupper((string)$tag)])) {
+                if ((!$isSingleQrProduct || isset($reissuedReturnedTags[strtoupper((string)$tag)]))
+                    && isset($warehouseReturnedTagsMap[strtoupper((string)$tag)])) {
                     $pieceStatus = 'Out of Stock';
                 } elseif (isset($damagedTagsMap[$tag])) {
                     $isDamaged = true;
@@ -4026,12 +4031,30 @@ class ShopService {
                 $inventoryItem = self::getShopInventoryItem($shopId, $variantId);
                 $eligibleStatuses = $stockState === 'DAMAGED' ? ['DAMAGED'] : ['IN STOCK', 'AVAILABLE'];
                 $eligibleTags = [];
+                $goodPrintedReturnedTags = [];
+                if ($stockState === 'AVAILABLE' && $allowsMultiple) {
+                    foreach (ShopReturnedProduct::getForVariant($variantId, $shopId) as $returnedProduct) {
+                        if (!empty($returnedProduct['printed_at'])
+                            && strtoupper((string)($returnedProduct['item_condition'] ?? '')) === 'GOOD') {
+                            $returnedTag = strtoupper(trim((string)($returnedProduct['returned_tag'] ?? '')));
+                            if ($returnedTag !== '') {
+                                $goodPrintedReturnedTags[$returnedTag] = true;
+                            }
+                        }
+                    }
+                }
                 foreach (($inventoryItem['individual_pieces'] ?? []) as $piece) {
                     $pieceStatus = strtoupper((string)($piece['status'] ?? ''));
                     $isAvailableAggregatePoolTag = $allowsMultiple
                         && $stockState === 'AVAILABLE'
                         && in_array($pieceStatus, ['IN STOCK', 'AVAILABLE', 'DAMAGED'], true);
-                    if (!in_array($pieceStatus, $eligibleStatuses, true) && !$isAvailableAggregatePoolTag) {
+                    $isGoodReturnedAggregatePiece = $allowsMultiple
+                        && $stockState === 'AVAILABLE'
+                        && $pieceStatus === 'PARTIALLY DAMAGED'
+                        && isset($goodPrintedReturnedTags[strtoupper(trim((string)($piece['tag_code'] ?? '')))]);
+                    if (!in_array($pieceStatus, $eligibleStatuses, true)
+                        && !$isAvailableAggregatePoolTag
+                        && !$isGoodReturnedAggregatePiece) {
                         continue;
                     }
                     $tag = strtoupper(trim((string)($piece['tag_code'] ?? '')));

@@ -568,17 +568,19 @@ document.addEventListener('DOMContentLoaded', function() {
                         return;
                     }
 
-                    // 2. Check if this physical piece tag was already billed in a past invoice (bypass if SERIES)
+                    // Aggregate codes can be scanned repeatedly while available stock remains.
+                    const isComp = (variant.is_complementary == 1 || variant.category_type === 'COMPLEMENTARY');
                     const isSeries = (variant.is_series == 1 || variant.category_type === 'SERIES' || variant.qr_type === 'SERIES_BATCH' || parseInt(variant.pack_quantity) > 1);
-                    if (variant.already_sold_invoice && !isSeries) {
+                    const isAggregate = isSeries || isComp;
+                    if (variant.already_sold_invoice && !isAggregate) {
                         playDuplicateAlert();
                         scanStatus.innerHTML = `<i class="bi bi-exclamation-triangle-fill text-danger me-1"></i> <strong class="text-danger">ALREADY SOLD:</strong> Piece Tag <code>${escapeHtml(variant.scanned_piece_tag || code)}</code> was already sold in Invoice #<strong>${escapeHtml(variant.already_sold_invoice)}</strong>! Cannot bill again.`;
                         scanStatus.className = 'text-danger fw-bold';
                         return;
                     }
 
-                    // 3. Check if this unique piece tag is ALREADY in the current active cart (bypass if SERIES)
-                    if (variant.scanned_piece_tag && scannedPieceTags.has(variant.scanned_piece_tag) && !isSeries) {
+                    // Only unique individual piece tags are blocked when scanned twice.
+                    if (variant.scanned_piece_tag && scannedPieceTags.has(variant.scanned_piece_tag) && !isAggregate) {
                         playDuplicateAlert();
                         scanStatus.innerHTML = `<i class="bi bi-shield-slash-fill text-warning me-1"></i> <strong class="text-dark">DUPLICATE SCAN BLOCKED:</strong> Piece Tag <code class="text-danger fw-bold">${escapeHtml(variant.scanned_piece_tag)}</code> is already in the bill! Each physical garment has a unique serial QR and can only be scanned once.`;
                         scanStatus.className = 'bg-warning-subtle text-dark border border-warning p-2 rounded-3 small fw-bold d-block mt-1';
@@ -626,7 +628,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const isComp = (variant.is_complementary == 1 || variant.category_type === 'COMPLEMENTARY');
         const isSeries = (variant.is_series == 1 || variant.category_type === 'SERIES' || variant.qr_type === 'SERIES_BATCH' || parseInt(variant.pack_quantity) > 1);
         const pieceTag = variant.scanned_piece_tag || null;
-        if (pieceTag && !isSeries) {
+        if (pieceTag && !isSeries && !isComp) {
             scannedPieceTags.add(pieceTag);
         }
 
