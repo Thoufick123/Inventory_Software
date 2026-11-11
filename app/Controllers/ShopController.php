@@ -1898,20 +1898,6 @@ class ShopController {
                     continue;
                 }
 
-                $damageRecord = $this->findShopDamageForPieceTag(
-                    $shopId,
-                    (int)$saleItem['variant_id'],
-                    $matchedTagCode
-                );
-                if ($damageRecord) {
-                    Response::jsonError(
-                        "Piece tag '{$matchedTagCode}' is allocated to Damage Management"
-                        . (!empty($damageRecord['damage_number']) ? " ({$damageRecord['damage_number']})" : '')
-                        . ' and cannot be returned or exchanged.'
-                    );
-                    return;
-                }
-
                 $returnedQty = Database::fetchOne(
                     "SELECT COALESCE(SUM(quantity), 0) as returned_quantity
                      FROM return_items WHERE sale_item_id = ?",
@@ -2167,18 +2153,6 @@ class ShopController {
                     $pieceTag = trim((string)$pieceTag, " \t\n\r\0\x0B\"'");
                     if ($pieceTag === '' || !isset($savedBilledTags[strtoupper($pieceTag)])) {
                         throw new RuntimeException("Piece tag '{$pieceTag}' is not billed on invoice line {$saleItemId}.");
-                    }
-                    $damageRecord = $this->findShopDamageForPieceTag(
-                        $shopId,
-                        (int)$saleItem['variant_id'],
-                        (string)$pieceTag
-                    );
-                    if ($damageRecord) {
-                        throw new RuntimeException(
-                            "Piece tag '{$pieceTag}' is allocated to Damage Management"
-                            . (!empty($damageRecord['damage_number']) ? " ({$damageRecord['damage_number']})" : '')
-                            . ' and cannot be returned or exchanged.'
-                        );
                     }
                 }
                 $item['piece_tags'] = array_values(array_unique(array_map(
@@ -3452,13 +3426,25 @@ class ShopController {
 
         $categories = [];
         $pieceDetails = [];
+        $goodPrintedReturnedTagsByVariant = [];
         foreach ($inventory as &$item) {
             $item['image'] = !empty($item['variant_image']) ? $item['variant_image'] : ($item['product_image'] ?? null);
             $vid = (int)$item['variant_id'];
             if (!array_key_exists($vid, $pieceDetails)) {
                 $pieceDetails[$vid] = ShopService::getShopInventoryItem($shopId, $vid);
+                $goodPrintedReturnedTagsByVariant[$vid] = [];
+                foreach (ShopReturnedProduct::getForVariant($vid, $shopId) as $returnedProduct) {
+                    if (!empty($returnedProduct['printed_at'])
+                        && strtoupper((string)($returnedProduct['item_condition'] ?? '')) === 'GOOD') {
+                        $returnedTag = strtoupper(trim((string)($returnedProduct['returned_tag'] ?? '')));
+                        if ($returnedTag !== '') {
+                            $goodPrintedReturnedTagsByVariant[$vid][$returnedTag] = true;
+                        }
+                    }
+                }
             }
             $pieces = $pieceDetails[$vid]['individual_pieces'] ?? [];
+            $goodPrintedReturnedTags = $goodPrintedReturnedTagsByVariant[$vid];
             $item['piece_tags'] = [];
             $item['damaged_piece_tags'] = [];
             foreach ($pieces as $piece) {
@@ -3466,9 +3452,11 @@ class ShopController {
                 if ($tag === '') {
                     continue;
                 }
-                if (strtoupper((string)($piece['status'] ?? '')) === 'IN STOCK') {
+                $pieceStatus = strtoupper(trim((string)($piece['status'] ?? '')));
+                if ($pieceStatus === 'IN STOCK'
+                    || ($pieceStatus === 'PARTIALLY DAMAGED' && isset($goodPrintedReturnedTags[strtoupper($tag)]))) {
                     $item['piece_tags'][] = $tag;
-                } elseif (strtoupper((string)($piece['status'] ?? '')) === 'DAMAGED') {
+                } elseif ($pieceStatus === 'DAMAGED') {
                     $item['damaged_piece_tags'][] = $tag;
                 }
             }
@@ -4037,16 +4025,19 @@ class ShopController {
                         throw new RuntimeException("Piece tag '{$tagCode}' is already included in this damage submission.");
                     }
                     $processedTags[$normalizedTag] = true;
-                } elseif ($tagCode !== '' && !in_array(
-                    strtoupper($tagCode),
-                    array_map('strtoupper', array_filter([
+                } elseif ($isAggregate && $tagCode !== '') {
+                    $aggregateCodes = array_map('strtoupper', array_filter([
                         trim((string)($productType['sku'] ?? '')),
                         trim((string)($productType['qr_code'] ?? '')),
                         trim((string)($productType['product_code'] ?? '')),
-                    ])),
-                    true
-                )) {
-                    throw new RuntimeException('Series and complementary stock must be selected by their product SKU or QR code.');
+                    ]));
+                    $isRegisteredProductCode = in_array(strtoupper($tagCode), $aggregateCodes, true);
+                    $pieceStatus = $isRegisteredProductCode
+                        ? null
+                        : $this->getShopPieceStatus($variantId, $shopId, $tagCode);
+                    if (!$isRegisteredProductCode && !in_array($pieceStatus, ['IN STOCK', 'PARTIALLY DAMAGED'], true)) {
+                        throw new RuntimeException('Scan the product SKU, QR code, or a currently available piece tag for this series or complementary product.');
+                    }
                 }
 
                 $processedQtyByVariant[$variantId] = $previouslyQueuedQty + $qty;
@@ -4351,6 +4342,7 @@ class ShopController {
                        LEFT JOIN warehouse_categories wc ON COALESCE(p.warehouse_category_id, wsc.category_id, wssc_parent.category_id) = wc.id";
 
         $matchedTagCode = $extractedTag;
+        $matchedReturnedProduct = null;
 
         foreach ($candidateCodes as $candidateCode) {
             $candidateCode = trim((string)$candidateCode);
@@ -4378,6 +4370,7 @@ class ShopController {
                 exit;
             }
             $matchedTagCode = $candidateCode;
+            $matchedReturnedProduct = $returnedProduct;
             break;
         }
 
@@ -4672,6 +4665,17 @@ class ShopController {
                     $shopId,
                     $matchedTagCode
                 );
+                if ($pieceStatus !== $expectedStatus
+                    && $expectedStatus === 'IN STOCK'
+                    && $matchedReturnedProduct
+                    && strtoupper((string)($matchedReturnedProduct['item_condition'] ?? '')) === 'GOOD'
+                    && !empty($matchedReturnedProduct['printed_at'])
+                    && (float)($foundVariant['available_qty'] ?? 0) > 0
+                    && !$this->isShopPieceSold((int)$foundVariant['id'], $shopId, $matchedTagCode)
+                    && !$this->isShopPieceActivelyDamaged((int)$foundVariant['id'], $shopId, $matchedTagCode)
+                    && in_array($pieceStatus, [null, '', 'RETURNED - QR REISSUED', 'PARTIALLY DAMAGED'], true)) {
+                    $pieceStatus = 'IN STOCK';
+                }
                 if ($pieceStatus !== $expectedStatus) {
                     echo json_encode([
                         'success' => false,
