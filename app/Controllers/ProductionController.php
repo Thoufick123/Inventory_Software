@@ -303,6 +303,29 @@ class ProductionController {
         $cleanPhone = preg_replace('/\D/', '', $phone);
         if ($cleanPhone !== '') {
             $phone = substr($cleanPhone, 0, 15);
+            $dupPhone = Database::fetchOne(
+                "SELECT id, name, company FROM sellers WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') LIKE ? AND (is_active = 1 OR is_active IS NULL)",
+                ['%' . substr($cleanPhone, -10)]
+            );
+            if ($dupPhone) {
+                $dupName = !empty($dupPhone['company']) ? $dupPhone['company'] . ' (' . $dupPhone['name'] . ')' : $dupPhone['name'];
+                Session::flash('error', "Phone number is already registered to material supplier '{$dupName}'. Duplicate phone is not allowed.");
+                Response::back();
+                return;
+            }
+        }
+
+        if ($gstNumber !== '') {
+            $dupGst = Database::fetchOne(
+                "SELECT id, name, company FROM sellers WHERE UPPER(gst_number) = ? AND (is_active = 1 OR is_active IS NULL)",
+                [$gstNumber]
+            );
+            if ($dupGst) {
+                $dupName = !empty($dupGst['company']) ? $dupGst['company'] . ' (' . $dupGst['name'] . ')' : $dupGst['name'];
+                Session::flash('error', "GSTIN is already registered to material supplier '{$dupName}'. Duplicate GSTIN is not allowed.");
+                Response::back();
+                return;
+            }
         }
 
         $allIndianStateNames = ['TAMIL NADU', 'ANDHRA PRADESH', 'KARNATAKA', 'KERALA', 'MAHARASHTRA', 'GUJARAT', 'TELANGANA', 'DELHI', 'HARYANA', 'MADHYA PRADESH', 'PUNJAB', 'RAJASTHAN', 'UTTAR PRADESH', 'WEST BENGAL', 'ODISHA', 'BIHAR', 'ASSAM', 'GOA'];
@@ -364,6 +387,29 @@ class ProductionController {
         $cleanPhone = preg_replace('/\D/', '', $phone);
         if ($cleanPhone !== '') {
             $phone = substr($cleanPhone, 0, 15);
+            $dupPhone = Database::fetchOne(
+                "SELECT id, name, company FROM sellers WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') LIKE ? AND (is_active = 1 OR is_active IS NULL) AND id != ?",
+                ['%' . substr($cleanPhone, -10), $sellerId]
+            );
+            if ($dupPhone) {
+                $dupName = !empty($dupPhone['company']) ? $dupPhone['company'] . ' (' . $dupPhone['name'] . ')' : $dupPhone['name'];
+                Session::flash('error', "Phone number is already registered to material supplier '{$dupName}'. Duplicate phone is not allowed.");
+                Response::back();
+                return;
+            }
+        }
+
+        if ($gstNumber !== '') {
+            $dupGst = Database::fetchOne(
+                "SELECT id, name, company FROM sellers WHERE UPPER(gst_number) = ? AND (is_active = 1 OR is_active IS NULL) AND id != ?",
+                [$gstNumber, $sellerId]
+            );
+            if ($dupGst) {
+                $dupName = !empty($dupGst['company']) ? $dupGst['company'] . ' (' . $dupGst['name'] . ')' : $dupGst['name'];
+                Session::flash('error', "GSTIN is already registered to material supplier '{$dupName}'. Duplicate GSTIN is not allowed.");
+                Response::back();
+                return;
+            }
         }
 
         $allIndianStateNames = ['TAMIL NADU', 'ANDHRA PRADESH', 'KARNATAKA', 'KERALA', 'MAHARASHTRA', 'GUJARAT', 'TELANGANA', 'DELHI', 'HARYANA', 'MADHYA PRADESH', 'PUNJAB', 'RAJASTHAN', 'UTTAR PRADESH', 'WEST BENGAL', 'ODISHA', 'BIHAR', 'ASSAM', 'GOA'];
@@ -503,7 +549,14 @@ class ProductionController {
     }
 
     public function deleteSeller(string $id): void {
+        $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
+                  || (isset($_SERVER['HTTP_ACCEPT']) && str_contains($_SERVER['HTTP_ACCEPT'], 'application/json'));
+
         if (!CSRF::validateRequest()) {
+            if ($isAjax) {
+                Response::json(['success' => false, 'message' => 'Invalid security token. Please try again.'], 403);
+                return;
+            }
             Session::flash('error', 'Invalid security token. Please try again.');
             Response::back();
             return;
@@ -511,6 +564,10 @@ class ProductionController {
 
         $seller = Database::fetchOne("SELECT * FROM sellers WHERE id = ?", [(int)$id]);
         if (!$seller) {
+            if ($isAjax) {
+                Response::json(['success' => false, 'message' => 'Supplier not found.'], 404);
+                return;
+            }
             Session::flash('error', 'Supplier not found.');
             Response::redirect(url('production/sellers'));
             return;
@@ -545,12 +602,17 @@ class ProductionController {
             try {
                 Database::execute("DELETE FROM seller_rolls WHERE seller_id = ?", [(int)$id]);
                 Database::execute("DELETE FROM sellers WHERE id = ?", [(int)$id]);
-            } catch (Throwable $e) {
+            } catch (\Throwable $e) {
                 Database::execute("UPDATE sellers SET is_active = 0, updated_at = NOW() WHERE id = ?", [(int)$id]);
             }
         }
 
         AuditService::log('production', 'DELETE', 'sellers', (int)$id, $delSnapshot, null);
+
+        if ($isAjax) {
+            Response::json(['success' => true, 'message' => "Supplier '{$seller['name']}' deleted successfully."]);
+            return;
+        }
 
         Session::flash('success', "Supplier '{$seller['name']}' deleted successfully.");
         Response::redirect(url('production/sellers'));
@@ -13754,7 +13816,7 @@ class ProductionController {
                 return;
             }
 
-            $sql = "SELECT id, name, company FROM sellers WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') LIKE ?";
+            $sql = "SELECT id, name, company FROM sellers WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') LIKE ? AND (is_active = 1 OR is_active IS NULL)";
             $params = ['%' . $clean];
             if ($exceptId !== null) {
                 $sql .= " AND id != ?";
@@ -13780,7 +13842,7 @@ class ProductionController {
                 Response::json(['valid' => false, 'available' => false, 'message' => 'Invalid GSTIN format (15 characters alphanumeric).']);
                 return;
             }
-            $sql = "SELECT id, name, company FROM sellers WHERE UPPER(gst_number) = ?";
+            $sql = "SELECT id, name, company FROM sellers WHERE UPPER(gst_number) = ? AND (is_active = 1 OR is_active IS NULL)";
             $params = [$gst];
             if ($exceptId !== null) {
                 $sql .= " AND id != ?";
@@ -13806,7 +13868,7 @@ class ProductionController {
                 return;
             }
             $col = ($field === 'company') ? 'company' : 'name';
-            $sql = "SELECT id, name, company FROM sellers WHERE LOWER({$col}) = LOWER(?)";
+            $sql = "SELECT id, name, company FROM sellers WHERE LOWER({$col}) = LOWER(?) AND (is_active = 1 OR is_active IS NULL)";
             $params = [$value];
             if ($exceptId !== null) {
                 $sql .= " AND id != ?";
