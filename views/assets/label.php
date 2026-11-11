@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Asset QR Sticker - <?= e($asset['asset_code']) ?></title>
+    <link href="<?= asset('css/bootstrap.min.css') ?>" rel="stylesheet">
+    <link href="<?= asset('css/bootstrap-icons.min.css') ?>" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <style>
@@ -119,7 +121,7 @@
 
 <div class="label-card">
     <div class="qr-side">
-        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=<?= urlencode($asset['barcode_qr']) ?>" alt="QR Code">
+        <div id="qr_canvas" style="width: 19mm; height: 19mm; margin: 0 auto; display: flex; align-items: center; justify-content: center;"></div>
     </div>
     <div class="info-side">
         <div class="brand-header">GRM APPARELS</div>
@@ -131,6 +133,22 @@
         <?php endif; ?>
     </div>
 </div>
+
+<script src="<?= asset('js/qrcode.min.js') ?>"></script>
+<script>
+    try {
+        new QRCode(document.getElementById("qr_canvas"), {
+            text: <?= json_encode($asset['barcode_qr'] ?? $asset['asset_code']) ?>,
+            width: 72,
+            height: 72,
+            colorDark : "#000000",
+            colorLight : "#ffffff",
+            correctLevel : QRCode.CorrectLevel.M
+        });
+    } catch (e) {
+        document.getElementById("qr_canvas").innerHTML = '<img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=<?= urlencode($asset['barcode_qr'] ?? $asset['asset_code']) ?>" alt="QR Code" style="width:19mm;height:19mm;display:block;">';
+    }
+</script>
 
 </body>
 </html>
