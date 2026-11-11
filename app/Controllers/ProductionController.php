@@ -6549,16 +6549,48 @@ class ProductionController {
         $parsedColors = [];
         $sellerName = '';
 
-        if ($rollId) {
-            $ppr = Database::fetchOne(
-                "SELECT ppr.*, sr.roll_number, sr.color as sr_color, sr.design_name as sr_design,
-                        s.name as seller_name, s.company as seller_company
-                 FROM seller_rolls sr
-                 LEFT JOIN sellers s ON sr.seller_id = s.id
-                 LEFT JOIN production_program_rolls ppr ON (ppr.seller_roll_id = sr.id" . ($programId ? " AND ppr.production_program_id = " . (int)$programId : "") . ")
-                 WHERE sr.id = ? LIMIT 1",
-                [$rollId]
-            );
+        if ($rollId || $programId) {
+            $ppr = null;
+            if ($rollId) {
+                $ppr = Database::fetchOne(
+                    "SELECT ppr.*, 
+                            COALESCE(NULLIF(sr.roll_number, ''), CONCAT('ROLL #', ppr.id)) as roll_number,
+                            COALESCE(NULLIF(ppr.roll_color, ''), NULLIF(ppr.color, ''), sr.color) as sr_color,
+                            COALESCE(NULLIF(ppr.roll_design, ''), NULLIF(ppr.design_name, ''), sr.design_name) as sr_design,
+                            COALESCE(s.name, '') as seller_name, COALESCE(s.company, '') as seller_company
+                     FROM production_program_rolls ppr
+                     LEFT JOIN seller_rolls sr ON ppr.seller_roll_id = sr.id
+                     LEFT JOIN sellers s ON (ppr.seller_id = s.id OR sr.seller_id = s.id)
+                     WHERE (ppr.id = ? OR ppr.seller_roll_id = ?)" . ($programId ? " AND (ppr.production_program_id = " . (int)$programId . " OR ppr.program_id = " . (int)$programId . ")" : "") . "
+                     LIMIT 1",
+                    [$rollId, $rollId]
+                );
+            }
+            if (!$ppr && $rollId) {
+                $ppr = Database::fetchOne(
+                    "SELECT sr.*, sr.roll_number, sr.color as sr_color, sr.design_name as sr_design,
+                            s.name as seller_name, s.company as seller_company
+                     FROM seller_rolls sr
+                     LEFT JOIN sellers s ON sr.seller_id = s.id
+                     WHERE sr.id = ? LIMIT 1",
+                    [$rollId]
+                );
+            }
+            if (!$ppr && $programId) {
+                $ppr = Database::fetchOne(
+                    "SELECT ppr.*, 
+                            COALESCE(NULLIF(sr.roll_number, ''), CONCAT('ROLL #', ppr.id)) as roll_number,
+                            COALESCE(NULLIF(ppr.roll_color, ''), NULLIF(ppr.color, ''), sr.color) as sr_color,
+                            COALESCE(NULLIF(ppr.roll_design, ''), NULLIF(ppr.design_name, ''), sr.design_name) as sr_design,
+                            COALESCE(s.name, '') as seller_name, COALESCE(s.company, '') as seller_company
+                     FROM production_program_rolls ppr
+                     LEFT JOIN seller_rolls sr ON ppr.seller_roll_id = sr.id
+                     LEFT JOIN sellers s ON (ppr.seller_id = s.id OR sr.seller_id = s.id)
+                     WHERE (ppr.production_program_id = ? OR ppr.program_id = ?)
+                     LIMIT 1",
+                    [$programId, $programId]
+                );
+            }
             if ($ppr) {
                 if (!empty($ppr['attributes'])) {
                     $dec = is_string($ppr['attributes']) ? json_decode($ppr['attributes'], true) : $ppr['attributes'];
@@ -6576,6 +6608,19 @@ class ProductionController {
                     }
                 }
                 $sellerName = trim($ppr['seller_company'] ?: ($ppr['seller_name'] ?? ''));
+            }
+        }
+
+        if (empty($sellerName) && $programId) {
+            $prgSeller = Database::fetchOne(
+                "SELECT COALESCE(s.company, s.name, '') as seller_name
+                 FROM production_programs pp
+                 LEFT JOIN sellers s ON pp.seller_id = s.id
+                 WHERE pp.id = ?",
+                [$programId]
+            );
+            if ($prgSeller && !empty($prgSeller['seller_name'])) {
+                $sellerName = $prgSeller['seller_name'];
             }
         }
 
