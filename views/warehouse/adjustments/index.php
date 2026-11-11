@@ -195,7 +195,7 @@
                         <select name="variant_id" id="adjustmentVariantSelect" class="form-select" required>
                             <option value="">Select Variant</option>
                             <?php foreach ($variants as $v): ?>
-                                <option value="<?= $v['id'] ?>">
+                                <option value="<?= $v['id'] ?>" <?= (int)$v['id'] === (int)($selectedVariantId ?? 0) ? 'selected' : '' ?>>
                                     <?= e($v['sku']) ?> — <?= e($v['product_name']) ?> (<?= e($v['size_name']) ?>, <?= e($v['color_name']) ?>)
                                 </option>
                             <?php endforeach; ?>
@@ -388,4 +388,14 @@
         </form>
     </div>
 </div>
+<?php if (!empty($selectedVariantId) && hasPermission('stock', 'adjust')): ?>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const modal = document.getElementById('newAdjustmentModal');
+    if (modal) {
+        new bootstrap.Modal(modal).show();
+    }
+});
+</script>
+<?php endif; ?>
 <?php endif; ?>

@@ -2735,13 +2735,7 @@ class WarehouseController {
             "SELECT pv.id, pv.sku, pv.qr_code as barcode, pv.mrp, pv.selling_price, pv.purchase_price,
                     pv.qr_type, pv.pack_quantity, pv.series_start_code, pv.series_end_code,
                     GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary, p.is_complementary as prod_is_comp,
-                    CASE
-                        WHEN GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) = 1 THEN 'COMPLEMENTARY'
-                        WHEN UPPER(COALESCE(wc.category_type, '')) = 'COMPLEMENTARY' THEN 'COMPLEMENTARY'
-                        WHEN UPPER(COALESCE(pv.qr_type, '')) = 'SERIES_BATCH' THEN 'SERIES'
-                        WHEN UPPER(COALESCE(wc.category_type, '')) IN ('SERIES', 'NORMAL') THEN UPPER(wc.category_type)
-                        ELSE 'NORMAL'
-                    END as category_type,
+                    UPPER(COALESCE(wc.category_type, 'NORMAL')) as category_type,
                     p.id as product_id, p.name as product_name, p.code as product_code, p.category_id, p.subcategory_id, p.sub_subcategory_id,
                     sz.name as size_name, c.name as color_name,
                     COALESCE(wc.name, cat.name) as category_name, subcat.name as subcategory_name, subsub.name as sub_subcategory_name,
@@ -6527,6 +6521,14 @@ class WarehouseController {
              WHERE pv.is_active = 1
              ORDER BY p.name ASC, pv.sku ASC"
         );
+        $requestedVariantId = (int)($_GET['variant_id'] ?? 0);
+        $selectedVariantId = 0;
+        foreach ($variants as $variant) {
+            if ((int)$variant['id'] === $requestedVariantId) {
+                $selectedVariantId = $requestedVariantId;
+                break;
+            }
+        }
 
         Response::view('warehouse.adjustments.index', [
             'pageTitle'          => 'Stock Adjustments & Audits',
@@ -6536,6 +6538,7 @@ class WarehouseController {
             'warehouses'         => $warehouses,
             'variants'           => $variants,
             'warehouseId'        => $warehouseId,
+            'selectedVariantId'   => $selectedVariantId,
             'scopedWarehouseId'  => $scopedWarehouseId,
             'status'             => $status,
             'type'               => $type,
@@ -6793,6 +6796,25 @@ class WarehouseController {
                 Response::redirect(url('warehouse/allocation/create'));
                 return;
             }
+
+            $allocationVariant = Database::fetchOne(
+                "SELECT pv.*, p.name as product_name,
+                        UPPER(COALESCE(wc.category_type, 'NORMAL')) as category_type
+                 FROM product_variants pv
+                 JOIN products p ON p.id = pv.product_id
+                 LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+                 WHERE pv.id = ?",
+                [$vIdInt]
+            );
+            if ($allocationVariant && strtoupper($allocationVariant['category_type']) === 'NORMAL') {
+                $eligiblePieces = $this->generateVariantQrPieces($allocationVariant, PHP_INT_MAX, $warehouseId, true);
+                if ($totalReqQty > count($eligiblePieces)) {
+                    $skuName = $allocationVariant['sku'] ?? "Variant #$vIdInt";
+                    Session::flash('error', "Cannot allocate SKU {$skuName}: requested quantity ({$totalReqQty}) exceeds the count of available, inwarded, undamaged, unbilled pieces (" . count($eligiblePieces) . ').');
+                    Response::redirect(url('warehouse/allocation/create'));
+                    return;
+                }
+            }
         }
 
         // Server-side validation 2: prevent double-allocating piece QR tags (both across system and within this submission)
@@ -6812,7 +6834,7 @@ class WarehouseController {
                 );
                 $eligibleQrCodes = [];
                 if ($allocationVariant) {
-                    foreach ($this->generateVariantQrPieces($allocationVariant, PHP_INT_MAX, $warehouseId, false) as $piece) {
+                    foreach ($this->generateVariantQrPieces($allocationVariant, PHP_INT_MAX, $warehouseId, true) as $piece) {
                         $eligibleQrCodes[strtoupper(trim((string)$piece['qr_code']))] = true;
                     }
                 }
@@ -7010,7 +7032,7 @@ class WarehouseController {
             $reservedStock  = (float)($res['qty'] ?? 0);
             $totalStock     = $availableStock + $reservedStock;
 
-            $qrPieces = $this->generateVariantQrPieces($variant, (int)$availableStock, $warehouseId > 0 ? $warehouseId : null, false);
+            $qrPieces = $this->generateVariantQrPieces($variant, (int)$availableStock, $warehouseId > 0 ? $warehouseId : null, true);
 
             Response::json([
                 'success'              => true,
@@ -7036,7 +7058,7 @@ class WarehouseController {
         }
 
         if ($warehouseId > 0) {
-            $sql = "SELECT pv.id, pv.sku, pv.qr_type, pv.pack_quantity,
+            $sql = "SELECT pv.id, pv.sku, pv.qr_type, pv.pack_quantity, pv.series_start_code, pv.series_end_code,
                            GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
                            UPPER(COALESCE(wc.category_type, 'NORMAL')) as category_type,
                            p.name as product_name, p.category_id, p.subcategory_id, p.sub_subcategory_id,
@@ -7055,7 +7077,7 @@ class WarehouseController {
                     WHERE pv.is_active = 1";
             $params = [$warehouseId, $warehouseId];
         } else {
-            $sql = "SELECT pv.id, pv.sku, pv.qr_type, pv.pack_quantity,
+            $sql = "SELECT pv.id, pv.sku, pv.qr_type, pv.pack_quantity, pv.series_start_code, pv.series_end_code,
                            GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
                            UPPER(COALESCE(wc.category_type, 'NORMAL')) as category_type,
                            p.name as product_name, p.category_id, p.subcategory_id, p.sub_subcategory_id,
@@ -7110,7 +7132,7 @@ class WarehouseController {
         }
 
         if (
-            in_array(strtoupper((string)($variant['category_type'] ?? 'NORMAL')), ['SERIES', 'COMPLEMENTARY'], true)
+            in_array(strtoupper((string)($variant['category_type'] ?? $variant['cat_type'] ?? 'NORMAL')), ['SERIES', 'COMPLEMENTARY'], true)
             && !empty($variant['series_start_code'])
             && !empty($variant['series_end_code'])
         ) {
@@ -7121,58 +7143,48 @@ class WarehouseController {
         return false;
     }
 
-    private function getAllocationBilledQrCodeSet(int $variantId, ?int $warehouseId): array {
-        $sql = "SELECT pi.batch_lot_no, pi.notes
+    private function getAllocationBilledQrCodeSet(int $variantId): array {
+        $sql = "SELECT si.scanned_qr_codes, si.qr_code, NULL as billed_notes
+                FROM sale_items si
+                JOIN sales s ON s.id = si.sale_id
+                WHERE si.variant_id = ?
+                  AND s.status NOT IN ('CANCELLED', 'DRAFT', 'RETURNED')
+                UNION ALL
+                SELECT pi.batch_lot_no as scanned_qr_codes, NULL as qr_code, pi.notes as billed_notes
                 FROM purchase_items pi
                 JOIN purchase_orders po ON po.id = pi.purchase_order_id
                 WHERE pi.variant_id = ? AND po.customer_id IS NOT NULL
-                  AND po.status NOT IN ('CANCELLED', 'VOID')";
-        $params = [$variantId];
-        if ($warehouseId !== null && $warehouseId > 0) {
-            $sql .= " AND po.warehouse_id = ?";
-            $params[] = $warehouseId;
-        }
-
+                  AND po.status NOT IN ('CANCELLED', 'VOID', 'DRAFT')";
         $billedCodes = [];
-        foreach (Database::fetchAll($sql, $params) as $row) {
-            foreach (['batch_lot_no', 'notes'] as $field) {
-                $value = trim((string)($row[$field] ?? ''));
-                if ($value === '') {
-                    continue;
-                }
+        foreach (Database::fetchAll($sql, [$variantId, $variantId]) as $row) {
+            $codes = [];
+            $singleCode = trim((string)($row['qr_code'] ?? ''));
+            if ($singleCode !== '') {
+                $codes[] = $singleCode;
+            }
 
-                $decoded = json_decode($value, true);
-                $values = is_array($decoded) ? $decoded : preg_split('/[,;\s|]+/', $value);
-                foreach ($values as $entry) {
-                    if (is_scalar($entry)) {
-                        $code = strtoupper(trim((string)$entry));
-                        if ($code !== '') {
-                            $billedCodes[$code] = true;
-                        }
+            $storedCodes = trim((string)($row['scanned_qr_codes'] ?? ''));
+            if ($storedCodes !== '') {
+                $decodedCodes = json_decode($storedCodes, true);
+                if (is_array($decodedCodes)) {
+                    foreach ($decodedCodes as $entry) {
+                        $codes[] = is_array($entry)
+                            ? (string)($entry['tag_code'] ?? $entry['qr_code'] ?? $entry['tag'] ?? $entry['code'] ?? '')
+                            : (is_scalar($entry) ? (string)$entry : '');
                     }
+                } else {
+                    $codes = array_merge($codes, preg_split('/[,|]/', $storedCodes) ?: []);
                 }
             }
-        }
-
-        if ($billedCodes) {
-            $returnSql = "SELECT ri.reason
-                          FROM return_items ri
-                          JOIN `returns` r ON r.id = ri.return_id
-                          WHERE ri.variant_id = ? AND ri.item_condition = 'GOOD'
-                            AND ri.destination = 'AVAILABLE'
-                            AND r.status NOT IN ('CANCELLED', 'REJECTED')";
-            $returnParams = [$variantId];
-            if ($warehouseId !== null && $warehouseId > 0) {
-                $returnSql .= " AND r.warehouse_id = ?";
-                $returnParams[] = $warehouseId;
+            $billedNotes = trim((string)($row['billed_notes'] ?? ''));
+            if ($billedNotes !== '') {
+                $codes = array_merge($codes, preg_split('/[,;|\s]+/', $billedNotes) ?: []);
             }
-            $restockedReasons = Database::fetchAll($returnSql, $returnParams);
-            foreach ($billedCodes as $code => $_) {
-                foreach ($restockedReasons as $returnRow) {
-                    if (stripos((string)($returnRow['reason'] ?? ''), $code) !== false) {
-                        unset($billedCodes[$code]);
-                        break;
-                    }
+
+            foreach ($codes as $code) {
+                $code = strtoupper(trim((string)$code, " \t\n\r\0\x0B\"'"));
+                if ($code !== '') {
+                    $billedCodes[$code] = true;
                 }
             }
         }
@@ -7221,7 +7233,7 @@ class WarehouseController {
             ]];
 
             if ($allocationOnly) {
-                $unavailableCodes = $removedQrCodeSet + $this->getAllocationBilledQrCodeSet((int)($variant['id'] ?? 0), $warehouseId);
+                $unavailableCodes = $removedQrCodeSet + $this->getAllocationBilledQrCodeSet((int)($variant['id'] ?? 0));
                 $variantId = (int)($variant['id'] ?? 0);
                 foreach (Database::fetchAll(
                     "SELECT tag_code FROM warehouse_damages
@@ -7242,7 +7254,7 @@ class WarehouseController {
                      FROM production_batch_items pbi
                      JOIN production_batches pb ON pb.id = pbi.production_batch_id
                      LEFT JOIN production_outwards po ON (pb.production_outward_id = po.id OR po.production_batch_id = pb.id)
-                     WHERE pbi.variant_id = ? AND pb.status IN ('RECEIVED', 'DISPATCHED')
+                     WHERE pbi.variant_id = ? AND pb.status = 'RECEIVED'
                        AND (? IS NULL OR COALESCE(po.warehouse_id, pb.destination_warehouse_id) = ?)",
                     [$variantId, $warehouseId, $warehouseId]
                 );
@@ -7353,7 +7365,7 @@ class WarehouseController {
         $variantId = (int)($variant['id'] ?? 0);
         if ($variantId > 0) {
             if ($allocationOnly) {
-                foreach ($this->getAllocationBilledQrCodeSet($variantId, $warehouseId) as $code => $_) {
+                foreach ($this->getAllocationBilledQrCodeSet($variantId) as $code => $_) {
                     $unavailableQrCodes[$code] = true;
                 }
                 foreach (Database::fetchAll(
@@ -7413,12 +7425,13 @@ class WarehouseController {
                 }
             }
 
+            $batchStatusFilter = $allocationOnly ? "pb.status = 'RECEIVED'" : "pb.status IN ('RECEIVED', 'DISPATCHED')";
             $batchPieceRows = Database::fetchAll(
                 "SELECT pbi.received_qr_codes, pbi.damaged_qr_codes, pbi.quantity, pbi.received_qty, pb.id as batch_id
                  FROM production_batch_items pbi
                  JOIN production_batches pb ON pb.id = pbi.production_batch_id
                  LEFT JOIN production_outwards po ON (pb.production_outward_id = po.id OR po.production_batch_id = pb.id)
-                 WHERE pbi.variant_id = ? AND pb.status IN ('RECEIVED', 'DISPATCHED')
+                 WHERE pbi.variant_id = ? AND {$batchStatusFilter}
                    AND (? IS NULL OR COALESCE(po.warehouse_id, pb.destination_warehouse_id) = ?)
                  ORDER BY pb.id ASC",
                 [$variantId, $warehouseId, $warehouseId]
@@ -7625,19 +7638,43 @@ class WarehouseController {
             if ($dmgCheck) {
                 // Check if this variant is a Series batch, Complementary pack, or Pack product with remaining available warehouse stock
                 $dmgVar = Database::fetchOne(
-                    "SELECT pv.id, pv.qr_type, pv.pack_quantity,
+                    "SELECT pv.id, pv.sku, pv.qr_code as barcode, pv.qr_type, pv.pack_quantity,
+                            pv.series_start_code, pv.series_end_code,
                             COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
-                            COALESCE(wc.category_type, 'NORMAL') as cat_type
+                            CASE
+                                WHEN GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) = 1 THEN 'COMPLEMENTARY'
+                                WHEN UPPER(COALESCE(wc.category_type, '')) = 'COMPLEMENTARY' THEN 'COMPLEMENTARY'
+                                WHEN UPPER(COALESCE(pv.qr_type, '')) = 'SERIES_BATCH' THEN 'SERIES'
+                                ELSE UPPER(COALESCE(wc.category_type, 'NORMAL'))
+                            END as cat_type
                      FROM product_variants pv 
                      JOIN products p ON pv.product_id = p.id 
                      LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
-                     LEFT JOIN categories cat ON p.category_id = cat.id
                      WHERE pv.id = ?",
                     [$dmgCheck['variant_id']]
                 );
                 $isMasterOrComp = $dmgVar && in_array(strtoupper($dmgVar['cat_type'] ?? ''), ['SERIES', 'COMPLEMENTARY'], true);
+                $isAggregateCode = $isMasterOrComp && $this->isAllocationVariantIdentifier($dmgVar, (string)$scannedPieceTag);
+                if (!$isAggregateCode && $isMasterOrComp) {
+                    $aggregateQr = Database::fetchOne(
+                        "SELECT id FROM warehouse_qr_codes
+                         WHERE variant_id = ? AND pack_quantity > 1
+                           AND UPPER(qr_code) = UPPER(?)
+                           AND inwarded_at IS NOT NULL
+                           AND (? <= 0 OR warehouse_id = ?)
+                         LIMIT 1",
+                        [(int)$dmgCheck['variant_id'], $scannedPieceTag, $warehouseId, $warehouseId]
+                    );
+                    $isAggregateCode = (bool)$aggregateQr;
+                }
 
-                if ($isMasterOrComp) {
+                $damagedTags = array_map(
+                    static fn(string $tag): string => strtoupper(trim($tag)),
+                    explode(',', (string)($dmgCheck['tag_code'] ?? ''))
+                );
+                $isScannedTagDamaged = in_array(strtoupper(trim($scannedPieceTag)), $damagedTags, true);
+
+                if ($isMasterOrComp && (!$isScannedTagDamaged || $isAggregateCode)) {
                     $availStockRow = Database::fetchOne(
                         "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
                          WHERE variant_id = ? AND location_type = 'WAREHOUSE' " . ($warehouseId > 0 ? "AND location_id = {$warehouseId}" : "") . " AND stock_state = 'AVAILABLE'",
@@ -8308,7 +8345,9 @@ class WarehouseController {
             exit;
         }
 
-        if ($warehouseId > 0 && $availableStock <= 0) {
+        $categoryType = strtoupper(trim((string)($variant['category_type'] ?? 'NORMAL')));
+        $isAggregateAllocation = in_array($categoryType, ['SERIES', 'COMPLEMENTARY'], true);
+        if ($availableStock <= 0) {
             echo json_encode([
                 'success'     => false,
                 'is_no_stock' => true,
@@ -8318,8 +8357,7 @@ class WarehouseController {
         }
 
         // Fetch/generate piece QR items for this variant
-        $categoryType = strtoupper(trim((string)($variant['category_type'] ?? 'NORMAL')));
-        $qrPieces = $this->generateVariantQrPieces($variant, (int)$availableStock, $warehouseId > 0 ? $warehouseId : null, false);
+        $qrPieces = $this->generateVariantQrPieces($variant, (int)$availableStock, $warehouseId > 0 ? $warehouseId : null, true);
         $tagExistsInPieces = false;
         $isKnownVariantCode = false;
         foreach (array_unique(array_merge([(string)$extractedTag], $candidateCodes)) as $candidateTag) {
@@ -8332,13 +8370,16 @@ class WarehouseController {
             }
         }
         if (!$tagExistsInPieces) {
-            foreach (array_unique(array_merge([(string)$extractedTag], $candidateCodes)) as $candidateTag) {
-                if ($this->isAllocationVariantIdentifier($variant, (string)$candidateTag)) {
-                    $extractedTag = (string)$candidateTag;
-                    $isKnownVariantCode = true;
-                    break;
-                }
-            }
+            $isKnownVariantCode = $this->isAllocationVariantIdentifier($variant, (string)$extractedTag);
+        }
+
+        if ($isAggregateAllocation && $isKnownVariantCode && !empty($parsedSeriesQty) && $parsedSeriesQty > $availableStock) {
+            echo json_encode([
+                'success' => false,
+                'is_no_stock' => true,
+                'message' => "Only {$availableStock} AVAILABLE pieces remain for this series/complementary product; the scanned code requests {$parsedSeriesQty}."
+            ]);
+            exit;
         }
 
         if (!$isKnownVariantCode && !$tagExistsInPieces) {

@@ -1378,6 +1378,41 @@ class WhatsappController {
             $variantId = (int)($item['variant_id'] ?? 0);
             $allocationGroups[$variantId][] = $item;
         }
+        foreach ($allocationGroups as $groupItems) {
+            if (count($groupItems) < 2) {
+                continue;
+            }
+            $groupKey = (string)$groupItems[0]['id'];
+            $groupStatuses = $pieceStatusesInput[$groupKey] ?? null;
+            if (is_string($groupStatuses)) {
+                $decodedStatuses = json_decode($groupStatuses, true);
+                $groupStatuses = is_array($decodedStatuses) ? $decodedStatuses : null;
+            }
+            if (!is_array($groupStatuses)) {
+                continue;
+            }
+
+            $groupCapacity = 0;
+            foreach ($groupItems as $groupItem) {
+                $groupCapacity += (int)($groupItem['dispatched_qty'] > 0
+                    ? $groupItem['dispatched_qty']
+                    : ($groupItem['requested_qty'] ?? 1));
+            }
+            if (count($groupStatuses) !== $groupCapacity) {
+                continue;
+            }
+
+            $statusOffset = 0;
+            foreach ($groupItems as $groupItem) {
+                $itemId = (string)$groupItem['id'];
+                $capacity = (int)($groupItem['dispatched_qty'] > 0
+                    ? $groupItem['dispatched_qty']
+                    : ($groupItem['requested_qty'] ?? 1));
+                $pieceStatusesInput[$itemId] = array_slice($groupStatuses, $statusOffset, $capacity);
+                $statusOffset += $capacity;
+            }
+        }
+
         $groupedQuantitiesByItemId = [];
         foreach ($allocationGroups as $groupItems) {
             if (!$groupItems) {
@@ -1553,14 +1588,22 @@ class WhatsappController {
                     $variantId = (int)$item['variant_id'];
                     if (!array_key_exists($variantId, $loggedDamageTagsByVariant)) {
                         $existingDamage = Database::fetchOne(
-                            "SELECT tag_code FROM channel_damages WHERE channel_id = ? AND allocation_id = ? AND variant_id = ? AND source_type = 'INWARD_TRANSIT' AND status = 'LOGGED' LIMIT 1",
+                            "SELECT cd.id, cd.quantity, cd.tag_code, cd.variant_id, cd.allocation_id, pv.sku
+                             FROM channel_damages cd
+                             JOIN product_variants pv ON pv.id = cd.variant_id
+                             WHERE cd.channel_id = ? AND cd.allocation_id = ? AND cd.variant_id = ?
+                               AND cd.source_type = 'INWARD_TRANSIT' AND cd.status = 'LOGGED'
+                             LIMIT 1",
                             [$channelId, $id, $variantId]
                         );
-                        $loggedDamageTagsByVariant[$variantId] = !empty($existingDamage['tag_code'])
-                            ? array_values(array_filter(array_map('trim', explode(',', (string)$existingDamage['tag_code']))))
+                        $loggedDamageTagsByVariant[$variantId] = $existingDamage
+                            ? array_map('strtoupper', ChannelDamage::resolvePieceTags($existingDamage))
                             : [];
                     }
-                    $newDamageTags = array_values(array_diff($damagedTags, $loggedDamageTagsByVariant[$variantId]));
+                    $newDamageTags = array_values(array_filter(
+                        $damagedTags,
+                        static fn(string $tag): bool => !in_array(strtoupper($tag), $loggedDamageTagsByVariant[$variantId], true)
+                    ));
                     $newDamageTags = array_slice($newDamageTags, 0, $deltaDmg);
                     ChannelDamage::logInwardDamage(
                         channelId: $channelId,
@@ -2398,9 +2441,10 @@ class WhatsappController {
 
         // 4. WhatsApp Damage History
         $damageHistory = Database::fetchAll(
-            "SELECT cd.*, u.full_name as reported_by_name,
+            "SELECT cd.*, pv.sku, u.full_name as reported_by_name,
                     wr.return_number as outward_batch_number, wr.status as outward_batch_status
              FROM channel_damages cd
+             JOIN product_variants pv ON pv.id = cd.variant_id
              LEFT JOIN users u ON cd.reported_by = u.id
              LEFT JOIN warehouse_returns wr ON cd.outward_batch_id = wr.id
              WHERE cd.channel_id IN ($chanIn) AND cd.variant_id = ?
@@ -4488,18 +4532,13 @@ class WhatsappController {
             }
 
             if (!empty($tCode)) {
-                $existingDamage = Database::fetchOne(
-                    "SELECT id, damage_number, channel_id, variant_id, quantity, status FROM channel_damages
-                     WHERE (tag_code = ? OR tag_code LIKE ? OR tag_code LIKE ? OR tag_code LIKE ?)
-                       AND status NOT IN ('REWORK_RETURNED_TO_STOCK', 'CANCELLED', 'RESOLVED')
-                     LIMIT 1",
-                    [$tCode, "{$tCode},%", "%,{$tCode}", "%,{$tCode},%"]
-                );
+                $existingDamage = ChannelDamage::findActiveByPieceTag($tCode, $chanIds, $vId);
                 if ($existingDamage) {
                     $sameDamageRecord = (int)$existingDamage['channel_id'] === $channelId
                         && (int)$existingDamage['variant_id'] === $vId
                         && (int)$existingDamage['quantity'] === $qty
-                        && strtoupper((string)$existingDamage['status']) === 'LOGGED';
+                        && strtoupper((string)$existingDamage['status']) === 'LOGGED'
+                        && strtoupper((string)($existingDamage['source_type'] ?? '')) !== 'INWARD_TRANSIT';
                     $stockMovementExists = Database::fetchOne(
                         "SELECT id FROM stock_transactions
                          WHERE variant_id = ? AND location_type = 'CHANNEL' AND location_id = ?
@@ -5184,13 +5223,7 @@ class WhatsappController {
             }
             // Restriction 1: Check if piece tag is already logged as damaged / quarantined
             if (!empty($matchedTagCode)) {
-                $existingDamage = Database::fetchOne(
-                    "SELECT damage_number, status, created_at FROM channel_damages 
-                     WHERE (tag_code = ? OR tag_code LIKE ? OR tag_code LIKE ? OR tag_code LIKE ?)
-                       AND status NOT IN ('REWORK_RETURNED_TO_STOCK', 'CANCELLED', 'RESOLVED')
-                     ORDER BY id DESC LIMIT 1",
-                    [$matchedTagCode, "{$matchedTagCode},%", "%,{$matchedTagCode}", "%,{$matchedTagCode},%"]
-                );
+                $existingDamage = ChannelDamage::findActiveByPieceTag($matchedTagCode, $chanIds, (int)$foundVariant['id']);
                 if ($existingDamage) {
                     echo json_encode([
                         'success' => false,
@@ -6524,24 +6557,19 @@ class WhatsappController {
         }
         // 5. Quarantined Damaged piece tags
         $damagedRows = Database::fetchAll(
-            "SELECT tag_code
-             FROM channel_damages
-             WHERE variant_id = ?
-               AND channel_id IN ($placeholders)
-               AND status NOT IN ('REPAIRED', 'RESTOCKED', 'RESOLVED')
-               AND tag_code IS NOT NULL AND tag_code != ''",
+            "SELECT cd.*, pv.sku
+             FROM channel_damages cd
+             JOIN product_variants pv ON pv.id = cd.variant_id
+             WHERE cd.variant_id = ?
+               AND cd.channel_id IN ($placeholders)
+               AND cd.status NOT IN ('REPAIRED', 'RESTOCKED', 'RESOLVED')
+               AND (cd.tag_code IS NOT NULL AND cd.tag_code != '' OR cd.allocation_id IS NOT NULL)",
             array_merge([$variantId], $chanIds)
         );
 
         $damagedTags = [];
         foreach ($damagedRows as $dr) {
-            $rawDamageTags = trim((string)($dr['tag_code'] ?? ''));
-            $decodedDamageTags = json_decode($rawDamageTags, true);
-            $recordedDamageTags = is_array($decodedDamageTags) ? $decodedDamageTags : explode(',', $rawDamageTags);
-            foreach ($recordedDamageTags as $t) {
-                if (is_array($t)) {
-                    $t = $t['tag_code'] ?? $t['qr_code'] ?? $t['tag'] ?? '';
-                }
+            foreach (ChannelDamage::resolvePieceTags($dr) as $t) {
                 $t = trim((string)$t);
                 if ($t && !in_array($t, $damagedTags, true)) {
                     $damagedTags[] = $t;

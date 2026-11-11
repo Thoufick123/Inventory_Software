@@ -56,11 +56,16 @@ $canDeleteCutting = hasPermission('cutting', 'delete');
                         <select name="program_id" id="programSelect" class="form-select form-select-lg border-primary" required onchange="handleProgramChange(this.value)">
                             <option value="">-- Choose Production Program --</option>
                             <?php foreach ($programs as $p): ?>
+                                <?php
+                                    $sellerDisplay = trim($p['seller_company'] ?: ($p['seller_name'] ?? ''));
+                                    $unitDisplay = !empty($p['unit_name']) ? $p['unit_name'] : 'No Unit';
+                                ?>
                                 <option value="<?= $p['id'] ?>" 
                                     <?= ($selectedProgram && $selectedProgram['id'] == $p['id']) ? 'selected' : '' ?>
                                     data-name="<?= e($p['name'] ?: ($p['product_name'] ?? '')) ?>"
-                                    data-number="<?= e($p['program_number']) ?>">
-                                    <?= e($p['program_number']) ?> — <?= e($p['name'] ?: ($p['product_name'] ?? 'Program')) ?> (<?= e(!empty($p['unit_name']) ? $p['unit_name'] : 'No Unit') ?>)
+                                    data-number="<?= e($p['program_number']) ?>"
+                                    data-seller="<?= e($sellerDisplay) ?>">
+                                    <?= e($p['program_number']) ?> — <?= e($p['name'] ?: ($p['product_name'] ?? 'Program')) ?> (<?= e($unitDisplay) ?><?= !empty($sellerDisplay) ? ' — ' . e($sellerDisplay) : '' ?>)
                                 </option>
                             <?php endforeach; ?>
                         </select>
@@ -98,8 +103,13 @@ $canDeleteCutting = hasPermission('cutting', 'delete');
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">Cutting Master / Operator</label>
-                        <select name="operator_id" class="form-select">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <label class="form-label fw-semibold mb-0">Cutting Master / Operator</label>
+                            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 fw-semibold" onclick="openAddOperatorModal()">
+                                <i class="bi bi-plus-circle me-1"></i>+ Add Cutting Master
+                            </button>
+                        </div>
+                        <select name="operator_id" id="operatorSelect" class="form-select">
                             <option value="">Select Operator</option>
                             <?php foreach ($users as $u): ?>
                                 <option value="<?= $u['id'] ?>"><?= e($u['full_name']) ?></option>
@@ -273,6 +283,7 @@ $canDeleteCutting = hasPermission('cutting', 'delete');
 </form>
 
 <script>
+const baseUrl = '<?= rtrim(url(''), '/') ?>';
 const canDeleteCutting = <?= $canDeleteCutting ? 'true' : 'false' ?>;
 let variantCounter = 0;
 let cuttingRollCounter = 0;
@@ -281,24 +292,45 @@ const allCategories = <?= json_encode($categories ?? []) ?>;
 let initialProgramRolls = <?= json_encode($selectedProgramRolls ?? []) ?>;
 let programDataCache = null;
 
-function buildRollOptionsHtml(selectedRollId = '') {
+function buildRollOptionsHtml(selectedRollId = '', rollData = null) {
     let html = '<option value="">-- Select Fabric Roll --</option>';
+    let matched = false;
     if (availableRolls && availableRolls.length > 0) {
         availableRolls.forEach(r => {
             const w = r.weight !== undefined ? r.weight : (r.weight_kg || 0);
             const p = r.price !== undefined ? r.price : (r.price_total || 0);
-            const isSel = (selectedRollId && String(r.id) === String(selectedRollId)) ? 'selected' : '';
+            const isSel = (selectedRollId && String(r.id) === String(selectedRollId));
+            if (isSel) matched = true;
+            const sName = r.seller_company ? `${r.seller_company} (${r.seller_name || ''})` : (r.seller_name || '');
             html += `<option value="${r.id}" 
                 data-weight="${w}" 
                 data-price="${p}" 
                 data-color="${escapeHtml(r.color || '')}" 
                 data-design="${escapeHtml(r.design_name || '')}" 
                 data-material="${escapeHtml(r.material_type || '')}" 
-                data-seller="${escapeHtml(r.seller_name || '')}" 
-                ${isSel}>
-                Roll #${escapeHtml(r.roll_number || r.id)} (${escapeHtml(r.color || 'Standard')} - ${escapeHtml(r.design_name || 'Plain')}) — ${parseFloat(w).toFixed(2)} kg / ₹${parseFloat(p).toFixed(2)}
+                data-seller="${escapeHtml(sName)}" 
+                ${isSel ? 'selected' : ''}>
+                Roll #${escapeHtml(r.roll_number || r.id)} (${escapeHtml(r.color || 'Standard')} - ${escapeHtml(r.design_name || 'Plain')}${sName ? ' — ' + escapeHtml(sName) : ''}) — ${parseFloat(w).toFixed(2)} kg / ₹${parseFloat(p).toFixed(2)}
             </option>`;
         });
+    }
+    if (!matched && rollData && (rollData.roll_number || rollData.roll_color || rollData.roll_weight || selectedRollId)) {
+        const rId = rollData.seller_roll_id || rollData.id || selectedRollId || '1';
+        const w = parseFloat(rollData.roll_weight || rollData.weight || 0);
+        const p = parseFloat(rollData.roll_price || rollData.price || 0);
+        const col = rollData.roll_color || rollData.color || 'Standard';
+        const des = rollData.roll_design || rollData.design_name || 'Plain';
+        const num = rollData.roll_number || ('ROLL #' + rId);
+        const sName = rollData.seller_company ? `${rollData.seller_company} (${rollData.seller_name || ''})` : (rollData.seller_name || '');
+        html += `<option value="${rId}" 
+            data-weight="${w}" 
+            data-price="${p}" 
+            data-color="${escapeHtml(col)}" 
+            data-design="${escapeHtml(des)}" 
+            data-seller="${escapeHtml(sName)}" 
+            selected>
+            ${escapeHtml(num)} (${escapeHtml(col)} - ${escapeHtml(des)}${sName ? ' — ' + escapeHtml(sName) : ''}) — ${w.toFixed(2)} kg / ₹${p.toFixed(2)}
+        </option>`;
     }
     return html;
 }
@@ -333,7 +365,7 @@ function addCuttingRollRow(rollData = null) {
     const subcatId = rollData ? (rollData.subcategory_id || '') : '';
     const subSubcatId = rollData ? (rollData.sub_subcategory_id || '') : '';
 
-    const optionsHtml = buildRollOptionsHtml(rollId);
+    const optionsHtml = buildRollOptionsHtml(rollId, rollData);
     const categoryOptionsHtml = buildCategoryOptionsHtml(catId);
 
     rowDiv.innerHTML = `
@@ -597,7 +629,7 @@ function handleProgramChange(programId) {
         document.getElementById('btnAddVariantRow').style.display = 'none';
         document.getElementById('noProgramAlert').style.display = 'block';
         document.getElementById('alertTitle').innerText = 'No Production Program Selected';
-        document.getElementById('alertMessage').innerText = 'Please choose a Production Program and select a Fabric Roll from the left.';
+        document.getElementById('alertMessage').innerText = 'Please choose a Production Program and select Fabric Roll(s) with their specific Catalog Hierarchy from the left to dynamically generate cutting variants.';
         programDataCache = null;
         return;
     }
@@ -612,36 +644,89 @@ function handleProgramChange(programId) {
         nameInput.value = 'CUTTING - ' + prgName.toUpperCase();
     }
 
-    // Reset downstream selections
+    // Reset downstream selections with clear loading indicator
     document.getElementById('variantTableWrapper').style.display = 'none';
     document.getElementById('btnAddVariantRow').style.display = 'none';
     document.getElementById('noProgramAlert').style.display = 'block';
-    document.getElementById('alertTitle').innerText = 'Roll & Catalog Required';
-    document.getElementById('alertMessage').innerText = 'Program selected. Now please select Fabric Roll(s) and their Catalog Hierarchy to continue.';
+    document.getElementById('alertTitle').innerText = 'Loading Program Details...';
+    document.getElementById('alertMessage').innerText = 'Fetching program fabric rolls and catalog hierarchy...';
 
-    // Fetch Program details API
-    fetch('<?= url('api/programs/') ?>' + programId + '/details')
-        .then(res => res.json())
+    // Fetch Program details API with dual-path resilience
+    const primaryUrl = `${baseUrl}/api/programs/${encodeURIComponent(programId)}/details`;
+    const fallbackUrl = `api/programs/${encodeURIComponent(programId)}/details`;
+
+    fetch(primaryUrl, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+    })
+    .then(res => {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+    })
+    .then(data => {
+        if (data && data.success) {
+            programDataCache = data;
+            renderProgramHeader(data);
+        } else {
+            alert((data && data.message) ? data.message : 'Unable to fetch program details.');
+        }
+    })
+    .catch(err => {
+        console.warn('Primary program fetch failed, trying fallback:', err);
+        fetch(fallbackUrl, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+        })
+        .then(res => {
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return res.json();
+        })
         .then(data => {
-            if (data.success) {
+            if (data && data.success) {
                 programDataCache = data;
                 renderProgramHeader(data);
             } else {
-                alert(data.message || 'Unable to fetch program details.');
+                alert((data && data.message) ? data.message : 'Unable to fetch program details.');
             }
         })
-        .catch(err => {
-            console.error('Error fetching program:', err);
+        .catch(finalErr => {
+            console.error('All program fetch attempts failed:', finalErr);
+            document.getElementById('alertTitle').innerText = 'Error Loading Program Details';
+            document.getElementById('alertMessage').innerText = 'Could not load program rolls. Please verify your connection or refresh the page.';
         });
+    });
 }
 
 function renderProgramHeader(data) {
-    const prg = data.program;
+    const prg = data.program || {};
     const assignedRolls = data.assignedRolls || [];
     if (data.allRolls && data.allRolls.length > 0) {
         availableRolls = data.allRolls;
     } else if (data.sellerRolls && data.sellerRolls.length > 0) {
         availableRolls = data.sellerRolls;
+    }
+
+    // Ensure any assigned rolls are also merged into availableRolls so they are selectable
+    if (assignedRolls && assignedRolls.length > 0) {
+        const availableMap = new Map();
+        (availableRolls || []).forEach(ar => availableMap.set(String(ar.id), ar));
+        assignedRolls.forEach(r => {
+            const targetId = String(r.seller_roll_id || r.id);
+            if (!availableMap.has(targetId)) {
+                const newRollEntry = {
+                    id: r.seller_roll_id || r.id,
+                    roll_number: r.roll_number || ('ROLL #' + r.id),
+                    color: r.roll_color || r.color || 'Standard',
+                    design_name: r.roll_design || r.design_name || 'Plain',
+                    weight: r.roll_weight || r.weight || 0,
+                    price: r.roll_price || r.price || 0,
+                    quantity: r.roll_qty || r.quantity || 1,
+                    material_type: r.material_type || '',
+                    seller_name: r.seller_name || '',
+                    seller_company: r.seller_company || ''
+                };
+                availableMap.set(targetId, newRollEntry);
+                availableRolls.unshift(newRollEntry);
+            }
+        });
     }
 
     // Show Program details box
@@ -662,33 +747,29 @@ function renderProgramHeader(data) {
     if (assignedRolls.length > 0) {
         assignedRolls.forEach(r => {
             const rollCopy = Object.assign({}, r, {
-                category_id: r.category_id || data.program.category_id || '',
-                subcategory_id: r.subcategory_id || data.program.subcategory_id || '',
-                sub_subcategory_id: r.sub_subcategory_id || data.program.sub_subcategory_id || ''
+                category_id: r.category_id || prg.category_id || '',
+                subcategory_id: r.subcategory_id || prg.subcategory_id || '',
+                sub_subcategory_id: r.sub_subcategory_id || prg.sub_subcategory_id || ''
             });
             addCuttingRollRow(rollCopy);
         });
     } else if (data.roll) {
         const rollCopy = Object.assign({}, data.roll, {
-            category_id: data.roll.category_id || data.program.category_id || '',
-            subcategory_id: data.roll.subcategory_id || data.program.subcategory_id || '',
-            sub_subcategory_id: data.roll.sub_subcategory_id || data.program.sub_subcategory_id || ''
+            category_id: data.roll.category_id || prg.category_id || '',
+            subcategory_id: data.roll.subcategory_id || prg.subcategory_id || '',
+            sub_subcategory_id: data.roll.sub_subcategory_id || prg.sub_subcategory_id || ''
         });
         addCuttingRollRow(rollCopy);
     } else {
         addCuttingRollRow({
-            category_id: data.program.category_id || '',
-            subcategory_id: data.program.subcategory_id || '',
-            sub_subcategory_id: data.program.sub_subcategory_id || ''
+            category_id: prg.category_id || '',
+            subcategory_id: prg.subcategory_id || '',
+            sub_subcategory_id: prg.sub_subcategory_id || ''
         });
     }
 
-    // Keep variant table hidden until the user selects the Catalog dropdowns
-    document.getElementById('variantTableWrapper').style.display = 'none';
-    document.getElementById('btnAddVariantRow').style.display = 'none';
-    document.getElementById('noProgramAlert').style.display = 'block';
-    document.getElementById('alertTitle').innerText = 'Catalog Selection Required';
-    document.getElementById('alertMessage').innerText = 'Fabric Roll(s) selected. Now select Main Category, Sub Category, and Sub Sub Category from the catalog dropdowns on the left to generate the variant cutting table.';
+    // Immediately generate cutting variants breakdown table dynamically!
+    regenerateAllRollVariants(data);
 }
 
 // =========================================================================
@@ -719,7 +800,9 @@ function loadRollSubcategories(rowIdx, categoryId, selectedSubcatId, selectedSub
     const row = document.getElementById('cutting_roll_row_' + rowIdx);
     if (!row) return;
 
-    fetch('<?= url('api/subcategories/') ?>' + categoryId)
+    fetch(`${baseUrl}/api/subcategories/${encodeURIComponent(categoryId)}`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+    })
         .then(res => res.json())
         .then(data => {
             const subcatSelect = row.querySelector('.roll-subcat-select');
@@ -745,7 +828,36 @@ function loadRollSubcategories(rowIdx, categoryId, selectedSubcatId, selectedSub
             }
             updateRollCatalogBadge(rowIdx);
         })
-        .catch(err => console.error('Error loading subcategories for roll ' + rowIdx + ':', err));
+        .catch(err => {
+            console.error('Error loading subcategories for roll ' + rowIdx + ':', err);
+            // Fallback relative
+            fetch(`api/subcategories/${encodeURIComponent(categoryId)}`, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+            })
+            .then(res => res.json())
+            .then(data => {
+                const subcatSelect = row.querySelector('.roll-subcat-select');
+                subcatSelect.innerHTML = '<option value="">-- Sub Category --</option>';
+                if (data && Array.isArray(data) && data.length > 0) {
+                    data.forEach(sc => {
+                        const opt = document.createElement('option');
+                        opt.value = sc.id;
+                        opt.textContent = sc.name;
+                        if (selectedSubcatId && String(sc.id) === String(selectedSubcatId)) {
+                            opt.selected = true;
+                        }
+                        subcatSelect.appendChild(opt);
+                    });
+                    if (selectedSubcatId) {
+                        loadRollSubSubcategories(rowIdx, selectedSubcatId, selectedSubSubcatId);
+                    } else {
+                        regenerateAllRollVariants();
+                    }
+                }
+                updateRollCatalogBadge(rowIdx);
+            })
+            .catch(e => console.error(e));
+        });
 }
 
 function handleRollSubcategoryChange(rowIdx, subcategoryId) {
@@ -769,7 +881,9 @@ function loadRollSubSubcategories(rowIdx, subcategoryId, selectedSubSubcatId) {
     const row = document.getElementById('cutting_roll_row_' + rowIdx);
     if (!row) return;
 
-    fetch('<?= url('api/sub-subcategories/') ?>' + subcategoryId)
+    fetch(`${baseUrl}/api/sub-subcategories/${encodeURIComponent(subcategoryId)}`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+    })
         .then(res => res.json())
         .then(data => {
             const subSubcatSelect = row.querySelector('.roll-subsubcat-select');
@@ -788,7 +902,32 @@ function loadRollSubSubcategories(rowIdx, subcategoryId, selectedSubSubcatId) {
             updateRollCatalogBadge(rowIdx);
             regenerateAllRollVariants();
         })
-        .catch(err => console.error('Error loading sub subcategories for roll ' + rowIdx + ':', err));
+        .catch(err => {
+            console.error('Error loading sub subcategories for roll ' + rowIdx + ':', err);
+            // Fallback relative
+            fetch(`api/sub-subcategories/${encodeURIComponent(subcategoryId)}`, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+            })
+            .then(res => res.json())
+            .then(data => {
+                const subSubcatSelect = row.querySelector('.roll-subsubcat-select');
+                subSubcatSelect.innerHTML = '<option value="">-- Sub Sub Category --</option>';
+                if (data && Array.isArray(data) && data.length > 0) {
+                    data.forEach(ssc => {
+                        const opt = document.createElement('option');
+                        opt.value = ssc.id;
+                        opt.textContent = ssc.name;
+                        if (selectedSubSubcatId && String(ssc.id) === String(selectedSubSubcatId)) {
+                            opt.selected = true;
+                        }
+                        subSubcatSelect.appendChild(opt);
+                    });
+                }
+                updateRollCatalogBadge(rowIdx);
+                regenerateAllRollVariants();
+            })
+            .catch(e => console.error(e));
+        });
 }
 
 function handleRollSubSubcategoryChange(rowIdx, subSubcategoryId) {
@@ -816,7 +955,10 @@ function updateRollCatalogBadge(rowIdx) {
 }
 
 // Regenerate variants across all active rolls with catalog selection
-function regenerateAllRollVariants() {
+function regenerateAllRollVariants(cachedData = null) {
+    if (cachedData) {
+        programDataCache = cachedData;
+    }
     const rows = document.querySelectorAll('.cutting-roll-row');
     const activeRollRequests = [];
 
@@ -830,9 +972,11 @@ function regenerateAllRollVariants() {
 
         const rollId = rollSelect ? rollSelect.value : '';
         const rollOpt = rollSelect && rollSelect.selectedIndex >= 0 ? rollSelect.options[rollSelect.selectedIndex] : null;
-        const rollNumber = rollOpt ? (rollOpt.text.split('(')[0].replace('Roll #', '').trim()) : (rIndex + 1);
+        let rawRollNum = rollOpt ? (rollOpt.text.split('(')[0].trim()) : String(rIndex + 1);
+        let rollNumber = rawRollNum.replace(/^(roll\s*#?|#)\s*/i, '').trim() || String(rIndex + 1);
         const rollColor = (colorLabel && colorLabel.innerText !== '-') ? colorLabel.innerText : (rollOpt ? (rollOpt.getAttribute('data-color') || '') : '');
         const rollDesign = (designLabel && designLabel.innerText !== '-') ? designLabel.innerText : (rollOpt ? (rollOpt.getAttribute('data-design') || '') : '');
+        const sellerName = rollOpt ? (rollOpt.getAttribute('data-seller') || '') : '';
 
         const catId = catSelect ? catSelect.value : '';
         const subcatId = subcatSelect ? subcatSelect.value : '';
@@ -842,51 +986,80 @@ function regenerateAllRollVariants() {
         if (catSelect && catSelect.selectedIndex > 0) catParts.push(catSelect.options[catSelect.selectedIndex].text);
         if (subcatSelect && subcatSelect.selectedIndex > 0) catParts.push(subcatSelect.options[subcatSelect.selectedIndex].text);
         if (subSubcatSelect && subSubcatSelect.selectedIndex > 0) catParts.push(subSubcatSelect.options[subSubcatSelect.selectedIndex].text);
-        const catalogPath = catParts.length > 0 ? catParts.join(' › ') : 'General Catalog';
-
-        if (catId || subcatId || subSubcatId) {
-            activeRollRequests.push({
-                rollId,
-                rollNumber,
-                rollColor,
-                rollDesign,
-                catId,
-                subcatId,
-                subSubcatId,
-                catalogPath
-            });
+        let catalogPath = catParts.length > 0 ? catParts.join(' › ') : '';
+        if (!catalogPath && programDataCache && programDataCache.catalogHierarchy) {
+            catalogPath = programDataCache.catalogHierarchy;
         }
+        if (!catalogPath) {
+            catalogPath = 'General Catalog';
+        }
+
+        // Include all active roll rows (even if catalog hierarchy is not fully chosen yet)
+        activeRollRequests.push({
+            rollId,
+            rollNumber,
+            rollColor,
+            rollDesign,
+            sellerName,
+            catId,
+            subcatId,
+            subSubcatId,
+            catalogPath
+        });
     });
 
     if (activeRollRequests.length === 0) {
         document.getElementById('variantTableWrapper').style.display = 'none';
         document.getElementById('btnAddVariantRow').style.display = 'none';
         document.getElementById('noProgramAlert').style.display = 'block';
-        document.getElementById('alertTitle').innerText = 'Catalog Selection Required';
-        document.getElementById('alertMessage').innerText = 'Please select the Main Category, Sub Category, and Sub Sub Category for each fabric roll to generate cutting variants.';
+        document.getElementById('alertTitle').innerText = 'No Fabric Rolls Added';
+        document.getElementById('alertMessage').innerText = 'Please select a Production Program with assigned Fabric Rolls from the left to dynamically generate cutting variants.';
         return;
     }
 
+    const prgId = document.getElementById('programSelect') ? document.getElementById('programSelect').value : '';
+
     // Fetch variants for each roll concurrently
     const promises = activeRollRequests.map(req => {
-        const url = '<?= url('api/catalog/variants') ?>?category_id=' + (req.catId || '') + 
-                    '&subcategory_id=' + (req.subcatId || '') + 
-                    '&sub_subcategory_id=' + (req.subSubcatId || '') + 
-                    '&roll_id=' + (req.rollId || '') + 
+        const cachedSizes = programDataCache && programDataCache.sizes && programDataCache.sizes.length > 0 ? programDataCache.sizes : ['M', 'L', 'XL', 'XXL', '3XL'];
+        const cachedColors = req.rollColor ? [req.rollColor] : (programDataCache && programDataCache.colors && programDataCache.colors.length > 0 ? programDataCache.colors : ['STANDARD']);
+
+        const primaryUrl = `${baseUrl}/api/catalog/variants?category_id=` + encodeURIComponent(req.catId || '') + 
+                    '&subcategory_id=' + encodeURIComponent(req.subcatId || '') + 
+                    '&sub_subcategory_id=' + encodeURIComponent(req.subSubcatId || '') + 
+                    '&roll_id=' + encodeURIComponent(req.rollId || '') + 
+                    '&program_id=' + encodeURIComponent(prgId || '') + 
                     '&roll_color=' + encodeURIComponent(req.rollColor || '');
-        return fetch(url)
-            .then(res => res.json())
+        const fallbackUrl = 'api/catalog/variants?category_id=' + encodeURIComponent(req.catId || '') + 
+                    '&subcategory_id=' + encodeURIComponent(req.subcatId || '') + 
+                    '&sub_subcategory_id=' + encodeURIComponent(req.subSubcatId || '') + 
+                    '&roll_id=' + encodeURIComponent(req.rollId || '') + 
+                    '&program_id=' + encodeURIComponent(prgId || '') + 
+                    '&roll_color=' + encodeURIComponent(req.rollColor || '');
+
+        return fetch(primaryUrl, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+        })
+            .then(res => {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.json();
+            })
+            .catch(e => {
+                return fetch(fallbackUrl, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                }).then(r => r.json());
+            })
             .then(data => ({
-                req,
+                req: Object.assign({}, req, { sellerName: data.seller_name || req.sellerName || '' }),
                 variants: data.variants || [],
-                sizes: data.sizes || ['M', 'L', 'XL', 'XXL', '3XL'],
-                colors: data.colors || (req.rollColor ? [req.rollColor] : ['BLACK', 'BLUE', 'RED'])
+                sizes: (data.sizes && data.sizes.length > 0) ? data.sizes : cachedSizes,
+                colors: (data.colors && data.colors.length > 0) ? data.colors : cachedColors
             }))
             .catch(err => ({
                 req,
                 variants: [],
-                sizes: ['M', 'L', 'XL', 'XXL', '3XL'],
-                colors: req.rollColor ? [req.rollColor] : ['STANDARD']
+                sizes: cachedSizes,
+                colors: cachedColors
             }));
     });
 
@@ -907,7 +1080,8 @@ function regenerateAllRollVariants() {
             const groupKey = 'roll_' + (req.rollId || resIdx);
             let rawRollNum = req.rollNumber ? String(req.rollNumber).trim() : String(resIdx + 1);
             let cleanRollNum = rawRollNum.replace(/^(roll\s*#?|#)\s*/i, '').trim() || (resIdx + 1);
-            const rollTitle = `Roll #${cleanRollNum} (${req.rollColor || 'Standard'}${req.rollDesign ? ' - ' + req.rollDesign : ''}) — ${req.catalogPath}`;
+            const sellerPart = req.sellerName ? ` — ${req.sellerName}` : '';
+            const rollTitle = `Roll #${cleanRollNum} (${req.rollColor || 'Standard'}${req.rollDesign ? ' - ' + req.rollDesign : ''}${sellerPart}) — ${req.catalogPath}`;
 
             // Add Header row for each Roll's catalog section
             const groupTr = document.createElement('tr');
@@ -938,15 +1112,16 @@ function regenerateAllRollVariants() {
             }
 
             totalVariantsCount += rollVariantCount;
+            const tabLabel = `Roll #${cleanRollNum}` + (req.rollColor ? ` (${req.rollColor})` : '') + (req.sellerName ? ` - ${req.sellerName}` : '');
             rollTabConfigs.push({
                 groupKey,
-                label: `Roll #${cleanRollNum}` + (req.rollColor ? ` (${req.rollColor})` : ''),
+                label: tabLabel,
                 fullTitle: rollTitle,
                 count: rollVariantCount
             });
         });
 
-        // Build Roll View Tabs if multiple rolls exist
+        // Build Roll View Tabs
         if (results.length > 1 && navTabsContainer && navTabs) {
             navTabsContainer.style.display = 'flex';
             rollTabConfigs.forEach((cfg, idx) => {
@@ -970,6 +1145,17 @@ function regenerateAllRollVariants() {
 
             // Activate First Roll by default
             switchRollVariantTab(rollTabConfigs[0].groupKey, rollTabConfigs[0].fullTitle);
+        } else if (results.length === 1 && navTabsContainer && navTabs) {
+            navTabsContainer.style.display = 'flex';
+            const singleCfg = rollTabConfigs[0];
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn btn-sm btn-primary active fw-semibold';
+            btn.setAttribute('data-target-group', singleCfg.groupKey);
+            btn.innerHTML = `<i class="bi bi-layers me-1"></i>${escapeHtml(singleCfg.label)} <span class="badge bg-white text-primary ms-1">${singleCfg.count}</span>`;
+            btn.onclick = () => switchRollVariantTab('all', singleCfg.fullTitle);
+            navTabs.appendChild(btn);
+            switchRollVariantTab('all', singleCfg.fullTitle);
         } else {
             if (navTabsContainer) navTabsContainer.style.display = 'none';
             switchRollVariantTab('all', '');
@@ -1189,8 +1375,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 return false;
             }
 
-            const masterSelect = document.getElementById('cuttingMasterSelect');
-            if (masterSelect && !masterSelect.value) {
+            const masterSelect = document.getElementById('operatorSelect') || document.getElementById('cuttingMasterSelect');
+            if (masterSelect && masterSelect.hasAttribute('required') && !masterSelect.value) {
                 e.preventDefault();
                 alert('Validation error: Please select a Cutting Master.');
                 masterSelect.focus();
@@ -1212,4 +1398,145 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+function openAddOperatorModal() {
+    const nameInput = document.getElementById('newOperatorName');
+    const phoneInput = document.getElementById('newOperatorPhone');
+    const alertBox = document.getElementById('addOperatorAlert');
+    if (nameInput) nameInput.value = '';
+    if (phoneInput) phoneInput.value = '';
+    if (alertBox) {
+        alertBox.classList.add('d-none');
+        alertBox.innerText = '';
+    }
+    const modalEl = document.getElementById('addOperatorModal');
+    if (modalEl) {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+        setTimeout(() => nameInput && nameInput.focus(), 300);
+    }
+}
+
+function saveNewOperator() {
+    const nameInput = document.getElementById('newOperatorName');
+    const phoneInput = document.getElementById('newOperatorPhone');
+    const alertBox = document.getElementById('addOperatorAlert');
+    const saveBtn = document.getElementById('btnSaveOperator');
+
+    const name = nameInput ? nameInput.value.trim() : '';
+    const phone = phoneInput ? phoneInput.value.trim() : '';
+
+    if (!name) {
+        if (alertBox) {
+            alertBox.innerText = 'Please enter the cutting master / operator name.';
+            alertBox.classList.remove('d-none');
+        }
+        nameInput?.focus();
+        return;
+    }
+
+    if (alertBox) alertBox.classList.add('d-none');
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+    }
+
+    const formData = new FormData();
+    formData.append('full_name', name);
+    formData.append('phone', phone);
+    const csrfToken = document.querySelector('input[name="csrf_token"]')?.value || '';
+    if (csrfToken) formData.append('csrf_token', csrfToken);
+
+    fetch(`${baseUrl}/api/operators/quick-add`, {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Save Cutting Master';
+        }
+
+        if (data.success) {
+            const select = document.getElementById('operatorSelect');
+            if (select) {
+                const opt = document.createElement('option');
+                opt.value = data.id;
+                opt.textContent = data.name;
+                opt.selected = true;
+                select.appendChild(opt);
+                select.value = data.id;
+                select.dispatchEvent(new Event('change'));
+            }
+
+            const modalEl = document.getElementById('addOperatorModal');
+            if (modalEl) {
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if (modal) modal.hide();
+            }
+
+            // Quick non-blocking feedback
+            const toastDiv = document.createElement('div');
+            toastDiv.className = 'alert alert-success position-fixed top-0 end-0 m-3 shadow-lg py-2 px-3';
+            toastDiv.style.zIndex = '9999';
+            toastDiv.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>' + escapeHtml(data.message || 'Cutting Master added!');
+            document.body.appendChild(toastDiv);
+            setTimeout(() => toastDiv.remove(), 3000);
+        } else {
+            if (alertBox) {
+                alertBox.innerText = data.message || 'Error saving operator.';
+                alertBox.classList.remove('d-none');
+            } else {
+                alert(data.message || 'Error saving operator.');
+            }
+        }
+    })
+    .catch(err => {
+        console.error('Error saving operator:', err);
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Save Cutting Master';
+        }
+        if (alertBox) {
+            alertBox.innerText = 'Network error while saving cutting master.';
+            alertBox.classList.remove('d-none');
+        }
+    });
+}
 </script>
+
+<!-- Modal: Add Cutting Master / Operator -->
+<div class="modal fade" id="addOperatorModal" tabindex="-1" aria-labelledby="addOperatorModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-primary text-white py-3">
+                <h6 class="modal-title fw-bold" id="addOperatorModalLabel">
+                    <i class="bi bi-person-plus-fill me-2"></i>Add Cutting Master / Operator
+                </h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div id="addOperatorAlert" class="alert alert-danger py-2 px-3 small d-none mb-3"></div>
+                <div class="mb-3">
+                    <label class="form-label required fw-semibold">Cutting Master / Operator Name <span class="text-danger">*</span></label>
+                    <input type="text" id="newOperatorName" class="form-control text-uppercase fw-semibold" placeholder="e.g. MASTER RAMESH" required>
+                    <small class="text-muted">Enter the operator or cutting master's full name.</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Phone Number (Optional)</label>
+                    <input type="text" id="newOperatorPhone" class="form-control" placeholder="e.g. 9876543210">
+                </div>
+            </div>
+            <div class="modal-footer bg-light py-2 px-4 justify-content-between">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-sm btn-primary px-3 fw-semibold" id="btnSaveOperator" onclick="saveNewOperator()">
+                    <i class="bi bi-check-circle me-1"></i> Save Cutting Master
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

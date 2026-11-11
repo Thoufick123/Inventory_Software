@@ -255,6 +255,10 @@ class Router {
         $this->post('api/sub-subcategories/quick-add', 'ProductionController', 'ajaxQuickAddSubSubcategory', ['AuthMiddleware']);
         $this->post('api/sub-subcategories/update/{id}', 'ProductionController', 'ajaxUpdateSubSubcategory', ['AuthMiddleware']);
         $this->post('api/sub-subcategories/delete/{id}', 'ProductionController', 'ajaxDeleteSubSubcategory', ['AuthMiddleware']);
+        $this->get('api/categories/attributes/{category_id}', 'ProductionController', 'ajaxGetCategoryAttributes', ['AuthMiddleware']);
+        $this->post('api/categories/attributes/quick-add', 'ProductionController', 'ajaxQuickAddCategoryAttribute', ['AuthMiddleware']);
+        $this->post('api/categories/attributes/add-option', 'ProductionController', 'ajaxAddCategoryAttributeOption', ['AuthMiddleware']);
+        $this->post('api/categories/attributes/delete-option', 'ProductionController', 'ajaxDeleteCategoryAttributeOption', ['AuthMiddleware']);
 
         // Warehouse Category Routes
         $this->get('api/warehouse-categories', 'WarehouseController', 'ajaxCategories', ['AuthMiddleware', ['PermissionMiddleware', 'wh_catalog', 'view']]);
@@ -284,6 +288,7 @@ class Router {
         $this->get('api/catalog/check-qr-code', 'ProductionController', 'ajaxCheckQRCode', ['AuthMiddleware']);
         $this->get('api/hsn-codes', 'ProductionController', 'ajaxHsnCodesList', ['AuthMiddleware']);
         $this->post('api/hsn-codes/store', 'ProductionController', 'ajaxStoreHsnCode', ['AuthMiddleware']);
+        $this->post('api/operators/quick-add', 'ProductionController', 'ajaxQuickAddOperator', ['AuthMiddleware']);
         $this->post('api/warehouse/quick-add', 'WarehouseController', 'ajaxAddWarehouse', ['AuthMiddleware', ['PermissionMiddleware', 'warehouse', 'create']]);
         $this->post('api/warehouse/store', 'WarehouseController', 'ajaxAddWarehouse', ['AuthMiddleware', ['PermissionMiddleware', 'warehouse', 'create']]);
         $this->get('api/warehouse/get/{id}', 'WarehouseController', 'ajaxGetWarehouse', ['AuthMiddleware', ['PermissionMiddleware', 'warehouse', 'view']]);

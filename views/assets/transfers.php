@@ -4,6 +4,9 @@
  */
 ?>
 
+<!-- HTML5-QRCode Library for Web & Mobile Camera Scanning -->
+<script src="<?= asset('js/html5-qrcode.min.js') ?>"></script>
+
 <div class="w-100" style="max-width: 100%; overflow-x: hidden;">
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
         <div>
@@ -11,15 +14,24 @@
                 <a href="<?= url('asset/list') ?>" class="btn btn-outline-secondary btn-sm rounded-circle p-2 d-inline-flex align-items-center justify-content-center" style="width: 34px; height: 34px;">
                     <i class="bi bi-arrow-left"></i>
                 </a>
-                Inter-Unit Asset Movement Manifest
+                Inter-Unit Asset Transfers &amp; Allocation Logs
             </h3>
-            <p class="text-muted small mb-0">Audit history of equipment transfers between Production plants, Warehouses, and Retail outlets.</p>
+            <p class="text-muted small mb-0">Audit history of equipment tracking &amp; unit allocations — maintains logs of which module/facility equipment is allocated to without outwarding goods inventory.</p>
         </div>
         <div>
             <button type="button" class="btn btn-primary d-inline-flex align-items-center gap-2 shadow-sm" data-bs-toggle="modal" data-bs-target="#newTransferModal">
                 <i class="bi bi-plus-circle"></i> Initiate New Transfer
             </button>
         </div>
+    </div>
+
+    <!-- Enterprise Asset Allocation Info Banner -->
+    <div class="alert alert-light border shadow-sm py-2 px-3 small text-muted mb-3 d-flex align-items-center justify-content-between rounded-3 flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-shield-check text-primary fs-5"></i>
+            <span><strong>Enterprise Asset Allocation:</strong> Relocations record physical machinery, equipment, and hardware movements across facilities within the <strong>Assets Module only</strong> without altering raw material rolls, warehouse stock, or retail sales inventory.</span>
+        </div>
+        <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace px-2 py-1">Assets Module Only</span>
     </div>
 
     <!-- Filter Toolbar -->
@@ -96,8 +108,11 @@
                                 <td>
                                     <div class="fw-medium text-success small"><?= e($t['to_display']) ?></div>
                                     <?php if (!empty($t['to_floor_area'])): ?>
-                                        <span class="text-muted small"><?= e($t['to_floor_area']) ?></span>
+                                        <span class="text-muted small d-block"><?= e($t['to_floor_area']) ?></span>
                                     <?php endif; ?>
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle small mt-1" style="font-size: 0.72rem;">
+                                        <i class="bi bi-geo-alt-fill me-1"></i>Allocated Unit
+                                    </span>
                                 </td>
                                 <td>
                                     <div class="small fw-semibold text-dark"><?= e($t['reason'] ?: 'Internal Unit Transfer') ?></div>
@@ -164,30 +179,81 @@
                                 <div class="form-text small">Choose the facility that currently holds the asset.</div>
                             </div>
 
-                            <!-- Assets currently assigned to the selected unit -->
+                            <!-- Assets currently assigned to the selected unit with Live Fast-Scanner -->
                             <div class="col-md-7">
-                                <label class="form-label fw-bold small text-dark d-flex align-items-center gap-1">
-                                    <i class="bi bi-cpu-fill text-primary"></i> 2. Contents of Selected Unit <span class="text-danger">*</span>
-                                </label>
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <label class="form-label fw-bold small text-dark d-flex align-items-center gap-1 mb-0">
+                                        <i class="bi bi-cpu-fill text-primary"></i> 2. Contents of Selected Unit <span class="text-danger">*</span>
+                                    </label>
+                                    <div class="d-flex align-items-center gap-1">
+                                        <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25" style="font-size: 0.7rem;">
+                                            <i class="bi bi-broadcast me-1"></i>Scanner Ready
+                                        </span>
+                                        <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 small d-inline-flex align-items-center gap-1" id="btn_toggle_trf_camera" onclick="toggleTrfCameraScanner()">
+                                            <i class="bi bi-camera-video-fill"></i> <span id="trf_cam_btn_label">Scan Camera</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Barcode / QR Fast Scan Search Input -->
+                                <div class="input-group input-group-sm mb-2">
+                                    <span class="input-group-text bg-white border-end-0 text-primary">
+                                        <i class="bi bi-upc-scan"></i>
+                                    </span>
+                                    <input type="text" id="trf_scan_input" class="form-control font-monospace border-start-0" placeholder="Scan Barcode / QR or search Tag, Serial #, Model..." autocomplete="off">
+                                    <button type="button" class="btn btn-primary btn-sm px-3 fw-semibold" onclick="executeTrfScanLookup()">
+                                        <i class="bi bi-search me-1"></i> Scan / Find
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearTrfScan()" title="Clear">
+                                        <i class="bi bi-x"></i>
+                                    </button>
+                                </div>
+
+                                <!-- Collapsible Camera Optical Viewfinder -->
+                                <div id="trf_camera_scanner_container" class="mb-2 d-none">
+                                    <div class="card bg-black border border-primary rounded-3 p-2 text-white shadow-sm">
+                                        <div class="d-flex justify-content-between align-items-center mb-1">
+                                            <span class="small text-info fw-semibold">
+                                                <i class="bi bi-record-circle text-danger me-1"></i> Optical Camera: Aim at Asset QR / Barcode Sticker
+                                            </span>
+                                            <button type="button" class="btn btn-sm btn-outline-light py-0 px-2" onclick="toggleTrfCameraScanner()">Close</button>
+                                        </div>
+                                        <div id="trf_camera_reader" style="width: 100%; max-width: 380px; margin: 0 auto; border-radius: 8px; overflow: hidden;"></div>
+                                    </div>
+                                </div>
+
+                                <!-- Scan Feedback Alert -->
+                                <div id="trf_scan_feedback" class="small alert alert-success py-1 px-2 mb-2 d-none d-flex align-items-center justify-content-between">
+                                    <span id="trf_scan_feedback_text"><i class="bi bi-check-circle-fill me-1"></i> Asset found!</span>
+                                    <button type="button" class="btn-close btn-close-sm" onclick="document.getElementById('trf_scan_feedback').classList.add('d-none')"></button>
+                                </div>
+
+                                <!-- Asset Dropdown -->
                                 <select name="asset_id" id="trf_asset_select" class="form-select" required disabled onchange="onTrfAssetSelected()">
-                                    <option value="">Select an origin unit to load its assets</option>
+                                    <option value="">Select an origin unit or scan tag to load assets</option>
                                 </select>
-                                <div class="form-text small" id="trf_loc_asset_count" aria-live="polite">Assets assigned to the selected unit will appear here.</div>
+                                <div class="form-text small" id="trf_loc_asset_count" aria-live="polite">Assets assigned to the selected unit will appear here. You can also scan any tag directly above!</div>
                             </div>
                         </div>
 
                         <!-- Selected Asset Quick Info Preview -->
-                        <div id="trf_selected_asset_preview" class="mt-3 p-2 bg-white rounded border d-none">
+                        <div id="trf_selected_asset_preview" class="mt-3 p-3 bg-white rounded-3 border d-none">
                             <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-                                <div class="d-flex align-items-center gap-2">
-                                    <span class="badge bg-dark font-monospace" id="trf_preview_code">AST-0000</span>
-                                    <strong class="text-dark small" id="trf_preview_name">-</strong>
+                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                    <span class="badge bg-dark font-monospace fs-6 px-2 py-1" id="trf_preview_code">AST-0000</span>
+                                    <strong class="text-dark fs-6" id="trf_preview_name">-</strong>
                                     <span class="badge bg-light text-secondary border" id="trf_preview_cat">-</span>
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle" id="trf_preview_val">-</span>
                                 </div>
-                                <div>
+                                <div class="d-flex align-items-center gap-1">
                                     <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25" id="trf_preview_loc">-</span>
                                     <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25" id="trf_preview_status">-</span>
+                                    <span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary border-opacity-25" id="trf_preview_cond">-</span>
                                 </div>
+                            </div>
+                            <div class="small text-muted mt-2 pt-2 border-top d-flex align-items-center justify-content-between flex-wrap gap-2">
+                                <span><i class="bi bi-info-circle text-primary me-1"></i> Allocated in this unit. Maintained strictly within <strong>Assets Module</strong> only.</span>
+                                <span class="badge bg-light text-muted border font-monospace" id="trf_preview_sn">-</span>
                             </div>
                         </div>
                     </div>
@@ -197,7 +263,7 @@
                         <label class="form-label fw-semibold small text-dark d-flex align-items-center gap-1">
                             <i class="bi bi-box-arrow-in-right text-success"></i> 3. Destination Target Unit (To) <span class="text-danger">*</span>
                         </label>
-                        <select name="target_unit" class="form-select" required>
+                        <select name="target_unit" id="trf_target_unit_select" class="form-select" required onchange="checkDestinationUnitNotice()">
                             <optgroup label="🏭 Production Units">
                                 <?php foreach (($unitsMap['production'] ?? []) as $pu): ?>
                                     <option value="PU_<?= $pu['id'] ?>">PU: <?= e($pu['name']) ?> (<?= e($pu['code']) ?>)</option>
@@ -217,6 +283,10 @@
                                 <option value="OFFICE_1">Head Office &amp; Central Logistics</option>
                             </optgroup>
                         </select>
+                        <div id="trf_same_unit_notice" class="alert alert-warning py-1 px-2 small mt-2 d-none d-flex align-items-center gap-2">
+                            <i class="bi bi-exclamation-circle text-warning fs-6"></i>
+                            <span>Origin and Destination are the same unit. This will record an <strong>internal floor/bay relocation</strong> within this facility.</span>
+                        </div>
                     </div>
 
                     <div class="mb-3">
@@ -244,8 +314,180 @@
 </div>
 
 <script>
-// All assets registry for client-side live cascading filter
+// All assets registry for client-side live cascading filter & fast scan search
 const allTrfAssetsData = <?= json_encode($allAssets ?? [], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+
+function playTrfScannerBeep() {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.12);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.12);
+    } catch(e) {}
+}
+
+function escapeTrfHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+let trfHtml5QrScanner = null;
+let isTrfCameraActive = false;
+
+function toggleTrfCameraScanner() {
+    const container = document.getElementById('trf_camera_scanner_container');
+    const btnLabel = document.getElementById('trf_cam_btn_label');
+
+    if (isTrfCameraActive) {
+        stopTrfCamera();
+    } else {
+        container.classList.remove('d-none');
+        if (btnLabel) btnLabel.textContent = 'Stop Camera';
+        isTrfCameraActive = true;
+
+        if (typeof Html5Qrcode !== 'undefined') {
+            trfHtml5QrScanner = new Html5Qrcode("trf_camera_reader");
+            trfHtml5QrScanner.start(
+                { facingMode: "environment" },
+                { fps: 10, qrbox: { width: 250, height: 250 } },
+                (decodedText) => {
+                    executeTrfScanLookup(decodedText);
+                },
+                (errorMessage) => {}
+            ).catch(err => {
+                container.classList.add('d-none');
+                if (btnLabel) btnLabel.textContent = 'Scan Camera';
+                isTrfCameraActive = false;
+                alert('Camera access failed or permission denied.');
+            });
+        } else {
+            alert('Camera scanner library not available.');
+        }
+    }
+}
+
+function stopTrfCamera() {
+    const container = document.getElementById('trf_camera_scanner_container');
+    const btnLabel = document.getElementById('trf_cam_btn_label');
+    if (trfHtml5QrScanner) {
+        trfHtml5QrScanner.stop().then(() => {
+            trfHtml5QrScanner.clear();
+            trfHtml5QrScanner = null;
+        }).catch(() => {});
+    }
+    container.classList.add('d-none');
+    if (btnLabel) btnLabel.textContent = 'Scan Camera';
+    isTrfCameraActive = false;
+}
+
+function clearTrfScan() {
+    const input = document.getElementById('trf_scan_input');
+    input.value = '';
+    input.focus();
+    document.getElementById('trf_scan_feedback')?.classList.add('d-none');
+}
+
+/**
+ * Fast Live Barcode / Tag Scan Finder
+ */
+function executeTrfScanLookup(forcedCode = null) {
+    const input = document.getElementById('trf_scan_input');
+    const raw = (forcedCode !== null ? forcedCode : input.value).trim();
+    if (!raw) {
+        input.focus();
+        return;
+    }
+
+    input.value = raw;
+    const query = raw.toLowerCase();
+
+    // Find in enterprise assets
+    const found = allTrfAssetsData.find(a => 
+        (a.asset_code && a.asset_code.toLowerCase() === query) ||
+        (a.barcode_qr && a.barcode_qr.toLowerCase() === query) ||
+        (a.serial_number && a.serial_number.toLowerCase() === query) ||
+        (a.model_number && a.model_number.toLowerCase() === query) ||
+        (a.asset_code && a.asset_code.toLowerCase().includes(query)) ||
+        (a.name && a.name.toLowerCase().includes(query))
+    );
+
+    const fb = document.getElementById('trf_scan_feedback');
+    const fbText = document.getElementById('trf_scan_feedback_text');
+
+    if (found) {
+        playTrfScannerBeep();
+
+        // 1. Auto-select Origin Unit if not set or different
+        const originVal = found.location_type + '_' + found.location_id;
+        const originSelect = document.getElementById('trf_origin_location_filter');
+        originSelect.value = originVal;
+
+        // 2. Filter asset options for this origin unit
+        filterTrfAssetsByLocation();
+
+        // 3. Select the scanned asset
+        const assetSelect = document.getElementById('trf_asset_select');
+        assetSelect.value = found.id;
+        onTrfAssetSelected();
+
+        // 4. Update feedback message
+        fbText.innerHTML = `<i class="bi bi-check-circle-fill text-success me-1"></i> Found &amp; Selected: <strong>${escapeTrfHtml(found.asset_code)}</strong> (${escapeTrfHtml(found.name)}) currently allocated in <strong>${escapeTrfHtml(found.location_display || found.location_type)}</strong>`;
+        fb.classList.remove('d-none');
+
+        // Close camera if active
+        if (isTrfCameraActive) {
+            stopTrfCamera();
+        }
+
+        checkDestinationUnitNotice();
+        document.getElementById('trf_target_unit_select')?.focus();
+    } else {
+        fbText.innerHTML = `<i class="bi bi-exclamation-triangle-fill text-warning me-1"></i> No asset found matching tag: <strong>${escapeTrfHtml(raw)}</strong>.`;
+        fb.classList.remove('d-none');
+    }
+}
+
+// Auto-trigger on scanner gun Enter key
+document.getElementById('trf_scan_input')?.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        executeTrfScanLookup();
+    }
+});
+
+/**
+ * Check if origin and destination units are identical
+ */
+function checkDestinationUnitNotice() {
+    const originVal = document.getElementById('trf_origin_location_filter')?.value || '';
+    const targetVal = document.getElementById('trf_target_unit_select')?.value || '';
+    const notice = document.getElementById('trf_same_unit_notice');
+    if (!notice) return;
+
+    if (!originVal || !targetVal) {
+        notice.classList.add('d-none');
+        return;
+    }
+
+    let origNormalized = originVal.replace('PRODUCTION_', 'PU_').replace('WAREHOUSE_', 'WH_').replace('SHOP_', 'SH_');
+    if (origNormalized === targetVal) {
+        notice.classList.remove('d-none');
+    } else {
+        notice.classList.add('d-none');
+    }
+}
 
 /**
  * Filter Transfer Assets by Selected Origin Location
@@ -263,11 +505,13 @@ function filterTrfAssetsByLocation() {
 
     const placeholder = document.createElement('option');
     placeholder.value = '';
-    placeholder.textContent = locFilter ? '-- Choose an asset in this unit --' : 'Select an origin unit to load its assets';
+    placeholder.textContent = locFilter ? '-- Choose an asset in this unit --' : 'Select an origin unit or scan tag above to load assets';
     assetSelect.appendChild(placeholder);
 
+    checkDestinationUnitNotice();
+
     if (!locFilter) {
-        countLabel.textContent = 'Assets assigned to the selected unit will appear here.';
+        countLabel.textContent = 'Assets assigned to the selected unit will appear here. You can also scan any tag directly above!';
         return;
     }
 
@@ -278,7 +522,7 @@ function filterTrfAssetsByLocation() {
         .filter(asset => asset.location_type === locType && Number(asset.location_id) === locId)
         .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
 
-    countLabel.textContent = `${filtered.length} asset${filtered.length === 1 ? '' : 's'} currently assigned to this unit.`;
+    countLabel.textContent = `${filtered.length} asset${filtered.length === 1 ? '' : 's'} currently allocated to this unit.`;
 
     if (filtered.length === 0) {
         placeholder.textContent = 'No assets currently assigned to this unit';
@@ -297,6 +541,9 @@ function filterTrfAssetsByLocation() {
         opt.dataset.cat = a.category_name || 'General';
         opt.dataset.loc = a.location_display || '';
         opt.dataset.status = a.status || '';
+        opt.dataset.cond = a.condition_state || 'GOOD';
+        opt.dataset.val = a.current_book_value || '0.00';
+        opt.dataset.sn = a.serial_number || '';
         assetSelect.appendChild(opt);
     });
 }
@@ -319,9 +566,18 @@ function onTrfAssetSelected() {
     document.getElementById('trf_preview_cat').textContent = selectedOpt.dataset.cat || '';
     document.getElementById('trf_preview_loc').textContent = selectedOpt.dataset.loc || '';
     document.getElementById('trf_preview_status').textContent = (selectedOpt.dataset.status || '').replace('_', ' ');
+    document.getElementById('trf_preview_cond').textContent = selectedOpt.dataset.cond || 'GOOD';
+    document.getElementById('trf_preview_val').textContent = '₹' + Number(selectedOpt.dataset.val || 0).toLocaleString('en-IN', {minimumFractionDigits: 2});
+    
+    const snSpan = document.getElementById('trf_preview_sn');
+    if (selectedOpt.dataset.sn) {
+        snSpan.textContent = 'SN: ' + selectedOpt.dataset.sn;
+        snSpan.classList.remove('d-none');
+    } else {
+        snSpan.classList.add('d-none');
+    }
 
     previewBox.classList.remove('d-none');
+    checkDestinationUnitNotice();
 }
-
-// Keep the dependent contents field empty until the user chooses an origin unit.
 </script>

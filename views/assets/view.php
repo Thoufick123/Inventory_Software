@@ -60,6 +60,11 @@ $condBadge = match($asset['condition_state']) {
                     <a href="<?= url('asset/edit/' . $asset['id']) ?>" class="btn btn-primary d-inline-flex align-items-center gap-2">
                         <i class="bi bi-pencil"></i> Edit Details
                     </a>
+                    <?php if (hasPermission('asset_register', 'delete') || hasPermission('assets', 'delete')): ?>
+                    <button type="button" class="btn btn-outline-danger d-inline-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#deleteAssetModal">
+                        <i class="bi bi-trash"></i> Delete
+                    </button>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -458,6 +463,32 @@ $condBadge = match($asset['condition_state']) {
         </div>
     </div>
 </div>
+
+<!-- Modal: Delete Asset Confirmation -->
+<?php if (hasPermission('asset_register', 'delete') || hasPermission('assets', 'delete')): ?>
+<div class="modal fade" id="deleteAssetModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content border-0 shadow">
+            <form method="POST" action="<?= url('asset/delete/' . $asset['id']) ?>">
+                <?= CSRF::field() ?>
+                <div class="modal-body p-4 text-center">
+                    <div class="p-3 bg-danger bg-opacity-10 text-danger rounded-circle d-inline-flex mb-3">
+                        <i class="bi bi-exclamation-triangle-fill fs-1"></i>
+                    </div>
+                    <h5 class="fw-bold text-dark mb-2">Delete Asset?</h5>
+                    <p class="text-muted small mb-4">
+                        Are you sure you want to delete <strong><?= e($asset['name']) ?></strong> (<code><?= e($asset['asset_code']) ?></code>)? This will also purge its transfer and maintenance records.
+                    </p>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-outline-secondary w-50" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-danger w-50 fw-semibold">Delete</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <script>
 function openTransferModal() {

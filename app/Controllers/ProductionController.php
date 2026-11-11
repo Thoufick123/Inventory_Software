@@ -3643,10 +3643,11 @@ class ProductionController {
                     }
 
                     // Recalculate purchase total
-                    $sumTotal = (float)Database::fetchValue(
-                        "SELECT SUM(total_price) FROM production_purchase_items WHERE purchase_id = ?",
+                    $sumRow = Database::fetchOne(
+                        "SELECT SUM(total_price) as total FROM production_purchase_items WHERE purchase_id = ?",
                         [$purchaseId]
                     );
+                    $sumTotal = (float)($sumRow['total'] ?? 0);
                     Database::execute(
                         "UPDATE production_purchases SET total_amount = ? WHERE id = ?",
                         [$sumTotal, $purchaseId]
@@ -4719,6 +4720,341 @@ class ProductionController {
         }
     }
 
+    /**
+     * AJAX: Get category attributes for dynamic catalog hierarchy specifications.
+     * Matches exact hierarchy with multi-level scoping and cross-catalog synchronization.
+     */
+    public function ajaxGetCategoryAttributes(int $categoryId): void {
+        try {
+            $subcategoryId = !empty($_GET['subcategory_id']) ? (int)$_GET['subcategory_id'] : null;
+            $subSubcategoryId = !empty($_GET['sub_subcategory_id']) ? (int)$_GET['sub_subcategory_id'] : null;
+
+            // 1. Resolve Category IDs across both `categories` and `warehouse_categories` by name and ID
+            $allCatIds = [$categoryId];
+            $catRow = Database::fetchOne("SELECT name FROM categories WHERE id = ?", [$categoryId]);
+            if (!$catRow) {
+                $catRow = Database::fetchOne("SELECT name FROM warehouse_categories WHERE id = ?", [$categoryId]);
+            }
+            if ($catRow && !empty($catRow['name'])) {
+                $catName = trim($catRow['name']);
+                $cIds = Database::fetchAll("SELECT id FROM categories WHERE LOWER(TRIM(name)) = LOWER(?)", [$catName]);
+                $wcIds = Database::fetchAll("SELECT id FROM warehouse_categories WHERE LOWER(TRIM(name)) = LOWER(?)", [$catName]);
+                $allCatIds = array_values(array_unique(array_filter(array_merge($allCatIds, array_column($cIds, 'id'), array_column($wcIds, 'id')))));
+            }
+
+            // 2. Resolve Subcategory IDs across both `subcategories` and `warehouse_subcategories`
+            $allSubcatIds = $subcategoryId ? [$subcategoryId] : [];
+            if ($subcategoryId) {
+                $subcatRow = Database::fetchOne("SELECT name FROM subcategories WHERE id = ?", [$subcategoryId]);
+                if (!$subcatRow) {
+                    $subcatRow = Database::fetchOne("SELECT name FROM warehouse_subcategories WHERE id = ?", [$subcategoryId]);
+                }
+                if ($subcatRow && !empty($subcatRow['name'])) {
+                    $subName = trim($subcatRow['name']);
+                    $sIds = Database::fetchAll("SELECT id FROM subcategories WHERE LOWER(TRIM(name)) = LOWER(?)", [$subName]);
+                    $wsIds = Database::fetchAll("SELECT id FROM warehouse_subcategories WHERE LOWER(TRIM(name)) = LOWER(?)", [$subName]);
+                    $allSubcatIds = array_values(array_unique(array_filter(array_merge($allSubcatIds, array_column($sIds, 'id'), array_column($wsIds, 'id')))));
+                }
+            }
+
+            // 3. Resolve Sub-Subcategory IDs across both `sub_subcategories` and `warehouse_sub_subcategories`
+            $allSubSubcatIds = $subSubcategoryId ? [$subSubcategoryId] : [];
+            if ($subSubcategoryId) {
+                $subSubRow = Database::fetchOne("SELECT name FROM sub_subcategories WHERE id = ?", [$subSubcategoryId]);
+                if (!$subSubRow) {
+                    $subSubRow = Database::fetchOne("SELECT name FROM warehouse_sub_subcategories WHERE id = ?", [$subSubcategoryId]);
+                }
+                if ($subSubRow && !empty($subSubRow['name'])) {
+                    $sscName = trim($subSubRow['name']);
+                    $ssIds = Database::fetchAll("SELECT id FROM sub_subcategories WHERE LOWER(TRIM(name)) = LOWER(?)", [$sscName]);
+                    $wssIds = Database::fetchAll("SELECT id FROM warehouse_sub_subcategories WHERE LOWER(TRIM(name)) = LOWER(?)", [$sscName]);
+                    $allSubSubcatIds = array_values(array_unique(array_filter(array_merge($allSubSubcatIds, array_column($ssIds, 'id'), array_column($wssIds, 'id')))));
+                }
+            }
+
+            // 4. Query matching attributes from `wh_category_attributes`
+            $catPlaceholders = implode(',', array_fill(0, count($allCatIds), '?'));
+            $sql = "SELECT * FROM wh_category_attributes WHERE category_id IN ($catPlaceholders) AND is_active = 1";
+            $rawAttributes = Database::fetchAll($sql, array_values($allCatIds));
+
+            // Hierarchy matching & override logic:
+            // Level 1: Category root (subcategory_id is NULL or 0)
+            // Level 2: Subcategory (subcategory_id in $allSubcatIds and (sub_subcategory_id is NULL or 0))
+            // Level 3: Sub-subcategory (sub_subcategory_id in $allSubSubcatIds)
+            // More specific level overrides less specific level for attributes with the same name
+            $scopedAttrs = [];
+
+            foreach ($rawAttributes as $row) {
+                $rSubcat = !empty($row['subcategory_id']) ? (int)$row['subcategory_id'] : 0;
+                $rSubSubcat = !empty($row['sub_subcategory_id']) ? (int)$row['sub_subcategory_id'] : 0;
+
+                $level = 0;
+                if (!empty($allSubSubcatIds) && $rSubSubcat > 0 && in_array($rSubSubcat, $allSubSubcatIds, true)) {
+                    $level = 3;
+                } elseif (!empty($allSubcatIds) && $rSubcat > 0 && in_array($rSubcat, $allSubcatIds, true) && $rSubSubcat === 0) {
+                    $level = 2;
+                } elseif ($rSubcat === 0 && $rSubSubcat === 0) {
+                    $level = 1;
+                }
+
+                if ($level > 0) {
+                    $attrKey = mb_strtoupper(trim($row['attr_name']));
+                    if (!isset($scopedAttrs[$attrKey]) || $level >= $scopedAttrs[$attrKey]['level']) {
+                        $scopedAttrs[$attrKey] = [
+                            'level' => $level,
+                            'data'  => $row
+                        ];
+                    }
+                }
+            }
+
+            // Master active sizes
+            $masterSizes = Database::fetchAll("SELECT id, name, code FROM sizes WHERE is_active = 1 ORDER BY sort_order ASC, id ASC");
+            $defaultSizeCodes = !empty($masterSizes) ? array_values(array_unique(array_column($masterSizes, 'code'))) : ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
+
+            // Words that should NEVER be inside SIZE options (cleans out corrupted entries like COLOR, SIZE, RED, PINK, STANDARD)
+            $junkWords = ['COLOR', 'SIZE', 'RED', 'YELLOW', 'PINK', 'BLUE', 'GREEN', 'BLACK', 'WHITE', 'STANDARD', 'DEFAULT'];
+
+            $finalAttributes = [];
+            foreach ($scopedAttrs as $item) {
+                $attr = $item['data'];
+                if (mb_strtoupper(trim($attr['attr_name'])) === 'SIZE') {
+                    // Sanitize SIZE options
+                    $opts = !empty($attr['attr_options']) ? array_map('trim', explode(',', $attr['attr_options'])) : [];
+                    $cleanedOpts = [];
+                    foreach ($opts as $o) {
+                        $uo = mb_strtoupper(trim($o));
+                        if ($uo !== '' && !in_array($uo, $junkWords, true)) {
+                            $cleanedOpts[] = $uo;
+                        }
+                    }
+                    $cleanedOpts = array_values(array_unique($cleanedOpts));
+                    if (empty($cleanedOpts)) {
+                        $cleanedOpts = $defaultSizeCodes;
+                    }
+                    $cleanOptionsStr = implode(',', $cleanedOpts);
+                    if ($cleanOptionsStr !== $attr['attr_options']) {
+                        Database::execute("UPDATE wh_category_attributes SET attr_options = ?, attr_type = 'MULTI_SELECT', updated_at = NOW() WHERE id = ?", [$cleanOptionsStr, $attr['id']]);
+                        $attr['attr_options'] = $cleanOptionsStr;
+                    }
+                    $attr['attr_type'] = 'MULTI_SELECT';
+                }
+                $finalAttributes[] = $attr;
+            }
+
+            // If no attributes were configured for this category hierarchy, provide clean default apparel SIZE
+            if (empty($finalAttributes)) {
+                $finalAttributes[] = [
+                    'id'                 => 0,
+                    'category_id'        => $categoryId,
+                    'subcategory_id'     => $subcategoryId,
+                    'sub_subcategory_id' => $subSubcategoryId,
+                    'attr_name'          => 'SIZE',
+                    'attr_type'          => 'MULTI_SELECT',
+                    'attr_options'       => implode(',', $defaultSizeCodes),
+                    'is_required'        => 0,
+                    'sort_order'         => 1,
+                    'is_active'          => 1,
+                ];
+            }
+
+            // Sort attributes by sort_order
+            usort($finalAttributes, fn($a, $b) => ($a['sort_order'] ?? 0) <=> ($b['sort_order'] ?? 0));
+
+            Response::json([
+                'success'      => true,
+                'attributes'   => $finalAttributes,
+                'master_sizes' => $masterSizes
+            ]);
+        } catch (\Throwable $e) {
+            Response::json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * AJAX: Add a new option to an existing category attribute dynamically (e.g. adding XXL, XXXL).
+     */
+    public function ajaxAddCategoryAttributeOption(): void {
+        try {
+            $attrId = (int)($_POST['attribute_id'] ?? 0);
+            $attrName = mb_strtoupper(trim($_POST['attr_name'] ?? ''));
+            $optionsInput = trim($_POST['options'] ?? '');
+
+            if (empty($optionsInput)) {
+                Response::json(['success' => false, 'message' => 'Please enter at least one option.'], 400);
+                return;
+            }
+
+            $attr = null;
+            if ($attrId > 0) {
+                $attr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE id = ?", [$attrId]);
+            }
+            if (!$attr && !empty($attrName)) {
+                $attr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE attr_name = ? ORDER BY id DESC LIMIT 1", [$attrName]);
+            }
+
+            if (!$attr) {
+                Response::json(['success' => false, 'message' => 'Attribute not found.'], 404);
+                return;
+            }
+
+            $currentOpts = !empty($attr['attr_options']) ? array_map('trim', explode(',', $attr['attr_options'])) : [];
+            $currentOpts = array_filter($currentOpts, fn($v) => $v !== '');
+            $currentOptsUpper = array_map('mb_strtoupper', $currentOpts);
+
+            $newOptsInput = array_map('trim', explode(',', $optionsInput));
+            $newOptsInput = array_filter($newOptsInput, fn($v) => $v !== '');
+            $addedOpts = [];
+
+            foreach ($newOptsInput as $rawOpt) {
+                $optUpper = mb_strtoupper($rawOpt);
+                if (!in_array($optUpper, $currentOptsUpper, true)) {
+                    $currentOpts[] = $optUpper;
+                    $currentOptsUpper[] = $optUpper;
+                    $addedOpts[] = $optUpper;
+                }
+            }
+
+            $updatedOptsStr = implode(',', $currentOpts);
+            Database::execute("UPDATE wh_category_attributes SET attr_options = ?, attr_type = 'MULTI_SELECT', updated_at = NOW() WHERE id = ?", [$updatedOptsStr, $attr['id']]);
+
+            // If attribute is SIZE, also add each added option to sizes table if not present
+            if ($attr['attr_name'] === 'SIZE') {
+                foreach ($addedOpts as $szCode) {
+                    $existsSize = Database::fetchOne("SELECT id FROM sizes WHERE code = ?", [$szCode]);
+                    if (!$existsSize) {
+                        Database::execute("INSERT INTO sizes (name, code, is_active, created_at) VALUES (?, ?, 1, NOW())", [$szCode, $szCode]);
+                    }
+                }
+            }
+
+            Response::json([
+                'success'     => true,
+                'new_options' => $addedOpts,
+                'all_options' => $currentOpts
+            ]);
+        } catch (\Throwable $e) {
+            Response::json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * AJAX: Remove an option from a category attribute dynamically.
+     */
+    public function ajaxDeleteCategoryAttributeOption(): void {
+        try {
+            $attrId = (int)($_POST['attribute_id'] ?? 0);
+            $attrName = mb_strtoupper(trim($_POST['attr_name'] ?? ''));
+            $optionToDelete = mb_strtoupper(trim($_POST['option'] ?? ''));
+
+            if (empty($optionToDelete)) {
+                Response::json(['success' => false, 'message' => 'Option value is required.'], 400);
+                return;
+            }
+
+            $attr = null;
+            if ($attrId > 0) {
+                $attr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE id = ?", [$attrId]);
+            }
+            if (!$attr && !empty($attrName)) {
+                $attr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE attr_name = ? ORDER BY id DESC LIMIT 1", [$attrName]);
+            }
+
+            if (!$attr) {
+                Response::json(['success' => false, 'message' => 'Attribute not found.'], 404);
+                return;
+            }
+
+            $currentOpts = !empty($attr['attr_options']) ? array_map('trim', explode(',', $attr['attr_options'])) : [];
+            $filteredOpts = array_filter($currentOpts, fn($v) => mb_strtoupper(trim($v)) !== $optionToDelete);
+            $updatedOptsStr = implode(',', $filteredOpts);
+
+            Database::execute("UPDATE wh_category_attributes SET attr_options = ?, updated_at = NOW() WHERE id = ?", [$updatedOptsStr, $attr['id']]);
+
+            Response::json(['success' => true]);
+        } catch (\Throwable $e) {
+            Response::json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * AJAX: Quick Add category attribute dynamically without page reload.
+     */
+    public function ajaxQuickAddCategoryAttribute(): void {
+        try {
+            $categoryId = (int)($_POST['category_id'] ?? 0);
+            $subcategoryId = !empty($_POST['subcategory_id']) ? (int)$_POST['subcategory_id'] : null;
+            $subSubcategoryId = !empty($_POST['sub_subcategory_id']) ? (int)$_POST['sub_subcategory_id'] : null;
+            $attrName = mb_strtoupper(trim($_POST['attr_name'] ?? ''));
+            $attrType = in_array(strtoupper(trim($_POST['attr_type'] ?? '')), ['TEXT', 'NUMBER', 'SELECT', 'MULTI_SELECT']) ? strtoupper(trim($_POST['attr_type'])) : 'SELECT';
+            if ($attrName === 'SIZE') {
+                $attrType = 'MULTI_SELECT';
+            }
+            $attrOptions = trim($_POST['attr_options'] ?? '');
+            $isRequired = !empty($_POST['is_required']) ? 1 : 0;
+
+            if ($categoryId <= 0) {
+                Response::json(['success' => false, 'message' => 'Please select a Main Category first.'], 400);
+                return;
+            }
+            if (empty($attrName)) {
+                Response::json(['success' => false, 'message' => 'Attribute Name is required.'], 400);
+                return;
+            }
+            if (($attrType === 'SELECT' || $attrType === 'MULTI_SELECT') && empty($attrOptions)) {
+                Response::json(['success' => false, 'message' => 'Please enter at least one option for the attribute.'], 400);
+                return;
+            }
+
+            // Clean options: split by comma, trim, uppercase
+            $formattedOptions = null;
+            if (!empty($attrOptions)) {
+                $opts = array_map('trim', explode(',', $attrOptions));
+                $opts = array_filter($opts, function($v) { return $v !== ''; });
+                $opts = array_map('mb_strtoupper', $opts);
+                $formattedOptions = implode(',', $opts);
+            }
+
+            // Check if attribute with same name already exists for this scope
+            $existingSql = "SELECT id FROM wh_category_attributes WHERE category_id = ? AND attr_name = ?";
+            $existingParams = [$categoryId, $attrName];
+            if ($subSubcategoryId) {
+                $existingSql .= " AND sub_subcategory_id = ?";
+                $existingParams[] = $subSubcategoryId;
+            } elseif ($subcategoryId) {
+                $existingSql .= " AND subcategory_id = ? AND (sub_subcategory_id IS NULL OR sub_subcategory_id = 0)";
+                $existingParams[] = $subcategoryId;
+            } else {
+                $existingSql .= " AND (subcategory_id IS NULL OR subcategory_id = 0) AND (sub_subcategory_id IS NULL OR sub_subcategory_id = 0)";
+            }
+            $existing = Database::fetchOne($existingSql, $existingParams);
+            if ($existing) {
+                Database::execute(
+                    "UPDATE wh_category_attributes SET attr_type = ?, attr_options = ?, is_required = ?, is_active = 1, updated_at = NOW() WHERE id = ?",
+                    [$attrType, $formattedOptions, $isRequired, $existing['id']]
+                );
+                $attrId = (int)$existing['id'];
+            } else {
+                $maxSort = (int)(Database::fetchOne("SELECT MAX(sort_order) as m FROM wh_category_attributes WHERE category_id = ?", [$categoryId])['m'] ?? 0);
+                Database::execute(
+                    "INSERT INTO wh_category_attributes (category_id, subcategory_id, sub_subcategory_id, attr_name, attr_type, attr_options, is_required, sort_order, is_active, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())",
+                    [$categoryId, $subcategoryId, $subSubcategoryId, $attrName, $attrType, $formattedOptions, $isRequired, $maxSort + 1]
+                );
+                $attrId = (int)Database::lastInsertId();
+            }
+
+            $savedAttr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE id = ?", [$attrId]);
+            Response::json([
+                'success'   => true,
+                'message'   => "Attribute '{$attrName}' saved successfully.",
+                'attribute' => $savedAttr
+            ]);
+        } catch (\Throwable $e) {
+            Response::json(['success' => false, 'message' => 'Error saving attribute: ' . $e->getMessage()], 500);
+        }
+    }
+
     public function ajaxQuickAddBrand(): void {
         $name = mb_strtoupper(trim($_POST['name'] ?? ''));
         if (empty($name)) {
@@ -5113,6 +5449,8 @@ class ProductionController {
                     'roll_price'         => $rPrice,
                     'roll_color'         => $sellerData['color'] ?? '',
                     'roll_design'        => $sellerData['design_name'] ?? '',
+                    'allocated_qr_codes' => !empty($r['allocated_qr_codes']) ? $r['allocated_qr_codes'] : null,
+                    'attributes'         => !empty($r['attributes']) ? $r['attributes'] : null,
                 ];
                 $totalRollQty += $rQty;
                 $totalRollWeight += $rWeight;
@@ -5139,6 +5477,8 @@ class ProductionController {
                     'roll_price'         => $rPrice,
                     'roll_color'         => $sellerData['color'] ?? '',
                     'roll_design'        => $sellerData['design_name'] ?? '',
+                    'allocated_qr_codes' => !empty($r['allocated_qr_codes']) ? $r['allocated_qr_codes'] : null,
+                    'attributes'         => !empty($r['attributes']) ? $r['attributes'] : null,
                 ];
                 $totalRollQty = $rQty;
                 $totalRollWeight = $rWeight;
@@ -5421,6 +5761,8 @@ class ProductionController {
                     'roll_price'         => $rPrice,
                     'roll_color'         => $sellerData['color'] ?? '',
                     'roll_design'        => $sellerData['design_name'] ?? '',
+                    'allocated_qr_codes' => !empty($r['allocated_qr_codes']) ? $r['allocated_qr_codes'] : null,
+                    'attributes'         => !empty($r['attributes']) ? $r['attributes'] : null,
                 ];
                 $totalRollQty += $rQty;
                 $totalRollWeight += $rWeight;
@@ -5446,6 +5788,8 @@ class ProductionController {
                     'roll_price'         => $rPrice,
                     'roll_color'         => $sellerData['color'] ?? '',
                     'roll_design'        => $sellerData['design_name'] ?? '',
+                    'allocated_qr_codes' => !empty($r['allocated_qr_codes']) ? $r['allocated_qr_codes'] : null,
+                    'attributes'         => !empty($r['attributes']) ? $r['attributes'] : null,
                 ];
                 $totalRollQty = $rQty;
                 $totalRollWeight = $rWeight;
@@ -5787,6 +6131,27 @@ class ProductionController {
                         }
                     } else {
                         if (!in_array($cName, $parsedColors, true)) $parsedColors[] = $cName;
+                    }
+                }
+            }
+        }
+
+        // Also parse attributes from assigned rolls for sizes
+        if (!empty($assignedRolls)) {
+            foreach ($assignedRolls as $ar) {
+                if (!empty($ar['attributes'])) {
+                    $dec = is_string($ar['attributes']) ? json_decode($ar['attributes'], true) : $ar['attributes'];
+                    if (is_array($dec)) {
+                        foreach ($dec as $k => $v) {
+                            if (strtoupper($k) === 'SIZE' && is_array($v)) {
+                                foreach ($v as $sz) {
+                                    $sz = trim((string)$sz);
+                                    if ($sz !== '' && !in_array($sz, $parsedSizes, true)) {
+                                        $parsedSizes[] = $sz;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -6165,6 +6530,8 @@ class ProductionController {
         $categoryId = !empty($_GET['category_id']) ? (int)$_GET['category_id'] : null;
         $subcategoryId = !empty($_GET['subcategory_id']) ? (int)$_GET['subcategory_id'] : null;
         $subSubcategoryId = !empty($_GET['sub_subcategory_id']) ? (int)$_GET['sub_subcategory_id'] : null;
+        $rollId = !empty($_GET['roll_id']) ? (int)$_GET['roll_id'] : null;
+        $programId = !empty($_GET['program_id']) ? (int)$_GET['program_id'] : null;
 
         // Resolve product matching hierarchy
         $product = null;
@@ -6180,6 +6547,82 @@ class ProductionController {
 
         $parsedSizes = [];
         $parsedColors = [];
+        $sellerName = '';
+
+        if ($rollId || $programId) {
+            $ppr = null;
+            if ($rollId) {
+                $ppr = Database::fetchOne(
+                    "SELECT ppr.*, 
+                            COALESCE(NULLIF(sr.roll_number, ''), CONCAT('ROLL #', ppr.id)) as roll_number,
+                            COALESCE(NULLIF(ppr.roll_color, ''), NULLIF(ppr.color, ''), sr.color) as sr_color,
+                            COALESCE(NULLIF(ppr.roll_design, ''), NULLIF(ppr.design_name, ''), sr.design_name) as sr_design,
+                            COALESCE(s.name, '') as seller_name, COALESCE(s.company, '') as seller_company
+                     FROM production_program_rolls ppr
+                     LEFT JOIN seller_rolls sr ON ppr.seller_roll_id = sr.id
+                     LEFT JOIN sellers s ON (ppr.seller_id = s.id OR sr.seller_id = s.id)
+                     WHERE (ppr.id = ? OR ppr.seller_roll_id = ?)" . ($programId ? " AND (ppr.production_program_id = " . (int)$programId . " OR ppr.program_id = " . (int)$programId . ")" : "") . "
+                     LIMIT 1",
+                    [$rollId, $rollId]
+                );
+            }
+            if (!$ppr && $rollId) {
+                $ppr = Database::fetchOne(
+                    "SELECT sr.*, sr.roll_number, sr.color as sr_color, sr.design_name as sr_design,
+                            s.name as seller_name, s.company as seller_company
+                     FROM seller_rolls sr
+                     LEFT JOIN sellers s ON sr.seller_id = s.id
+                     WHERE sr.id = ? LIMIT 1",
+                    [$rollId]
+                );
+            }
+            if (!$ppr && $programId) {
+                $ppr = Database::fetchOne(
+                    "SELECT ppr.*, 
+                            COALESCE(NULLIF(sr.roll_number, ''), CONCAT('ROLL #', ppr.id)) as roll_number,
+                            COALESCE(NULLIF(ppr.roll_color, ''), NULLIF(ppr.color, ''), sr.color) as sr_color,
+                            COALESCE(NULLIF(ppr.roll_design, ''), NULLIF(ppr.design_name, ''), sr.design_name) as sr_design,
+                            COALESCE(s.name, '') as seller_name, COALESCE(s.company, '') as seller_company
+                     FROM production_program_rolls ppr
+                     LEFT JOIN seller_rolls sr ON ppr.seller_roll_id = sr.id
+                     LEFT JOIN sellers s ON (ppr.seller_id = s.id OR sr.seller_id = s.id)
+                     WHERE (ppr.production_program_id = ? OR ppr.program_id = ?)
+                     LIMIT 1",
+                    [$programId, $programId]
+                );
+            }
+            if ($ppr) {
+                if (!empty($ppr['attributes'])) {
+                    $dec = is_string($ppr['attributes']) ? json_decode($ppr['attributes'], true) : $ppr['attributes'];
+                    if (is_array($dec)) {
+                        foreach ($dec as $k => $v) {
+                            if (strtoupper($k) === 'SIZE' && is_array($v) && !empty($v)) {
+                                foreach ($v as $sz) {
+                                    $sz = trim((string)$sz);
+                                    if ($sz !== '' && !in_array($sz, $parsedSizes, true)) {
+                                        $parsedSizes[] = $sz;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                $sellerName = trim($ppr['seller_company'] ?: ($ppr['seller_name'] ?? ''));
+            }
+        }
+
+        if (empty($sellerName) && $programId) {
+            $prgSeller = Database::fetchOne(
+                "SELECT COALESCE(s.company, s.name, '') as seller_name
+                 FROM production_programs pp
+                 LEFT JOIN sellers s ON pp.seller_id = s.id
+                 WHERE pp.id = ?",
+                [$programId]
+            );
+            if ($prgSeller && !empty($prgSeller['seller_name'])) {
+                $sellerName = $prgSeller['seller_name'];
+            }
+        }
 
         if ($product) {
             $pvRows = Database::fetchAll(
@@ -6273,11 +6716,12 @@ class ProductionController {
         }
 
         Response::json([
-            'success'  => true,
-            'product'  => $product,
-            'sizes'    => $parsedSizes,
-            'colors'   => $parsedColors,
-            'variants' => $variants,
+            'success'     => true,
+            'product'     => $product,
+            'sizes'       => $parsedSizes,
+            'colors'      => $parsedColors,
+            'variants'    => $variants,
+            'seller_name' => $sellerName,
         ]);
     }
 
@@ -6291,11 +6735,15 @@ class ProductionController {
                     COALESCE(pp.name, p.name) as product_name, 
                     pu.name as unit_name,
                     sr.roll_number, sr.color as roll_color, sr.design_name as roll_design,
-                    c.name as category_name, sc.name as subcategory_name, ssc.name as sub_subcategory_name
+                    c.name as category_name, sc.name as subcategory_name, ssc.name as sub_subcategory_name,
+                    COALESCE(s.name, s_roll.name, (SELECT s2.name FROM production_program_rolls ppr2 JOIN seller_rolls sr2 ON ppr2.seller_roll_id = sr2.id JOIN sellers s2 ON (ppr2.seller_id = s2.id OR sr2.seller_id = s2.id) WHERE ppr2.production_program_id = pp.id LIMIT 1)) as seller_name,
+                    COALESCE(s.company, s_roll.company, (SELECT s2.company FROM production_program_rolls ppr2 JOIN seller_rolls sr2 ON ppr2.seller_roll_id = sr2.id JOIN sellers s2 ON (ppr2.seller_id = s2.id OR sr2.seller_id = s2.id) WHERE ppr2.production_program_id = pp.id LIMIT 1)) as seller_company
              FROM production_programs pp
              LEFT JOIN products p ON pp.product_id = p.id
              LEFT JOIN production_units pu ON pp.production_unit_id = pu.id
              LEFT JOIN seller_rolls sr ON pp.seller_roll_id = sr.id
+             LEFT JOIN sellers s ON pp.seller_id = s.id
+             LEFT JOIN sellers s_roll ON sr.seller_id = s_roll.id
              LEFT JOIN categories c ON pp.category_id = c.id
              LEFT JOIN subcategories sc ON pp.subcategory_id = sc.id
              LEFT JOIN sub_subcategories ssc ON pp.sub_subcategory_id = ssc.id
@@ -13025,6 +13473,58 @@ class ProductionController {
                 'description' => $description,
                 'gst_rate'    => number_format($gstRate, 2, '.', ''),
             ]
+        ]);
+    }
+
+    /**
+     * AJAX quick add Cutting Master / Operator.
+     */
+    public function ajaxQuickAddOperator(): void {
+        header('Content-Type: application/json');
+
+        $rawInput = file_get_contents('php://input');
+        $jsonData = !empty($rawInput) ? json_decode($rawInput, true) : [];
+        if (!is_array($jsonData)) $jsonData = [];
+
+        $fullName = mb_strtoupper(trim($_POST['full_name'] ?? $jsonData['full_name'] ?? ''));
+        $phone = trim($_POST['phone'] ?? $jsonData['phone'] ?? '');
+
+        if (empty($fullName)) {
+            Response::json(['success' => false, 'message' => 'Cutting Master / Operator name is required.'], 422);
+            return;
+        }
+
+        // Determine operator role
+        $role = Database::fetchOne("SELECT id FROM roles WHERE slug IN ('production-staff', 'operator', 'staff', 'production-manager') ORDER BY id ASC LIMIT 1");
+        $roleId = $role ? (int)$role['id'] : 4;
+
+        // Generate clean unique username
+        $baseUsername = strtolower(preg_replace('/[^a-z0-9_]/', '', str_replace(' ', '_', $fullName)));
+        if (empty($baseUsername)) {
+            $baseUsername = 'operator_' . time();
+        }
+        $username = $baseUsername;
+        $counter = 1;
+        while (Database::fetchOne("SELECT id FROM users WHERE username = ?", [$username])) {
+            $username = $baseUsername . '_' . $counter;
+            $counter++;
+        }
+
+        $passwordHash = password_hash('Operator@123', PASSWORD_BCRYPT);
+
+        Database::execute(
+            "INSERT INTO users (username, full_name, phone, role_id, department, password_hash, is_active, created_at, updated_at) 
+             VALUES (?, ?, ?, ?, 'PRODUCTION', ?, 1, NOW(), NOW())",
+            [$username, $fullName, $phone ?: null, $roleId, $passwordHash]
+        );
+
+        $newId = (int)Database::lastInsertId();
+
+        Response::json([
+            'success' => true,
+            'id'      => $newId,
+            'name'    => $fullName,
+            'message' => 'Cutting Master added successfully!'
         ]);
     }
 

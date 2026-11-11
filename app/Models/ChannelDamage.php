@@ -335,16 +335,125 @@ class ChannelDamage {
      */
     public static function resolvePieceTags(array $d): array {
         $rawTags = trim((string)($d['tag_code'] ?? ''));
-        if ($rawTags === '') {
+        $parts = [];
+        if ($rawTags !== '') {
+            $decodedTags = json_decode($rawTags, true);
+            $parts = is_array($decodedTags) ? $decodedTags : explode(',', $rawTags);
+        }
+
+        $tags = self::normalizeTags($parts);
+        $variantId = (int)($d['variant_id'] ?? 0);
+        $sku = trim((string)($d['sku'] ?? ''));
+        if ($sku === '' && $variantId > 0) {
+            $variant = Database::fetchOne("SELECT sku FROM product_variants WHERE id = ?", [$variantId]);
+            $sku = trim((string)($variant['sku'] ?? ''));
+        }
+        if ($sku !== '') {
+            $tags = array_values(array_filter(
+                $tags,
+                static fn(string $tag): bool => strcasecmp($tag, $sku) !== 0
+            ));
+        }
+
+        if ($tags) {
+            return $tags;
+        }
+
+        $allocationId = (int)($d['allocation_id'] ?? 0);
+        if ($allocationId <= 0 || $variantId <= 0) {
             return [];
         }
 
-        $decodedTags = json_decode($rawTags, true);
-        $parts = is_array($decodedTags) ? $decodedTags : explode(',', $rawTags);
-        return array_values(array_filter(array_map(
-            static fn($tag): string => trim((string)$tag),
-            $parts
-        )));
+        $damagedRows = Database::fetchAll(
+            "SELECT selected_qr_codes, damaged_qty
+             FROM allocation_items
+             WHERE allocation_id = ? AND variant_id = ? AND damaged_qty > 0
+             ORDER BY id ASC",
+            [$allocationId, $variantId]
+        );
+        if (!$damagedRows) {
+            return [];
+        }
+
+        $inferredTags = [];
+        $damagedQuantity = 0;
+        foreach ($damagedRows as $row) {
+            $damagedQty = (int)$row['damaged_qty'];
+            $damagedQuantity += $damagedQty;
+            $selected = trim((string)($row['selected_qr_codes'] ?? ''));
+            if ($selected === '') {
+                return [];
+            }
+            $decoded = json_decode($selected, true);
+            $selectedTags = self::normalizeTags(is_array($decoded) ? $decoded : explode(',', $selected));
+            if (count($selectedTags) !== 1 && count($selectedTags) !== $damagedQty) {
+                return [];
+            }
+            $inferredTags = array_merge($inferredTags, $selectedTags);
+        }
+
+        $recordedQuantity = (int)($d['quantity'] ?? 0);
+        if ($recordedQuantity > 0 && $damagedQuantity !== $recordedQuantity) {
+            return [];
+        }
+
+        return self::normalizeTags($inferredTags);
+    }
+
+    public static function findActiveByPieceTag(
+        string $tagCode,
+        array $channelIds = [],
+        ?int $variantId = null
+    ): ?array {
+        $tagCode = strtoupper(trim($tagCode));
+        if ($tagCode === '') {
+            return null;
+        }
+
+        $sql = "SELECT cd.*, pv.sku
+                FROM channel_damages cd
+                JOIN product_variants pv ON pv.id = cd.variant_id
+                WHERE cd.status NOT IN ('REWORK_RETURNED_TO_STOCK', 'CANCELLED', 'RESOLVED')";
+        $params = [];
+        if ($variantId !== null && $variantId > 0) {
+            $sql .= " AND cd.variant_id = ?";
+            $params[] = $variantId;
+        }
+        if ($channelIds) {
+            $channelIds = array_values(array_unique(array_filter(array_map('intval', $channelIds))));
+            if ($channelIds) {
+                $sql .= " AND cd.channel_id IN (" . implode(',', array_fill(0, count($channelIds), '?')) . ")";
+                $params = array_merge($params, $channelIds);
+            }
+        }
+        $sql .= " AND (cd.tag_code LIKE ? OR cd.allocation_id IS NOT NULL)
+                  ORDER BY cd.id DESC";
+        $params[] = '%' . $tagCode . '%';
+
+        foreach (Database::fetchAll($sql, $params) as $damage) {
+            if (in_array($tagCode, array_map('strtoupper', self::resolvePieceTags($damage)), true)) {
+                return $damage;
+            }
+        }
+
+        return null;
+    }
+
+    private static function normalizeTags(array $values): array {
+        $tags = [];
+        $seen = [];
+        foreach ($values as $value) {
+            if (is_array($value)) {
+                $value = $value['tag_code'] ?? $value['qr_code'] ?? $value['tag'] ?? '';
+            }
+            $tag = trim((string)$value);
+            $normalized = strtoupper($tag);
+            if ($tag !== '' && !isset($seen[$normalized])) {
+                $seen[$normalized] = true;
+                $tags[] = $tag;
+            }
+        }
+        return $tags;
     }
 
     /**
@@ -366,13 +475,14 @@ class ChannelDamage {
         if ($quantity <= 0 || $variantId <= 0) return 0;
 
         $user = $reportedBy ?: $userId;
+        $pieceTags = self::normalizeTags($pieceTags);
         if (!empty($pieceTags)) {
             $tagCodes = implode(', ', $pieceTags);
         }
 
         // Check if an entry already exists for this allocation & variant
         $existing = Database::fetchOne(
-            "SELECT id, quantity, tag_code, total_loss FROM channel_damages 
+            "SELECT id, quantity, tag_code, total_loss FROM channel_damages
              WHERE channel_id = ? AND allocation_id = ? AND variant_id = ? AND source_type = 'INWARD_TRANSIT' AND status = 'LOGGED'
              LIMIT 1",
             [$channelId, $allocationId, $variantId]
@@ -395,13 +505,22 @@ class ChannelDamage {
         if ($existing) {
             $newQty = (int)$existing['quantity'] + $quantity;
             $newLoss = round($unitCost * $newQty, 2);
-            $mergedTags = $existing['tag_code'];
-            if ($tagCodes) {
-                $mergedTags = $mergedTags ? ($mergedTags . ', ' . $tagCodes) : $tagCodes;
+            $existingRawTags = trim((string)($existing['tag_code'] ?? ''));
+            $decodedExistingTags = json_decode($existingRawTags, true);
+            $existingTags = self::normalizeTags(
+                is_array($decodedExistingTags) ? $decodedExistingTags : explode(',', $existingRawTags)
+            );
+            if (!empty($variant['sku'])) {
+                $existingTags = array_values(array_filter(
+                    $existingTags,
+                    static fn(string $tag): bool => strcasecmp($tag, (string)$variant['sku']) !== 0
+                ));
             }
+            $incomingTags = self::normalizeTags($pieceTags ?: explode(',', $tagCodes));
+            $mergedTags = self::normalizeTags(array_merge($existingTags, $incomingTags));
             Database::execute(
                 "UPDATE channel_damages SET quantity = ?, tag_code = ?, total_loss = ?, updated_at = NOW() WHERE id = ?",
-                [$newQty, $mergedTags, $newLoss, $existing['id']]
+                [$newQty, $mergedTags ? implode(', ', $mergedTags) : null, $newLoss, $existing['id']]
             );
             return (int)$existing['id'];
         }
