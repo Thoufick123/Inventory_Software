@@ -175,9 +175,9 @@ thead th.sticky-col-select {
 
                             <div class="row g-2 mb-2">
                                 <div class="col-6">
-                                    <label class="form-label text-muted small mb-1" style="font-size: 10px;">Vehicle No</label>
-                                    <input type="text" name="vehicle_no" id="fieldVehicleNo" class="form-control form-control-sm bg-white font-monospace" placeholder="TN-01-AB-1234" maxlength="20" style="text-transform: uppercase;">
-                                    <div class="invalid-feedback" style="font-size: 9px;">Invalid vehicle format.</div>
+                                    <label class="form-label text-muted small mb-1" style="font-size: 10px;">Vehicle No <span class="text-danger">*</span></label>
+                                    <input type="text" name="vehicle_no" id="fieldVehicleNo" class="form-control form-control-sm bg-white font-monospace" placeholder="TN-01-AB-1234" maxlength="20" style="text-transform: uppercase;" required>
+                                    <div class="invalid-feedback" style="font-size: 9px;">Enter a valid vehicle number.</div>
                                 </div>
                                 <div class="col-6">
                                     <label class="form-label text-muted small mb-1" style="font-size: 10px;">Cartons / Boxes <span class="text-danger">*</span></label>
@@ -188,12 +188,13 @@ thead th.sticky-col-select {
 
                             <div class="row g-2 mb-2">
                                 <div class="col-6">
-                                    <label class="form-label text-muted small mb-1" style="font-size: 10px;">Driver / Bearer</label>
-                                    <input type="text" name="driver_name" id="fieldDriverName" class="form-control form-control-sm bg-white" placeholder="Driver Name" maxlength="50">
+                                    <label class="form-label text-muted small mb-1" style="font-size: 10px;">Driver Name <span class="text-danger">*</span></label>
+                                    <input type="text" name="driver_name" id="fieldDriverName" class="form-control form-control-sm bg-white" placeholder="Driver Name" maxlength="50" required>
+                                    <div class="invalid-feedback" style="font-size: 9px;">Driver name is required.</div>
                                 </div>
                                 <div class="col-6">
-                                    <label class="form-label text-muted small mb-1" style="font-size: 10px;">Driver Phone</label>
-                                    <input type="tel" name="driver_phone" id="fieldDriverPhone" class="form-control form-control-sm bg-white font-monospace" placeholder="10-digit Mobile" maxlength="10" pattern="[6-9][0-9]{9}">
+                                    <label class="form-label text-muted small mb-1" style="font-size: 10px;">Driver Phone <span class="text-danger">*</span></label>
+                                    <input type="tel" name="driver_phone" id="fieldDriverPhone" class="form-control form-control-sm bg-white font-monospace" placeholder="10-digit Mobile" maxlength="10" pattern="[6-9][0-9]{9}" required>
                                     <div class="invalid-feedback" id="fieldDriverPhoneError" style="font-size: 9px;">Enter valid 10-digit mobile.</div>
                                 </div>
                             </div>
@@ -2297,6 +2298,24 @@ document.addEventListener('DOMContentLoaded', function() {
             fieldCarrierName.classList.remove('is-invalid');
         }
 
+        const vehicleNo = fieldVehicleNo?.value.trim() || '';
+        if (!/^[A-Z0-9 -]{1,20}$/i.test(vehicleNo)) {
+            fieldVehicleNo?.classList.add('is-invalid');
+            if (!firstInvalid) firstInvalid = fieldVehicleNo;
+            isValid = false;
+        } else {
+            fieldVehicleNo?.classList.remove('is-invalid');
+        }
+
+        const driverName = fieldDriverName?.value.trim() || '';
+        if (!driverName || driverName.length > 50) {
+            fieldDriverName?.classList.add('is-invalid');
+            if (!firstInvalid) firstInvalid = fieldDriverName;
+            isValid = false;
+        } else {
+            fieldDriverName?.classList.remove('is-invalid');
+        }
+
         // Carton Count Validation
         const cartonVal = parseInt(fieldCartonCount?.value) || 0;
         if (!fieldCartonCount || cartonVal < 1 || cartonVal > 999) {
@@ -2309,14 +2328,17 @@ document.addEventListener('DOMContentLoaded', function() {
             fieldCartonCount.classList.remove('is-invalid');
         }
 
-        // Driver Phone Validation (optional, but must be valid if provided)
-        if (fieldDriverPhone && fieldDriverPhone.value.trim() !== '') {
-            if (!validatePhone(fieldDriverPhone, fieldDriverPhoneError)) {
-                isValid = false;
+        // Driver Phone Validation
+        if (!fieldDriverPhone || !mobileRegex.test(fieldDriverPhone.value.trim())) {
+            if (fieldDriverPhone) {
+                fieldDriverPhone.classList.add('is-invalid');
+                if (fieldDriverPhoneError) fieldDriverPhoneError.textContent = 'Enter a valid 10-digit mobile number.';
                 if (!firstInvalid) firstInvalid = fieldDriverPhone;
             }
-        } else if (fieldDriverPhone) {
-            fieldDriverPhone.classList.remove('is-invalid');
+            isValid = false;
+        } else if (!validatePhone(fieldDriverPhone, fieldDriverPhoneError)) {
+            isValid = false;
+            if (!firstInvalid) firstInvalid = fieldDriverPhone;
         }
 
         if (!isValid && firstInvalid) {

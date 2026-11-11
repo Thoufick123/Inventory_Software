@@ -170,8 +170,9 @@ thead th.sticky-col-select {
 
                             <div class="row g-2 mb-2">
                                 <div class="col-6">
-                                    <label class="form-label text-muted small mb-1" style="font-size: 10px;">Vehicle No</label>
-                                    <input type="text" name="vehicle_no" id="fieldVehicleNo" class="form-control form-control-sm bg-white" placeholder="TN-01-AB-1234">
+                                    <label class="form-label text-muted small mb-1" style="font-size: 10px;">Vehicle No <span class="text-danger">*</span></label>
+                                    <input type="text" name="vehicle_no" id="fieldVehicleNo" class="form-control form-control-sm bg-white" placeholder="TN-01-AB-1234" maxlength="20" style="text-transform: uppercase;" required>
+                                    <div class="invalid-feedback">Enter a valid vehicle number.</div>
                                 </div>
                                 <div class="col-6">
                                     <label class="form-label text-muted small mb-1" style="font-size: 10px;">Cartons / Boxes</label>
@@ -181,12 +182,14 @@ thead th.sticky-col-select {
 
                             <div class="row g-2 mb-2">
                                 <div class="col-6">
-                                    <label class="form-label text-muted small mb-1" style="font-size: 10px;">Driver / Bearer</label>
-                                    <input type="text" name="driver_name" id="fieldDriverName" class="form-control form-control-sm bg-white" placeholder="Driver Name">
+                                    <label class="form-label text-muted small mb-1" style="font-size: 10px;">Driver Name <span class="text-danger">*</span></label>
+                                    <input type="text" name="driver_name" id="fieldDriverName" class="form-control form-control-sm bg-white" placeholder="Driver Name" maxlength="50" required>
+                                    <div class="invalid-feedback">Driver name is required.</div>
                                 </div>
                                 <div class="col-6">
-                                    <label class="form-label text-muted small mb-1" style="font-size: 10px;">Driver Phone</label>
-                                    <input type="text" name="driver_phone" id="fieldDriverPhone" class="form-control form-control-sm bg-white" placeholder="Phone No">
+                                    <label class="form-label text-muted small mb-1" style="font-size: 10px;">Driver Phone <span class="text-danger">*</span></label>
+                                    <input type="tel" name="driver_phone" id="fieldDriverPhone" class="form-control form-control-sm bg-white" placeholder="10-digit Mobile" maxlength="10" pattern="[6-9][0-9]{9}" required>
+                                    <div class="invalid-feedback">Enter a valid 10-digit mobile number starting with 6-9.</div>
                                 </div>
                             </div>
 
@@ -846,10 +849,10 @@ thead th.sticky-col-select {
                                 </div>
                             </div>
                             <div class="col-md-3">
-                                <label class="form-label small fw-bold text-dark mb-1">Vehicle / Transport No</label>
+                                <label class="form-label small fw-bold text-dark mb-1">Vehicle / Transport No <span class="text-danger">*</span></label>
                                 <div class="input-group input-group-sm">
                                     <span class="input-group-text bg-light"><i class="bi bi-car-front text-muted"></i></span>
-                                    <input type="text" id="modalFieldVehicleNo" class="form-control" placeholder="TN-01-AB-1234">
+                                    <input type="text" id="modalFieldVehicleNo" class="form-control" placeholder="TN-01-AB-1234" maxlength="20" required>
                                 </div>
                             </div>
                             <div class="col-md-3">
@@ -861,17 +864,17 @@ thead th.sticky-col-select {
                             </div>
 
                             <div class="col-md-6">
-                                <label class="form-label small fw-bold text-dark mb-1">Driver / Bearer Handover Name</label>
+                                <label class="form-label small fw-bold text-dark mb-1">Driver Name <span class="text-danger">*</span></label>
                                 <div class="input-group input-group-sm">
                                     <span class="input-group-text bg-light"><i class="bi bi-person text-muted"></i></span>
-                                    <input type="text" id="modalFieldDriverName" class="form-control" placeholder="Driver / Bearer Name">
+                                    <input type="text" id="modalFieldDriverName" class="form-control" placeholder="Driver Name" maxlength="50" required>
                                 </div>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label small fw-bold text-dark mb-1">Driver Contact Phone</label>
+                                <label class="form-label small fw-bold text-dark mb-1">Driver Contact Phone <span class="text-danger">*</span></label>
                                 <div class="input-group input-group-sm">
                                     <span class="input-group-text bg-light"><i class="bi bi-telephone text-muted"></i></span>
-                                    <input type="text" id="modalFieldDriverPhone" class="form-control" placeholder="Phone Number">
+                                    <input type="tel" id="modalFieldDriverPhone" class="form-control" placeholder="10-digit Mobile" maxlength="10" pattern="[6-9][0-9]{9}" required>
                                 </div>
                             </div>
 
@@ -2223,6 +2226,30 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (btnFinalExecuteOutwardDispatch) {
         btnFinalExecuteOutwardDispatch.addEventListener('click', function() {
+            const vehicleInput = document.getElementById('modalFieldVehicleNo');
+            const driverNameInput = document.getElementById('modalFieldDriverName');
+            const driverPhoneInput = document.getElementById('modalFieldDriverPhone');
+            const vehicleNo = vehicleInput?.value.trim().toUpperCase() || '';
+            const driverName = driverNameInput?.value.trim() || '';
+            const driverPhone = driverPhoneInput?.value.replace(/\D/g, '') || '';
+            if (!/^[A-Z0-9 -]{1,20}$/.test(vehicleNo)) {
+                alert('Enter a valid vehicle number using letters, numbers, spaces, or hyphens.');
+                vehicleInput?.focus();
+                return;
+            }
+            if (!driverName || driverName.length > 50) {
+                alert('Driver name is required and must be 50 characters or fewer.');
+                driverNameInput?.focus();
+                return;
+            }
+            if (!/^[6-9][0-9]{9}$/.test(driverPhone)) {
+                alert('Enter a valid 10-digit driver mobile number starting with 6-9.');
+                driverPhoneInput?.focus();
+                return;
+            }
+            vehicleInput.value = vehicleNo;
+            driverPhoneInput.value = driverPhone;
+
             // Sync values from Outward Modal back to Sidebar Form
             if (document.getElementById('fieldCarrierName')) document.getElementById('fieldCarrierName').value = document.getElementById('modalFieldCarrierName')?.value || '';
             if (document.getElementById('fieldVehicleNo')) document.getElementById('fieldVehicleNo').value = document.getElementById('modalFieldVehicleNo')?.value || '';

@@ -185,13 +185,12 @@ $onlineRecordCount = count(array_filter($items, static fn($item) => (float)($ite
                         <th class="text-end" style="width: 12%;">Rate &amp; Discount</th>
                         <th class="text-end" style="width: 9%;">Net Total</th>
                         <th class="text-center" style="width: 6%;">Mode</th>
-                        <th class="text-center pe-3" style="width: 9%;">Action</th>
                     </tr>
                 </thead>
                 <tbody id="salesTableBody">
                     <?php if (empty($items)): ?>
                         <tr id="emptySalesRow">
-                            <td colspan="10" class="text-center py-5 text-muted">
+                            <td colspan="9" class="text-center py-5 text-muted">
                                 <div class="py-4">
                                     <i class="bi bi-inbox fs-1 text-secondary d-block mb-2"></i>
                                     <h6>No sold products found matching your search criteria.</h6>
@@ -297,19 +296,6 @@ $onlineRecordCount = count(array_filter($items, static fn($item) => (float)($ite
                                         };
                                     ?>
                                     <span class="badge <?= $modeBadge ?> rounded-pill px-2" style="font-size: 10px;"><?= $it['payment_mode'] === 'CASH_UPI' ? 'Cash+UPI' : e($it['payment_mode']) ?></span>
-                                </td>
-                                <td class="text-center pe-3" style="white-space: nowrap;">
-                                    <div class="d-flex justify-content-center align-items-center gap-1">
-                                        <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-2"
-                                                onclick="openSoldProductModal(<?= (int)$it['id'] ?>, 'specs')"
-                                                aria-label="View sold product and invoice <?= e($it['invoice_number']) ?>"
-                                                title="View product and invoice details">
-                                            <i class="bi bi-eye me-1"></i>View
-                                        </button>
-                                        <a href="<?= url('shop/pos/invoice/' . $it['sale_id']) ?>" target="_blank" class="btn btn-sm btn-light border rounded-circle" title="Print POS Invoice">
-                                            <i class="bi bi-printer"></i>
-                                        </a>
-                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -1364,7 +1350,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 emptyRow = document.createElement('tr');
                 emptyRow.id = 'noSalesMatchRow';
                 emptyRow.innerHTML = `
-                    <td colspan="10" class="text-center py-5 text-muted">
+                    <td colspan="9" class="text-center py-5 text-muted">
                         <i class="bi bi-search fs-1 d-block mb-2 text-secondary opacity-50"></i>
                         <h6 class="fw-bold text-secondary">No Matching Sold Products Found</h6>
                         <p class="small text-muted mb-2">No transactions match your live search criteria.</p>

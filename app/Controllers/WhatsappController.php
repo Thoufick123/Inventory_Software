@@ -6036,6 +6036,20 @@ class WhatsappController {
             throw new InvalidArgumentException("Please select at least one product item to return to the warehouse.");
         }
 
+        $carrierName = trim($payload['carrier_name'] ?? '');
+        $vehicleNo = strtoupper(trim((string)($payload['vehicle_no'] ?? '')));
+        $driverName = trim((string)($payload['driver_name'] ?? ''));
+        $driverPhone = preg_replace('/\D/', '', trim((string)($payload['driver_phone'] ?? '')));
+        if ($vehicleNo === '' || strlen($vehicleNo) > 20 || !preg_match('/^[A-Z0-9 -]+$/', $vehicleNo)) {
+            throw new InvalidArgumentException("Enter a valid vehicle number using letters, numbers, spaces, or hyphens.");
+        }
+        if ($driverName === '' || mb_strlen($driverName) > 50) {
+            throw new InvalidArgumentException("Driver name is required and must be 50 characters or fewer.");
+        }
+        if (!preg_match('/^[6-9][0-9]{9}$/', $driverPhone)) {
+            throw new InvalidArgumentException("Driver phone is required and must be a valid 10-digit mobile number starting with 6-9.");
+        }
+
         Database::beginTransaction();
         try {
             $today = date('Ymd');
@@ -6051,10 +6065,6 @@ class WhatsappController {
             }
             $returnNumber = sprintf('%s%04d', $prefix, $seq);
 
-            $carrierName  = trim($payload['carrier_name'] ?? '');
-            $vehicleNo    = trim($payload['vehicle_no'] ?? '');
-            $driverName   = trim($payload['driver_name'] ?? '');
-            $driverPhone  = trim($payload['driver_phone'] ?? '');
             $trackingNo   = trim($payload['tracking_no'] ?? '');
             $cartonCount  = (int)($payload['carton_count'] ?? 1);
             $dispatchDate = trim($payload['dispatch_date'] ?? date('Y-m-d H:i:s'));
