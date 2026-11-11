@@ -163,7 +163,7 @@
                             <th style="width: 8%;" class="text-center">QTY (PCS) <span class="text-danger">*</span></th>
                             <th style="width: 6%;" class="text-center">UNIT (₹)</th>
                             <th style="width: 6%;" class="text-end">LOSS (₹)</th>
-                            <th style="width: 4%;" class="text-center">ACTION</th>
+                            <th style="width: 4%;" class="text-center" title="Remove scanned item from queue">REMOVE</th>
                         </tr>
                     </thead>
                     <tbody id="damageItemsContainer">
@@ -511,8 +511,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 <input type="hidden" name="total_losses[]" class="total-loss-input" value="${(rowQty * cost).toFixed(2)}">
             </td>
             <td class="text-center">
-                <button type="button" class="btn btn-sm btn-outline-danger remove-row" onclick="removeDamageItemRow(this)" title="Remove item">
-                    <i class="bi bi-trash"></i>
+                <button type="button" class="btn btn-sm btn-outline-secondary remove-row" onclick="removeDamageItemRow(this)" title="Remove scanned piece from queue">
+                    <i class="bi bi-x-lg"></i>
                 </button>
             </td>
         `;
