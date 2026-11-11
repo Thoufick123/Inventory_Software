@@ -866,6 +866,7 @@ let damageCameraRunning = false;
 let damageCameraStarting = false;
 let damageCameraRequestId = 0;
 let lastDamageCameraCode = '';
+let activeDamageReasonEditor = null;
 const damageReasonOptions = <?= json_encode(array_values(array_column($damageReasons, 'damage_reason')), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 
 function setDamageRollScanStatus(message, isError = false) {
@@ -887,6 +888,9 @@ function renderDamageScannedLabels() {
     const inputs = document.getElementById('damageQrInputs');
     if (!list || !inputs) return;
 
+    if (activeDamageReasonEditor && list.contains(activeDamageReasonEditor.container)) {
+        closeDamageReasonEditor();
+    }
     list.replaceChildren();
     inputs.replaceChildren();
     const count = document.getElementById('damageScannedCount');
@@ -1704,6 +1708,7 @@ document.addEventListener('DOMContentLoaded', () => {
         damageModal.addEventListener('shown.bs.modal', () => scanInput.focus());
         damageModal.addEventListener('hidden.bs.modal', () => {
             stopDamageCameraScanner();
+            closeDamageReasonEditor();
             clearDamageRollSelection();
             scanInput.value = '';
             setDamageRollScanStatus('');
@@ -1852,15 +1857,79 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-async function addDamageReason(selectId) {
-    const newReason = window.prompt('Enter the new damage / defect reason:');
-    if (newReason === null) return;
+function addDamageReason(selectId) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
 
-    const reason = newReason.trim();
-    if (!reason) {
-        window.alert('Please enter a damage reason.');
+    if (activeDamageReasonEditor && activeDamageReasonEditor.select === select) {
+        closeDamageReasonEditor();
         return;
     }
+    closeDamageReasonEditor();
+
+    const editor = document.createElement('div');
+    editor.className = 'mt-2 p-2 border rounded bg-light';
+    const label = document.createElement('label');
+    label.className = 'form-label small fw-semibold mb-1';
+    label.textContent = 'New Damage / Defect Reason';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 255;
+    input.className = 'form-control form-control-sm';
+    input.placeholder = 'Enter a damage reason';
+    const actions = document.createElement('div');
+    actions.className = 'd-flex justify-content-end gap-2 mt-2';
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'btn btn-sm btn-outline-secondary';
+    cancelButton.textContent = 'Cancel';
+    cancelButton.addEventListener('click', () => closeDamageReasonEditor());
+    const saveButton = document.createElement('button');
+    saveButton.type = 'button';
+    saveButton.className = 'btn btn-sm btn-primary';
+    saveButton.textContent = 'Save Reason';
+    saveButton.addEventListener('click', () => saveDamageReason());
+    const status = document.createElement('div');
+    status.className = 'small mt-1 d-none';
+    status.setAttribute('role', 'status');
+    actions.append(cancelButton, saveButton);
+    editor.append(label, input, actions, status);
+    (select.closest('.col-md-6') || select.parentElement).appendChild(editor);
+
+    activeDamageReasonEditor = { container: editor, select, input, saveButton, cancelButton, status };
+    input.addEventListener('keydown', event => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            saveDamageReason();
+        } else if (event.key === 'Escape') {
+            closeDamageReasonEditor();
+        }
+    });
+    input.focus();
+}
+
+function closeDamageReasonEditor(expectedEditor = null) {
+    if (!activeDamageReasonEditor || (expectedEditor && activeDamageReasonEditor.container !== expectedEditor.container)) return;
+    activeDamageReasonEditor.container.remove();
+    activeDamageReasonEditor = null;
+}
+
+async function saveDamageReason() {
+    const editor = activeDamageReasonEditor;
+    if (!editor) return;
+    const reason = editor.input.value.trim();
+    if (!reason) {
+        editor.status.textContent = 'Please enter a damage reason.';
+        editor.status.className = 'small mt-1 text-danger';
+        editor.input.focus();
+        return;
+    }
+
+    editor.saveButton.disabled = true;
+    editor.cancelButton.disabled = true;
+    editor.saveButton.textContent = 'Saving...';
+    editor.status.textContent = '';
+    editor.status.className = 'small mt-1 d-none';
 
     const formData = new FormData();
     formData.append('_csrf_token', '<?= CSRF::token() ?>');
@@ -1881,19 +1950,21 @@ async function addDamageReason(selectId) {
         if (!damageReasonOptions.some(option => option.toLowerCase() === savedReason.toLowerCase())) {
             damageReasonOptions.push(savedReason);
         }
-        const select = document.getElementById(selectId);
-        if (select && !Array.from(select.options).some(option => option.value.toLowerCase() === savedReason.toLowerCase())) {
+        if (!Array.from(editor.select.options).some(option => option.value.toLowerCase() === savedReason.toLowerCase())) {
             const option = document.createElement('option');
             option.value = savedReason;
             option.textContent = savedReason;
-            select.appendChild(option);
+            editor.select.appendChild(option);
         }
-        if (select) {
-            select.value = savedReason;
-            select.dispatchEvent(new Event('change', { bubbles: true }));
-        }
+        editor.select.value = savedReason;
+        editor.select.dispatchEvent(new Event('change', { bubbles: true }));
+        closeDamageReasonEditor(editor);
     } catch (error) {
-        window.alert(error.message || 'Unable to save this damage reason.');
+        editor.status.textContent = error.message || 'Unable to save this damage reason.';
+        editor.status.className = 'small mt-1 text-danger';
+        editor.saveButton.disabled = false;
+        editor.cancelButton.disabled = false;
+        editor.saveButton.textContent = 'Save Reason';
     }
 }
 </script>
