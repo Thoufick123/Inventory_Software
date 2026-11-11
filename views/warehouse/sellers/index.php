@@ -190,7 +190,7 @@
                                             <i class="bi bi-eye"></i>
                                         </a>
                                         <?php if (hasPermission('wh_sellers', 'edit')): ?>
-                                        <a href="<?= url('warehouse/sellers/create?seller_id=' . $s['id'] . '&mode=edit') ?>" class="btn btn-outline-secondary" title="Edit Supplier">
+                                        <a href="<?= url('warehouse/sellers/edit/' . $s['id']) ?>" class="btn btn-outline-secondary" title="Edit Supplier">
                                             <i class="bi bi-pencil"></i>
                                         </a>
                                         <?php endif; ?>

@@ -567,6 +567,9 @@ class Router {
         $this->post('warehouse/allocation/outward/store', 'WarehouseController', 'storeAllocationOutward', ['AuthMiddleware', ['PermissionMiddleware', 'allocation_outward', 'create']]);
         $this->post('warehouse/allocation/outward/mark-delivered/{id}', 'WarehouseController', 'markOutwardDelivered', ['AuthMiddleware', ['PermissionMiddleware', 'allocation_outward', 'deliver']]);
         $this->get('warehouse/allocation/gatepass/{id}', 'WarehouseController', 'printAllocationGatePass', ['AuthMiddleware', ['PermissionMiddleware', 'allocation_outward', 'gatepass']]);
+        $this->get('warehouse/allocation/outward/view-ajax/{id}', 'WarehouseController', 'allocationOutwardDetailsAjax', ['AuthMiddleware', ['PermissionMiddleware', 'allocation_outward', 'view']]);
+        $this->post('warehouse/allocation/outward/update/{id}', 'WarehouseController', 'updateAllocationOutward', ['AuthMiddleware', ['PermissionMiddleware', 'allocation_outward', 'edit']]);
+        $this->post('warehouse/allocation/outward/delete/{id}', 'WarehouseController', 'deleteAllocationOutward', ['AuthMiddleware', ['PermissionMiddleware', 'allocation_outward', 'delete']]);
         $this->get('api/warehouse/scan-allocation-qr', 'WarehouseController', 'ajaxScanAllocationQr', ['AuthMiddleware', ['PermissionMiddleware', 'allocation', 'view']]);
         $this->post('api/warehouse/scan-allocation-qr', 'WarehouseController', 'ajaxScanAllocationQr', ['AuthMiddleware', ['PermissionMiddleware', 'allocation', 'view']]);
         $this->get('api/warehouse/variant-stock-hierarchy', 'WarehouseController', 'ajaxVariantStockHierarchy', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'view']]);
@@ -601,6 +604,7 @@ class Router {
         $this->post('warehouse/sellers/store-buy', 'WarehouseController', 'storeThirdPartyPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'purchases', 'create']]);
         $this->get('warehouse/sellers/view/{id}', 'WarehouseController', 'viewSeller', ['AuthMiddleware', ['PermissionMiddleware', 'wh_sellers', 'view']]);
         $this->get('warehouse/sellers/edit/{id}', 'WarehouseController', 'editSeller', ['AuthMiddleware', ['PermissionMiddleware', 'wh_sellers', 'edit']]);
+        $this->get('warehouse/sellers/{id}/edit', 'WarehouseController', 'editSeller', ['AuthMiddleware', ['PermissionMiddleware', 'wh_sellers', 'edit']]);
         $this->post('warehouse/sellers/update/{id}', 'WarehouseController', 'updateSeller', ['AuthMiddleware', ['PermissionMiddleware', 'wh_sellers', 'edit']]);
         $this->post('warehouse/sellers/update-product', 'WarehouseController', 'updateSupplierProductAjax', ['AuthMiddleware', ['PermissionMiddleware', 'wh_sellers', 'edit']]);
         $this->post('warehouse/sellers/delete/{id}', 'WarehouseController', 'deleteSeller', ['AuthMiddleware', ['PermissionMiddleware', 'wh_sellers', 'delete']]);
