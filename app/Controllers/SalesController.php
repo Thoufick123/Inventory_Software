@@ -226,11 +226,17 @@ class SalesController {
                 if (!$isAggregateStock && !isset($damageTagsByVariant[$variantId])) {
                     $damageTagsByVariant[$variantId] = [];
                     $damageRecords = Database::fetchAll(
-                        "SELECT 'CHANNEL' AS damage_source, damage_number, tag_code FROM channel_damages
-                         WHERE variant_id = ? AND tag_code IS NOT NULL AND tag_code != ''
+                        "SELECT 'CHANNEL' AS damage_source, cd.damage_number, cd.tag_code, cd.allocation_id,
+                                cd.variant_id, cd.quantity, pv.sku
+                         FROM channel_damages cd
+                         JOIN product_variants pv ON pv.id = cd.variant_id
+                         WHERE cd.variant_id = ? AND (cd.tag_code IS NOT NULL AND cd.tag_code != '' OR cd.allocation_id IS NOT NULL)
                          UNION ALL
-                         SELECT 'SHOP' AS damage_source, damage_number, tag_code FROM shop_damages
-                         WHERE variant_id = ? AND tag_code IS NOT NULL AND tag_code != ''",
+                         SELECT 'SHOP' AS damage_source, sd.damage_number, sd.tag_code, NULL AS allocation_id,
+                                sd.variant_id, sd.quantity, pv.sku
+                         FROM shop_damages sd
+                         JOIN product_variants pv ON pv.id = sd.variant_id
+                         WHERE sd.variant_id = ? AND sd.tag_code IS NOT NULL AND sd.tag_code != ''",
                         [$variantId, $variantId]
                     );
                     foreach ($damageRecords as $damageRecord) {

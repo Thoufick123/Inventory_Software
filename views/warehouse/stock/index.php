@@ -52,6 +52,11 @@ if (!function_exists('renderCategoryTypeBadge')) {
     </div>
     <div class="d-flex gap-2 flex-wrap align-items-center">
 
+        <?php if (hasPermission('inward', 'create') && (hasPermission('inward', 'view') || hasPermission('warehouse', 'view'))): ?>
+        <a href="<?= url('warehouse/inward') ?>" class="btn btn-primary">
+            <i class="bi bi-box-arrow-in-down me-1"></i> Receive Stock
+        </a>
+        <?php endif; ?>
 
         <?php if (hasPermission('stock', 'view')): ?>
         <a href="<?= url('warehouse/adjustments') ?>" class="btn btn-outline-secondary">
@@ -472,6 +477,16 @@ if (!function_exists('renderCategoryTypeBadge')) {
                                     <td class="text-end fw-bold text-dark font-monospace" id="val-cell-<?= $item['variant_id'] ?>">₹<?= number_format((float)($item['valuation'] ?? 0), 2) ?></td>
                                     <td class="text-end text-nowrap">
                                         <div class="d-inline-flex gap-1">
+                                            <?php if (hasPermission('stock', 'edit')): ?>
+                                                <button type="button" class="btn btn-sm btn-outline-success px-2 py-1" title="Edit product price" onclick="openEditPriceModal({variantId: <?= (int)$item['variant_id'] ?>, sku: <?= htmlspecialchars(json_encode($item['sku'] ?? ''), ENT_QUOTES, 'UTF-8') ?>, productName: <?= htmlspecialchars(json_encode($item['product_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>, costPrice: <?= (float)($item['cost_rate'] ?? ($item['production_cost'] ?? ($item['purchase_price'] ?? 0))) ?>, sellingPrice: <?= (float)($item['display_selling_price'] ?? $item['selling_price'] ?? 0) ?>, mrp: <?= (float)($item['display_mrp'] ?? $item['mrp'] ?? 0) ?>})">
+                                                    <i class="bi bi-pencil-square"></i>
+                                                </button>
+                                            <?php endif; ?>
+                                            <?php if (hasPermission('stock', 'adjust')): ?>
+                                                <a href="<?= url('warehouse/adjustments?warehouse_id=' . (int)$selectedWarehouseId . '&variant_id=' . (int)$item['variant_id']) ?>" class="btn btn-sm btn-outline-danger px-2 py-1" title="Request a stock adjustment or removal">
+                                                    <i class="bi bi-sliders"></i>
+                                                </a>
+                                            <?php endif; ?>
                                             <a href="<?= url('warehouse/stock/detail/' . $item['variant_id'] . (!empty($selectedWarehouseId) ? ('?warehouse_id=' . (int)$selectedWarehouseId) : '')) ?>" class="btn btn-sm btn-outline-primary px-2 py-1" title="View Stock Details & Ledger">
                                                 <i class="bi bi-clock-history me-1"></i> History
                                             </a>
@@ -621,6 +636,16 @@ if (!function_exists('renderCategoryTypeBadge')) {
                                     <td class="text-end fw-bold text-dark font-monospace" id="val-cell-<?= $item['variant_id'] ?>">₹<?= number_format((float)($item['valuation'] ?? 0), 2) ?></td>
                                     <td class="text-end text-nowrap">
                                         <div class="d-inline-flex gap-1">
+                                            <?php if (hasPermission('stock', 'edit')): ?>
+                                                <button type="button" class="btn btn-sm btn-outline-success px-2 py-1" title="Edit product price" onclick="openEditPriceModal({variantId: <?= (int)$item['variant_id'] ?>, sku: <?= htmlspecialchars(json_encode($item['sku'] ?? ''), ENT_QUOTES, 'UTF-8') ?>, productName: <?= htmlspecialchars(json_encode($item['product_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>, costPrice: <?= (float)($item['purchase_price'] > 0 ? $item['purchase_price'] : ($item['production_cost'] ?? 0)) ?>, sellingPrice: <?= (float)($item['display_selling_price'] ?? $item['selling_price'] ?? 0) ?>, mrp: <?= (float)($item['display_mrp'] ?? $item['mrp'] ?? 0) ?>})">
+                                                    <i class="bi bi-pencil-square"></i>
+                                                </button>
+                                            <?php endif; ?>
+                                            <?php if (hasPermission('stock', 'adjust')): ?>
+                                                <a href="<?= url('warehouse/adjustments?warehouse_id=' . (int)$selectedWarehouseId . '&variant_id=' . (int)$item['variant_id']) ?>" class="btn btn-sm btn-outline-danger px-2 py-1" title="Request a stock adjustment or removal">
+                                                    <i class="bi bi-sliders"></i>
+                                                </a>
+                                            <?php endif; ?>
                                             <a href="<?= url('warehouse/stock/detail/' . $item['variant_id'] . (!empty($selectedWarehouseId) ? ('?warehouse_id=' . (int)$selectedWarehouseId) : '')) ?>" class="btn btn-sm btn-outline-primary px-2 py-1" title="View Stock Details & Ledger">
                                                 <i class="bi bi-clock-history me-1"></i> History
                                             </a>
@@ -772,6 +797,16 @@ if (!function_exists('renderCategoryTypeBadge')) {
                                     <td class="text-end fw-bold text-dark font-monospace" id="val-cell-<?= $item['variant_id'] ?>">₹<?= number_format((float)($item['valuation'] ?? 0), 2) ?></td>
                                     <td class="text-end text-nowrap">
                                         <div class="d-inline-flex gap-1">
+                                            <?php if (hasPermission('stock', 'edit')): ?>
+                                                <button type="button" class="btn btn-sm btn-outline-success px-2 py-1" title="Edit product price" onclick="openEditPriceModal({variantId: <?= (int)$item['variant_id'] ?>, sku: <?= htmlspecialchars(json_encode($item['sku'] ?? ''), ENT_QUOTES, 'UTF-8') ?>, productName: <?= htmlspecialchars(json_encode($item['product_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?>, costPrice: <?= (float)($item['purchase_price'] > 0 ? $item['purchase_price'] : ($item['production_cost'] ?? 0)) ?>, sellingPrice: <?= (float)($item['display_selling_price'] ?? $item['selling_price'] ?? 0) ?>, mrp: <?= (float)($item['display_mrp'] ?? $item['mrp'] ?? 0) ?>})">
+                                                    <i class="bi bi-pencil-square"></i>
+                                                </button>
+                                            <?php endif; ?>
+                                            <?php if (hasPermission('stock', 'adjust')): ?>
+                                                <a href="<?= url('warehouse/adjustments?warehouse_id=' . (int)$selectedWarehouseId . '&variant_id=' . (int)$item['variant_id']) ?>" class="btn btn-sm btn-outline-danger px-2 py-1" title="Request a stock adjustment or removal">
+                                                    <i class="bi bi-sliders"></i>
+                                                </a>
+                                            <?php endif; ?>
                                             <a href="<?= url('warehouse/stock/detail/' . $item['variant_id'] . (!empty($selectedWarehouseId) ? ('?warehouse_id=' . (int)$selectedWarehouseId) : '')) ?>" class="btn btn-sm btn-outline-primary px-2 py-1" title="View Stock Details & Ledger">
                                                 <i class="bi bi-clock-history me-1"></i> History
                                             </a>
