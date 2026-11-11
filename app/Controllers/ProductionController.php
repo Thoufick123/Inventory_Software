@@ -4728,21 +4728,168 @@ class ProductionController {
             $subcategoryId = !empty($_GET['subcategory_id']) ? (int)$_GET['subcategory_id'] : null;
             $subSubcategoryId = !empty($_GET['sub_subcategory_id']) ? (int)$_GET['sub_subcategory_id'] : null;
 
-            $sql = "SELECT * FROM wh_category_attributes WHERE category_id = ? AND is_active = 1";
+            // Ensure default SIZE attribute exists for this category if none exists in wh_category_attributes
+            $hasAny = Database::fetchOne("SELECT id FROM wh_category_attributes WHERE category_id = ? LIMIT 1", [$categoryId]);
+            if (!$hasAny) {
+                $allSizes = Database::fetchAll("SELECT code, name FROM sizes WHERE is_active = 1 ORDER BY sort_order ASC, id ASC");
+                $sizeCodes = !empty($allSizes) ? array_unique(array_column($allSizes, 'code')) : ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
+                $sizeOptionsStr = implode(',', $sizeCodes);
+                Database::execute(
+                    "INSERT INTO wh_category_attributes (category_id, subcategory_id, sub_subcategory_id, attr_name, attr_type, attr_options, is_required, sort_order, is_active, created_at)
+                     VALUES (?, NULL, NULL, 'SIZE', 'MULTI_SELECT', ?, 0, 1, 1, NOW())",
+                    [$categoryId, $sizeOptionsStr]
+                );
+            }
+
+            // Also if SIZE attribute exists in wh_category_attributes, ensure it is MULTI_SELECT so user can multi-select
+            Database::execute(
+                "UPDATE wh_category_attributes SET attr_type = 'MULTI_SELECT' WHERE category_id = ? AND attr_name = 'SIZE' AND attr_type != 'MULTI_SELECT'",
+                [$categoryId]
+            );
+
+            // Fetch attributes matching hierarchy:
+            // 1. General to category: subcategory_id IS NULL or 0
+            // 2. Specific to subcategory: subcategory_id = ? AND (sub_subcategory_id IS NULL OR 0)
+            // 3. Specific to sub-subcategory: subcategory_id = ? AND sub_subcategory_id = ?
+            $sql = "SELECT * FROM wh_category_attributes 
+                    WHERE category_id = ? 
+                      AND is_active = 1";
             $params = [$categoryId];
 
-            if ($subSubcategoryId) {
-                $sql .= " AND (sub_subcategory_id = ? OR sub_subcategory_id IS NULL OR sub_subcategory_id = 0)";
+            if ($subSubcategoryId && $subcategoryId) {
+                $sql .= " AND (
+                    (subcategory_id IS NULL OR subcategory_id = 0)
+                    OR (subcategory_id = ? AND (sub_subcategory_id IS NULL OR sub_subcategory_id = 0 OR sub_subcategory_id = ?))
+                )";
+                $params[] = $subcategoryId;
                 $params[] = $subSubcategoryId;
             } elseif ($subcategoryId) {
-                $sql .= " AND (subcategory_id = ? OR subcategory_id IS NULL OR subcategory_id = 0)";
+                $sql .= " AND (
+                    (subcategory_id IS NULL OR subcategory_id = 0)
+                    OR (subcategory_id = ? AND (sub_subcategory_id IS NULL OR sub_subcategory_id = 0))
+                )";
                 $params[] = $subcategoryId;
+            } else {
+                $sql .= " AND (subcategory_id IS NULL OR subcategory_id = 0)";
             }
 
             $sql .= " ORDER BY sort_order ASC, id ASC";
             $attributes = Database::fetchAll($sql, $params);
 
-            Response::json(['success' => true, 'attributes' => $attributes]);
+            // Also fetch all active sizes for convenience
+            $masterSizes = Database::fetchAll("SELECT id, name, code FROM sizes WHERE is_active = 1 ORDER BY sort_order ASC, id ASC");
+
+            Response::json([
+                'success'      => true,
+                'attributes'   => $attributes,
+                'master_sizes' => $masterSizes
+            ]);
+        } catch (\Throwable $e) {
+            Response::json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * AJAX: Add a new option to an existing category attribute dynamically (e.g. adding XXL, XXXL).
+     */
+    public function ajaxAddCategoryAttributeOption(): void {
+        try {
+            $attrId = (int)($_POST['attribute_id'] ?? 0);
+            $attrName = mb_strtoupper(trim($_POST['attr_name'] ?? ''));
+            $optionsInput = trim($_POST['options'] ?? '');
+
+            if (empty($optionsInput)) {
+                Response::json(['success' => false, 'message' => 'Please enter at least one option.'], 400);
+                return;
+            }
+
+            $attr = null;
+            if ($attrId > 0) {
+                $attr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE id = ?", [$attrId]);
+            }
+            if (!$attr && !empty($attrName)) {
+                $attr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE attr_name = ? ORDER BY id DESC LIMIT 1", [$attrName]);
+            }
+
+            if (!$attr) {
+                Response::json(['success' => false, 'message' => 'Attribute not found.'], 404);
+                return;
+            }
+
+            $currentOpts = !empty($attr['attr_options']) ? array_map('trim', explode(',', $attr['attr_options'])) : [];
+            $currentOpts = array_filter($currentOpts, fn($v) => $v !== '');
+            $currentOptsUpper = array_map('mb_strtoupper', $currentOpts);
+
+            $newOptsInput = array_map('trim', explode(',', $optionsInput));
+            $newOptsInput = array_filter($newOptsInput, fn($v) => $v !== '');
+            $addedOpts = [];
+
+            foreach ($newOptsInput as $rawOpt) {
+                $optUpper = mb_strtoupper($rawOpt);
+                if (!in_array($optUpper, $currentOptsUpper, true)) {
+                    $currentOpts[] = $optUpper;
+                    $currentOptsUpper[] = $optUpper;
+                    $addedOpts[] = $optUpper;
+                }
+            }
+
+            $updatedOptsStr = implode(',', $currentOpts);
+            Database::execute("UPDATE wh_category_attributes SET attr_options = ?, attr_type = 'MULTI_SELECT', updated_at = NOW() WHERE id = ?", [$updatedOptsStr, $attr['id']]);
+
+            // If attribute is SIZE, also add each added option to sizes table if not present
+            if ($attr['attr_name'] === 'SIZE') {
+                foreach ($addedOpts as $szCode) {
+                    $existsSize = Database::fetchOne("SELECT id FROM sizes WHERE code = ?", [$szCode]);
+                    if (!$existsSize) {
+                        Database::execute("INSERT INTO sizes (name, code, is_active, created_at) VALUES (?, ?, 1, NOW())", [$szCode, $szCode]);
+                    }
+                }
+            }
+
+            Response::json([
+                'success'     => true,
+                'new_options' => $addedOpts,
+                'all_options' => $currentOpts
+            ]);
+        } catch (\Throwable $e) {
+            Response::json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * AJAX: Remove an option from a category attribute dynamically.
+     */
+    public function ajaxDeleteCategoryAttributeOption(): void {
+        try {
+            $attrId = (int)($_POST['attribute_id'] ?? 0);
+            $attrName = mb_strtoupper(trim($_POST['attr_name'] ?? ''));
+            $optionToDelete = mb_strtoupper(trim($_POST['option'] ?? ''));
+
+            if (empty($optionToDelete)) {
+                Response::json(['success' => false, 'message' => 'Option value is required.'], 400);
+                return;
+            }
+
+            $attr = null;
+            if ($attrId > 0) {
+                $attr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE id = ?", [$attrId]);
+            }
+            if (!$attr && !empty($attrName)) {
+                $attr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE attr_name = ? ORDER BY id DESC LIMIT 1", [$attrName]);
+            }
+
+            if (!$attr) {
+                Response::json(['success' => false, 'message' => 'Attribute not found.'], 404);
+                return;
+            }
+
+            $currentOpts = !empty($attr['attr_options']) ? array_map('trim', explode(',', $attr['attr_options'])) : [];
+            $filteredOpts = array_filter($currentOpts, fn($v) => mb_strtoupper(trim($v)) !== $optionToDelete);
+            $updatedOptsStr = implode(',', $filteredOpts);
+
+            Database::execute("UPDATE wh_category_attributes SET attr_options = ?, updated_at = NOW() WHERE id = ?", [$updatedOptsStr, $attr['id']]);
+
+            Response::json(['success' => true]);
         } catch (\Throwable $e) {
             Response::json(['success' => false, 'message' => $e->getMessage()], 500);
         }
