@@ -136,13 +136,13 @@ $taxValueForItem = static function (array $item, string $type): float {
                                 <div class="col-lg-2 col-md-4"><label class="form-label required">Roll No. / Code *</label><input name="items[<?= $key ?>][roll_number]" class="form-control roll-number text-uppercase" maxlength="50" value="<?= e($item['roll_number']) ?>" required></div>
                                 <div class="col-lg-2 col-md-4"><label class="form-label required">Color / Shade *</label><input name="items[<?= $key ?>][color]" class="form-control roll-color text-uppercase" maxlength="100" value="<?= e($item['color']) ?>" required></div>
                                 <div class="col-lg-2 col-md-4"><label class="form-label required">Design Name / Pattern *</label><input name="items[<?= $key ?>][design_name]" class="form-control roll-design text-uppercase" maxlength="150" value="<?= e($item['design_name']) ?>" required></div>
-                                <div class="col-lg-1 col-md-3"><label class="form-label required">Designs *</label><input type="number" min="1" step="1" name="items[<?= $key ?>][design_count]" class="form-control roll-design-count" value="<?= (int)$item['design_count'] ?>" required></div>
+                                <div class="col-lg-1 col-md-3"><label class="form-label required">Designs *</label><input type="text" inputmode="numeric" pattern="[0-9]+" data-min="1" data-step="1" name="items[<?= $key ?>][design_count]" class="form-control roll-design-count numeric-text-input" value="<?= (int)$item['design_count'] ?>" required></div>
                                 <div class="col-lg-1 col-md-3">
                                     <label class="form-label required">RQ *</label>
-                                    <input type="number" min="1" step="1" name="items[<?= $key ?>][quantity]" class="form-control roll-quantity" value="<?= max(1, (int)$item['quantity']) ?>" required>
+                                    <input type="text" inputmode="numeric" pattern="[0-9]+" data-min="1" data-step="1" name="items[<?= $key ?>][quantity]" class="form-control roll-quantity numeric-text-input" value="<?= max(1, (int)$item['quantity']) ?>" required>
                                 </div>
-                                <div class="col-lg-2 col-md-3"><label class="form-label required">Weight (kg) *</label><div class="input-group"><input type="number" min="0.01" step="0.01" name="items[<?= $key ?>][weight_kg]" class="form-control roll-weight" value="<?= e($item['weight_kg']) ?>" required><span class="input-group-text">kg</span></div></div>
-                                <div class="col-lg-2 col-md-3"><label class="form-label required">Price (₹) *</label><div class="input-group"><span class="input-group-text">₹</span><input type="number" min="0" step="0.01" name="items[<?= $key ?>][unit_price]" class="roll-price form-control" value="<?= e($item['unit_price']) ?>" required></div></div>
+                                <div class="col-lg-2 col-md-3"><label class="form-label required">Weight (kg) *</label><div class="input-group"><input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" data-min="0.01" data-step="0.01" name="items[<?= $key ?>][weight_kg]" class="form-control roll-weight numeric-text-input" value="<?= e($item['weight_kg']) ?>" required><span class="input-group-text">kg</span></div></div>
+                                <div class="col-lg-2 col-md-3"><label class="form-label required">Price (₹) *</label><div class="input-group"><span class="input-group-text">₹</span><input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" data-min="0" data-step="0.01" name="items[<?= $key ?>][unit_price]" class="roll-price form-control numeric-text-input" value="<?= e($item['unit_price']) ?>" required></div></div>
                                 <div class="col-lg-2 col-md-3">
                                     <div class="d-flex justify-content-between align-items-center mb-1">
                                         <label class="form-label mb-0">HSN Code</label>
@@ -168,8 +168,8 @@ $taxValueForItem = static function (array $item, string $type): float {
                                     <?php foreach (['SGST'=>'SGST','IGST'=>'IGST','CGST'=>'CGST','BOTH'=>'Both (CGST and SGST)','EXEMPTED'=>'Exempted'] as $type => $label): ?><option value="<?= e($type) ?>" <?= $gstType === $type ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?>
                                 </select></div>
                                 <div class="col-lg-3 col-md-4 tax-mode-field <?= ($item['tax_input_type'] ?? 'PERCENT') === '' || $gstType === 'EXEMPTED' ? 'd-none' : '' ?>"><label class="form-label">Tax Input Type</label><select name="items[<?= $key ?>][tax_mode]" class="form-select item-tax-mode"><option value="PERCENT" <?= ($item['tax_input_type'] ?? '') !== 'AMOUNT' ? 'selected' : '' ?>>Percentage (%)</option><option value="AMOUNT" <?= ($item['tax_input_type'] ?? '') === 'AMOUNT' ? 'selected' : '' ?>>Amount (₹)</option></select></div>
-                                <div class="col-lg-3 col-md-4 tax-value-field <?= $gstType === 'EXEMPTED' ? 'd-none' : '' ?>"><label class="form-label item-tax-label"><?= $gstType === 'BOTH' ? 'SGST' : e($gstType) ?></label><input type="number" min="0" step="0.01" name="items[<?= $key ?>][tax_value]" class="form-control item-tax-value" value="<?= e($taxValue) ?>"></div>
-                                <div class="col-lg-3 col-md-4 tax-cgst-field <?= $gstType !== 'BOTH' ? 'd-none' : '' ?>"><label class="form-label item-cgst-label">CGST</label><input type="number" min="0" step="0.01" name="items[<?= $key ?>][cgst_tax_value]" class="form-control item-cgst-value" value="<?= e($cgstValue) ?>"></div>
+                                <div class="col-lg-3 col-md-4 tax-value-field <?= $gstType === 'EXEMPTED' ? 'd-none' : '' ?>"><label class="form-label item-tax-label"><?= $gstType === 'BOTH' ? 'SGST' : e($gstType) ?></label><input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" data-min="0" data-step="0.01" name="items[<?= $key ?>][tax_value]" class="form-control item-tax-value numeric-text-input" value="<?= e($taxValue) ?>"></div>
+                                <div class="col-lg-3 col-md-4 tax-cgst-field <?= $gstType !== 'BOTH' ? 'd-none' : '' ?>"><label class="form-label item-cgst-label">CGST</label><input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" data-min="0" data-step="0.01" name="items[<?= $key ?>][cgst_tax_value]" class="form-control item-cgst-value numeric-text-input" value="<?= e($cgstValue) ?>"></div>
                                 <div class="col-md-6">
                                     <label class="form-label">Roll Sample Photo <small class="text-muted">(Optional — JPG, PNG, WEBP)</small></label>
                                     <input type="file" name="roll_photo_<?= $key ?>" class="form-control roll-photo" accept=".jpg,.jpeg,.png,.webp">
@@ -261,7 +261,7 @@ $taxValueForItem = static function (array $item, string $type): float {
                                 </div>
                                 <div class="col-lg-2 col-md-3">
                                     <label class="form-label required">Quantity *</label>
-                                    <input type="number" min="0.001" step="0.001" name="items[<?= $key ?>][quantity]" class="form-control supply-quantity" value="<?= e($item['quantity']) ?>" required>
+                                    <input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" data-min="0.001" data-step="0.001" name="items[<?= $key ?>][quantity]" class="form-control supply-quantity numeric-text-input" value="<?= e($item['quantity']) ?>" required>
                                 </div>
                                 <div class="col-lg-2 col-md-3">
                                     <label class="form-label required">Unit *</label>
@@ -278,7 +278,7 @@ $taxValueForItem = static function (array $item, string $type): float {
                                     <label class="form-label required">Unit Price (₹) *</label>
                                     <div class="input-group">
                                         <span class="input-group-text">₹</span>
-                                        <input type="number" min="0" step="0.01" name="items[<?= $key ?>][unit_price]" class="form-control supply-price" value="<?= e($item['unit_price']) ?>" required>
+                                        <input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" data-min="0" data-step="0.01" name="items[<?= $key ?>][unit_price]" class="form-control supply-price numeric-text-input" value="<?= e($item['unit_price']) ?>" required>
                                     </div>
                                 </div>
                                 <div class="col-lg-2 col-md-3">
@@ -291,11 +291,11 @@ $taxValueForItem = static function (array $item, string $type): float {
                                 </div>
                                 <div class="col-lg-2 col-md-3 tax-value-field <?= $gstType === 'EXEMPTED' ? 'd-none' : '' ?>">
                                     <label class="form-label item-tax-label"><?= $gstType === 'BOTH' ? 'SGST' : e($gstType) ?></label>
-                                    <input type="number" min="0" step="0.01" name="items[<?= $key ?>][tax_value]" class="form-control item-tax-value" value="<?= e($taxValue) ?>">
+                                    <input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" data-min="0" data-step="0.01" name="items[<?= $key ?>][tax_value]" class="form-control item-tax-value numeric-text-input" value="<?= e($taxValue) ?>">
                                 </div>
                                 <div class="col-lg-2 col-md-3 tax-cgst-field <?= $gstType !== 'BOTH' ? 'd-none' : '' ?>">
                                     <label class="form-label item-cgst-label">CGST</label>
-                                    <input type="number" min="0" step="0.01" name="items[<?= $key ?>][cgst_tax_value]" class="form-control item-cgst-value" value="<?= e($cgstValue) ?>">
+                                    <input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" data-min="0" data-step="0.01" name="items[<?= $key ?>][cgst_tax_value]" class="form-control item-cgst-value numeric-text-input" value="<?= e($cgstValue) ?>">
                                 </div>
                             </div>
                         </div>
@@ -356,7 +356,7 @@ $taxValueForItem = static function (array $item, string $type): float {
                 <div class="mb-3">
                     <label class="form-label fw-bold small text-dark">Default GST Rate (%) <span class="text-danger">*</span></label>
                     <div class="input-group">
-                        <input type="number" step="0.01" min="0" max="28" id="quickHsnGstInput" class="form-control fw-bold" value="5.00" required>
+                        <input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" data-step="0.01" data-min="0" data-max="28" id="quickHsnGstInput" class="form-control fw-bold numeric-text-input" value="5.00" required>
                         <span class="input-group-text">%</span>
                     </div>
                     <small class="text-muted" style="font-size:0.75rem;">Standard garment slab: 5.00%, 12.00%, 18.00%</small>
@@ -518,7 +518,7 @@ $taxValueForItem = static function (array $item, string $type): float {
                 </div>
                 <div class="col-lg-2 col-md-3">
                     <label class="form-label required">Quantity *</label>
-                    <input type="number" class="form-control supply-quantity" min="0.001" step="0.001" value="1" required>
+                    <input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" class="form-control supply-quantity numeric-text-input" data-min="0.001" data-step="0.001" value="1" required>
                 </div>
                 <div class="col-lg-2 col-md-3">
                     <label class="form-label required">Unit *</label>
@@ -543,7 +543,7 @@ $taxValueForItem = static function (array $item, string $type): float {
                     <label class="form-label required">Unit Price (₹) *</label>
                     <div class="input-group">
                         <span class="input-group-text">₹</span>
-                        <input type="number" class="form-control supply-price" min="0" step="0.01" value="0" required>
+                        <input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" class="form-control supply-price numeric-text-input" data-min="0" data-step="0.01" value="0" required>
                     </div>
                 </div>
                 <div class="col-lg-2 col-md-3">
@@ -565,11 +565,11 @@ $taxValueForItem = static function (array $item, string $type): float {
                 </div>
                 <div class="col-lg-2 col-md-3 tax-value-field d-none">
                     <label class="form-label item-tax-label">Tax</label>
-                    <input type="number" class="form-control item-tax-value" min="0" max="100" step="0.01" value="0">
+                    <input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" class="form-control item-tax-value numeric-text-input" data-min="0" data-max="100" data-step="0.01" value="0">
                 </div>
                 <div class="col-lg-2 col-md-3 tax-cgst-field d-none">
                     <label class="form-label item-cgst-label">CGST</label>
-                    <input type="number" class="form-control item-cgst-value" min="0" max="100" step="0.01" value="0">
+                    <input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" class="form-control item-cgst-value numeric-text-input" data-min="0" data-max="100" data-step="0.01" value="0">
                 </div>
             </div>
         </div>
@@ -585,7 +585,51 @@ $taxValueForItem = static function (array $item, string $type): float {
     window.hsnCodesList = <?= json_encode($hsnCodes ?? []) ?>;
     const money = value => '₹' + (Number(value) || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     const safe = value => String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const numericTextPattern = /^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/;
     let activeHsnTarget = null;
+
+    function validateNumericTextInput(input) {
+        const value = input.value.trim();
+        let message = '';
+        if (value === '') {
+            message = input.required ? 'Enter a value.' : '';
+        } else if (!numericTextPattern.test(value) || !Number.isFinite(Number(value))) {
+            message = 'Enter a valid number.';
+        } else {
+            const number = Number(value);
+            const minAttribute = input.dataset.min;
+            const maxAttribute = input.dataset.max;
+            const stepAttribute = input.dataset.step;
+            if (minAttribute !== undefined && number < Number(minAttribute)) {
+                message = `Value must be at least ${minAttribute}.`;
+            } else if (maxAttribute !== undefined && number > Number(maxAttribute)) {
+                message = `Value must be no more than ${maxAttribute}.`;
+            } else if (stepAttribute && stepAttribute !== 'any') {
+                const step = Number(stepAttribute);
+                const base = minAttribute !== undefined ? Number(minAttribute) : 0;
+                const stepCount = (number - base) / step;
+                if (step > 0 && Math.abs(stepCount - Math.round(stepCount)) > 1e-8) {
+                    message = `Value must use increments of ${stepAttribute}.`;
+                }
+            }
+        }
+        input.setCustomValidity(message);
+        return message === '';
+    }
+
+    form.addEventListener('input', event => {
+        if (event.target.matches('.numeric-text-input')) {
+            validateNumericTextInput(event.target);
+        }
+    });
+    form.addEventListener('submit', event => {
+        const invalidInput = Array.from(form.querySelectorAll('.numeric-text-input'))
+            .find(input => !validateNumericTextInput(input));
+        if (invalidInput) {
+            event.preventDefault();
+            invalidInput.reportValidity();
+        }
+    }, true);
 
     function openQuickAddHsnModal(dropdownEl, hiddenInput, presetCode = '') {
         activeHsnTarget = {
@@ -619,7 +663,12 @@ $taxValueForItem = static function (array $item, string $type): float {
         btnSave.addEventListener('click', () => {
             const code = (document.getElementById('quickHsnCodeInput')?.value || '').trim().toUpperCase();
             const desc = (document.getElementById('quickHsnDescInput')?.value || '').trim();
-            const gst = parseFloat(document.getElementById('quickHsnGstInput')?.value) || 0;
+            const gstInput = document.getElementById('quickHsnGstInput');
+            if (gstInput && !validateNumericTextInput(gstInput)) {
+                gstInput.reportValidity();
+                return;
+            }
+            const gst = Number(gstInput?.value) || 0;
             const alertBox = document.getElementById('quickHsnAlert');
 
             if (!code || code.length < 2) {
@@ -855,8 +904,8 @@ $taxValueForItem = static function (array $item, string $type): float {
         row.querySelector('.item-tax-label').textContent = `${type === 'BOTH' ? 'SGST' : type} (${mode === 'PERCENT' ? '%' : '₹'})`;
         row.querySelector('.item-cgst-label').textContent = `CGST (${mode === 'PERCENT' ? '%' : '₹'})`;
         [row.querySelector('.item-tax-value'), row.querySelector('.item-cgst-value')].forEach(input => {
-            if (mode === 'PERCENT') input.max = '100';
-            else input.removeAttribute('max');
+            if (mode === 'PERCENT') input.dataset.max = '100';
+            else delete input.dataset.max;
         });
     }
 

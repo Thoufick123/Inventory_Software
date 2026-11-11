@@ -349,7 +349,7 @@
 
 <!-- 1. Report Damage Modal -->
 <div class="modal fade" id="reportDamageModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
         <div class="modal-content shadow-lg border-danger">
             <div class="modal-header bg-danger text-white py-3">
                 <h5 class="modal-title fw-bold fs-6">
@@ -362,33 +362,50 @@
                 <div class="modal-body p-4">
                     <div class="row g-3">
                         <div class="col-12">
-                            <label for="damageRollQrScan" class="form-label fw-bold">Scan Fabric Roll QR or Finished Product Tag</label>
-                            <input type="text" id="damageRollQrScan" class="form-control form-control-lg" placeholder="Scan a Roll QR or Garment Tag and press Enter; repeat for multiple items" autocomplete="off">
+                            <div class="p-3 bg-light rounded-3 border">
+                                <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+                                    <label for="damageRollQrScan" class="form-label fw-bold mb-0">
+                                        <i class="bi bi-upc-scan text-success me-1"></i>Scan Fabric Roll Barcode / QR Tag
+                                    </label>
+                                    <small class="text-muted">Hardware gun or camera scanner</small>
+                                </div>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-white text-success border-end-0">
+                                        <i class="bi bi-qr-code"></i>
+                                    </span>
+                                    <input type="text" id="damageRollQrScan" class="form-control border-start-0" placeholder="Scan a Roll QR or Finished Product Tag and press Enter" autocomplete="off">
+                                    <button type="button" class="btn btn-success fw-semibold px-3" onclick="scanDamageRollQr()">
+                                        <i class="bi bi-plus-circle me-1"></i>Scan / Add
+                                    </button>
+                                    <button type="button" id="damageCameraToggle" class="btn btn-outline-secondary px-3" onclick="toggleDamageCameraScanner()">
+                                        <i class="bi bi-camera-video me-1"></i><span id="damageCameraToggleLabel">Camera Scanner</span>
+                                    </button>
+                                </div>
+                            </div>
                             <div id="damageRollScanStatus" class="small mt-1" role="status" aria-live="polite"></div>
+                            <div id="damageCameraScannerContainer" class="mt-2 p-2 border rounded d-none">
+                                <div id="damageCameraScannerPreview" style="width: 100%; max-width: 420px; min-height: 220px; background: #000; border-radius: 8px; overflow: hidden; margin: 0 auto;"></div>
+                                <div class="d-flex justify-content-between align-items-center gap-2 mt-2">
+                                    <small id="damageCameraScannerStatus" class="text-muted" role="status" aria-live="polite">Position a QR label inside the camera frame.</small>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0" onclick="stopDamageCameraScanner()">Stop Camera</button>
+                                </div>
+                            </div>
                             <div class="border rounded mt-2 p-2">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
                                     <strong>Scanned labels</strong>
                                     <span id="damageScannedCount" class="badge bg-secondary">0 pieces</span>
                                 </div>
-                                <div id="damageScannedLabels" class="list-group small">
+                                <div id="damageScannedLabels" class="list-group small" style="max-height: 340px; overflow-y: auto;">
                                     <div class="list-group-item text-muted" id="damageScannedEmpty">No labels scanned yet.</div>
                                 </div>
                             </div>
                             <div id="damageQrInputs"></div>
                         </div>
 
-                        <!-- Damage Reason -->
-                        <div class="col-md-6">
-                            <div class="d-flex justify-content-between align-items-center mb-1">
-                                <label class="form-label fw-bold mb-0" for="reportReasonSelect">Damage / Defect Reason <span class="text-danger">*</span></label>
-                                <button type="button" class="btn btn-link btn-sm text-decoration-none p-0" onclick="addDamageReason('reportReasonSelect')"><i class="bi bi-plus-circle me-1"></i>New</button>
+                        <div class="col-12">
+                            <div class="alert alert-info py-2 mb-0 small">
+                                <i class="bi bi-info-circle me-1"></i>Set a damage reason and attach a photo for each scanned label.
                             </div>
-                            <select name="damage_reason" id="reportReasonSelect" class="form-select" required>
-                                <option value="">-- Select Reason --</option>
-                                <?php foreach ($damageReasons as $damageReasonOption): ?>
-                                    <option value="<?= e($damageReasonOption['damage_reason']) ?>"><?= e($damageReasonOption['damage_reason']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
                         </div>
 
                         <!-- Damaged Weight (Disabled with clear visibility - Auto-calculated) -->
@@ -416,19 +433,10 @@
                             <small class="text-muted d-block mt-1" id="reportLossCalcHelp">Calculated: 0.00 kg × ₹0.00/kg</small>
                         </div>
 
-                        <!-- Photo Evidence Upload (Required) -->
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold required">
-                                <i class="bi bi-camera me-1 text-danger"></i>Defect Photo / Evidence
-                            </label>
-                            <input type="file" name="photo" id="reportPhotoInput" class="form-control" accept="image/*,application/pdf" required>
-                            <small class="text-muted d-block mt-1">Upload clear photo/evidence of the damaged roll</small>
-                        </div>
-
-                        <!-- Specific Notes (Either Reason or Notes is required) -->
+                        <!-- Shared notes are optional; reason and evidence are captured per scanned label. -->
                         <div class="col-12">
                             <label class="form-label fw-semibold" id="reportNotesLabel">
-                                Defect Notes &amp; Observations <small class="text-muted fw-normal">(Optional)</small>
+                                Additional Notes &amp; Observations <small class="text-muted fw-normal">(Optional, applies to all scanned labels)</small>
                             </label>
                             <textarea name="defect_notes" id="reportDefectNotes" class="form-control" rows="2" placeholder="Add additional observations if needed"></textarea>
                         </div>
@@ -853,6 +861,13 @@
 let loadedEditRollsMap = {};
 let damageScannedLabels = [];
 let damageScanInProgress = false;
+let damageCameraScanner = null;
+let damageCameraRunning = false;
+let damageCameraStarting = false;
+let damageCameraRequestId = 0;
+let lastDamageCameraCode = '';
+let activeDamageReasonEditor = null;
+const damageReasonOptions = <?= json_encode(array_values(array_column($damageReasons, 'damage_reason')), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
 
 function setDamageRollScanStatus(message, isError = false) {
     const status = document.getElementById('damageRollScanStatus');
@@ -873,6 +888,9 @@ function renderDamageScannedLabels() {
     const inputs = document.getElementById('damageQrInputs');
     if (!list || !inputs) return;
 
+    if (activeDamageReasonEditor && list.contains(activeDamageReasonEditor.container)) {
+        closeDamageReasonEditor();
+    }
     list.replaceChildren();
     inputs.replaceChildren();
     const count = document.getElementById('damageScannedCount');
@@ -892,20 +910,23 @@ function renderDamageScannedLabels() {
         totalLoss += item.loss;
 
         const row = document.createElement('div');
-        row.className = 'list-group-item d-flex justify-content-between align-items-center gap-2';
+        row.className = 'list-group-item';
+        const header = document.createElement('div');
+        header.className = 'd-flex justify-content-between align-items-start gap-2';
         const details = document.createElement('div');
-        details.className = 'text-break';
+        details.className = 'text-break flex-grow-1';
         const code = document.createElement('strong');
         code.textContent = item.code;
         const metadata = document.createElement('div');
         metadata.className = 'text-muted small mt-0.5';
 
         const isProd = (item.itemType === 'PRODUCT');
-        const typeBadge = isProd
-            ? '<span class="badge bg-primary-subtle text-primary border me-1"><i class="bi bi-box-seam me-1"></i>Product</span>'
-            : '<span class="badge bg-secondary-subtle text-secondary border me-1"><i class="bi bi-disc me-1"></i>Roll</span>';
-
-        metadata.innerHTML = `${typeBadge} <span>${item.sellerName} • ${item.rollNumber} • ${item.weight.toFixed(2)} kg • ₹${item.loss.toFixed(2)}</span>`;
+        const typeBadge = document.createElement('span');
+        typeBadge.className = `badge ${isProd ? 'bg-primary-subtle text-primary' : 'bg-secondary-subtle text-secondary'} border me-1`;
+        typeBadge.textContent = isProd ? 'Product' : 'Roll';
+        metadata.append(typeBadge, document.createTextNode(
+            `${item.sellerName} • ${item.rollNumber} • ${item.weight.toFixed(2)} kg • ₹${item.loss.toFixed(2)}`
+        ));
         details.append(code, metadata);
 
         const remove = document.createElement('button');
@@ -917,12 +938,70 @@ function renderDamageScannedLabels() {
             damageScannedLabels.splice(index, 1);
             renderDamageScannedLabels();
         });
-        row.append(details, remove);
+        header.append(details, remove);
+        row.appendChild(header);
+
+        const fields = document.createElement('div');
+        fields.className = 'row g-2 mt-1';
+
+        const reasonColumn = document.createElement('div');
+        reasonColumn.className = 'col-md-6';
+        const reasonLabel = document.createElement('label');
+        reasonLabel.className = 'form-label small fw-semibold mb-1';
+        reasonLabel.htmlFor = `damageReason_${index}`;
+        reasonLabel.textContent = 'Damage / Defect Reason *';
+        const reasonControls = document.createElement('div');
+        reasonControls.className = 'd-flex gap-1';
+        const reasonSelect = document.createElement('select');
+        reasonSelect.id = `damageReason_${index}`;
+        reasonSelect.name = `damage_reasons[${index}]`;
+        reasonSelect.className = 'form-select form-select-sm';
+        reasonSelect.required = true;
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = '-- Select Reason --';
+        reasonSelect.appendChild(placeholder);
+        damageReasonOptions.forEach(reason => {
+            const option = document.createElement('option');
+            option.value = reason;
+            option.textContent = reason;
+            reasonSelect.appendChild(option);
+        });
+        reasonSelect.value = item.damageReason || '';
+        reasonSelect.addEventListener('change', () => {
+            item.damageReason = reasonSelect.value;
+        });
+        const addReasonButton = document.createElement('button');
+        addReasonButton.type = 'button';
+        addReasonButton.className = 'btn btn-sm btn-outline-primary flex-shrink-0';
+        addReasonButton.textContent = 'New';
+        addReasonButton.addEventListener('click', () => addDamageReason(reasonSelect.id));
+        reasonControls.append(reasonSelect, addReasonButton);
+        reasonColumn.append(reasonLabel, reasonControls);
+
+        const photoColumn = document.createElement('div');
+        photoColumn.className = 'col-md-6';
+        const photoLabel = document.createElement('label');
+        photoLabel.className = 'form-label small fw-semibold mb-1';
+        photoLabel.htmlFor = `damagePhoto_${index}`;
+        photoLabel.textContent = 'Defect Photo / Evidence *';
+        if (!item.photoInput) {
+            item.photoInput = document.createElement('input');
+            item.photoInput.type = 'file';
+            item.photoInput.accept = 'image/*,application/pdf';
+            item.photoInput.className = 'form-control form-control-sm';
+            item.photoInput.required = true;
+        }
+        item.photoInput.id = `damagePhoto_${index}`;
+        item.photoInput.name = `damage_photos[${index}]`;
+        photoColumn.append(photoLabel, item.photoInput);
+        fields.append(reasonColumn, photoColumn);
+        row.appendChild(fields);
         list.appendChild(row);
 
         const hiddenCode = document.createElement('input');
         hiddenCode.type = 'hidden';
-        hiddenCode.name = 'qr_codes[]';
+        hiddenCode.name = `qr_codes[${index}]`;
         hiddenCode.value = item.code;
         inputs.appendChild(hiddenCode);
     });
@@ -937,15 +1016,15 @@ function renderDamageScannedLabels() {
     if (lossHelp) lossHelp.textContent = `Estimated loss for ${damageScannedLabels.length} scanned item(s): ₹${totalLoss.toFixed(2)}`;
 }
 
-function scanDamageRollQr() {
+function scanDamageRollQr(scannedValue = null) {
     const scanInput = document.getElementById('damageRollQrScan');
-    const scannedCode = scanInput ? scanInput.value.trim() : '';
+    const scannedCode = (scannedValue !== null ? String(scannedValue) : (scanInput ? scanInput.value : '')).trim();
     if (!scannedCode || damageScanInProgress) return;
 
     const normalizedCode = scannedCode.split('|', 1)[0].trim().toUpperCase().replace(/^#/, '');
     if (damageScannedLabels.some(item => item.code === normalizedCode)) {
         setDamageRollScanStatus(`QR label ${normalizedCode} is already in this damage list.`, true);
-        scanInput.select();
+        if (scanInput && scannedValue === null) scanInput.select();
         return;
     }
 
@@ -970,20 +1049,134 @@ function scanDamageRollQr() {
                 sellerName: data.seller_name || 'Own Production',
                 rollNumber: data.roll_number,
                 weight: pieceWeight,
-                loss: loss
+                loss: loss,
+                damageReason: ''
             });
             renderDamageScannedLabels();
             const badgeType = isProd ? 'Finished Product' : 'Fabric Roll';
             setDamageRollScanStatus(`Added [${badgeType}] ${data.code} — ${data.roll_number}. Scan another label or submit.`);
-            scanInput.value = '';
-            scanInput.focus();
+            if (scanInput) {
+                scanInput.value = '';
+                if (!damageCameraRunning) scanInput.focus();
+            }
         })
         .catch(error => {
             setDamageRollScanStatus(error.message || 'Unable to scan this item.', true);
+            if (damageCameraRunning) setDamageCameraStatus(error.message || 'Unable to scan this item.', true);
         })
         .finally(() => {
             damageScanInProgress = false;
         });
+}
+
+function setDamageCameraStatus(message, isError = false) {
+    const status = document.getElementById('damageCameraScannerStatus');
+    if (!status) return;
+    status.textContent = message;
+    status.className = `small ${isError ? 'text-danger' : 'text-muted'}`;
+}
+
+function toggleDamageCameraScanner() {
+    if (damageCameraRunning || damageCameraStarting) {
+        stopDamageCameraScanner();
+        return;
+    }
+    startDamageCameraScanner();
+}
+
+async function startDamageCameraScanner() {
+    if (damageCameraRunning || damageCameraStarting) return;
+    const container = document.getElementById('damageCameraScannerContainer');
+    const toggleLabel = document.getElementById('damageCameraToggleLabel');
+    const requestId = ++damageCameraRequestId;
+    damageCameraStarting = true;
+    if (container) container.classList.remove('d-none');
+    setDamageCameraStatus('Starting camera…');
+    let scanner = null;
+
+    try {
+        if (typeof Html5Qrcode === 'undefined') {
+            throw new Error('Camera scanner library is not available. Please use the Scan / Add field.');
+        }
+        const cameras = await Html5Qrcode.getCameras();
+        if (requestId !== damageCameraRequestId) return;
+        if (!cameras || cameras.length === 0) {
+            throw new Error('No camera was found on this device.');
+        }
+
+        const camera = cameras.find(device => /back|rear|environment/i.test(device.label)) || cameras[0];
+        scanner = new Html5Qrcode('damageCameraScannerPreview');
+        damageCameraScanner = scanner;
+        await scanner.start(
+            camera.id,
+            { fps: 10, qrbox: { width: 220, height: 220 } },
+            decodedText => {
+                const normalizedCode = decodedText.split('|', 1)[0].trim().toUpperCase().replace(/^#/, '');
+                if (damageScanInProgress || !normalizedCode || damageScannedLabels.some(item => item.code === normalizedCode)) return;
+                if (normalizedCode === lastDamageCameraCode) return;
+                lastDamageCameraCode = normalizedCode;
+                setDamageCameraStatus(`Scanned ${normalizedCode}. Add the item's reason and photo below.`);
+                scanDamageRollQr(decodedText);
+            },
+            () => {}
+        );
+
+        if (requestId !== damageCameraRequestId) {
+            await scanner.stop();
+            scanner.clear();
+            return;
+        }
+        damageCameraRunning = true;
+        if (toggleLabel) toggleLabel.textContent = 'Stop Camera';
+        setDamageCameraStatus('Camera is ready. Point it at a QR label; scanned labels will be added automatically.');
+    } catch (error) {
+        if (scanner) {
+            if (damageCameraScanner === scanner) damageCameraScanner = null;
+            try {
+                scanner.clear();
+            } catch (clearError) {
+                console.warn('Unable to clear failed Production damage camera scanner:', clearError);
+            }
+        }
+        if (requestId === damageCameraRequestId) {
+            setDamageCameraStatus(error.message || 'Camera could not start. Check camera permission and try again.', true);
+            if (toggleLabel) toggleLabel.textContent = 'Camera Scanner';
+        }
+    } finally {
+        if (requestId === damageCameraRequestId) damageCameraStarting = false;
+    }
+}
+
+async function stopDamageCameraScanner() {
+    const wasStarting = damageCameraStarting;
+    const wasRunning = damageCameraRunning;
+    damageCameraRequestId++;
+    damageCameraStarting = false;
+    damageCameraRunning = false;
+    lastDamageCameraCode = '';
+    const scanner = damageCameraScanner;
+    damageCameraScanner = null;
+    const container = document.getElementById('damageCameraScannerContainer');
+    const toggleLabel = document.getElementById('damageCameraToggleLabel');
+    if (toggleLabel) toggleLabel.textContent = 'Camera Scanner';
+
+    if (scanner) {
+        if (wasRunning) {
+            try {
+                await scanner.stop();
+            } catch (error) {
+                console.warn('Unable to stop Production damage camera scanner:', error);
+            }
+        }
+        if (!wasStarting) {
+            try {
+                scanner.clear();
+            } catch (error) {
+                console.warn('Unable to clear Production damage camera scanner:', error);
+            }
+        }
+    }
+    if (container) container.classList.add('d-none');
 }
 
 function getRollMetrics(r) {
@@ -1514,6 +1707,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const damageModal = document.getElementById('reportDamageModal');
         damageModal.addEventListener('shown.bs.modal', () => scanInput.focus());
         damageModal.addEventListener('hidden.bs.modal', () => {
+            stopDamageCameraScanner();
+            closeDamageReasonEditor();
             clearDamageRollSelection();
             scanInput.value = '';
             setDamageRollScanStatus('');
@@ -1551,9 +1746,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const reportForm = document.getElementById('reportDamageForm');
     if (reportForm) {
         reportForm.addEventListener('submit', function(e) {
-            const reason = document.getElementById('reportReasonSelect').value.trim();
-            const photoInput = document.getElementById('reportPhotoInput');
-
             if (damageScannedLabels.length === 0) {
                 alert('Scan at least one valid fabric QR label first.');
                 e.preventDefault();
@@ -1564,15 +1756,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.preventDefault();
                 return false;
             }
-            if (!reason) {
-                alert('Please enter a Damage / Defect Reason.');
-                e.preventDefault();
-                return false;
-            }
-            if (photoInput && photoInput.hasAttribute('required') && (!photoInput.files || photoInput.files.length === 0)) {
-                alert('Defect Photo / Evidence is required. Please attach a clear photo of the damaged roll.');
-                e.preventDefault();
-                return false;
+            for (const item of damageScannedLabels) {
+                if (!item.damageReason || !item.damageReason.trim()) {
+                    alert(`Please select a Damage / Defect Reason for QR label ${item.code}.`);
+                    e.preventDefault();
+                    return false;
+                }
+                if (!item.photoInput || !item.photoInput.files || item.photoInput.files.length === 0) {
+                    alert(`Please attach a photo / evidence file for QR label ${item.code}.`);
+                    e.preventDefault();
+                    return false;
+                }
             }
         });
     }
@@ -1663,15 +1857,79 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-async function addDamageReason(selectId) {
-    const newReason = window.prompt('Enter the new damage / defect reason:');
-    if (newReason === null) return;
+function addDamageReason(selectId) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
 
-    const reason = newReason.trim();
-    if (!reason) {
-        window.alert('Please enter a damage reason.');
+    if (activeDamageReasonEditor && activeDamageReasonEditor.select === select) {
+        closeDamageReasonEditor();
         return;
     }
+    closeDamageReasonEditor();
+
+    const editor = document.createElement('div');
+    editor.className = 'mt-2 p-2 border rounded bg-light';
+    const label = document.createElement('label');
+    label.className = 'form-label small fw-semibold mb-1';
+    label.textContent = 'New Damage / Defect Reason';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 255;
+    input.className = 'form-control form-control-sm';
+    input.placeholder = 'Enter a damage reason';
+    const actions = document.createElement('div');
+    actions.className = 'd-flex justify-content-end gap-2 mt-2';
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'btn btn-sm btn-outline-secondary';
+    cancelButton.textContent = 'Cancel';
+    cancelButton.addEventListener('click', () => closeDamageReasonEditor());
+    const saveButton = document.createElement('button');
+    saveButton.type = 'button';
+    saveButton.className = 'btn btn-sm btn-primary';
+    saveButton.textContent = 'Save Reason';
+    saveButton.addEventListener('click', () => saveDamageReason());
+    const status = document.createElement('div');
+    status.className = 'small mt-1 d-none';
+    status.setAttribute('role', 'status');
+    actions.append(cancelButton, saveButton);
+    editor.append(label, input, actions, status);
+    (select.closest('.col-md-6') || select.parentElement).appendChild(editor);
+
+    activeDamageReasonEditor = { container: editor, select, input, saveButton, cancelButton, status };
+    input.addEventListener('keydown', event => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            saveDamageReason();
+        } else if (event.key === 'Escape') {
+            closeDamageReasonEditor();
+        }
+    });
+    input.focus();
+}
+
+function closeDamageReasonEditor(expectedEditor = null) {
+    if (!activeDamageReasonEditor || (expectedEditor && activeDamageReasonEditor.container !== expectedEditor.container)) return;
+    activeDamageReasonEditor.container.remove();
+    activeDamageReasonEditor = null;
+}
+
+async function saveDamageReason() {
+    const editor = activeDamageReasonEditor;
+    if (!editor) return;
+    const reason = editor.input.value.trim();
+    if (!reason) {
+        editor.status.textContent = 'Please enter a damage reason.';
+        editor.status.className = 'small mt-1 text-danger';
+        editor.input.focus();
+        return;
+    }
+
+    editor.saveButton.disabled = true;
+    editor.cancelButton.disabled = true;
+    editor.saveButton.textContent = 'Saving...';
+    editor.status.textContent = '';
+    editor.status.className = 'small mt-1 d-none';
 
     const formData = new FormData();
     formData.append('_csrf_token', '<?= CSRF::token() ?>');
@@ -1689,16 +1947,24 @@ async function addDamageReason(selectId) {
         }
 
         const savedReason = result.reason;
-        const select = document.getElementById(selectId);
-        if (select && !Array.from(select.options).some(option => option.value.toLowerCase() === savedReason.toLowerCase())) {
+        if (!damageReasonOptions.some(option => option.toLowerCase() === savedReason.toLowerCase())) {
+            damageReasonOptions.push(savedReason);
+        }
+        if (!Array.from(editor.select.options).some(option => option.value.toLowerCase() === savedReason.toLowerCase())) {
             const option = document.createElement('option');
             option.value = savedReason;
             option.textContent = savedReason;
-            select.appendChild(option);
+            editor.select.appendChild(option);
         }
-        if (select) select.value = savedReason;
+        editor.select.value = savedReason;
+        editor.select.dispatchEvent(new Event('change', { bubbles: true }));
+        closeDamageReasonEditor(editor);
     } catch (error) {
-        window.alert(error.message || 'Unable to save this damage reason.');
+        editor.status.textContent = error.message || 'Unable to save this damage reason.';
+        editor.status.className = 'small mt-1 text-danger';
+        editor.saveButton.disabled = false;
+        editor.cancelButton.disabled = false;
+        editor.saveButton.textContent = 'Save Reason';
     }
 }
 </script>
