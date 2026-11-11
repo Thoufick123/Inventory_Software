@@ -74,7 +74,7 @@
 </style>
 <div class="inward-wrapper">
 <?php
-$canVerify = hasPermission('inward', 'verify');
+$canVerify = hasPermission('inward', 'verify') || hasPermission('inward', 'create') || hasPermission('inward', 'edit');
 ?>
     <!-- Page Header -->
     <div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">

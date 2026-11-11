@@ -1558,6 +1558,7 @@ class WarehouseService {
             );
             $item['sibling_variants'] = $siblings;
         }
+        unset($item);
 
         $totalReturnable = 0;
         foreach ($items as $item) {
