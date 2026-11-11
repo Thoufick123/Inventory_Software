@@ -2231,6 +2231,7 @@ CREATE TABLE `sellers` (
   `document_url` varchar(500) DEFAULT NULL,
   `seller_type` enum('MATERIAL_SUPPLIER','PRODUCT_SELLER') DEFAULT 'PRODUCT_SELLER',
   `is_active` tinyint(1) DEFAULT 1,
+  `production_deleted_at` datetime DEFAULT NULL,
   `created_at` datetime DEFAULT current_timestamp(),
   `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `gstin` varchar(20) DEFAULT NULL,
