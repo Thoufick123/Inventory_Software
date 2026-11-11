@@ -219,9 +219,6 @@ $canDeleteCutting = hasPermission('cutting', 'delete');
                         <small class="text-muted">Variants dynamically generated for each selected fabric roll based on its specific catalog hierarchy</small>
                     </div>
                     <div class="d-flex align-items-center gap-2">
-                        <button type="button" class="btn btn-sm btn-outline-primary" id="btnAddVariantRow" style="display: none;" onclick="addCustomVariantRow()">
-                            <i class="bi bi-plus-lg me-1"></i> Add Row
-                        </button>
                         <span class="badge bg-success fs-6 px-3 py-2" id="totalCutBadge">0 Cut pcs</span>
                     </div>
                 </div>
@@ -1062,13 +1059,6 @@ function appendVariantRow(sizeName, colorName, variantId, sku, plannedQty, rollI
     tbody.appendChild(tr);
 }
 
-function addCustomVariantRow() {
-    const activeBtn = document.querySelector('#rollVariantNavTabs .btn.active');
-    const activeGroup = activeBtn ? activeBtn.getAttribute('data-target-group') : 'all';
-    const rollId = (activeGroup && activeGroup !== 'all') ? activeGroup.replace('roll_', '') : '';
-    appendVariantRow('XL', 'STANDARD', '', '', 0, rollId, activeGroup !== 'all' ? activeGroup : '');
-    calculateMetrics();
-}
 
 function removeVariantRow(id) {
     if (!canDeleteCutting) return;
