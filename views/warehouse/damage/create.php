@@ -842,10 +842,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // 2. Fetch backend API matcher with client-side fallback
         PENDING_DAMAGE_TAGS.add(tagCode);
-        fetch(`<?= url("api/warehouse/damage/lookup-scan") ?>?warehouse_id=${whId}&code=${encodeURIComponent(rawCode)}`)
-            .then(res => {
-                if (!res.ok) throw new Error('API lookup failed');
-                return res.json();
+        fetch(`<?= url("api/warehouse/damage/lookup-scan") ?>?warehouse_id=${whId}&code=${encodeURIComponent(rawCode)}`, {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            }
+        })
+            .then(async res => {
+                const text = await res.text();
+                let data = null;
+                try {
+                    data = JSON.parse(text);
+                } catch (e) {
+                    console.error('Invalid JSON response:', text);
+                    throw new Error('Server returned invalid response');
+                }
+                return data;
             })
             .then(data => {
                 if (data.success) {

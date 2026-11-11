@@ -3186,7 +3186,8 @@ class WarehouseController {
         }
         header('Content-Type: application/json');
 
-        $rawCode = trim($_REQUEST['code'] ?? $_REQUEST['query'] ?? $_REQUEST['search'] ?? '');
+        try {
+            $rawCode = trim($_REQUEST['code'] ?? $_REQUEST['query'] ?? $_REQUEST['search'] ?? '');
         $warehouseId = (int)($_REQUEST['warehouse_id'] ?? 0);
 
         if (empty($rawCode)) {
@@ -3341,6 +3342,14 @@ class WarehouseController {
                         [$dmgCheck['variant_id']]
                     );
                     $remStock = (float)($availStockRow['qty'] ?? 0);
+                    if ($remStock <= 0 && $warehouseId > 0) {
+                        $fallbackRow = Database::fetchOne(
+                            "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                             WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND stock_state = 'AVAILABLE'",
+                            [$dmgCheck['variant_id']]
+                        );
+                        $remStock = (float)($fallbackRow['qty'] ?? 0);
+                    }
                     if ($remStock > 0) {
                         $dmgCheck = null;
                         continue;
@@ -3425,6 +3434,14 @@ class WarehouseController {
                         [$soldItem['variant_id']]
                     );
                     $remStock = (float)($availStockRow['qty'] ?? 0);
+                    if ($remStock <= 0 && $warehouseId > 0) {
+                        $fallbackRow = Database::fetchOne(
+                            "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                             WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND stock_state = 'AVAILABLE'",
+                            [$soldItem['variant_id']]
+                        );
+                        $remStock = (float)($fallbackRow['qty'] ?? 0);
+                    }
                     if ($remStock > 0) {
                         $soldItem = null;
                         continue;
@@ -3539,12 +3556,19 @@ class WarehouseController {
             if ($dpoPurchase) {
                 // For series/complementary products, check if remaining stock is available
                 $dpoVar = Database::fetchOne(
-                    "SELECT pv.id, pv.qr_type, pv.pack_quantity,
-                            COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
-                            COALESCE(wc.category_type, 'NORMAL') as cat_type
+                    "SELECT pv.*, p.name as product_name, p.code as product_code,
+                            p.category_code, p.subcategory_code, p.sub_subcategory_code,
+                            p.warehouse_category_id, p.category_id,
+                            GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
+                            p.is_complementary as prod_is_comp,
+                            pv.is_complementary as var_is_comp,
+                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as category_type,
+                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as cat_type,
+                            COALESCE(wc.name, cat.name, 'General') as category_name
                      FROM product_variants pv 
                      JOIN products p ON pv.product_id = p.id 
                      LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+                     LEFT JOIN categories cat ON p.category_id = cat.id
                      WHERE pv.id = ?",
                     [$dpoPurchase['variant_id']]
                 );
@@ -3559,7 +3583,16 @@ class WarehouseController {
                         [$dpoPurchase['variant_id']]
                     );
                     $remStock = (float)($availStockRow['qty'] ?? 0);
+                    if ($remStock <= 0 && $warehouseId > 0) {
+                        $fallbackRow = Database::fetchOne(
+                            "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                             WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND stock_state = 'AVAILABLE'",
+                            [$dpoPurchase['variant_id']]
+                        );
+                        $remStock = (float)($fallbackRow['qty'] ?? 0);
+                    }
                     if ($remStock > 0) {
+                        $dpoPurchase = null;
                         continue;
                     }
                 }
@@ -3653,6 +3686,14 @@ class WarehouseController {
                         [$alreadyAlloc['variant_id']]
                     );
                     $remStock = (float)($availStockRow['qty'] ?? 0);
+                    if ($remStock <= 0 && $warehouseId > 0) {
+                        $fallbackRow = Database::fetchOne(
+                            "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                             WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND stock_state = 'AVAILABLE'",
+                            [$alreadyAlloc['variant_id']]
+                        );
+                        $remStock = (float)($fallbackRow['qty'] ?? 0);
+                    }
                     if ($remStock > 0) {
                         $alreadyAlloc = null;
                         continue;
@@ -3710,17 +3751,48 @@ class WarehouseController {
         foreach ($candidateCodes as $c) {
             if (empty($c)) continue;
             $whQr = Database::fetchOne(
-                "SELECT wq.variant_id, wq.qr_code, wq.warehouse_id 
+                "SELECT wq.variant_id, wq.qr_code, wq.series_end_code, wq.warehouse_id 
                  FROM warehouse_qr_codes wq 
-                 WHERE UPPER(wq.qr_code) = UPPER(?) 
+                 WHERE UPPER(wq.qr_code) = UPPER(?) OR UPPER(COALESCE(wq.series_end_code, '')) = UPPER(?)
                  LIMIT 1",
-                [$c]
+                [$c, $c]
             );
             if ($whQr && !empty($whQr['variant_id'])) {
                 $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [(int)$whQr['variant_id']]);
                 if ($variant) {
-                    $extractedTag = $whQr['qr_code'];
+                    $extractedTag = $c;
                     break;
+                }
+            }
+        }
+
+        // Strategy 0b: Check series ranges inside warehouse_qr_codes
+        if (!$variant) {
+            foreach ($candidateCodes as $c) {
+                if (preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $c, $mTag)) {
+                    $tagPfx = strtoupper($mTag[1]);
+                    $tagNum = (int)$mTag[2];
+                    $whSeriesQrs = Database::fetchAll(
+                        "SELECT wq.variant_id, wq.qr_code, wq.series_end_code 
+                         FROM warehouse_qr_codes wq 
+                         WHERE wq.series_end_code IS NOT NULL AND wq.series_end_code != ''"
+                    );
+                    foreach ($whSeriesQrs as $wsq) {
+                        if (preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $wsq['qr_code'], $mS) &&
+                            preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $wsq['series_end_code'], $mE)) {
+                            if (strtoupper($mS[1]) === $tagPfx && strtoupper($mE[1]) === $tagPfx) {
+                                $sNum = (int)$mS[2];
+                                $eNum = (int)$mE[2];
+                                if ($tagNum >= $sNum && $tagNum <= $eNum) {
+                                    $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [(int)$wsq['variant_id']]);
+                                    if ($variant) {
+                                        $extractedTag = $c;
+                                        break 2;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -4088,6 +4160,54 @@ class WarehouseController {
             }
         }
 
+        // Strategy 9: Fallback from previous allocations, sales, or damage logs
+        if (!$variant) {
+            foreach ($candidateCodes as $c) {
+                if (strlen($c) < 3) continue;
+                // Allocation records
+                $allocHist = Database::fetchOne(
+                    "SELECT ai.variant_id FROM allocation_items ai 
+                     WHERE ai.selected_qr_codes LIKE ? LIMIT 1",
+                    ['%' . $c . '%']
+                );
+                if ($allocHist && !empty($allocHist['variant_id'])) {
+                    $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [(int)$allocHist['variant_id']]);
+                    if ($variant) {
+                        $extractedTag = $c;
+                        break;
+                    }
+                }
+
+                // Sale items
+                $saleHist = Database::fetchOne(
+                    "SELECT si.variant_id FROM sale_items si 
+                     WHERE (si.qr_code = ? OR si.scanned_qr_codes LIKE ?) LIMIT 1",
+                    [$c, '%' . $c . '%']
+                );
+                if ($saleHist && !empty($saleHist['variant_id'])) {
+                    $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [(int)$saleHist['variant_id']]);
+                    if ($variant) {
+                        $extractedTag = $c;
+                        break;
+                    }
+                }
+
+                // Damage records
+                $dmgHist = Database::fetchOne(
+                    "SELECT wd.variant_id FROM warehouse_damages wd 
+                     WHERE wd.tag_code LIKE ? LIMIT 1",
+                    ['%' . $c . '%']
+                );
+                if ($dmgHist && !empty($dmgHist['variant_id'])) {
+                    $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [(int)$dmgHist['variant_id']]);
+                    if ($variant) {
+                        $extractedTag = $c;
+                        break;
+                    }
+                }
+            }
+        }
+
         if (!$variant) {
             echo json_encode([
                 'success' => false,
@@ -4252,6 +4372,13 @@ class WarehouseController {
 
         echo json_encode($responseData);
         exit;
+        } catch (\Throwable $e) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Error verifying QR code: ' . $e->getMessage()
+            ]);
+            exit;
+        }
     }
 
     private function findAllocatedWarehouseTag(string $tagCode): ?array {
@@ -5701,17 +5828,48 @@ class WarehouseController {
         foreach ($candidateCodes as $c) {
             if (empty($c)) continue;
             $whQr = Database::fetchOne(
-                "SELECT wq.variant_id, wq.qr_code, wq.warehouse_id 
+                "SELECT wq.variant_id, wq.qr_code, wq.series_end_code, wq.warehouse_id 
                  FROM warehouse_qr_codes wq 
-                 WHERE UPPER(wq.qr_code) = UPPER(?) 
+                 WHERE UPPER(wq.qr_code) = UPPER(?) OR UPPER(COALESCE(wq.series_end_code, '')) = UPPER(?)
                  LIMIT 1",
-                [$c]
+                [$c, $c]
             );
             if ($whQr && !empty($whQr['variant_id'])) {
                 $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [(int)$whQr['variant_id']]);
                 if ($variant) {
-                    $extractedTag = $whQr['qr_code'];
+                    $extractedTag = $c;
                     break;
+                }
+            }
+        }
+
+        // Strategy 0b: Check series ranges inside warehouse_qr_codes
+        if (!$variant) {
+            foreach ($candidateCodes as $c) {
+                if (preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $c, $mTag)) {
+                    $tagPfx = strtoupper($mTag[1]);
+                    $tagNum = (int)$mTag[2];
+                    $whSeriesQrs = Database::fetchAll(
+                        "SELECT wq.variant_id, wq.qr_code, wq.series_end_code 
+                         FROM warehouse_qr_codes wq 
+                         WHERE wq.series_end_code IS NOT NULL AND wq.series_end_code != ''"
+                    );
+                    foreach ($whSeriesQrs as $wsq) {
+                        if (preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $wsq['qr_code'], $mS) &&
+                            preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $wsq['series_end_code'], $mE)) {
+                            if (strtoupper($mS[1]) === $tagPfx && strtoupper($mE[1]) === $tagPfx) {
+                                $sNum = (int)$mS[2];
+                                $eNum = (int)$mE[2];
+                                if ($tagNum >= $sNum && $tagNum <= $eNum) {
+                                    $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [(int)$wsq['variant_id']]);
+                                    if ($variant) {
+                                        $extractedTag = $c;
+                                        break 2;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -8154,6 +8312,14 @@ class WarehouseController {
                         [$soldItem['variant_id']]
                     );
                     $remStock = (float)($availStockRow['qty'] ?? 0);
+                    if ($remStock <= 0 && $warehouseId > 0) {
+                        $fallbackRow = Database::fetchOne(
+                            "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                             WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND stock_state = 'AVAILABLE'",
+                            [$soldItem['variant_id']]
+                        );
+                        $remStock = (float)($fallbackRow['qty'] ?? 0);
+                    }
                     if ($remStock > 0) {
                         $soldItem = null;
                         continue;
@@ -8268,12 +8434,19 @@ class WarehouseController {
             if ($dpoPurchase) {
                 // For series/complementary products, check if remaining stock is available
                 $dpoVar = Database::fetchOne(
-                    "SELECT pv.id, pv.qr_type, pv.pack_quantity,
-                            COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
-                            COALESCE(wc.category_type, 'NORMAL') as cat_type
+                    "SELECT pv.*, p.name as product_name, p.code as product_code,
+                            p.category_code, p.subcategory_code, p.sub_subcategory_code,
+                            p.warehouse_category_id, p.category_id,
+                            GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
+                            p.is_complementary as prod_is_comp,
+                            pv.is_complementary as var_is_comp,
+                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as category_type,
+                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as cat_type,
+                            COALESCE(wc.name, cat.name, 'General') as category_name
                      FROM product_variants pv 
                      JOIN products p ON pv.product_id = p.id 
                      LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+                     LEFT JOIN categories cat ON p.category_id = cat.id
                      WHERE pv.id = ?",
                     [$dpoPurchase['variant_id']]
                 );
@@ -8288,7 +8461,16 @@ class WarehouseController {
                         [$dpoPurchase['variant_id']]
                     );
                     $remStock = (float)($availStockRow['qty'] ?? 0);
+                    if ($remStock <= 0 && $warehouseId > 0) {
+                        $fallbackRow = Database::fetchOne(
+                            "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                             WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND stock_state = 'AVAILABLE'",
+                            [$dpoPurchase['variant_id']]
+                        );
+                        $remStock = (float)($fallbackRow['qty'] ?? 0);
+                    }
                     if ($remStock > 0) {
+                        $dpoPurchase = null;
                         continue;
                     }
                 }
@@ -8429,17 +8611,48 @@ class WarehouseController {
         foreach ($candidateCodes as $c) {
             if (empty($c)) continue;
             $whQr = Database::fetchOne(
-                "SELECT wq.variant_id, wq.qr_code, wq.warehouse_id 
+                "SELECT wq.variant_id, wq.qr_code, wq.series_end_code, wq.warehouse_id 
                  FROM warehouse_qr_codes wq 
-                 WHERE UPPER(wq.qr_code) = UPPER(?) 
+                 WHERE UPPER(wq.qr_code) = UPPER(?) OR UPPER(COALESCE(wq.series_end_code, '')) = UPPER(?)
                  LIMIT 1",
-                [$c]
+                [$c, $c]
             );
             if ($whQr && !empty($whQr['variant_id'])) {
                 $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [(int)$whQr['variant_id']]);
                 if ($variant) {
-                    $extractedTag = $whQr['qr_code'];
+                    $extractedTag = $c;
                     break;
+                }
+            }
+        }
+
+        // Strategy 0b: Check series ranges inside warehouse_qr_codes
+        if (!$variant) {
+            foreach ($candidateCodes as $c) {
+                if (preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $c, $mTag)) {
+                    $tagPfx = strtoupper($mTag[1]);
+                    $tagNum = (int)$mTag[2];
+                    $whSeriesQrs = Database::fetchAll(
+                        "SELECT wq.variant_id, wq.qr_code, wq.series_end_code 
+                         FROM warehouse_qr_codes wq 
+                         WHERE wq.series_end_code IS NOT NULL AND wq.series_end_code != ''"
+                    );
+                    foreach ($whSeriesQrs as $wsq) {
+                        if (preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $wsq['qr_code'], $mS) &&
+                            preg_match('/^([A-Za-z0-9_-]+?)(\d+)$/', $wsq['series_end_code'], $mE)) {
+                            if (strtoupper($mS[1]) === $tagPfx && strtoupper($mE[1]) === $tagPfx) {
+                                $sNum = (int)$mS[2];
+                                $eNum = (int)$mE[2];
+                                if ($tagNum >= $sNum && $tagNum <= $eNum) {
+                                    $variant = Database::fetchOne($baseVariantSql . " WHERE pv.id = ? LIMIT 1", [(int)$wsq['variant_id']]);
+                                    if ($variant) {
+                                        $extractedTag = $c;
+                                        break 2;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
