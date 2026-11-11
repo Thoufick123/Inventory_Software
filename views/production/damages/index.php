@@ -1219,25 +1219,26 @@ function openResolveModal(damageData) {
     document.getElementById('inputRefundAmount').value = damageData.refund_amount > 0 ? damageData.refund_amount : damageData.loss_amount;
     document.getElementById('inputDebitNote').value = damageData.debit_note_number || '';
 
-    // Populate all replacement roll fields from damageData
-    document.getElementById('inputReplacementRoll').value = damageData.replacement_roll_number || (damageData.roll_number ? (damageData.roll_number + '-REPL') : 'ROLL #1-REPL');
-    document.getElementById('inputReplacementColor').value = damageData.roll_color || '';
-    document.getElementById('inputReplacementDesign').value = damageData.roll_design || '';
-    document.getElementById('inputReplacementDesignCount').value = damageData.roll_design_count || 1;
-    document.getElementById('inputReplacementQuantity').value = damageData.damaged_quantity || 1;
-    document.getElementById('inputReplacementWeight').value = damageData.damaged_weight || '';
-    document.getElementById('inputReplacementPrice').value = damageData.loss_amount || '';
+    // Replacement roll details are manually entered by staff/admin (kept empty for manual entry)
+    document.getElementById('inputReplacementRoll').value = damageData.replacement_roll_number || '';
+    document.getElementById('inputReplacementColor').value = '';
+    document.getElementById('inputReplacementDesign').value = '';
+    document.getElementById('inputReplacementDesignCount').value = '1';
+    document.getElementById('inputReplacementQuantity').value = '1';
+    document.getElementById('inputReplacementWeight').value = '';
+    document.getElementById('inputReplacementPrice').value = '';
 
-    const hsnVal = damageData.roll_hsn_code || '';
     const hsnHidden = document.getElementById('inputReplacementHsn');
     if (hsnHidden) {
-        hsnHidden.value = hsnVal;
+        hsnHidden.value = '';
         const btnText = document.querySelector('#fieldReplacementBox .hsn-btn-text');
         if (btnText) {
-            btnText.textContent = hsnVal ? hsnVal : '-- Select HSN --';
+            btnText.textContent = '-- Select HSN --';
         }
     }
     document.getElementById('inputReplacementGstType').value = 'EXEMPTED';
+    const replPhotoInp = document.getElementById('inputReplacementPhoto');
+    if (replPhotoInp) replPhotoInp.value = '';
     document.getElementById('inputResolutionNotes').value = damageData.resolution_notes || '';
 
     handleResolutionStatusChange(document.getElementById('resStatusSelect').value);
