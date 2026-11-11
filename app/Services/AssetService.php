@@ -698,10 +698,21 @@ class AssetService {
     }
 
     /**
-     * Delete Asset.
+     * Delete Asset and cleanly remove related child transfer & maintenance records.
      */
     public static function deleteAsset(int $id): bool {
-        return Database::execute("DELETE FROM assets WHERE id = ?", [$id]);
+        Database::beginTransaction();
+        try {
+            Database::execute("DELETE FROM asset_transfers WHERE asset_id = ?", [$id]);
+            Database::execute("DELETE FROM asset_maintenance_logs WHERE asset_id = ?", [$id]);
+            Database::execute("DELETE FROM asset_audit_items WHERE asset_id = ?", [$id]);
+            $res = Database::execute("DELETE FROM assets WHERE id = ?", [$id]);
+            Database::commit();
+            return $res > 0;
+        } catch (Throwable $e) {
+            Database::rollBack();
+            throw $e;
+        }
     }
 
     /**

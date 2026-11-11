@@ -54,14 +54,14 @@ $serviceDue = $metrics['serviceDue'] ?? [];
         <button type="button" class="btn btn-primary d-inline-flex align-items-center gap-1 shadow-sm fw-semibold" data-bs-toggle="modal" data-bs-target="#assetReportExportModal">
             <i class="bi bi-file-earmark-arrow-down me-1"></i> Export Reports
         </button>
+        <a href="<?= url('asset/list') ?>" class="btn btn-outline-secondary d-inline-flex align-items-center gap-1">
+            <i class="bi bi-table me-1 text-success"></i> Asset Register
+        </a>
+        <a href="<?= url('asset/scanner') ?>" class="btn btn-outline-info d-inline-flex align-items-center gap-1">
+            <i class="bi bi-qr-code-scan me-1 text-info"></i> Scan Assets
+        </a>
         <a href="<?= url('asset/create') ?>" class="btn btn-outline-primary d-inline-flex align-items-center gap-1 shadow-sm">
             <i class="bi bi-plus-circle me-1"></i> New Asset
-        </a>
-        <a href="<?= url('asset/scanner') ?>" class="btn btn-outline-dark d-inline-flex align-items-center gap-1">
-            <i class="bi bi-qr-code-scan me-1 text-primary"></i> QR Scanner
-        </a>
-        <a href="<?= url('asset/list') ?>" class="btn btn-outline-secondary d-inline-flex align-items-center gap-1">
-            <i class="bi bi-table me-1"></i> Asset Register
         </a>
     </div>
 </div>

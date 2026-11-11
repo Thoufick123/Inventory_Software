@@ -28,7 +28,7 @@
                         </label>
                         <div class="input-group input-group-lg">
                             <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
-                            <input type="text" id="qrFinderInput" class="form-control border-start-0 font-monospace fs-6" placeholder="e.g. FB112601, MSF112606, TTT112631, BAT-..., CUT-..., PP-..." autocomplete="off">
+                            <input type="text" id="qrFinderInput" class="form-control border-start-0 font-monospace fs-6" placeholder="e.g. AST-PRD-0001, FB112601, MSF112606, BAT-..., CUT-..., PP-..." autocomplete="off">
                             <button class="btn btn-primary px-4 fw-semibold d-flex align-items-center gap-1.5" type="button" id="btnTraceQr" onclick="runQrStatusFinder()">
                                 <i class="bi bi-geo-alt-fill"></i>
                                 <span>Trace Status</span>
@@ -39,7 +39,7 @@
                         </div>
                         <div class="d-flex justify-content-between align-items-center mt-2 flex-wrap gap-2">
                             <small class="text-muted">
-                                <i class="bi bi-info-circle me-1"></i>Supports: Fabric Roll labels, QC garment tags, Warehouse QRs, Batches, Invoices &amp; Damages.
+                                <i class="bi bi-info-circle me-1"></i>Supports: Equipment &amp; Assets (AST-...), Fabric Roll labels, QC garment tags, Warehouse QRs, Batches, Invoices &amp; Damages.
                             </small>
                             <button type="button" class="btn btn-sm btn-outline-dark d-inline-flex align-items-center gap-1 py-0 px-2" id="btnToggleCameraScanner" onclick="toggleCameraScanner()">
                                 <i class="bi bi-camera me-1"></i><span id="cameraToggleText">Scan with Camera</span>
@@ -141,6 +141,29 @@
             <div class="modal-footer bg-light py-2 px-4 d-flex justify-content-between">
                 <small class="text-muted"><i class="bi bi-shield-check me-1 text-success"></i>Live database synchronization enabled</small>
                 <button type="button" class="btn btn-secondary px-4 fw-semibold" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- DEDICATED POP ALERT BOX MODAL (WHEN QR IS NOT IN INVENTORY SECTIONS)       -->
+<!-- ========================================================================= -->
+<div class="modal fade" id="qrNotFoundAlertModal" tabindex="-1" aria-labelledby="qrNotFoundAlertModalLabel" aria-hidden="true" style="z-index: 1080;">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content border-0 shadow-lg text-center p-3" style="border-radius: 18px;">
+            <div class="modal-body p-3">
+                <div class="p-3 bg-danger bg-opacity-10 text-danger rounded-circle d-inline-flex mb-3">
+                    <i class="bi bi-exclamation-octagon-fill fs-1"></i>
+                </div>
+                <h5 class="fw-bold text-dark mb-1" id="qrNotFoundAlertModalLabel">Not in Inventory!</h5>
+                <div class="badge bg-danger-subtle text-danger border border-danger-subtle font-monospace px-2.5 py-1 mb-2 fs-7" id="qrNotFoundAlertCode">AST-0000</div>
+                <p class="text-secondary small mb-3" id="qrNotFoundAlertMsg" style="line-height: 1.45;">
+                    This QR code is not in any inventory sections.
+                </p>
+                <button type="button" class="btn btn-danger btn-sm px-4 fw-semibold w-100 rounded-pill shadow-sm" data-bs-dismiss="modal">
+                    <i class="bi bi-check-lg me-1"></i> Understood
+                </button>
             </div>
         </div>
     </div>
@@ -275,8 +298,42 @@ function runQrStatusFinder() {
         .catch(err => {
             document.getElementById('qrFinderLoading').classList.add('d-none');
             document.getElementById('qrFinderEmpty').classList.remove('d-none');
-            showQrFeedback(err.message || 'Item not found in any inventory stage.', true);
+            const notFoundMsg = err.message || `This QR code (${code}) is not in any inventory sections.`;
+            showQrFeedback(notFoundMsg, true);
+            showQrNotFoundPopup(code, notFoundMsg);
         });
+}
+
+function showQrNotFoundPopup(code, customMsg = null) {
+    const cleanMsg = customMsg || `This QR code (${code}) is not in any inventory sections.`;
+
+    // 1. Toast Notification if App helper is available
+    if (typeof App !== 'undefined' && typeof App.toast === 'function') {
+        App.toast(cleanMsg, 'error');
+    }
+
+    // 2. SweetAlert2 if available
+    if (typeof Swal !== 'undefined') {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Not in Inventory',
+            text: cleanMsg,
+            confirmButtonColor: '#dc3545',
+            confirmButtonText: 'OK'
+        });
+        return;
+    }
+
+    // 3. Dedicated Pop Alert Box Modal
+    const alertModalEl = document.getElementById('qrNotFoundAlertModal');
+    if (alertModalEl && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+        const codeBadge = document.getElementById('qrNotFoundAlertCode');
+        const textMsg = document.getElementById('qrNotFoundAlertMsg');
+        if (codeBadge) codeBadge.textContent = code;
+        if (textMsg) textMsg.textContent = cleanMsg;
+        const alertModal = bootstrap.Modal.getOrCreateInstance(alertModalEl);
+        alertModal.show();
+    }
 }
 
 function renderQrFinderResults(data) {
