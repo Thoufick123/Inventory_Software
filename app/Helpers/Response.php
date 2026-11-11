@@ -174,6 +174,10 @@ function csrf_field(): string {
 function uploadUrl(?string $path = ''): string {
     if (empty($path)) return '';
     if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+        // Automatically deliver Cloudinary image-uploaded PDFs as .jpg to prevent 401 ACL Deny errors
+        if (str_contains($path, 'res.cloudinary.com') && str_contains($path, '/image/upload/') && preg_match('/\.pdf($|\?)/i', $path)) {
+            return preg_replace('/\.pdf($|\?)/i', '.jpg$1', $path);
+        }
         return $path;
     }
     $cleanPath = ltrim($path, '/');
@@ -181,6 +185,13 @@ function uploadUrl(?string $path = ''): string {
         $cleanPath = 'public/' . $cleanPath;
     }
     return url($cleanPath);
+}
+
+/**
+ * Generate safe document view URL (alias for uploadUrl).
+ */
+function documentViewUrl(?string $path = ''): string {
+    return uploadUrl($path);
 }
 
 /**
@@ -196,6 +207,9 @@ function downloadUrl(?string $path = '', string $filename = ''): string {
             if ($safeName) {
                 $param .= ':' . $safeName;
             }
+        }
+        if (str_contains($path, '/image/upload/') && preg_match('/\.pdf($|\?)/i', $path)) {
+            $path = preg_replace('/\.pdf($|\?)/i', '.jpg$1', $path);
         }
         if (str_contains($path, '/upload/')) {
             return str_replace('/upload/', '/upload/' . $param . '/', $path);

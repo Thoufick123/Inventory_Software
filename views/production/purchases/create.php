@@ -78,7 +78,21 @@
                 <div class="col-md-6">
                     <label class="form-label" for="purchaseDocument">Tax Invoice / Bill Attachment (Optional)</label>
                     <input type="file" class="form-control" name="document" id="purchaseDocument" accept=".jpg,.jpeg,.png,.webp,.pdf">
-                    <small class="text-muted">JPG, PNG, WEBP or PDF up to 5 MB.</small>
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-1">
+                        <small class="text-muted">JPG, PNG, WEBP or PDF up to 5 MB.</small>
+                        <div id="documentFilePreviewContainer" class="d-none align-items-center gap-1">
+                            <span class="badge bg-success-subtle text-success border border-success-subtle d-inline-flex align-items-center gap-1 py-1 px-2">
+                                <i class="bi bi-file-earmark-check"></i>
+                                <span id="docPreviewFilename" class="text-truncate" style="max-width: 150px;">invoice.pdf</span>
+                            </span>
+                            <button type="button" class="btn btn-xs btn-outline-primary" id="btnViewSelectedDocument" onclick="viewSelectedDocumentFile()" title="View selected document">
+                                <i class="bi bi-eye me-1"></i>View Selected File
+                            </button>
+                            <button type="button" class="btn btn-xs btn-outline-danger" onclick="clearSelectedDocumentFile()" title="Clear file">
+                                <i class="bi bi-x"></i>
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label" for="purchaseNotes">Purchase Notes</label>
@@ -1030,6 +1044,54 @@
         }
         payloadInput.value = JSON.stringify(itemsPayload);
     });
+
+    // Tax Invoice Document Preview
+    let selectedDocBlobUrl = null;
+    const docInput = document.getElementById('purchaseDocument');
+    const docPreviewContainer = document.getElementById('documentFilePreviewContainer');
+    const docFilenameSpan = document.getElementById('docPreviewFilename');
+
+    if (docInput) {
+        docInput.addEventListener('change', function() {
+            if (selectedDocBlobUrl) {
+                URL.revokeObjectURL(selectedDocBlobUrl);
+                selectedDocBlobUrl = null;
+            }
+            const file = docInput.files && docInput.files[0];
+            if (file) {
+                selectedDocBlobUrl = URL.createObjectURL(file);
+                if (docFilenameSpan) docFilenameSpan.textContent = file.name;
+                if (docPreviewContainer) {
+                    docPreviewContainer.classList.remove('d-none');
+                    docPreviewContainer.classList.add('d-inline-flex');
+                }
+            } else {
+                if (docPreviewContainer) {
+                    docPreviewContainer.classList.add('d-none');
+                    docPreviewContainer.classList.remove('d-inline-flex');
+                }
+            }
+        });
+    }
+
+    window.viewSelectedDocumentFile = function() {
+        if (selectedDocBlobUrl) {
+            window.open(selectedDocBlobUrl, '_blank', 'noopener,noreferrer');
+        }
+    };
+
+    window.clearSelectedDocumentFile = function() {
+        if (docInput) docInput.value = '';
+        if (selectedDocBlobUrl) {
+            URL.revokeObjectURL(selectedDocBlobUrl);
+            selectedDocBlobUrl = null;
+        }
+        if (docPreviewContainer) {
+            docPreviewContainer.classList.add('d-none');
+            docPreviewContainer.classList.remove('d-inline-flex');
+        }
+    };
+
     addRoll();
 })();
 </script>

@@ -38,11 +38,32 @@ $taxValueForItem = static function (array $item, string $type): float {
                 <div class="col-md-3"><label class="form-label required">Purchase Date *</label><input type="date" name="purchase_date" class="form-control" value="<?= e($purchase['purchase_date']) ?>" required></div>
                 <div class="col-md-4"><label class="form-label">Invoice / Bill Number</label><input name="invoice_number" class="form-control" maxlength="100" value="<?= e($purchase['invoice_number']) ?>"></div>
                 <div class="col-md-6">
-                    <label class="form-label">Tax Invoice / Bill Attachment (Optional)</label>
-                    <input type="file" name="document" class="form-control" accept=".jpg,.jpeg,.png,.webp,.pdf">
-                    <small class="text-muted">JPG, PNG, WEBP or PDF up to 5 MB.
-                        <?php if (!empty($purchase['document_url'])): ?>Current attachment: <a href="<?= uploadUrl($purchase['document_url']) ?>" target="_blank" rel="noopener">View file</a><?php endif; ?>
-                    </small>
+                    <label class="form-label" for="editPurchaseDocument">Tax Invoice / Bill Attachment (Optional)</label>
+                    <input type="file" name="document" id="editPurchaseDocument" class="form-control" accept=".jpg,.jpeg,.png,.webp,.pdf">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-1">
+                        <small class="text-muted">JPG, PNG, WEBP or PDF up to 5 MB.</small>
+                        <div class="d-flex align-items-center gap-2">
+                            <?php if (!empty($purchase['document_url'])): ?>
+                                <span class="small text-muted" id="existingDocWrapper">Current: 
+                                    <a href="<?= uploadUrl($purchase['document_url']) ?>" target="_blank" rel="noopener" class="badge bg-primary-subtle text-primary border text-decoration-none px-2 py-1" id="existingDocLink">
+                                        <i class="bi bi-eye me-1"></i>View File
+                                    </a>
+                                </span>
+                            <?php endif; ?>
+                            <div id="editDocPreviewContainer" class="d-none align-items-center gap-1">
+                                <span class="badge bg-success-subtle text-success border border-success-subtle d-inline-flex align-items-center gap-1 py-1 px-2">
+                                    <i class="bi bi-file-earmark-check"></i>
+                                    <span id="editDocPreviewFilename" class="text-truncate" style="max-width: 140px;">file.pdf</span>
+                                </span>
+                                <button type="button" class="btn btn-xs btn-outline-primary" id="btnViewEditSelectedDoc" onclick="viewEditSelectedDoc()" title="View selected document">
+                                    <i class="bi bi-eye me-1"></i>View Selected File
+                                </button>
+                                <button type="button" class="btn btn-xs btn-outline-danger" onclick="clearEditSelectedDoc()" title="Clear file">
+                                    <i class="bi bi-x"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="col-md-6"><label class="form-label">Purchase Notes</label><input name="notes" class="form-control" maxlength="500" value="<?= e($purchase['notes']) ?>"></div>
                 <div class="col-12">
@@ -784,6 +805,54 @@ $taxValueForItem = static function (array $item, string $type): float {
             }
         });
     });
+
+    // Tax Invoice Document Preview
+    let selectedDocBlobUrl = null;
+    const docInput = document.getElementById('editPurchaseDocument');
+    const docPreviewContainer = document.getElementById('editDocPreviewContainer');
+    const docFilenameSpan = document.getElementById('editDocPreviewFilename');
+
+    if (docInput) {
+        docInput.addEventListener('change', function() {
+            if (selectedDocBlobUrl) {
+                URL.revokeObjectURL(selectedDocBlobUrl);
+                selectedDocBlobUrl = null;
+            }
+            const file = docInput.files && docInput.files[0];
+            if (file) {
+                selectedDocBlobUrl = URL.createObjectURL(file);
+                if (docFilenameSpan) docFilenameSpan.textContent = file.name;
+                if (docPreviewContainer) {
+                    docPreviewContainer.classList.remove('d-none');
+                    docPreviewContainer.classList.add('d-inline-flex');
+                }
+            } else {
+                if (docPreviewContainer) {
+                    docPreviewContainer.classList.add('d-none');
+                    docPreviewContainer.classList.remove('d-inline-flex');
+                }
+            }
+        });
+    }
+
+    window.viewEditSelectedDoc = function() {
+        if (selectedDocBlobUrl) {
+            window.open(selectedDocBlobUrl, '_blank', 'noopener,noreferrer');
+        }
+    };
+
+    window.clearEditSelectedDoc = function() {
+        if (docInput) docInput.value = '';
+        if (selectedDocBlobUrl) {
+            URL.revokeObjectURL(selectedDocBlobUrl);
+            selectedDocBlobUrl = null;
+        }
+        if (docPreviewContainer) {
+            docPreviewContainer.classList.add('d-none');
+            docPreviewContainer.classList.remove('d-inline-flex');
+        }
+    };
+
     updateSummary();
 })();
 </script>
