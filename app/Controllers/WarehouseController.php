@@ -2859,6 +2859,27 @@ class WarehouseController {
                     Response::back();
                     return;
                 }
+
+                $dpoCheck = Database::fetchOne(
+                    "SELECT po.po_number, COALESCE(c.name, 'Customer') as customer_name
+                     FROM purchase_items pi
+                     JOIN purchase_orders po ON po.id = pi.purchase_order_id
+                     LEFT JOIN customers c ON po.customer_id = c.id
+                     WHERE (
+                         UPPER(TRIM(COALESCE(pi.batch_lot_no, ''))) = UPPER(?)
+                         OR FIND_IN_SET(UPPER(?), UPPER(REPLACE(COALESCE(pi.batch_lot_no, ''), ' ', ''))) > 0
+                         OR UPPER(COALESCE(pi.batch_lot_no, '')) LIKE UPPER(?)
+                         OR UPPER(COALESCE(pi.notes, '')) LIKE UPPER(?)
+                     )
+                     AND po.status NOT IN ('CANCELLED', 'VOID')
+                     LIMIT 1",
+                    [trim($pieceTag), trim($pieceTag), '%' . trim($pieceTag) . '%', '%' . trim($pieceTag) . '%']
+                );
+                if ($dpoCheck) {
+                    Session::flash('error', "QR code '{$pieceTag}' has ALREADY been purchased by customer '{$dpoCheck['customer_name']}' under Direct Purchase #{$dpoCheck['po_number']}! It cannot be logged as warehouse damage.");
+                    Response::back();
+                    return;
+                }
             }
         }
 
@@ -3443,6 +3464,93 @@ class WarehouseController {
                     'message'         => "This QR code ({$codeToCheck}) has ALREADY been purchased / billed to customer '{$cust}' under Bill #{$billNum} (Dated {$billDate})! It cannot be logged as warehouse damage stock."
                 ]);
                 exit;
+            }
+
+            // 3. Check Warehouse Direct Purchase Orders (purchase_orders & purchase_items - DPO invoices)
+            $dpoPurchase = Database::fetchOne(
+                "SELECT po.id as po_id, po.po_number, po.status, po.created_at,
+                        COALESCE(c.name, 'Customer') as customer_name, c.phone as customer_phone,
+                        p.name as product_name, pv.sku, pv.id as variant_id
+                 FROM purchase_items pi
+                 JOIN purchase_orders po ON pi.purchase_order_id = po.id
+                 JOIN product_variants pv ON pi.variant_id = pv.id
+                 JOIN products p ON pv.product_id = p.id
+                 LEFT JOIN customers c ON po.customer_id = c.id
+                 WHERE (
+                     UPPER(TRIM(COALESCE(pi.batch_lot_no, ''))) = UPPER(?)
+                     OR FIND_IN_SET(UPPER(?), UPPER(REPLACE(COALESCE(pi.batch_lot_no, ''), ' ', ''))) > 0
+                     OR UPPER(COALESCE(pi.batch_lot_no, '')) LIKE UPPER(?)
+                     OR UPPER(COALESCE(pi.notes, '')) LIKE UPPER(?)
+                 )
+                 AND po.status NOT IN ('CANCELLED', 'VOID')
+                 LIMIT 1",
+                [trim($codeToCheck), trim($codeToCheck), '%' . trim($codeToCheck) . '%', '%' . trim($codeToCheck) . '%']
+            );
+
+            if ($dpoPurchase) {
+                // For series/complementary products, check if remaining stock is available
+                $dpoVar = Database::fetchOne(
+                    "SELECT pv.id, pv.qr_type, pv.pack_quantity,
+                            COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
+                            COALESCE(wc.category_type, 'NORMAL') as cat_type
+                     FROM product_variants pv 
+                     JOIN products p ON pv.product_id = p.id 
+                     LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+                     WHERE pv.id = ?",
+                    [$dpoPurchase['variant_id']]
+                );
+                $isMasterOrComp = ($dpoVar && (
+                    $dpoVar['qr_type'] === 'SERIES_BATCH'
+                    || strtoupper($dpoVar['cat_type'] ?? '') === 'SERIES'
+                    || strtoupper($dpoVar['cat_type'] ?? '') === 'COMPLEMENTARY'
+                    || (int)($dpoVar['pack_quantity'] ?? 0) > 1
+                    || !empty($dpoVar['is_comp'])
+                ));
+
+                if ($isMasterOrComp) {
+                    $availStockRow = Database::fetchOne(
+                        "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                         WHERE variant_id = ? AND location_type = 'WAREHOUSE' " . ($warehouseId > 0 ? "AND location_id = {$warehouseId}" : "") . " AND stock_state = 'AVAILABLE'",
+                        [$dpoPurchase['variant_id']]
+                    );
+                    $remStock = (float)($availStockRow['qty'] ?? 0);
+                    if ($remStock > 0) {
+                        continue;
+                    }
+                }
+
+                // Check if this piece was subsequently returned and restocked in GOOD condition
+                $isRestocked = Database::fetchOne(
+                    "SELECT r.return_number
+                     FROM return_items ri
+                     JOIN `returns` r ON ri.return_id = r.id
+                     WHERE ri.variant_id = ?
+                       AND ri.reason LIKE ?
+                       AND ri.item_condition = 'GOOD'
+                       AND ri.destination = 'AVAILABLE'
+                       AND r.status NOT IN ('CANCELLED', 'REJECTED')
+                     ORDER BY r.id DESC LIMIT 1",
+                    [(int)$dpoPurchase['variant_id'], '%' . $codeToCheck . '%']
+                );
+
+                if (!$isRestocked) {
+                    $cust = $dpoPurchase['customer_name'] ?: 'Customer';
+                    $poNum = $dpoPurchase['po_number'] ?: ('DPO #' . $dpoPurchase['po_id']);
+                    $poDate = date('d M Y', strtotime($dpoPurchase['created_at']));
+                    echo json_encode([
+                        'success'         => false,
+                        'is_already_sold' => true,
+                        'tag_code'        => $codeToCheck,
+                        'invoice_number'  => $poNum,
+                        'customer_name'   => $cust,
+                        'sale_type'       => 'DIRECT_PURCHASE',
+                        'sale_date'       => $poDate,
+                        'product_name'    => $dpoPurchase['product_name'],
+                        'sku'             => $dpoPurchase['sku'],
+                        'message'         => "This QR code ({$codeToCheck}) has ALREADY been purchased by customer '{$cust}' via Direct Purchase #{$poNum} (Dated {$poDate})! It cannot be logged as warehouse damage stock."
+                    ]);
+                    exit;
+                }
             }
         }
 
@@ -7839,7 +7947,7 @@ class WarehouseController {
                 );
                 $isScannedTagDamaged = in_array(strtoupper(trim($scannedPieceTag)), $damagedTags, true);
 
-                if ($isMasterOrComp && (!$isScannedTagDamaged || $isAggregateCode)) {
+                if ($isMasterOrComp) {
                     $availStockRow = Database::fetchOne(
                         "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
                          WHERE variant_id = ? AND location_type = 'WAREHOUSE' " . ($warehouseId > 0 ? "AND location_id = {$warehouseId}" : "") . " AND stock_state = 'AVAILABLE'",
@@ -7981,6 +8089,93 @@ class WarehouseController {
                     'message'         => "This QR code ({$codeToCheck}) has ALREADY been purchased / billed to customer '{$cust}' under Bill #{$billNum} (Dated {$billDate})! It cannot be logged as warehouse damage stock."
                 ]);
                 exit;
+            }
+
+            // 3. Check Warehouse Direct Purchase Orders (purchase_orders & purchase_items - DPO invoices)
+            $dpoPurchase = Database::fetchOne(
+                "SELECT po.id as po_id, po.po_number, po.status, po.created_at,
+                        COALESCE(c.name, 'Customer') as customer_name, c.phone as customer_phone,
+                        p.name as product_name, pv.sku, pv.id as variant_id
+                 FROM purchase_items pi
+                 JOIN purchase_orders po ON pi.purchase_order_id = po.id
+                 JOIN product_variants pv ON pi.variant_id = pv.id
+                 JOIN products p ON pv.product_id = p.id
+                 LEFT JOIN customers c ON po.customer_id = c.id
+                 WHERE (
+                     UPPER(TRIM(COALESCE(pi.batch_lot_no, ''))) = UPPER(?)
+                     OR FIND_IN_SET(UPPER(?), UPPER(REPLACE(COALESCE(pi.batch_lot_no, ''), ' ', ''))) > 0
+                     OR UPPER(COALESCE(pi.batch_lot_no, '')) LIKE UPPER(?)
+                     OR UPPER(COALESCE(pi.notes, '')) LIKE UPPER(?)
+                 )
+                 AND po.status NOT IN ('CANCELLED', 'VOID')
+                 LIMIT 1",
+                [trim($codeToCheck), trim($codeToCheck), '%' . trim($codeToCheck) . '%', '%' . trim($codeToCheck) . '%']
+            );
+
+            if ($dpoPurchase) {
+                // For series/complementary products, check if remaining stock is available
+                $dpoVar = Database::fetchOne(
+                    "SELECT pv.id, pv.qr_type, pv.pack_quantity,
+                            COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
+                            COALESCE(wc.category_type, 'NORMAL') as cat_type
+                     FROM product_variants pv 
+                     JOIN products p ON pv.product_id = p.id 
+                     LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+                     WHERE pv.id = ?",
+                    [$dpoPurchase['variant_id']]
+                );
+                $isMasterOrComp = ($dpoVar && (
+                    $dpoVar['qr_type'] === 'SERIES_BATCH'
+                    || strtoupper($dpoVar['cat_type'] ?? '') === 'SERIES'
+                    || strtoupper($dpoVar['cat_type'] ?? '') === 'COMPLEMENTARY'
+                    || (int)($dpoVar['pack_quantity'] ?? 0) > 1
+                    || !empty($dpoVar['is_comp'])
+                ));
+
+                if ($isMasterOrComp) {
+                    $availStockRow = Database::fetchOne(
+                        "SELECT COALESCE(SUM(quantity), 0) as qty FROM stock_balances 
+                         WHERE variant_id = ? AND location_type = 'WAREHOUSE' " . ($warehouseId > 0 ? "AND location_id = {$warehouseId}" : "") . " AND stock_state = 'AVAILABLE'",
+                        [$dpoPurchase['variant_id']]
+                    );
+                    $remStock = (float)($availStockRow['qty'] ?? 0);
+                    if ($remStock > 0) {
+                        continue;
+                    }
+                }
+
+                // Check if this piece was subsequently returned and restocked in GOOD condition
+                $isRestocked = Database::fetchOne(
+                    "SELECT r.return_number
+                     FROM return_items ri
+                     JOIN `returns` r ON ri.return_id = r.id
+                     WHERE ri.variant_id = ?
+                       AND ri.reason LIKE ?
+                       AND ri.item_condition = 'GOOD'
+                       AND ri.destination = 'AVAILABLE'
+                       AND r.status NOT IN ('CANCELLED', 'REJECTED')
+                     ORDER BY r.id DESC LIMIT 1",
+                    [(int)$dpoPurchase['variant_id'], '%' . $codeToCheck . '%']
+                );
+
+                if (!$isRestocked) {
+                    $cust = $dpoPurchase['customer_name'] ?: 'Customer';
+                    $poNum = $dpoPurchase['po_number'] ?: ('DPO #' . $dpoPurchase['po_id']);
+                    $poDate = date('d M Y', strtotime($dpoPurchase['created_at']));
+                    echo json_encode([
+                        'success'         => false,
+                        'is_already_sold' => true,
+                        'tag_code'        => $codeToCheck,
+                        'invoice_number'  => $poNum,
+                        'customer_name'   => $cust,
+                        'sale_type'       => 'DIRECT_PURCHASE',
+                        'sale_date'       => $poDate,
+                        'product_name'    => $dpoPurchase['product_name'],
+                        'sku'             => $dpoPurchase['sku'],
+                        'message'         => "This QR code ({$codeToCheck}) has ALREADY been purchased by customer '{$cust}' via Direct Purchase #{$poNum} (Dated {$poDate})! It cannot be logged as warehouse damage stock."
+                    ]);
+                    exit;
+                }
             }
         }
 
@@ -8654,6 +8849,15 @@ class WarehouseController {
         }
         if (!$tagExistsInPieces) {
             $isKnownVariantCode = $this->isAllocationVariantIdentifier($variant, (string)$extractedTag);
+            if (!$isKnownVariantCode && $isAggregateAllocation) {
+                $whQrMatch = Database::fetchOne(
+                    "SELECT id FROM warehouse_qr_codes WHERE variant_id = ? AND UPPER(qr_code) = UPPER(?) LIMIT 1",
+                    [(int)$variant['id'], $extractedTag]
+                );
+                if ($whQrMatch) {
+                    $tagExistsInPieces = true;
+                }
+            }
         }
 
         if ($isAggregateAllocation && $isKnownVariantCode && !empty($parsedSeriesQty) && $parsedSeriesQty > $availableStock) {

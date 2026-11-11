@@ -622,38 +622,46 @@ function handleManualTotalWastageInput(totalVal) {
 }
 
 function handleProgramChange(programId) {
+    const progBox = document.getElementById('programDetailsBox');
+    const rollBox = document.getElementById('rollDetailsBox');
+    const tableWrap = document.getElementById('variantTableWrapper');
+    const btnAdd = document.getElementById('btnAddVariantRow');
+    const noAlert = document.getElementById('noProgramAlert');
+    const alertTitle = document.getElementById('alertTitle');
+    const alertMsg = document.getElementById('alertMessage');
+
     if (!programId) {
-        document.getElementById('programDetailsBox').style.display = 'none';
-        document.getElementById('rollDetailsBox').style.display = 'none';
-        document.getElementById('variantTableWrapper').style.display = 'none';
-        document.getElementById('btnAddVariantRow').style.display = 'none';
-        document.getElementById('noProgramAlert').style.display = 'block';
-        document.getElementById('alertTitle').innerText = 'No Production Program Selected';
-        document.getElementById('alertMessage').innerText = 'Please choose a Production Program and select Fabric Roll(s) with their specific Catalog Hierarchy from the left to dynamically generate cutting variants.';
+        if (progBox) progBox.style.display = 'none';
+        if (rollBox) rollBox.style.display = 'none';
+        if (tableWrap) tableWrap.style.display = 'none';
+        if (btnAdd) btnAdd.style.display = 'none';
+        if (noAlert) noAlert.style.display = 'block';
+        if (alertTitle) alertTitle.innerText = 'No Production Program Selected';
+        if (alertMsg) alertMsg.innerText = 'Please choose a Production Program and select Fabric Roll(s) with their specific Catalog Hierarchy from the left to dynamically generate cutting variants.';
         programDataCache = null;
         return;
     }
 
     const prgSelect = document.getElementById('programSelect');
-    const selectedOption = prgSelect.options[prgSelect.selectedIndex];
-    const prgName = selectedOption.getAttribute('data-name') || '';
+    const selectedOption = prgSelect && prgSelect.selectedIndex >= 0 ? prgSelect.options[prgSelect.selectedIndex] : null;
+    const prgName = selectedOption ? (selectedOption.getAttribute('data-name') || '') : '';
 
     // Pre-populate cutting name if empty or default
     const nameInput = document.getElementById('cuttingName');
-    if (!nameInput.value || nameInput.value.startsWith('CUTTING -')) {
+    if (nameInput && (!nameInput.value || nameInput.value.startsWith('CUTTING -'))) {
         nameInput.value = 'CUTTING - ' + prgName.toUpperCase();
     }
 
     // Reset downstream selections with clear loading indicator
-    document.getElementById('variantTableWrapper').style.display = 'none';
-    document.getElementById('btnAddVariantRow').style.display = 'none';
-    document.getElementById('noProgramAlert').style.display = 'block';
-    document.getElementById('alertTitle').innerText = 'Loading Program Details...';
-    document.getElementById('alertMessage').innerText = 'Fetching program fabric rolls and catalog hierarchy...';
+    if (tableWrap) tableWrap.style.display = 'none';
+    if (btnAdd) btnAdd.style.display = 'none';
+    if (noAlert) noAlert.style.display = 'block';
+    if (alertTitle) alertTitle.innerText = 'Loading Program Details...';
+    if (alertMsg) alertMsg.innerText = 'Fetching program fabric rolls and catalog hierarchy...';
 
     // Fetch Program details API with dual-path resilience
     const primaryUrl = `${baseUrl}/api/programs/${encodeURIComponent(programId)}/details`;
-    const fallbackUrl = `api/programs/${encodeURIComponent(programId)}/details`;
+    const fallbackUrl = `${baseUrl ? baseUrl : ''}/api/programs/${encodeURIComponent(programId)}/details`;
 
     fetch(primaryUrl, {
         headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
@@ -689,8 +697,8 @@ function handleProgramChange(programId) {
         })
         .catch(finalErr => {
             console.error('All program fetch attempts failed:', finalErr);
-            document.getElementById('alertTitle').innerText = 'Error Loading Program Details';
-            document.getElementById('alertMessage').innerText = 'Could not load program rolls. Please verify your connection or refresh the page.';
+            if (alertTitle) alertTitle.innerText = 'Error Loading Program Details';
+            if (alertMsg) alertMsg.innerText = 'Could not load program rolls. Please verify your connection or refresh the page.';
         });
     });
 }
@@ -730,42 +738,49 @@ function renderProgramHeader(data) {
     }
 
     // Show Program details box
-    document.getElementById('programDetailsBox').style.display = 'block';
-    document.getElementById('boxProgramNumber').innerText = prg.program_number || '';
-    document.getElementById('boxProductName').innerText = prg.name || prg.product_name || 'Apparel Program';
-    document.getElementById('boxUnitName').innerHTML = '<i class="bi bi-building me-1"></i>' + (prg.unit_name || 'Production Unit');
-    document.getElementById('inputProductionUnitId').value = prg.production_unit_id || '';
+    const progBox = document.getElementById('programDetailsBox');
+    if (progBox) progBox.style.display = 'block';
+    const boxPrgNum = document.getElementById('boxProgramNumber');
+    if (boxPrgNum) boxPrgNum.innerText = prg.program_number || '';
+    const boxProdName = document.getElementById('boxProductName');
+    if (boxProdName) boxProdName.innerText = prg.name || prg.product_name || 'Apparel Program';
+    const boxUnitName = document.getElementById('boxUnitName');
+    if (boxUnitName) boxUnitName.innerHTML = '<i class="bi bi-building me-1"></i>' + (prg.unit_name || 'Production Unit');
+    const inputUnitId = document.getElementById('inputProductionUnitId');
+    if (inputUnitId) inputUnitId.value = prg.production_unit_id || '';
 
     // Show Roll selection box & populate dynamic multi-roll rows
     const rollBox = document.getElementById('rollDetailsBox');
-    rollBox.style.display = 'block';
+    if (rollBox) rollBox.style.display = 'block';
 
     const container = document.getElementById('cuttingRollsContainer');
-    container.innerHTML = '';
-    cuttingRollCounter = 0;
+    if (container) {
+        container.innerHTML = '';
+        cuttingRollCounter = 0;
 
-    if (assignedRolls.length > 0) {
-        assignedRolls.forEach(r => {
-            const rollCopy = Object.assign({}, r, {
-                category_id: r.category_id || prg.category_id || '',
-                subcategory_id: r.subcategory_id || prg.subcategory_id || '',
-                sub_subcategory_id: r.sub_subcategory_id || prg.sub_subcategory_id || ''
+        if (assignedRolls.length > 0) {
+            assignedRolls.forEach(r => {
+                const rollCopy = Object.assign({}, r, {
+                    category_id: r.category_id || prg.category_id || '',
+                    subcategory_id: r.subcategory_id || prg.subcategory_id || '',
+                    sub_subcategory_id: r.sub_subcategory_id || prg.sub_subcategory_id || ''
+                });
+                addCuttingRollRow(rollCopy);
+            });
+        } else if (data.roll) {
+            const rollCopy = Object.assign({}, data.roll, {
+                category_id: data.roll.category_id || prg.category_id || '',
+                subcategory_id: data.roll.subcategory_id || prg.subcategory_id || '',
+                sub_subcategory_id: data.roll.sub_subcategory_id || prg.sub_subcategory_id || ''
             });
             addCuttingRollRow(rollCopy);
-        });
-    } else if (data.roll) {
-        const rollCopy = Object.assign({}, data.roll, {
-            category_id: data.roll.category_id || prg.category_id || '',
-            subcategory_id: data.roll.subcategory_id || prg.subcategory_id || '',
-            sub_subcategory_id: data.roll.sub_subcategory_id || prg.sub_subcategory_id || ''
-        });
-        addCuttingRollRow(rollCopy);
-    } else {
-        addCuttingRollRow({
-            category_id: prg.category_id || '',
-            subcategory_id: prg.subcategory_id || '',
-            sub_subcategory_id: prg.sub_subcategory_id || ''
-        });
+        } else {
+            addCuttingRollRow({
+                category_id: prg.category_id || '',
+                subcategory_id: prg.subcategory_id || '',
+                sub_subcategory_id: prg.sub_subcategory_id || ''
+            });
+        }
     }
 
     // Immediately generate cutting variants breakdown table dynamically!
@@ -831,7 +846,7 @@ function loadRollSubcategories(rowIdx, categoryId, selectedSubcatId, selectedSub
         .catch(err => {
             console.error('Error loading subcategories for roll ' + rowIdx + ':', err);
             // Fallback relative
-            fetch(`api/subcategories/${encodeURIComponent(categoryId)}`, {
+            fetch(`${baseUrl ? baseUrl : ''}/api/subcategories/${encodeURIComponent(categoryId)}`, {
                 headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
             })
             .then(res => res.json())
@@ -904,8 +919,8 @@ function loadRollSubSubcategories(rowIdx, subcategoryId, selectedSubSubcatId) {
         })
         .catch(err => {
             console.error('Error loading sub subcategories for roll ' + rowIdx + ':', err);
-            // Fallback relative
-            fetch(`api/sub-subcategories/${encodeURIComponent(subcategoryId)}`, {
+            // Fallback
+            fetch(`${baseUrl ? baseUrl : ''}/api/sub-subcategories/${encodeURIComponent(subcategoryId)}`, {
                 headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
             })
             .then(res => res.json())
@@ -1009,11 +1024,16 @@ function regenerateAllRollVariants(cachedData = null) {
     });
 
     if (activeRollRequests.length === 0) {
-        document.getElementById('variantTableWrapper').style.display = 'none';
-        document.getElementById('btnAddVariantRow').style.display = 'none';
-        document.getElementById('noProgramAlert').style.display = 'block';
-        document.getElementById('alertTitle').innerText = 'No Fabric Rolls Added';
-        document.getElementById('alertMessage').innerText = 'Please select a Production Program with assigned Fabric Rolls from the left to dynamically generate cutting variants.';
+        const tableWrap = document.getElementById('variantTableWrapper');
+        if (tableWrap) tableWrap.style.display = 'none';
+        const btnAdd = document.getElementById('btnAddVariantRow');
+        if (btnAdd) btnAdd.style.display = 'none';
+        const noAlert = document.getElementById('noProgramAlert');
+        if (noAlert) noAlert.style.display = 'block';
+        const alertTitle = document.getElementById('alertTitle');
+        if (alertTitle) alertTitle.innerText = 'No Fabric Rolls Added';
+        const alertMsg = document.getElementById('alertMessage');
+        if (alertMsg) alertMsg.innerText = 'Please select a Production Program with assigned Fabric Rolls from the left to dynamically generate cutting variants.';
         return;
     }
 
@@ -1024,18 +1044,14 @@ function regenerateAllRollVariants(cachedData = null) {
         const cachedSizes = programDataCache && programDataCache.sizes && programDataCache.sizes.length > 0 ? programDataCache.sizes : ['M', 'L', 'XL', 'XXL', '3XL'];
         const cachedColors = req.rollColor ? [req.rollColor] : (programDataCache && programDataCache.colors && programDataCache.colors.length > 0 ? programDataCache.colors : ['STANDARD']);
 
-        const primaryUrl = `${baseUrl}/api/catalog/variants?category_id=` + encodeURIComponent(req.catId || '') + 
+        const queryStr = '?category_id=' + encodeURIComponent(req.catId || '') + 
                     '&subcategory_id=' + encodeURIComponent(req.subcatId || '') + 
                     '&sub_subcategory_id=' + encodeURIComponent(req.subSubcatId || '') + 
                     '&roll_id=' + encodeURIComponent(req.rollId || '') + 
                     '&program_id=' + encodeURIComponent(prgId || '') + 
                     '&roll_color=' + encodeURIComponent(req.rollColor || '');
-        const fallbackUrl = 'api/catalog/variants?category_id=' + encodeURIComponent(req.catId || '') + 
-                    '&subcategory_id=' + encodeURIComponent(req.subcatId || '') + 
-                    '&sub_subcategory_id=' + encodeURIComponent(req.subSubcatId || '') + 
-                    '&roll_id=' + encodeURIComponent(req.rollId || '') + 
-                    '&program_id=' + encodeURIComponent(prgId || '') + 
-                    '&roll_color=' + encodeURIComponent(req.rollColor || '');
+        const primaryUrl = `${baseUrl}/api/catalog/variants` + queryStr;
+        const fallbackUrl = `${baseUrl ? baseUrl : ''}/api/catalog/variants` + queryStr;
 
         return fetch(primaryUrl, {
             headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
@@ -1161,9 +1177,12 @@ function regenerateAllRollVariants(cachedData = null) {
             switchRollVariantTab('all', '');
         }
 
-        document.getElementById('noProgramAlert').style.display = 'none';
-        document.getElementById('variantTableWrapper').style.display = 'block';
-        document.getElementById('btnAddVariantRow').style.display = 'inline-block';
+        const noAlert = document.getElementById('noProgramAlert');
+        if (noAlert) noAlert.style.display = 'none';
+        const tableWrap = document.getElementById('variantTableWrapper');
+        if (tableWrap) tableWrap.style.display = 'block';
+        const btnAdd = document.getElementById('btnAddVariantRow');
+        if (btnAdd) btnAdd.style.display = 'inline-block';
         calculateMetrics();
     });
 }

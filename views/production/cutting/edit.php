@@ -692,7 +692,8 @@ function loadRollSubcategories(rowIdx, categoryId, selectedSubcatId, selectedSub
         })
         .catch(err => {
             console.error('Error loading subcategories for roll ' + rowIdx + ':', err);
-            fetch(`api/subcategories/${encodeURIComponent(categoryId)}`, {
+            // Fallback
+            fetch(`${baseUrl ? baseUrl : ''}/api/subcategories/${encodeURIComponent(categoryId)}`, {
                 headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
             })
             .then(res => res.json())
@@ -765,7 +766,8 @@ function loadRollSubSubcategories(rowIdx, subcategoryId, selectedSubSubcatId) {
         })
         .catch(err => {
             console.error('Error loading sub subcategories for roll ' + rowIdx + ':', err);
-            fetch(`api/sub-subcategories/${encodeURIComponent(subcategoryId)}`, {
+            // Fallback
+            fetch(`${baseUrl ? baseUrl : ''}/api/sub-subcategories/${encodeURIComponent(subcategoryId)}`, {
                 headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
             })
             .then(res => res.json())
@@ -872,17 +874,16 @@ function regenerateAllRollVariants() {
         }
     });
 
+    const prgId = '<?= e($batch['program_id'] ?? '') ?>';
     const promises = activeRollRequests.map(req => {
-        const primaryUrl = `${baseUrl}/api/catalog/variants?category_id=` + encodeURIComponent(req.catId || '') + 
+        const queryStr = '?category_id=' + encodeURIComponent(req.catId || '') + 
                     '&subcategory_id=' + encodeURIComponent(req.subcatId || '') + 
                     '&sub_subcategory_id=' + encodeURIComponent(req.subSubcatId || '') + 
                     '&roll_id=' + encodeURIComponent(req.rollId || '') + 
+                    '&program_id=' + encodeURIComponent(prgId || '') + 
                     '&roll_color=' + encodeURIComponent(req.rollColor || '');
-        const fallbackUrl = 'api/catalog/variants?category_id=' + encodeURIComponent(req.catId || '') + 
-                    '&subcategory_id=' + encodeURIComponent(req.subcatId || '') + 
-                    '&sub_subcategory_id=' + encodeURIComponent(req.subSubcatId || '') + 
-                    '&roll_id=' + encodeURIComponent(req.rollId || '') + 
-                    '&roll_color=' + encodeURIComponent(req.rollColor || '');
+        const primaryUrl = `${baseUrl}/api/catalog/variants` + queryStr;
+        const fallbackUrl = `${baseUrl ? baseUrl : ''}/api/catalog/variants` + queryStr;
 
         return fetch(primaryUrl, {
             headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }

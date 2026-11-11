@@ -1832,8 +1832,6 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
                         <input type="text" name="rolls[${idx}][attributes][${escapeHtml(attr.attr_name)}]" class="form-control form-control-sm" style="font-size: 12px; height: 36px;" value="${escapeHtml(curVal)}" placeholder="Enter ${escapeHtml(attr.attr_name)}" ${isReq ? 'required' : ''}>
                     </div>`;
                 }
-                    </div>`;
-                }
             });
 
             container.innerHTML = html;
