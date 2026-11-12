@@ -2355,9 +2355,19 @@ class ProductionController {
         }
 
         // 4. Check Product Variants by SKU or QR
-        // 4. Check generated production label codes
         if (!$prodItem) {
-            $prodItem = $this->findDamageProductByLabelCode($scanCode);
+            $supplyItemId = max(0, (int)($_GET['supply_item_id'] ?? 0));
+            $labelLookup = $this->resolveDamageLabelCode($scanCode, $supplyItemId ?: null);
+            if ($labelLookup['status'] === 'ambiguous') {
+                Response::json([
+                    'success' => true,
+                    'needs_supply_selection' => true,
+                    'code' => $scanCode,
+                    'candidates' => $labelLookup['candidates'],
+                ]);
+                return;
+            }
+            $prodItem = $labelLookup['item'];
         }
 
         // 5. Check Product Variants by SKU or QR
@@ -2381,40 +2391,52 @@ class ProductionController {
         }
 
         if ($prodItem) {
-            $loss = (float)(!empty($prodItem['selling_price']) && $prodItem['selling_price'] > 0
-                ? $prodItem['selling_price']
-                : (!empty($prodItem['mrp']) && $prodItem['mrp'] > 0
-                    ? $prodItem['mrp']
-                    : (!empty($prodItem['base_price']) && $prodItem['base_price'] > 0
-                        ? $prodItem['base_price']
-                        : (!empty($prodItem['discount_price']) && $prodItem['discount_price'] > 0
-                            ? $prodItem['discount_price']
-                            : (!empty($prodItem['production_cost']) && $prodItem['production_cost'] > 0
-                                ? $prodItem['production_cost']
-                                : 500.00)))));
+            $isSupply = !empty($prodItem['_damage_supply']);
+            if ($isSupply) {
+                $loss = (float)$prodItem['damage_cost'];
+                $weight = (float)$prodItem['damage_weight'];
+            } else {
+                $loss = (float)(!empty($prodItem['selling_price']) && $prodItem['selling_price'] > 0
+                    ? $prodItem['selling_price']
+                    : (!empty($prodItem['mrp']) && $prodItem['mrp'] > 0
+                        ? $prodItem['mrp']
+                        : (!empty($prodItem['base_price']) && $prodItem['base_price'] > 0
+                            ? $prodItem['base_price']
+                            : (!empty($prodItem['discount_price']) && $prodItem['discount_price'] > 0
+                                ? $prodItem['discount_price']
+                                : (!empty($prodItem['production_cost']) && $prodItem['production_cost'] > 0
+                                    ? $prodItem['production_cost']
+                                    : 500.00)))));
 
-            $weight = (float)(!empty($prodItem['variant_weight']) && $prodItem['variant_weight'] > 0
-                ? $prodItem['variant_weight']
-                : (!empty($prodItem['weight']) && $prodItem['weight'] > 0
-                    ? $prodItem['weight']
-                    : 0.25));
+                $weight = (float)(!empty($prodItem['variant_weight']) && $prodItem['variant_weight'] > 0
+                    ? $prodItem['variant_weight']
+                    : (!empty($prodItem['weight']) && $prodItem['weight'] > 0
+                        ? $prodItem['weight']
+                        : 0.25));
+            }
 
             $prodName = $prodItem['product_name'] ?: 'Garment Product';
             $sizeStr = $prodItem['size_name'] ?? '';
             $colorStr = $prodItem['color_name'] ?? '';
-            $rollDesc = $prodName . ($sizeStr || $colorStr ? " ({$sizeStr}" . ($colorStr ? "/{$colorStr}" : '') . ")" : '');
+            $rollDesc = $isSupply
+                ? $prodName
+                : $prodName . ($sizeStr || $colorStr ? " ({$sizeStr}" . ($colorStr ? "/{$colorStr}" : '') . ")" : '');
 
             Response::json([
                 'success' => true,
                 'item_type' => 'PRODUCT',
-                'product_id' => (int)$prodItem['product_id'],
+                'damage_kind' => $isSupply ? 'SUPPLY' : 'PRODUCT',
+                'supply_item_id' => $isSupply ? (int)$prodItem['id'] : null,
+                'product_id' => !empty($prodItem['product_id']) ? (int)$prodItem['product_id'] : null,
                 'variant_id' => !empty($prodItem['variant_id']) ? (int)$prodItem['variant_id'] : null,
                 'product_name' => $prodName,
                 'sku' => $prodItem['sku'] ?? $scanCode,
+                'quantity_label' => $prodItem['damage_quantity_label'] ?? null,
+                'purchase_number' => $prodItem['purchase_number'] ?? null,
                 'size' => $sizeStr,
                 'color' => $colorStr,
                 'seller_id' => null,
-                'seller_name' => 'Own Production',
+                'seller_name' => $isSupply ? ($prodItem['supplier_name'] ?: 'Purchased Supply') : 'Own Production',
                 'roll_id' => null,
                 'roll_number' => $rollDesc,
                 'quantity' => 1,
@@ -2470,6 +2492,123 @@ class ProductionController {
         }
 
         return $matches[0];
+    }
+
+    private function resolveDamageLabelCode(string $scanCode, ?int $supplyItemId = null): array {
+        if ($supplyItemId !== null) {
+            return $this->findDamageSupplyLabelByCode($scanCode, $supplyItemId);
+        }
+
+        $product = $this->findDamageProductByLabelCode($scanCode);
+        if ($product) {
+            return ['status' => 'found', 'item' => $product];
+        }
+
+        return $this->findDamageSupplyLabelByCode($scanCode);
+    }
+
+    private function findDamageSupplyLabelByCode(string $scanCode, ?int $selectedItemId = null): array {
+        if (!preg_match('/^SP(\d{2})(\d{2})(\d{2,})$/', strtoupper(trim($scanCode)), $codeParts)) {
+            return ['status' => 'not_found', 'item' => null];
+        }
+
+        $month = (int)$codeParts[1];
+        if ($month < 1 || $month > 12) {
+            return ['status' => 'not_found', 'item' => null];
+        }
+
+        $dateCode = $codeParts[1] . $codeParts[2];
+        $sequence = (int)$codeParts[3];
+        $supplySql =
+            "SELECT ppi.id, ppi.purchase_id, ppi.item_name, ppi.quantity, ppi.unit,
+                    ppi.weight_kg, ppi.unit_price, ppi.total_price,
+                    pp.purchase_number, s.name AS supplier_name, s.company AS supplier_company
+             FROM production_purchase_items ppi
+             JOIN production_purchases pp ON pp.id = ppi.purchase_id
+             LEFT JOIN sellers s ON s.id = pp.seller_id
+             WHERE ppi.item_type = 'GENERAL_SUPPLY'
+                AND DATE_FORMAT(pp.purchase_date, '%m%y') = ?";
+           $supplyParams = [$dateCode];
+           $supplySql .= " ORDER BY pp.id ASC, ppi.id ASC";
+           $supplyRows = Database::fetchAll($supplySql, $supplyParams);
+
+        $pieceSequenceByPurchase = [];
+        $packageSequenceByPurchase = [];
+        $matches = [];
+        foreach ($supplyRows as $supply) {
+            $purchaseId = (int)$supply['purchase_id'];
+            $quantity = max(0.0, (float)$supply['quantity']);
+            $isWholeQuantity = floor($quantity) === $quantity;
+            $wholeQuantity = (int)$quantity;
+            $pieceCount = $isWholeQuantity && $wholeQuantity > 1 && $wholeQuantity <= 100
+                ? $wholeQuantity
+                : 1;
+
+            $pieceStart = $pieceSequenceByPurchase[$purchaseId] ?? 1;
+            $pieceEnd = $pieceStart + $pieceCount - 1;
+            $pieceSequenceByPurchase[$purchaseId] = $pieceEnd + 1;
+
+            $packageSequence = $packageSequenceByPurchase[$purchaseId] ?? 1;
+            $packageSequenceByPurchase[$purchaseId] = $packageSequence + 1;
+
+            $selectedItemMatch = $sequence >= 1 && $sequence <= $pieceCount;
+            $fullPurchasePieceMatch = $sequence >= $pieceStart && $sequence <= $pieceEnd;
+            $fullPurchasePackageMatch = $sequence === $packageSequence;
+            if (!$selectedItemMatch && !$fullPurchasePieceMatch && !$fullPurchasePackageMatch) {
+                continue;
+            }
+
+            $supply['_package_label'] = $fullPurchasePackageMatch
+                && !$selectedItemMatch
+                && !$fullPurchasePieceMatch;
+            $matches[(int)$supply['id']] = $supply;
+        }
+
+        if ($selectedItemId !== null) {
+            if (!isset($matches[$selectedItemId])) {
+                return ['status' => 'not_found', 'item' => null];
+            }
+            $matches = [$selectedItemId => $matches[$selectedItemId]];
+        }
+
+        if (count($matches) > 1) {
+            $options = [];
+            foreach ($matches as $match) {
+                $options[] = [
+                    'id' => (int)$match['id'],
+                    'label' => trim(($match['item_name'] ?? 'Supply') . ' | ' . ($match['purchase_number'] ?? 'Purchase') . ' | ' . ($match['supplier_company'] ?: $match['supplier_name']) . ' | ' . $match['quantity'] . ' ' . $match['unit']),
+                ];
+            }
+            return ['status' => 'ambiguous', 'item' => null, 'candidates' => $options];
+        }
+        if (!$matches) {
+            return ['status' => 'not_found', 'item' => null];
+        }
+
+        $supply = reset($matches);
+        $quantity = max(0.0, (float)$supply['quantity']);
+        $isPackage = !empty($supply['_package_label'])
+            || floor($quantity) !== $quantity
+            || $quantity <= 1
+            || $quantity > 100;
+        $unit = trim((string)$supply['unit']);
+        $supply['product_id'] = null;
+        $supply['variant_id'] = null;
+        $supply['product_name'] = $supply['item_name'];
+        $supply['supplier_name'] = $supply['supplier_company'] ?: $supply['supplier_name'];
+        $supply['sku'] = $supply['purchase_number'] . '-ITEM-' . $supply['id'];
+        $supply['_damage_supply'] = true;
+        $supply['damage_quantity_label'] = $isPackage
+            ? rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.') . ' ' . $unit
+            : '1 ' . $unit;
+        $supply['damage_cost'] = $isPackage
+            ? (float)$supply['total_price']
+            : (float)$supply['unit_price'];
+        $supply['damage_weight'] = $isPackage
+            ? (float)($supply['weight_kg'] ?? 0)
+            : ($quantity > 0 ? (float)($supply['weight_kg'] ?? 0) / $quantity : 0.0);
+
+        return ['status' => 'found', 'item' => $supply];
     }
 
     public function downloadBill(string $id): void {
@@ -3399,6 +3538,10 @@ class ProductionController {
         if (!is_array($submittedQrCodes)) {
             $submittedQrCodes = [];
         }
+        $submittedSupplyItemIds = $_POST['damage_supply_item_ids'] ?? [];
+        if (!is_array($submittedSupplyItemIds)) {
+            $submittedSupplyItemIds = [];
+        }
         if (empty($submittedQrCodes) && !empty($_POST['qr_code'])) {
             $submittedQrCodes = [$_POST['qr_code']];
         }
@@ -3413,6 +3556,7 @@ class ProductionController {
                 $qrEntries[] = [
                     'code' => $code,
                     'scan_index' => (string)$scanIndex,
+                    'supply_item_id' => max(0, (int)($submittedSupplyItemIds[$scanIndex] ?? 0)),
                 ];
             }
         }
@@ -3549,7 +3693,13 @@ class ProductionController {
                 }
 
                 if (!$prodItem) {
-                    $prodItem = $this->findDamageProductByLabelCode($qrCode);
+                    $labelLookup = $this->resolveDamageLabelCode($qrCode, $qrEntry['supply_item_id'] ?: null);
+                    if ($labelLookup['status'] === 'ambiguous') {
+                        Session::flash('error', "QR code {$qrCode} matches multiple Other Garment Supplies labels. The code is not unique, so damage was not saved.");
+                        Response::back();
+                        return;
+                    }
+                    $prodItem = $labelLookup['item'];
                 }
 
                 if (!$prodItem) {
@@ -3571,21 +3721,27 @@ class ProductionController {
                     return;
                 }
 
-                $lossAmount = (float)(!empty($prodItem['selling_price']) && $prodItem['selling_price'] > 0
-                    ? $prodItem['selling_price']
-                    : (!empty($prodItem['mrp']) && $prodItem['mrp'] > 0
-                        ? $prodItem['mrp']
-                        : (!empty($prodItem['base_price']) && $prodItem['base_price'] > 0
-                            ? $prodItem['base_price']
-                            : (!empty($prodItem['discount_price']) && $prodItem['discount_price'] > 0
-                                ? $prodItem['discount_price']
-                                : 500.00))));
+                $isSupply = !empty($prodItem['_damage_supply']);
+                if ($isSupply) {
+                    $lossAmount = (float)$prodItem['damage_cost'];
+                    $weight = (float)$prodItem['damage_weight'];
+                } else {
+                    $lossAmount = (float)(!empty($prodItem['selling_price']) && $prodItem['selling_price'] > 0
+                        ? $prodItem['selling_price']
+                        : (!empty($prodItem['mrp']) && $prodItem['mrp'] > 0
+                            ? $prodItem['mrp']
+                            : (!empty($prodItem['base_price']) && $prodItem['base_price'] > 0
+                                ? $prodItem['base_price']
+                                : (!empty($prodItem['discount_price']) && $prodItem['discount_price'] > 0
+                                    ? $prodItem['discount_price']
+                                    : 500.00))));
 
-                $weight = (float)(!empty($prodItem['variant_weight']) && $prodItem['variant_weight'] > 0
-                    ? $prodItem['variant_weight']
-                    : (!empty($prodItem['weight']) && $prodItem['weight'] > 0
-                        ? $prodItem['weight']
-                        : 0.25));
+                    $weight = (float)(!empty($prodItem['variant_weight']) && $prodItem['variant_weight'] > 0
+                        ? $prodItem['variant_weight']
+                        : (!empty($prodItem['weight']) && $prodItem['weight'] > 0
+                            ? $prodItem['weight']
+                            : 0.25));
+                }
 
                 $damageItems[] = [
                     'item_type' => 'PRODUCT',
@@ -3593,11 +3749,15 @@ class ProductionController {
                     'scan_index' => $qrEntry['scan_index'],
                     'seller_id' => null,
                     'seller_roll_id' => null,
-                    'product_id' => (int)$prodItem['product_id'],
+                    'product_id' => !empty($prodItem['product_id']) ? (int)$prodItem['product_id'] : null,
                     'variant_id' => !empty($prodItem['variant_id']) ? (int)$prodItem['variant_id'] : null,
                     'product_name' => $prodItem['product_name'] ?: 'Garment Product',
-                    'variant_info' => trim(($prodItem['size_name'] ?? '') . ' ' . ($prodItem['color_name'] ?? '') . ' ' . ($prodItem['sku'] ?? '')),
-                    'roll_number' => $prodItem['product_name'] . (!empty($prodItem['size_name']) ? " ({$prodItem['size_name']})" : ''),
+                    'variant_info' => $isSupply
+                        ? trim('Purchase ' . ($prodItem['purchase_number'] ?? '') . ' ' . ($prodItem['damage_quantity_label'] ?? ''))
+                        : trim(($prodItem['size_name'] ?? '') . ' ' . ($prodItem['color_name'] ?? '') . ' ' . ($prodItem['sku'] ?? '')),
+                    'roll_number' => $isSupply
+                        ? $prodItem['product_name'] . ' (' . $prodItem['damage_quantity_label'] . ')'
+                        : $prodItem['product_name'] . (!empty($prodItem['size_name']) ? " ({$prodItem['size_name']})" : ''),
                     'damaged_weight' => $weight,
                     'loss_amount' => $lossAmount,
                 ];
