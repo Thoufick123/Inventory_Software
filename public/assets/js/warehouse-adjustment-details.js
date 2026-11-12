@@ -1,4 +1,10 @@
 (() => {
+    const initialize = () => {
+    if (typeof bootstrap === 'undefined' || !bootstrap.Modal) {
+        console.error('Bootstrap Modal is unavailable; stock adjustment actions could not be initialized.');
+        return;
+    }
+
     const detailsModalElement = document.getElementById('adjustmentDetailsModal');
     if (!detailsModalElement) return;
 
@@ -162,5 +168,12 @@
             editSaveButton.disabled = true;
             editError.classList.add('d-none');
         });
+    }
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initialize, { once: true });
+    } else {
+        initialize();
     }
 })();
