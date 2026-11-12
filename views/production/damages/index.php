@@ -1,4 +1,3 @@
-                        <div class="col-md-6" id="damageWeightSummary">
 <div class="page-header mb-4">
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 w-100">
         <div>
@@ -400,7 +399,7 @@
                         </div>
 
                         <!-- Damaged Weight (Disabled with clear visibility - Auto-calculated) -->
-                        <div class="col-md-6">
+                        <div class="col-md-6" id="damageWeightSummary">
                             <label class="form-label fw-bold text-dark">
                                 Damaged Weight <span class="badge bg-secondary-subtle text-secondary border ms-1">Auto</span>
                             </label>
@@ -412,7 +411,6 @@
                         </div>
 
                         <!-- Estimated Loss Valuation (Disabled with clear visibility - Auto-calculated) -->
-                        <div class="col-md-6">
                         <div class="col-md-6" id="damageLossSummary">
                             <label class="form-label fw-bold text-danger">
                                 <i class="bi bi-currency-rupee me-1"></i><span id="reportLossLabel">Estimated Loss Valuation</span> <span class="badge bg-danger-subtle text-danger border ms-1">Auto</span>
@@ -1714,6 +1712,13 @@ function initQuickAddHsnModalHandler() {
 
 // Client-side form submit validation
 document.addEventListener('DOMContentLoaded', () => {
+    ['reportDamageModal', 'editDamageModal', 'resolveModal', 'damageQrModal', 'modalConfirmDeleteDamage'].forEach(modalId => {
+        const modalElement = document.getElementById(modalId);
+        if (modalElement && modalElement.parentElement !== document.body) {
+            document.body.appendChild(modalElement);
+        }
+    });
+
     const replBox = document.getElementById('fieldReplacementBox');
     if (replBox) {
         initHsnDropdown(replBox, '#inputReplacementHsn');
