@@ -31,10 +31,12 @@
         </div>
         <div class="d-flex align-items-center gap-2 flex-wrap">
             <div class="btn-group btn-group-sm shadow-xs" role="group" aria-label="Warehouse Filter">
+                <?php if (empty($warehouseScopeRestricted)): ?>
                 <a href="<?= url('warehouse/stock/detail/' . $variant['id']) ?>" 
                    class="btn <?= empty($selectedWarehouseId) ? 'btn-primary active fw-bold' : 'btn-outline-secondary' ?>">
                     <i class="bi bi-globe me-1"></i> All Facilities (<?= number_format($allWarehouseTotalAvailable ?? 0) ?>)
                 </a>
+                <?php endif; ?>
                 <?php foreach (($warehouses ?? []) as $wh): 
                     $whAvail = $warehouseAvailMap[$wh['id']] ?? 0;
                     $isActiveWh = (!empty($selectedWarehouseId) && (int)$selectedWarehouseId === (int)$wh['id']);
@@ -45,7 +47,7 @@
                     </a>
                 <?php endforeach; ?>
             </div>
-            <?php if (!empty($selectedWarehouseId)): ?>
+            <?php if (!empty($selectedWarehouseId) && empty($warehouseScopeRestricted)): ?>
                 <a href="<?= url('warehouse/stock/detail/' . $variant['id']) ?>" class="btn btn-sm btn-outline-danger" title="Clear filter and view all warehouses">
                     <i class="bi bi-x-circle me-1"></i> Clear Filter
                 </a>
@@ -172,7 +174,7 @@
         <div class="card border-0 shadow-sm">
             <div class="card-header bg-white py-3 d-flex align-items-center justify-content-between">
                 <h6 class="card-title mb-0 fw-bold"><i class="bi bi-buildings me-2 text-primary"></i>Stock by Warehouse Location</h6>
-                <?php if (!empty($selectedWarehouseId)): ?>
+                <?php if (!empty($selectedWarehouseId) && empty($warehouseScopeRestricted)): ?>
                     <a href="<?= url('warehouse/stock/detail/' . $variant['id']) ?>" class="badge bg-secondary-subtle text-secondary border text-decoration-none" title="Show all warehouses combined">
                         View All
                     </a>
@@ -199,7 +201,7 @@
                                 </div>
                                 <div class="text-end">
                                     <span class="fw-bold fs-6"><?= number_format($b['quantity']) ?> pcs</span>
-                                    <?php if (!$isThisSelected): ?>
+                                    <?php if (!$isThisSelected && empty($warehouseScopeRestricted)): ?>
                                         <div>
                                             <a href="<?= url('warehouse/stock/detail/' . $variant['id'] . '?warehouse_id=' . $b['location_id']) ?>" class="btn btn-xs btn-outline-primary py-0 px-2 mt-1" style="font-size: 0.70rem;">
                                                 View Only
@@ -212,7 +214,7 @@
                     </ul>
                 <?php endif; ?>
             </div>
-            <?php if (!empty($selectedWarehouseId)): ?>
+            <?php if (!empty($selectedWarehouseId) && empty($warehouseScopeRestricted)): ?>
                 <div class="card-footer bg-light p-2 text-center border-top">
                     <a href="<?= url('warehouse/stock/detail/' . $variant['id']) ?>" class="text-decoration-none small fw-semibold text-primary">
                         <i class="bi bi-globe me-1"></i>View All Warehouses Combined (<?= number_format($allWarehouseTotalAvailable ?? 0) ?> pcs)

@@ -201,6 +201,16 @@ class StockAdjustment {
             $params[] = $filters['adjustment_type'];
         }
 
+        if (!empty($filters['date_from'])) {
+            $sql .= " AND DATE(sa.created_at) >= ?";
+            $params[] = $filters['date_from'];
+        }
+
+        if (!empty($filters['date_to'])) {
+            $sql .= " AND DATE(sa.created_at) <= ?";
+            $params[] = $filters['date_to'];
+        }
+
         if (!empty($filters['search'])) {
             $sql .= " AND (sa.adjustment_number LIKE ? OR pv.sku LIKE ? OR p.name LIKE ? OR sa.reason LIKE ?)";
             $s = '%' . $filters['search'] . '%';

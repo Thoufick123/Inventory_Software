@@ -2880,6 +2880,16 @@ class WarehouseService {
                                                  LEFT JOIN sizes sz ON pv.size_id = sz.id 
                                                  LEFT JOIN colors cl ON pv.color_id = cl.id 
                                                  WHERE pv.id = ?", [$repVarId]);
+                    if (!$repVar) {
+                        throw new InvalidArgumentException("The selected same-product exchange variant was not found.");
+                    }
+                    $originalProduct = Database::fetchOne(
+                        "SELECT product_id FROM product_variants WHERE id = ?",
+                        [$variantId]
+                    );
+                    if (!$originalProduct || (int)$repVar['product_id'] !== (int)$originalProduct['product_id']) {
+                        throw new InvalidArgumentException("A same-product exchange replacement must be a variant of the returned product.");
+                    }
                     $availStock = (int)(Database::fetchOne("SELECT COALESCE(SUM(quantity), 0) as stock FROM stock_balances WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND location_id = ? AND stock_state = 'AVAILABLE'", [$repVarId, $targetWarehouseId])['stock'] ?? 0);
                     if ($availStock < $qty) {
                         $pName = $repVar['product_name'] ?? 'Product';
@@ -3222,14 +3232,13 @@ class WarehouseService {
     /**
      * Find a piece QR that has already left warehouse stock as a direct-purchase exchange replacement.
      */
-    public static function getExchangedReplacementByPieceTag(string $pieceTag): ?array {
+    public static function getExchangedReplacementByPieceTag(string $pieceTag, ?int $excludeReturnId = null): ?array {
         $pieceTag = trim($pieceTag);
         if ($pieceTag === '') {
             return null;
         }
 
-        return Database::fetchOne(
-            "SELECT e.exchange_number, r.return_number
+        $sql = "SELECT e.exchange_number, r.return_number
              FROM exchange_items ei
              JOIN exchanges e ON e.id = ei.exchange_id
              JOIN `returns` r ON r.id = e.return_id
@@ -3237,11 +3246,15 @@ class WarehouseService {
                AND r.source_type = 'WAREHOUSE_PURCHASE'
                AND e.status = 'COMPLETED'
                AND ei.piece_tag IS NOT NULL
-               AND FIND_IN_SET(UPPER(?), REPLACE(UPPER(ei.piece_tag), ' ', '')) > 0
-             ORDER BY e.id DESC
-             LIMIT 1",
-            [$pieceTag]
-        );
+               AND FIND_IN_SET(UPPER(?), REPLACE(UPPER(ei.piece_tag), ' ', '')) > 0";
+        $params = [$pieceTag];
+        if ($excludeReturnId !== null && $excludeReturnId > 0) {
+            $sql .= " AND r.id != ?";
+            $params[] = $excludeReturnId;
+        }
+        $sql .= " ORDER BY e.id DESC LIMIT 1";
+
+        return Database::fetchOne($sql, $params);
     }
 
     /**

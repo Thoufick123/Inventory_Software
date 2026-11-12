@@ -472,6 +472,27 @@ $editData = $editData ?? null;
                             </div>
                         </div>
 
+                        <!-- Card 3: Same Product Exchange -->
+                        <div class="col-12 col-md-6">
+                            <div class="action-type-card card border-2 h-100 p-3 shadow-sm"
+                                 id="card_EXCHANGE_SAME" onclick="selectActionCard('EXCHANGE_SAME')"
+                                 style="border-radius:12px; cursor:pointer;">
+                                <div class="d-flex align-items-center gap-2 mb-2">
+                                    <span class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+                                          style="width:32px;height:32px;background:#eff6ff;">
+                                        <i class="bi bi-arrow-repeat text-primary" style="font-size:15px;"></i>
+                                    </span>
+                                    <strong class="text-dark" style="font-size:13.5px;">Same Product Exchange</strong>
+                                    <span class="ms-auto badge" style="background:#dbeafe;color:#1d4ed8;font-size:10px; white-space:nowrap;">
+                                        <i class="bi bi-upc-scan"></i>
+                                    </span>
+                                </div>
+                                <p class="text-muted mb-0" style="font-size:11.5px; line-height:1.4;">
+                                    Scan the same product or another size/color variant from warehouse stock.
+                                </p>
+                            </div>
+                        </div>
+
                     </div><!-- /row -->
                 </div>
 
@@ -491,7 +512,7 @@ $editData = $editData ?? null;
                                 <i class="bi bi-upc-scan me-1"></i>Scan Replacement Warehouse Product
                             </span>
                             <span class="text-white-50 small">
-                                Scan any in-stock QR, barcode, or SKU; it goes to the next checked invoice item
+                                <span id="exchangeScanHint">Scan any in-stock QR, barcode, or SKU; it goes to the next checked invoice item</span>
                             </span>
                         </div>
                     </div>
@@ -1061,7 +1082,7 @@ function selectActionCard(mode) {
     document.querySelectorAll('.action-type-card').forEach(c => {
         c.classList.remove('selected-action');
     });
-    const cardId = mode === 'EXCHANGE_SAME' ? 'EXCHANGE_DIFFERENT' : (mode === 'CREDIT_NOTE' ? 'RETURN' : mode);
+    const cardId = mode === 'CREDIT_NOTE' ? 'RETURN' : mode;
     const card = document.getElementById('card_' + cardId);
     if (card) {
         card.classList.add('selected-action');
@@ -1232,9 +1253,15 @@ function switchActionMode(mode) {
     const replacementHeader = document.getElementById('replacementProductHeader');
     const replacementCells = document.querySelectorAll('.replacement-product-cell');
     const scanInput = document.getElementById('modalExchangeScanInput');
+    const scanHint = document.getElementById('exchangeScanHint');
     const isExchange = mode === 'EXCHANGE_DIFFERENT' || mode === 'EXCHANGE_SAME';
 
     if (lastColHdr) lastColHdr.textContent = 'Item Credit';
+    if (scanHint) {
+        scanHint.textContent = mode === 'EXCHANGE_SAME'
+            ? 'Scan the same product or a size/color variant; it goes to a checked invoice item'
+            : 'Scan any in-stock QR, barcode, or SKU; it goes to the next checked invoice item';
+    }
     if (scannerBox) scannerBox.classList.toggle('d-none', !isExchange);
     if (replacementHeader) replacementHeader.classList.toggle('d-none', !isExchange);
     replacementCells.forEach(cell => cell.classList.toggle('d-none', !isExchange));
@@ -1351,9 +1378,35 @@ function onModalScanExchangeItem(code) {
 
     const mode = document.getElementById('actionTypeSelect').value;
     const whId = currentPurchaseData && currentPurchaseData.purchase ? (currentPurchaseData.purchase.warehouse_id || 1) : 1;
+    const invoiceItems = currentPurchaseData.items || [];
+    const checkedIndexes = invoiceItems
+        .map((item, index) => index)
+        .filter(index => {
+            const checkbox = document.querySelector(`.item-select-cb[data-idx="${index}"]`);
+            return checkbox && checkbox.checked;
+        });
+    const sameExchangeItemIds = mode === 'EXCHANGE_SAME'
+        ? checkedIndexes
+            .filter(index => {
+                const condition = document.querySelector(`.item-condition-select[data-idx="${index}"]`);
+                return condition && condition.value === 'GOOD';
+            })
+            .map(index => Number(invoiceItems[index].id))
+            .filter(id => id > 0)
+        : [];
+    if (mode === 'EXCHANGE_SAME' && checkedIndexes.length === 0) {
+        showModalScanFeedback('Select an invoice item before scanning a replacement product.', 'warning');
+        pendingReplacementScans.delete(normalizedCode);
+        return;
+    }
 
-    const scanPurpose = currentEditReturnId > 0 ? '&purpose=purchase_return_edit' : '';
-    fetch(`<?= url("api/warehouse/purchases/lookup-scan") ?>?warehouse_id=${whId}${scanPurpose}&code=${encodeURIComponent(code)}`)
+    const scanPurpose = currentEditReturnId > 0
+        ? `&purpose=purchase_return_edit&return_id=${currentEditReturnId}`
+        : '';
+    const sameExchangeParams = mode === 'EXCHANGE_SAME'
+        ? `&same_product_exchange_scan=1&purchase_order_id=${Number(currentPurchaseData.purchase.id)}&same_exchange_item_ids=${encodeURIComponent(JSON.stringify(sameExchangeItemIds))}`
+        : '';
+    fetch(`<?= url("api/warehouse/purchases/lookup-scan") ?>?warehouse_id=${whId}${scanPurpose}${sameExchangeParams}&code=${encodeURIComponent(code)}`)
         .then(res => res.json())
         .then(data => {
             if (data.success && data.variant) {
@@ -1376,29 +1429,42 @@ function onModalScanExchangeItem(code) {
                     showModalScanFeedback('Switch to Warehouse Exchange to scan replacement products.', 'warning');
                 } else {
                     const variantId = Number(scannedVar.id);
+                    const returnedSameVariantQty = mode === 'EXCHANGE_SAME'
+                        ? checkedIndexes.reduce((total, index) => {
+                            const item = invoiceItems[index];
+                            const condition = document.querySelector(`.item-condition-select[data-idx="${index}"]`);
+                            const qtyInput = document.querySelector(`.return-qty-input[data-idx="${index}"]`);
+                            if (Number(item.variant_id) !== variantId || !condition || condition.value !== 'GOOD') {
+                                return total;
+                            }
+                            return total + Math.max(0, Number.parseInt(qtyInput ? qtyInput.value : '0', 10) || 0);
+                        }, 0)
+                        : 0;
                     const availableStock = (Number(scannedVar.available_stock) || 0)
-                        + (currentEditReplacementQuantities[variantId] || 0);
+                        + (currentEditReplacementQuantities[variantId] || 0)
+                        + returnedSameVariantQty;
                     const packQuantity = Math.max(1, Number.parseInt(scannedVar.pack_quantity, 10) || 1);
                     const quantityToAdd = (scannedVar.is_series || scannedVar.is_complementary) ? packQuantity : 1;
-                    const invoiceItems = currentPurchaseData.items || [];
-                    const checkedIndexes = invoiceItems
-                        .map((item, index) => index)
-                        .filter(index => {
-                            const checkbox = document.querySelector(`.item-select-cb[data-idx="${index}"]`);
-                            return checkbox && checkbox.checked;
-                        });
                     const existingIndex = rowReplacements.findIndex((item, index) => {
                         const checkbox = document.querySelector(`.item-select-cb[data-idx="${index}"]`);
                         return item && Number(item.variant_id) === variantId && checkbox && checkbox.checked;
                     });
                     const targetIndex = existingIndex >= 0
                         ? existingIndex
-                        : checkedIndexes.find(index => !rowReplacements[index]);
+                        : checkedIndexes.find(index => {
+                            if (rowReplacements[index]) return false;
+                            return mode !== 'EXCHANGE_SAME'
+                                || Number(invoiceItems[index].product_id) === Number(scannedVar.product_id);
+                        });
 
                     if (!variantId || availableStock <= 0) {
                         showModalScanFeedback('This product has no available stock in the selected warehouse.', 'warning');
                     } else if (checkedIndexes.length === 0) {
                         showModalScanFeedback('Select an invoice item before scanning a replacement product.', 'warning');
+                    } else if (mode === 'EXCHANGE_SAME' && !checkedIndexes.some(index =>
+                        Number(invoiceItems[index].product_id) === Number(scannedVar.product_id)
+                    )) {
+                        showModalScanFeedback('Scan a size or color variant of the selected product for a same-product exchange.', 'warning');
                     } else if (targetIndex === undefined) {
                         showModalScanFeedback('Every checked invoice item already has a replacement. Remove one or select another item.', 'warning');
                     } else {
