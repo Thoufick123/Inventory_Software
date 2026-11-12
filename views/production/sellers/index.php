@@ -41,7 +41,7 @@
 <div class="card border shadow-sm">
     <div class="card-header bg-white d-flex justify-content-between align-items-center">
         <h5 class="mb-0 fw-bold"><i class="bi bi-person-vcard me-2 text-primary"></i>Supplier Profiles</h5>
-        <span class="badge bg-primary-subtle text-primary"><?= number_format(count($sellers)) ?> suppliers</span>
+        <span class="badge bg-primary-subtle text-primary" id="supplierCount"><?= number_format(count($sellers)) ?> suppliers</span>
     </div>
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
@@ -58,7 +58,7 @@
                         <?php endif; ?>
                     </td></tr>
                 <?php else: foreach ($sellers as $seller): ?>
-                    <tr class="seller-row" data-search="<?= strtolower(e($seller['name'] . ' ' . ($seller['company'] ?? '') . ' ' . ($seller['phone'] ?? '') . ' ' . ($seller['email'] ?? '') . ' ' . ($seller['city'] ?? '') . ' ' . ($seller['state'] ?? '') . ' ' . ($seller['gst_number'] ?? ''))) ?>">
+                    <tr class="seller-row" data-city="<?= strtolower(e($seller['city'] ?? '')) ?>" data-search="<?= strtolower(e($seller['name'] . ' ' . ($seller['company'] ?? '') . ' ' . ($seller['phone'] ?? '') . ' ' . ($seller['email'] ?? '') . ' ' . ($seller['address'] ?? '') . ' ' . ($seller['city'] ?? '') . ' ' . ($seller['state'] ?? '') . ' ' . ($seller['gst_number'] ?? ''))) ?>">
                         <td class="fw-semibold"><?= e($seller['name']) ?></td>
                         <td><?= e($seller['company'] ?: '—') ?></td>
                         <td>
@@ -87,6 +87,9 @@
                         </td>
                     </tr>
                 <?php endforeach; endif; ?>
+                <?php if (!empty($sellers)): ?>
+                    <tr id="supplierLiveNoResults" class="d-none"><td colspan="5" class="text-center text-muted py-4">No suppliers match these filters.</td></tr>
+                <?php endif; ?>
             </tbody>
         </table>
     </div>
@@ -272,10 +275,22 @@ function openDeleteSupplierModal(id, name, company, phone) {
 
 function filterSuppliersLive(query) {
     const q = query.toLowerCase().trim();
+    const city = (document.getElementById('supplierCity')?.value || '').toLowerCase().trim();
     const rows = document.querySelectorAll('tbody .seller-row');
+    let visibleCount = 0;
     rows.forEach(r => {
         const text = r.getAttribute('data-search') || (r.textContent || '').toLowerCase();
-        r.style.display = (!q || text.includes(q)) ? '' : 'none';
+        const matches = (!q || text.includes(q)) && (!city || r.dataset.city === city);
+        r.style.display = matches ? '' : 'none';
+        if (matches) visibleCount++;
     });
+    const countLabel = document.getElementById('supplierCount');
+    if (countLabel) countLabel.textContent = `${visibleCount.toLocaleString()} suppliers`;
+    document.getElementById('supplierLiveNoResults')?.classList.toggle('d-none', visibleCount > 0);
 }
+
+document.getElementById('supplierCity')?.addEventListener('change', event => {
+    filterSuppliersLive(document.getElementById('supplierSearch')?.value || '');
+    event.currentTarget.form?.requestSubmit();
+});
 </script>
