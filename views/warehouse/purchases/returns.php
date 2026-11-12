@@ -1166,7 +1166,7 @@ function renderReturnItemsTable(items) {
                 <input type="number" class="form-control form-control-sm return-qty-input fw-bold text-center"
                        style="width:80px;"
                        data-idx="${idx}" value="${maxQty}" min="1" max="${maxQty}"
-                       oninput="validateQty(this, ${maxQty}); recalculateTotals()">
+                       oninput="validateQty(this, ${maxQty}); recalculateTotals(); renderReplacementProductCell(${idx})">
             </td>
             <td>
                 <select class="form-select form-select-sm item-condition-select" data-idx="${idx}" style="min-width:130px;">
@@ -1290,6 +1290,17 @@ function escapeExchangeHtml(value) {
     return String(value || '').replace(/[&<>"']/g, character => replacements[character]);
 }
 
+function getReplacementQuantityLimit(idx, item) {
+    const availableStock = Number(item.available_stock) || 0;
+    if (document.getElementById('actionTypeSelect').value !== 'EXCHANGE_SAME') {
+        return availableStock;
+    }
+
+    const returnQtyInput = document.querySelector(`.return-qty-input[data-idx="${idx}"]`);
+    const returnQuantity = Math.max(1, Number.parseInt(returnQtyInput ? returnQtyInput.value : '1', 10) || 1);
+    return Math.min(availableStock, returnQuantity);
+}
+
 function renderReplacementProductCell(idx) {
     const display = document.getElementById('replacementDisplay_' + idx);
     if (!display) return;
@@ -1304,6 +1315,7 @@ function renderReplacementProductCell(idx) {
     const scanLabels = [...new Set([...(item.scanned_tags || []), ...(item.scanned_codes || [])])];
     const price = Number(item.unit_price) || 0;
     const quantity = Number(item.quantity) || 0;
+    const quantityLimit = getReplacementQuantityLimit(idx, item);
     display.className = 'border rounded-2 bg-light p-2';
     display.innerHTML = `
         <div class="d-flex justify-content-between align-items-start gap-2">
@@ -1318,7 +1330,7 @@ function renderReplacementProductCell(idx) {
         <div class="d-flex align-items-center justify-content-between gap-2 mt-2">
             <span class="small text-muted">Available: ${Number(item.available_stock) || 0}</span>
             <input type="number" class="form-control form-control-sm text-center replacement-qty-input"
-                   style="width:68px;" min="1" max="${Number(item.available_stock) || 0}" value="${quantity}"
+                   style="width:68px;" min="1" max="${quantityLimit}" value="${quantity}"
                    aria-label="Replacement quantity">
             <span class="small fw-bold text-success text-nowrap">₹${(price * quantity).toFixed(2)}</span>
         </div>
@@ -1336,8 +1348,9 @@ function renderReplacementProductCell(idx) {
 function updateReplacementQuantity(idx, value) {
     const item = rowReplacements[idx];
     const quantity = Number(value);
-    if (!item || !Number.isInteger(quantity) || quantity < 1 || quantity > Number(item.available_stock)) {
-        showModalScanFeedback('Replacement quantity must be between 1 and the available warehouse stock.', 'warning');
+    const quantityLimit = item ? getReplacementQuantityLimit(idx, item) : 0;
+    if (!item || !Number.isInteger(quantity) || quantity < 1 || quantity > quantityLimit) {
+        showModalScanFeedback(`Replacement quantity must be between 1 and ${quantityLimit}.`, 'warning');
         renderReplacementProductCell(idx);
         return;
     }
@@ -1471,7 +1484,6 @@ function onModalScanExchangeItem(code) {
                         + (currentEditReplacementQuantities[variantId] || 0)
                         + returnedSameVariantQty;
                     const packQuantity = Math.max(1, Number.parseInt(scannedVar.pack_quantity, 10) || 1);
-                    const quantityToAdd = (scannedVar.is_series || scannedVar.is_complementary) ? packQuantity : 1;
                     const existingIndex = rowReplacements.findIndex((item, index) => {
                         const checkbox = document.querySelector(`.item-select-cb[data-idx="${index}"]`);
                         return item && Number(item.variant_id) === variantId && checkbox && checkbox.checked;
@@ -1483,6 +1495,18 @@ function onModalScanExchangeItem(code) {
                             return mode !== 'EXCHANGE_SAME'
                                 || isSameProductExchangeVariant(invoiceItems[index], scannedVar);
                         });
+                    const quantityToAdd = mode === 'EXCHANGE_SAME'
+                        ? 1
+                        : ((scannedVar.is_series || scannedVar.is_complementary) ? packQuantity : 1);
+                    const targetReturnQtyInput = targetIndex !== undefined
+                        ? document.querySelector(`.return-qty-input[data-idx="${targetIndex}"]`)
+                        : null;
+                    const sameExchangeQuantityLimit = targetIndex !== undefined
+                        ? Math.min(
+                            availableStock,
+                            Math.max(1, Number.parseInt(targetReturnQtyInput ? targetReturnQtyInput.value : '1', 10) || 1)
+                        )
+                        : availableStock;
 
                     if (!variantId || availableStock <= 0) {
                         showModalScanFeedback('This product has no available stock in the selected warehouse.', 'warning');
@@ -1496,12 +1520,13 @@ function onModalScanExchangeItem(code) {
                         showModalScanFeedback('Every checked invoice item already has a replacement. Remove one or select another item.', 'warning');
                     } else {
                         let item = rowReplacements[targetIndex];
-                        if (item && (Number(item.quantity) + quantityToAdd > availableStock)) {
-                            showModalScanFeedback(`Insufficient stock for ${scannedVar.product_name}. Available: ${availableStock} pcs.`, 'warning');
-                            return;
-                        }
-                        if (!item && quantityToAdd > availableStock) {
-                            showModalScanFeedback(`Insufficient stock for ${scannedVar.product_name}. Available: ${availableStock} pcs.`, 'warning');
+                        const nextQuantity = (Number(item ? item.quantity : 0) || 0) + quantityToAdd;
+                        const quantityLimit = mode === 'EXCHANGE_SAME' ? sameExchangeQuantityLimit : availableStock;
+                        if (nextQuantity > quantityLimit) {
+                            const message = mode === 'EXCHANGE_SAME'
+                                ? `Replacement quantity cannot exceed the returned quantity (${quantityLimit} pcs).`
+                                : `Insufficient stock for ${scannedVar.product_name}. Available: ${availableStock} pcs.`;
+                            showModalScanFeedback(message, 'warning');
                             return;
                         }
 
@@ -1524,7 +1549,7 @@ function onModalScanExchangeItem(code) {
                             rowReplacements[targetIndex] = item;
                         }
                         item.available_stock = availableStock;
-                        item.quantity += quantityToAdd;
+                        item.quantity = nextQuantity;
                         if (!item.scanned_codes.includes(code)) item.scanned_codes.push(code);
                         if (!isCatalogCode && scannedTag && !item.scanned_tags.includes(scannedTag)) {
                             item.scanned_tags.push(scannedTag);
@@ -1723,11 +1748,19 @@ async function submitReturnProcess() {
         const hasMissingReplacement = currentEditReturnId > 0
             ? !selectedReplacementItems.some(item => item)
             : selectedReplacementItems.some(item => !item);
-        const hasInvalidReplacement = selectedReplacementItems.some(item => item && (
-            !Number.isInteger(Number(item.quantity))
-            || Number(item.quantity) < 1
-            || Number(item.quantity) > Number(item.available_stock)
-        ));
+        const hasInvalidReplacement = selectedReplacementItems.some((item, selectedIndex) => {
+            if (!item) return false;
+            const rowIndex = Number(checkboxes[selectedIndex].getAttribute('data-idx'));
+            const returnQtyInput = document.querySelector(`.return-qty-input[data-idx="${rowIndex}"]`);
+            const returnQuantity = Math.max(1, Number.parseInt(returnQtyInput ? returnQtyInput.value : '1', 10) || 1);
+            const availableStock = Number(item.available_stock) || 0;
+            const quantityLimit = mode === 'EXCHANGE_SAME'
+                ? Math.min(availableStock, returnQuantity)
+                : availableStock;
+            return !Number.isInteger(Number(item.quantity))
+                || Number(item.quantity) < 1
+                || Number(item.quantity) > quantityLimit;
+        });
         if (hasMissingReplacement || hasInvalidReplacement) {
             alert('Scan one replacement product for every checked invoice item and ensure each quantity is within available warehouse stock.');
             return;
