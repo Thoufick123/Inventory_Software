@@ -1504,6 +1504,299 @@ class WarehouseService {
     // 3. STOCK ADJUSTMENTS & PHYSICAL AUDITS
     // =========================================================================
 
+    public static function previewAdjustmentIncreaseQrCodes(int $variantId, int $warehouseId, int $quantity): array {
+        return self::buildAdjustmentIncreaseQrPreview($variantId, $warehouseId, $quantity);
+    }
+
+    public static function applyImmediateStockAdjustment(array $data, int $userId): int {
+        $variantId = (int)($data['variant_id'] ?? 0);
+        $warehouseId = (int)($data['warehouse_id'] ?? 0);
+        $quantity = (int)($data['quantity'] ?? 0);
+        $adjustmentType = strtoupper(trim((string)($data['adjustment_type'] ?? '')));
+        $qrCodes = $data['qr_codes'] ?? [];
+
+        if ($variantId <= 0 || $warehouseId <= 0 || $quantity <= 0) {
+            throw new InvalidArgumentException('Select a warehouse and product and enter a positive quantity.');
+        }
+        if (!in_array($adjustmentType, ['INCREASE', 'DECREASE'], true)) {
+            throw new InvalidArgumentException('Select either Stock Increase or Stock Decrease.');
+        }
+        if (!is_array($qrCodes) || empty($qrCodes)) {
+            throw new InvalidArgumentException('QR code list is missing. Scan the required codes and try again.');
+        }
+        if (trim((string)($data['reason'] ?? '')) === '') {
+            throw new InvalidArgumentException('Select a reason for this stock adjustment.');
+        }
+
+        $normalizedQrCodes = [];
+        foreach ($qrCodes as $qrCode) {
+            if (!is_scalar($qrCode)) {
+                throw new InvalidArgumentException('The QR code list is invalid.');
+            }
+            $qrCode = strtoupper(trim((string)$qrCode));
+            if ($qrCode === '' || !preg_match('/^[A-Z0-9_-]+$/', $qrCode) || isset($normalizedQrCodes[$qrCode])) {
+                throw new InvalidArgumentException('The QR code list contains an invalid or duplicate code.');
+            }
+            $normalizedQrCodes[$qrCode] = true;
+        }
+        $normalizedQrCodes = array_keys($normalizedQrCodes);
+
+        Database::beginTransaction();
+        try {
+            $variantLock = Database::fetchOne(
+                "SELECT id, series_start_code FROM product_variants WHERE id = ? AND is_active = 1 FOR UPDATE",
+                [$variantId]
+            );
+            if (!$variantLock) {
+                throw new RuntimeException('The selected product variant is unavailable.');
+            }
+            if (!Database::fetchOne("SELECT id FROM warehouses WHERE id = ? AND is_active = 1", [$warehouseId])) {
+                throw new RuntimeException('The selected warehouse is inactive or could not be found.');
+            }
+
+            if ($adjustmentType === 'INCREASE') {
+                $preview = self::buildAdjustmentIncreaseQrPreview($variantId, $warehouseId, $quantity);
+                $expectedQrCodes = array_column($preview['tags'], 'tag_code');
+                if ($normalizedQrCodes !== $expectedQrCodes) {
+                    throw new DomainException('The QR sequence changed after preview. Generate a fresh preview and save again.');
+                }
+
+                foreach ($preview['tags'] as $tag) {
+                    Database::execute(
+                        "INSERT INTO warehouse_qr_codes
+                         (qr_code, variant_id, warehouse_id, pack_quantity, series_end_code, created_by, inwarded_at, is_extra, extra_reason)
+                         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1, ?)",
+                        [
+                            $tag['tag_code'],
+                            $variantId,
+                            $warehouseId,
+                            $tag['pack_quantity'],
+                            $tag['series_end_code'],
+                            $userId > 0 ? $userId : null,
+                            "Stock Adjustment Increase (+{$tag['quantity']} pcs)",
+                        ]
+                    );
+                }
+
+                if ($preview['is_series_or_complementary'] && !empty($preview['tags'])) {
+                    $currentStart = trim((string)($variantLock['series_start_code'] ?? ''));
+                    if ($currentStart === '' || ctype_digit($currentStart)) {
+                        $currentStart = $preview['tags'][0]['tag_code'];
+                    }
+                    $lastTag = end($preview['tags']);
+                    Database::execute(
+                        "UPDATE product_variants SET series_start_code = ?, series_end_code = ? WHERE id = ?",
+                        [$currentStart, $lastTag['series_end_code'], $variantId]
+                    );
+                }
+            } else {
+                self::validateAdjustmentQrCodes($variantId, $warehouseId, $normalizedQrCodes, $quantity);
+            }
+
+            $data['adjustment_type'] = $adjustmentType;
+            $data['variant_id'] = $variantId;
+            $data['warehouse_id'] = $warehouseId;
+            $data['quantity'] = $quantity;
+            $data['qr_codes'] = $normalizedQrCodes;
+            $adjustmentId = self::createAdjustment($data, $userId);
+            self::approveAdjustment($adjustmentId, 'APPROVE', $userId);
+
+            Database::commit();
+            return $adjustmentId;
+        } catch (Throwable $e) {
+            Database::rollback();
+            throw $e;
+        }
+    }
+
+    private static function buildAdjustmentIncreaseQrPreview(int $variantId, int $warehouseId, int $quantity): array {
+        if ($variantId <= 0 || $warehouseId <= 0 || $quantity <= 0) {
+            throw new InvalidArgumentException('Select a warehouse and product and enter a positive increase quantity.');
+        }
+        if (!Database::fetchOne("SELECT id FROM warehouses WHERE id = ? AND is_active = 1", [$warehouseId])) {
+            throw new InvalidArgumentException('Select an active warehouse before generating QR labels.');
+        }
+
+        $variant = Database::fetchOne(
+            "SELECT pv.id, pv.sku, pv.qr_type, pv.pack_quantity, pv.is_complementary,
+                    pv.qr_code, pv.series_start_code, pv.series_end_code,
+                    p.is_complementary AS product_is_complementary,
+                    p.qr_code_prefix, p.category_code, p.subcategory_code, p.sub_subcategory_code,
+                    COALESCE(wc.category_type, 'NORMAL') AS category_type,
+                    COALESCE(wc.name, cat.name, '') AS category_name,
+                    COALESCE(wsc.name, subcat.name, '') AS subcategory_name,
+                    COALESCE(wssc.name, subsubcat.name, '') AS sub_subcategory_name
+             FROM product_variants pv
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+             LEFT JOIN warehouse_subcategories wsc ON wsc.id = p.warehouse_subcategory_id
+             LEFT JOIN warehouse_sub_subcategories wssc ON wssc.id = p.warehouse_sub_subcategory_id
+             LEFT JOIN categories cat ON cat.id = p.category_id
+             LEFT JOIN subcategories subcat ON subcat.id = p.subcategory_id
+             LEFT JOIN sub_subcategories subsubcat ON subsubcat.id = p.sub_subcategory_id
+             WHERE pv.id = ? AND pv.is_active = 1",
+            [$variantId]
+        );
+        if (!$variant) {
+            throw new RuntimeException('The selected product variant is unavailable.');
+        }
+
+        $categoryType = strtoupper((string)($variant['category_type'] ?? ''));
+        $isComplementary = !empty($variant['is_complementary'])
+            || !empty($variant['product_is_complementary'])
+            || $categoryType === 'COMPLEMENTARY';
+        $isSeries = in_array(strtoupper((string)($variant['qr_type'] ?? '')), ['SERIES', 'SERIES_BATCH'], true)
+            || $categoryType === 'SERIES';
+        $isSeriesOrComplementary = $isSeries || $isComplementary;
+        $packQuantity = $isSeriesOrComplementary ? max(1, (int)($variant['pack_quantity'] ?? 1)) : 1;
+        if ($quantity % $packQuantity !== 0) {
+            throw new InvalidArgumentException("Increase quantity must be a multiple of the product pack size ({$packQuantity} pcs).");
+        }
+        $labelCount = (int)($quantity / $packQuantity);
+        if ($labelCount > 500) {
+            throw new InvalidArgumentException('A maximum of 500 QR labels can be generated per adjustment.');
+        }
+
+        $productPrefix = trim((string)($variant['qr_code_prefix'] ?? ''));
+        if ($productPrefix === '' && (!empty($variant['category_code']) || !empty($variant['subcategory_code']) || !empty($variant['sub_subcategory_code']))) {
+            $productPrefix = strtoupper(
+                (string)($variant['category_code'] ?? '')
+                . (string)($variant['subcategory_code'] ?? '')
+                . (string)($variant['sub_subcategory_code'] ?? '')
+            );
+        }
+        if ($productPrefix === '') {
+            $initials = '';
+            foreach (['category_name', 'subcategory_name', 'sub_subcategory_name'] as $nameKey) {
+                $name = trim((string)($variant[$nameKey] ?? ''));
+                if ($name !== '') {
+                    $initials .= strtoupper(substr($name, 0, 1));
+                }
+            }
+            $productPrefix = substr($initials, 0, 3);
+        }
+        if ($productPrefix === '') {
+            $productPrefix = 'NEW';
+        }
+        $productPrefix = strtoupper((string)preg_replace('/[^A-Z0-9]/', '', $productPrefix));
+        $productPrefix = substr($productPrefix, 0, 4);
+        $basePrefix = $productPrefix . date('my');
+        $sequencePattern = '/^' . preg_quote($productPrefix, '/') . '\d{4}(\d+)$/i';
+
+        $variantMax = 0;
+        $otherMax = 0;
+        $otherRanges = [];
+        $usedCodes = [];
+        $qrRows = Database::fetchAll(
+            "SELECT variant_id, qr_code, series_end_code
+             FROM warehouse_qr_codes
+             WHERE qr_code LIKE ? OR series_end_code LIKE ?",
+            [$productPrefix . '%', $productPrefix . '%']
+        );
+        foreach ($qrRows as $row) {
+            $startNumber = 0;
+            $endNumber = 0;
+            $startCode = (string)($row['qr_code'] ?? '');
+            $endCode = (string)($row['series_end_code'] ?? '');
+            if (preg_match($sequencePattern, $startCode, $match)) {
+                $startNumber = (int)$match[1];
+                $usedCodes[strtoupper($startCode)] = true;
+            }
+            if (preg_match($sequencePattern, $endCode, $match)) {
+                $endNumber = (int)$match[1];
+                $usedCodes[strtoupper($endCode)] = true;
+            }
+            $endNumber = max($startNumber, $endNumber);
+            if ((int)$row['variant_id'] === $variantId) {
+                $variantMax = max($variantMax, $startNumber, $endNumber);
+            } else {
+                $otherMax = max($otherMax, $startNumber, $endNumber);
+                if ($startNumber > 0) {
+                    $otherRanges[] = ['start' => $startNumber, 'end' => max($startNumber, $endNumber)];
+                }
+            }
+        }
+
+        $variantRows = Database::fetchAll(
+            "SELECT id, qr_code, series_start_code, series_end_code
+             FROM product_variants
+             WHERE qr_code LIKE ? OR series_start_code LIKE ? OR series_end_code LIKE ?",
+            [$productPrefix . '%', $productPrefix . '%', $productPrefix . '%']
+        );
+        foreach ($variantRows as $row) {
+            $numbers = [];
+            foreach (['qr_code', 'series_start_code', 'series_end_code'] as $field) {
+                $code = (string)($row[$field] ?? '');
+                if ($code !== '' && preg_match($sequencePattern, $code, $match)) {
+                    $numbers[$field] = (int)$match[1];
+                    $usedCodes[strtoupper($code)] = true;
+                }
+            }
+            $startNumber = $numbers['series_start_code'] ?? $numbers['qr_code'] ?? 0;
+            $endNumber = $numbers['series_end_code'] ?? $startNumber;
+            if ((int)$row['id'] === $variantId) {
+                $variantMax = max($variantMax, $startNumber, $endNumber);
+            } else {
+                $otherMax = max($otherMax, $startNumber, $endNumber);
+                if ($startNumber > 0) {
+                    $otherRanges[] = ['start' => min($startNumber, $endNumber), 'end' => max($startNumber, $endNumber)];
+                }
+            }
+        }
+
+        $nextSequence = ($variantMax > 0 ? $variantMax : $otherMax) + 1;
+        $tags = [];
+        for ($index = 0; $index < $labelCount; $index++) {
+            while (true) {
+                $endSequence = $nextSequence + $packQuantity - 1;
+                $overlap = false;
+                foreach ($otherRanges as $range) {
+                    if ($nextSequence <= $range['end'] && $endSequence >= $range['start']) {
+                        $nextSequence = $range['end'] + 1;
+                        $overlap = true;
+                        break;
+                    }
+                }
+                if ($overlap) {
+                    continue;
+                }
+
+                $sequenceWidth = $endSequence > 99 ? 3 : 2;
+                $tagCode = $basePrefix . sprintf("%0{$sequenceWidth}d", $nextSequence);
+                $endCode = $basePrefix . sprintf("%0{$sequenceWidth}d", $endSequence);
+                if (isset($usedCodes[strtoupper($tagCode)]) || isset($usedCodes[strtoupper($endCode)])) {
+                    $nextSequence = $endSequence + 1;
+                    continue;
+                }
+                if (Database::fetchOne("SELECT id FROM warehouse_qr_codes WHERE qr_code = ? LIMIT 1", [$tagCode])
+                    || Database::fetchOne("SELECT id FROM product_variants WHERE qr_code = ? LIMIT 1", [$tagCode])) {
+                    $nextSequence = $endSequence + 1;
+                    continue;
+                }
+                break;
+            }
+
+            $tags[] = [
+                'tag_code' => $tagCode,
+                'series_end_code' => $endCode,
+                'pack_quantity' => $packQuantity,
+                'quantity' => $packQuantity,
+            ];
+            $usedCodes[strtoupper($tagCode)] = true;
+            $usedCodes[strtoupper($endCode)] = true;
+            $nextSequence = $endSequence + 1;
+        }
+
+        return [
+            'variant_id' => $variantId,
+            'warehouse_id' => $warehouseId,
+            'quantity' => $quantity,
+            'is_series_or_complementary' => $isSeriesOrComplementary,
+            'pack_quantity' => $packQuantity,
+            'tags' => $tags,
+        ];
+    }
+
     /**
      * Create Stock Adjustment Request.
      */
@@ -1683,12 +1976,20 @@ class WarehouseService {
                 }
             }
 
+            $warehouseTag = Database::fetchOne(
+                "SELECT id FROM warehouse_qr_codes
+                 WHERE variant_id = ? AND warehouse_id = ? AND inwarded_at IS NOT NULL
+                   AND (UPPER(qr_code) = ? OR UPPER(COALESCE(series_end_code, '')) = ?)
+                 LIMIT 1",
+                [$variantId, $warehouseId, $tag, $tag]
+            );
+            $tagRecorded = (bool)$warehouseTag;
             $directTag = Database::fetchOne(
                 "SELECT id FROM product_variants
                  WHERE id = ? AND (UPPER(COALESCE(qr_code, '')) = ? OR UPPER(COALESCE(series_start_code, '')) = ?)",
                 [$variantId, $tag, $tag]
             );
-            $tagRecorded = (bool)$directTag;
+            $tagRecorded = $tagRecorded || (bool)$directTag;
             if (!$tagRecorded) {
                 $productionReceipt = Database::fetchOne(
                     "SELECT pbi.id
@@ -1774,7 +2075,8 @@ class WarehouseService {
 
                 // Execute stock adjustment through StockService
                 $qrNote = !empty($adj['qr_codes'])
-                    ? ' Removed QR codes: ' . implode(', ', json_decode((string)$adj['qr_codes'], true) ?: [])
+                    ? ($adj['adjustment_type'] === 'DECREASE' ? ' Removed QR codes: ' : ' Added QR codes: ')
+                        . implode(', ', json_decode((string)$adj['qr_codes'], true) ?: [])
                     : '';
                 StockService::adjust(
                     variantId: (int)$adj['variant_id'],

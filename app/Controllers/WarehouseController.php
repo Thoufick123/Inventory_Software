@@ -7284,6 +7284,271 @@ class WarehouseController {
         ]);
     }
 
+    public function ajaxLookupAdjustmentProduct(): void {
+        if (!hasPermission('stock', 'adjust')) {
+            Response::json(['success' => false, 'message' => 'Access denied.'], 403);
+            return;
+        }
+
+        $rawCode = $_GET['code'] ?? '';
+        if (!is_string($rawCode)) {
+            Response::json(['success' => false, 'message' => 'Enter or scan a product QR code or SKU.'], 400);
+            return;
+        }
+        $rawCode = trim($rawCode, " \t\n\r\0\x0B\"'");
+        if (str_starts_with($rawCode, '{') && str_ends_with($rawCode, '}')) {
+            $qrPayload = json_decode($rawCode, true);
+            if (is_array($qrPayload)) {
+                $payloadCode = $qrPayload['tag'] ?? $qrPayload['tag_code'] ?? $qrPayload['qr_code'] ?? $qrPayload['code'] ?? $qrPayload['sku'] ?? '';
+                $rawCode = is_scalar($payloadCode) ? (string)$payloadCode : '';
+            }
+        } elseif (strpos($rawCode, '|') !== false) {
+            $rawCode = trim(explode('|', $rawCode)[0]);
+        }
+        $scanCode = strtoupper(trim($rawCode));
+        if ($scanCode === '' || strlen($scanCode) > 100) {
+            Response::json(['success' => false, 'message' => 'Enter or scan a valid product QR code or SKU.'], 400);
+            return;
+        }
+
+        $warehouseIdRaw = $_GET['warehouse_id'] ?? 0;
+        $warehouseId = is_scalar($warehouseIdRaw) ? (int)$warehouseIdRaw : 0;
+        $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+        if ($scopedWarehouseId !== null) {
+            $warehouseId = $scopedWarehouseId;
+        }
+        if ($warehouseId <= 0 || !Database::fetchOne("SELECT id FROM warehouses WHERE id = ? AND is_active = 1", [$warehouseId])) {
+            Response::json(['success' => false, 'message' => 'Select an active warehouse before scanning a product.'], 400);
+            return;
+        }
+
+        $variantId = 0;
+        $warehouseQr = Database::fetchOne(
+            "SELECT variant_id, warehouse_id
+             FROM warehouse_qr_codes
+             WHERE UPPER(qr_code) = ?
+             LIMIT 1",
+            [$scanCode]
+        );
+        if ($warehouseQr) {
+            if (!empty($warehouseQr['warehouse_id']) && (int)$warehouseQr['warehouse_id'] !== $warehouseId) {
+                Response::json(['success' => false, 'message' => 'This QR code belongs to a different warehouse.'], 409);
+                return;
+            }
+            $variantId = (int)$warehouseQr['variant_id'];
+        } else {
+            $variantMatches = Database::fetchAll(
+                "SELECT pv.id
+                 FROM product_variants pv
+                 JOIN products p ON p.id = pv.product_id
+                 WHERE pv.is_active = 1
+                   AND (
+                       UPPER(pv.sku) = ?
+                       OR UPPER(COALESCE(pv.qr_code, '')) = ?
+                       OR UPPER(COALESCE(pv.series_start_code, '')) = ?
+                   )
+                 ORDER BY CASE
+                     WHEN UPPER(pv.sku) = ? THEN 0
+                     WHEN UPPER(COALESCE(pv.qr_code, '')) = ? THEN 1
+                     ELSE 2
+                 END
+                 LIMIT 2",
+                [$scanCode, $scanCode, $scanCode, $scanCode, $scanCode]
+            );
+            if (count($variantMatches) > 1) {
+                Response::json(['success' => false, 'message' => 'This code matches more than one product variant. Scan the variant SKU or QR label.'], 409);
+                return;
+            }
+            if ($variantMatches) {
+                $variantId = (int)$variantMatches[0]['id'];
+            } else {
+                $productMatches = Database::fetchAll(
+                    "SELECT pv.id
+                     FROM product_variants pv
+                     JOIN products p ON p.id = pv.product_id
+                     WHERE pv.is_active = 1 AND UPPER(p.code) = ?
+                     ORDER BY pv.id ASC
+                     LIMIT 2",
+                    [$scanCode]
+                );
+                if (count($productMatches) > 1) {
+                    Response::json(['success' => false, 'message' => 'This product has multiple variants. Scan the variant SKU or QR label.'], 409);
+                    return;
+                }
+                if ($productMatches) {
+                    $variantId = (int)$productMatches[0]['id'];
+                }
+            }
+        }
+
+        if ($variantId <= 0) {
+            Response::json(['success' => false, 'message' => 'No product variant matches this QR code or SKU.'], 404);
+            return;
+        }
+
+        $variant = Database::fetchOne(
+            "SELECT pv.id, pv.sku, pv.qr_code, pv.qr_type, pv.series_start_code,
+                    pv.pack_quantity, pv.is_complementary,
+                    pv.mrp, pv.selling_price, pv.purchase_price, pv.production_cost,
+                    p.name AS product_name, p.code AS product_code, p.source_type,
+                    p.is_complementary AS product_is_complementary,
+                    COALESCE(NULLIF(ws.company, ''), ws.name, '') AS supplier_name,
+                    s.name AS size_name, c.name AS color_name,
+                    COALESCE(wc.category_type, 'NORMAL') AS category_type,
+                    COALESCE((
+                        SELECT SUM(sb.quantity)
+                        FROM stock_balances sb
+                        WHERE sb.variant_id = pv.id AND sb.location_type = 'WAREHOUSE'
+                          AND sb.location_id = ? AND sb.stock_state = 'AVAILABLE'
+                    ), 0) AS available_stock
+             FROM product_variants pv
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN warehouse_suppliers ws ON ws.id = p.warehouse_supplier_id
+             LEFT JOIN sizes s ON s.id = pv.size_id
+             LEFT JOIN colors c ON c.id = pv.color_id
+             LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+             WHERE pv.id = ? AND pv.is_active = 1
+             LIMIT 1",
+            [$warehouseId, $variantId]
+        );
+        if (!$variant) {
+            Response::json(['success' => false, 'message' => 'The product variant is inactive or unavailable.'], 404);
+            return;
+        }
+
+        $sourceType = strtoupper((string)($variant['source_type'] ?? 'OWN_PRODUCTION'));
+        $sourceLabel = $sourceType === 'EXTERNAL_PURCHASE' ? 'Third-party stock' : 'Production stock';
+        $isSeriesOrComplementary = in_array(strtoupper((string)($variant['qr_type'] ?? '')), ['SERIES', 'SERIES_BATCH'], true)
+            || in_array(strtoupper((string)($variant['category_type'] ?? '')), ['SERIES', 'COMPLEMENTARY'], true)
+            || !empty($variant['series_start_code'])
+            || !empty($variant['is_complementary'])
+            || !empty($variant['product_is_complementary'])
+            || (int)($variant['pack_quantity'] ?? 1) > 1;
+        $quantityPerTag = $isSeriesOrComplementary ? max(1, (int)($variant['pack_quantity'] ?? 1)) : 1;
+
+        $mode = $_GET['mode'] ?? 'product';
+        if ($mode === 'decrease') {
+            try {
+                WarehouseService::validateAdjustmentQrCodes(
+                    $variantId,
+                    $warehouseId,
+                    [$scanCode],
+                    $quantityPerTag
+                );
+            } catch (Throwable $e) {
+                Response::json(['success' => false, 'message' => $e->getMessage()], 409);
+                return;
+            }
+        }
+
+        Response::json([
+            'success' => true,
+            'tag_code' => $scanCode,
+            'variant' => [
+                'id' => $variantId,
+                'sku' => $variant['sku'],
+                'product_name' => $variant['product_name'],
+                'product_code' => $variant['product_code'],
+                'size_name' => $variant['size_name'] ?? 'Free',
+                'color_name' => $variant['color_name'] ?? 'Std',
+                'source_type' => $sourceType,
+                'source_label' => $sourceLabel,
+                'supplier_name' => $variant['supplier_name'],
+                'qr_type' => $variant['qr_type'] ?? 'INDIVIDUAL',
+                'pack_quantity' => $quantityPerTag,
+                'is_series_or_complementary' => $isSeriesOrComplementary,
+                'available_stock' => (int)$variant['available_stock'],
+                'quantity_per_tag' => $quantityPerTag,
+                'mrp' => (float)$variant['mrp'],
+                'selling_price' => (float)$variant['selling_price'],
+                'cost_price' => (float)($variant['purchase_price'] ?: $variant['production_cost']),
+            ],
+        ]);
+    }
+
+    public function previewAdjustmentIncrease(): void {
+        if (!CSRF::validateRequest()) {
+            Response::json(['success' => false, 'message' => 'Security token expired. Refresh the page and try again.'], 403);
+            return;
+        }
+        if (!hasPermission('stock', 'adjust')) {
+            Response::json(['success' => false, 'message' => 'Access denied.'], 403);
+            return;
+        }
+
+        $variantRaw = $_POST['variant_id'] ?? null;
+        $warehouseRaw = $_POST['warehouse_id'] ?? null;
+        $quantityRaw = $_POST['quantity'] ?? null;
+        $variantId = is_scalar($variantRaw) ? filter_var($variantRaw, FILTER_VALIDATE_INT) : false;
+        $warehouseId = is_scalar($warehouseRaw) ? filter_var($warehouseRaw, FILTER_VALIDATE_INT) : false;
+        $quantity = is_scalar($quantityRaw) ? filter_var($quantityRaw, FILTER_VALIDATE_INT) : false;
+        if (!$variantId || !$warehouseId || !$quantity) {
+            Response::json(['success' => false, 'message' => 'Select a warehouse and product and enter a positive whole-number quantity.'], 400);
+            return;
+        }
+        $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+        if ($scopedWarehouseId !== null) {
+            $warehouseId = $scopedWarehouseId;
+        }
+
+        try {
+            $preview = WarehouseService::previewAdjustmentIncreaseQrCodes((int)$variantId, (int)$warehouseId, (int)$quantity);
+            Response::json(['success' => true, 'preview' => $preview]);
+        } catch (InvalidArgumentException $e) {
+            Response::json(['success' => false, 'message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            error_log('Stock adjustment QR preview failed: ' . $e->getMessage());
+            Response::json(['success' => false, 'message' => 'Unable to generate a QR preview. Try again or contact an administrator.'], 500);
+        }
+    }
+
+    public function applyImmediateAdjustment(): void {
+        if (!hasPermission('stock', 'adjust')) {
+            Response::redirect(url('warehouse/adjustments'), 'error', 'Access denied: You do not have permission to adjust stock.');
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            Response::redirect(url('warehouse/adjustments'), 'error', 'Security token expired. Refresh and try again.');
+            return;
+        }
+
+        $qrCodesRaw = $_POST['qr_codes'] ?? '[]';
+        $qrCodes = is_array($qrCodesRaw) ? $qrCodesRaw : json_decode((string)$qrCodesRaw, true);
+        if (!is_array($qrCodes)) {
+            Response::redirect(url('warehouse/adjustments'), 'error', 'The QR code list is invalid.');
+            return;
+        }
+        $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+        $warehouseRaw = $_POST['warehouse_id'] ?? 0;
+        $warehouseIdValue = is_scalar($warehouseRaw) ? filter_var($warehouseRaw, FILTER_VALIDATE_INT) : false;
+        $warehouseId = $scopedWarehouseId !== null ? $scopedWarehouseId : (int)($warehouseIdValue ?: 0);
+        $returnType = $_POST['return_adjustment_type'] ?? '';
+        $returnType = is_string($returnType) && in_array(strtoupper($returnType), ['INCREASE', 'DECREASE'], true)
+            ? strtoupper($returnType)
+            : '';
+        $returnUrl = url('warehouse/adjustments' . ($returnType !== '' ? '?adjustment_type=' . $returnType : ''));
+
+        try {
+            $variantRaw = $_POST['variant_id'] ?? 0;
+            $quantityRaw = $_POST['quantity'] ?? 0;
+            $typeRaw = $_POST['adjustment_type'] ?? '';
+            $variantId = is_scalar($variantRaw) ? filter_var($variantRaw, FILTER_VALIDATE_INT) : false;
+            $quantity = is_scalar($quantityRaw) ? filter_var($quantityRaw, FILTER_VALIDATE_INT) : false;
+            $adjustmentId = WarehouseService::applyImmediateStockAdjustment([
+                'warehouse_id' => $warehouseId,
+                'variant_id' => (int)($variantId ?: 0),
+                'adjustment_type' => is_string($typeRaw) ? $typeRaw : '',
+                'quantity' => (int)($quantity ?: 0),
+                'reason' => is_string($_POST['reason'] ?? null) ? trim($_POST['reason']) : '',
+                'notes' => is_string($_POST['notes'] ?? null) ? trim($_POST['notes']) : '',
+                'qr_codes' => $qrCodes,
+            ], Session::userId() ?? 0);
+            Response::redirect($returnUrl, 'success', "Stock adjustment #{$adjustmentId} was applied immediately.");
+        } catch (Throwable $e) {
+            Response::redirect($returnUrl, 'error', 'Stock adjustment failed: ' . $e->getMessage());
+        }
+    }
+
     public function storeAdjustment(): void {
         if (!hasPermission('stock', 'adjust')) {
             Session::flash('error', 'Access denied: You do not have permission to create stock adjustments.');

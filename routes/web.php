@@ -810,6 +810,9 @@ class Router {
 
         // Stock Adjustments
         $this->get('warehouse/adjustments', 'WarehouseController', 'adjustmentList', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'view']]);
+        $this->get('api/warehouse/adjustments/lookup', 'WarehouseController', 'ajaxLookupAdjustmentProduct', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'adjust']]);
+        $this->post('api/warehouse/adjustments/preview-increase', 'WarehouseController', 'previewAdjustmentIncrease', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'adjust']]);
+        $this->post('warehouse/adjustments/apply', 'WarehouseController', 'applyImmediateAdjustment', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'adjust']]);
         $this->post('warehouse/adjustments/store', 'WarehouseController', 'storeAdjustment', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'adjust']]);
         $this->post('warehouse/adjustments/approve/{id}', 'WarehouseController', 'approveAdjustment', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'adjust']]);
 
