@@ -435,10 +435,10 @@
                 <div class="col-lg-2 col-md-4"><label class="form-label required">Roll No. / Code *</label><input class="form-control roll-number text-uppercase" maxlength="50" required></div>
                 <div class="col-lg-2 col-md-4"><label class="form-label required">Color / Shade *</label><input class="form-control roll-color text-uppercase" maxlength="100" required placeholder="E.G. NAVY BLUE"></div>
                 <div class="col-lg-2 col-md-4"><label class="form-label required">Design Name / Pattern *</label><input class="form-control roll-design text-uppercase" maxlength="150" required placeholder="E.G. FLORAL 01"></div>
-                <div class="col-lg-1 col-md-3"><label class="form-label required">Designs *</label><input type="number" min="1" step="1" class="form-control roll-design-count numeric-text-input" value="1" required></div>
-                <div class="col-lg-1 col-md-3"><label class="form-label required">RQ *</label><input type="number" min="1" step="1" class="form-control roll-quantity numeric-text-input" value="1" required></div>
-                <div class="col-lg-2 col-md-3"><label class="form-label required">Weight (kg) *</label><div class="input-group"><input type="number" min="0.01" step="0.01" class="form-control roll-weight numeric-text-input" required><span class="input-group-text">kg</span></div></div>
-                <div class="col-lg-2 col-md-3"><label class="form-label required">Price (₹) *</label><div class="input-group"><span class="input-group-text">₹</span><input type="number" min="0.01" step="0.01" class="form-control roll-price numeric-text-input" required></div></div>
+                <div class="col-lg-1 col-md-3"><label class="form-label required">Designs *</label><input type="text" inputmode="numeric" pattern="[0-9]+" data-min="1" data-step="1" class="form-control roll-design-count numeric-text-input" value="1" required></div>
+                <div class="col-lg-1 col-md-3"><label class="form-label required">RQ *</label><input type="text" inputmode="numeric" pattern="[0-9]+" data-min="1" data-step="1" class="form-control roll-quantity numeric-text-input" value="1" required></div>
+                <div class="col-lg-2 col-md-3"><label class="form-label required">Weight (kg) *</label><div class="input-group"><input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" data-min="0.01" data-step="0.01" class="form-control roll-weight numeric-text-input" required><span class="input-group-text">kg</span></div></div>
+                <div class="col-lg-2 col-md-3"><label class="form-label required">Price (₹) *</label><div class="input-group"><span class="input-group-text">₹</span><input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" data-min="0.01" data-step="0.01" class="form-control roll-price numeric-text-input" required></div></div>
                 <div class="col-lg-2 col-md-3">
                     <div class="d-flex justify-content-between align-items-center mb-1">
                         <label class="form-label mb-0">HSN Code</label>
@@ -462,8 +462,8 @@
                 </div>
                 <div class="col-lg-2 col-md-3"><label class="form-label">GST</label><select class="form-select item-gst-type"><option value="SGST">SGST</option><option value="IGST">IGST</option><option value="CGST">CGST</option><option value="BOTH">Both (CGST and SGST)</option><option value="EXEMPTED" selected>Exempted</option></select></div>
                 <div class="col-lg-2 col-md-3 tax-mode-field d-none"><label class="form-label">Tax Input Type</label><select class="form-select item-tax-mode"><option value="PERCENT">Percentage (%)</option><option value="AMOUNT">Amount (₹)</option></select></div>
-                <div class="col-lg-2 col-md-3 tax-value-field d-none"><label class="form-label item-tax-label">Tax</label><input type="number" min="0" max="100" step="0.01" class="form-control item-tax-value numeric-text-input" value="0"></div>
-                <div class="col-lg-2 col-md-3 tax-cgst-field d-none"><label class="form-label item-cgst-label">CGST</label><input type="number" min="0" max="100" step="0.01" class="form-control item-cgst-value numeric-text-input" value="0"></div>
+                <div class="col-lg-2 col-md-3 tax-value-field d-none"><label class="form-label item-tax-label">Tax</label><input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" data-min="0" data-max="100" data-step="0.01" class="form-control item-tax-value numeric-text-input" value="0"></div>
+                <div class="col-lg-2 col-md-3 tax-cgst-field d-none"><label class="form-label item-cgst-label">CGST</label><input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" data-min="0" data-max="100" data-step="0.01" class="form-control item-cgst-value numeric-text-input" value="0"></div>
                 <div class="col-md-6"><label class="form-label">Roll Sample Photo <small class="text-muted">(Optional — JPG, PNG, WEBP)</small></label><input type="file" class="form-control roll-photo" accept=".jpg,.jpeg,.png,.webp"></div>
                 <div class="col-md-6 roll-preview d-none"><img class="img-thumbnail" style="height:54px" alt="Roll photo preview"></div>
             </div>
@@ -506,7 +506,7 @@
                 </div>
                 <div class="col-lg-2 col-md-3">
                     <label class="form-label required">Quantity *</label>
-                    <input type="number" min="0.001" step="0.001" class="form-control supply-quantity numeric-text-input" value="1" required>
+                    <input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" data-min="0.001" data-step="0.001" class="form-control supply-quantity numeric-text-input" value="1" required>
                 </div>
                 <div class="col-lg-2 col-md-3">
                     <label class="form-label required">Unit *</label>
@@ -531,7 +531,7 @@
                     <label class="form-label required">Unit Price (₹) *</label>
                     <div class="input-group">
                         <span class="input-group-text">₹</span>
-                        <input type="number" min="0" step="0.01" class="form-control supply-price numeric-text-input" value="0" required>
+                        <input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" data-min="0" data-step="0.01" class="form-control supply-price numeric-text-input" value="0" required>
                     </div>
                 </div>
                 <div class="col-lg-2 col-md-3">
@@ -553,11 +553,11 @@
                 </div>
                 <div class="col-lg-2 col-md-3 tax-value-field d-none">
                     <label class="form-label item-tax-label">Tax</label>
-                    <input type="number" min="0" max="100" step="0.01" class="form-control item-tax-value numeric-text-input" value="0">
+                    <input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" data-min="0" data-max="100" data-step="0.01" class="form-control item-tax-value numeric-text-input" value="0">
                 </div>
                 <div class="col-lg-2 col-md-3 tax-cgst-field d-none">
                     <label class="form-label item-cgst-label">CGST</label>
-                    <input type="number" min="0" max="100" step="0.01" class="form-control item-cgst-value numeric-text-input" value="0">
+                    <input type="text" inputmode="decimal" pattern="([0-9]+([.][0-9]*)?|[.][0-9]+)" data-min="0" data-max="100" data-step="0.01" class="form-control item-cgst-value numeric-text-input" value="0">
                 </div>
             </div>
         </div>
