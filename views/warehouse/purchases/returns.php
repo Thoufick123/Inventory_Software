@@ -711,6 +711,11 @@ $editData = $editData ?? null;
     background: #f0fdf4 !important;
     box-shadow: 0 0 0 3px rgba(22,163,74,.18) !important;
 }
+#card_EXCHANGE_SAME.selected-action {
+    border-color: #2563eb !important;
+    background: #eff6ff !important;
+    box-shadow: 0 0 0 3px rgba(37,99,235,.18) !important;
+}
 /* Table row selected highlight */
 #returnItemsTable tbody tr.row-selected { background: #f0f7ff !important; }
 #returnItemsTable tbody tr { transition: background .12s; }
@@ -1362,6 +1367,23 @@ function normalizeReplacementScanValue(value) {
     return String(value || '').trim().toLowerCase();
 }
 
+function isSameProductExchangeVariant(invoiceItem, scannedVariant) {
+    const scannedVariantId = Number(scannedVariant.id);
+    if (!scannedVariantId) return false;
+
+    if (
+        Number(invoiceItem.product_id) > 0
+        && Number(scannedVariant.product_id) > 0
+        && Number(invoiceItem.product_id) === Number(scannedVariant.product_id)
+    ) {
+        return true;
+    }
+
+    return Number(invoiceItem.variant_id) === scannedVariantId
+        || (Array.isArray(invoiceItem.sibling_variants)
+            && invoiceItem.sibling_variants.some(variant => Number(variant.id) === scannedVariantId));
+}
+
 function onModalScanExchangeItem(code) {
     if (!code || !code.trim()) return;
     code = code.trim();
@@ -1454,7 +1476,7 @@ function onModalScanExchangeItem(code) {
                         : checkedIndexes.find(index => {
                             if (rowReplacements[index]) return false;
                             return mode !== 'EXCHANGE_SAME'
-                                || Number(invoiceItems[index].product_id) === Number(scannedVar.product_id);
+                                || isSameProductExchangeVariant(invoiceItems[index], scannedVar);
                         });
 
                     if (!variantId || availableStock <= 0) {
@@ -1462,7 +1484,7 @@ function onModalScanExchangeItem(code) {
                     } else if (checkedIndexes.length === 0) {
                         showModalScanFeedback('Select an invoice item before scanning a replacement product.', 'warning');
                     } else if (mode === 'EXCHANGE_SAME' && !checkedIndexes.some(index =>
-                        Number(invoiceItems[index].product_id) === Number(scannedVar.product_id)
+                        isSameProductExchangeVariant(invoiceItems[index], scannedVar)
                     )) {
                         showModalScanFeedback('Scan a size or color variant of the selected product for a same-product exchange.', 'warning');
                     } else if (targetIndex === undefined) {
