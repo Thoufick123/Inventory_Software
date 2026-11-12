@@ -24,6 +24,11 @@ class PermissionMiddleware {
                 }
             }
 
+            // Allow access to produce/adjust QR codes if user has create permission
+            if ($module === 'wh_labels' && $action === 'edit' && hasPermission('wh_labels', 'create')) {
+                return;
+            }
+
             $readableModule = ucwords(str_replace('_', ' ', $module));
             $readableAction = strtolower($action);
 
