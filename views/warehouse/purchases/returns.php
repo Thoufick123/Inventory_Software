@@ -4,6 +4,9 @@ $currentTab = $_GET['tab'] ?? 'all';
 $summary = $summary ?? [];
 $recentReturns = $recentReturns ?? [];
 $canProcessReturns = hasPermission('purchases_returns', 'process') || hasPermission('purchases_returns', 'create');
+$canEditReturns = hasPermission('purchases_returns', 'edit');
+$isEditingReturn = !empty($isEditingReturn);
+$editData = $editData ?? null;
 ?>
 <div class="container-fluid py-4">
     <!-- Header -->
@@ -21,6 +24,12 @@ $canProcessReturns = hasPermission('purchases_returns', 'process') || hasPermiss
            
         </div>
     </div>
+    <?php if ($isEditingReturn && !empty($editData['transaction'])): ?>
+        <div class="alert alert-info d-flex align-items-center gap-2 mb-4">
+            <i class="bi bi-info-circle-fill"></i>
+            <span>Editing <?= e($editData['transaction']['return_number']) ?>. Saving will reconcile the related warehouse stock and settlement values.</span>
+        </div>
+    <?php endif; ?>
 
     <!-- 5 QUICK ANALYSIS & FILTER CARDS -->
     <div class="row g-3 mb-4">
@@ -353,6 +362,11 @@ $canProcessReturns = hasPermission('purchases_returns', 'process') || hasPermiss
                                 <a href="<?= url('warehouse/purchases/returns/view/' . $r['id']) ?>" class="btn btn-outline-secondary" title="View Audit Details">
                                     <i class="bi bi-eye"></i>
                                 </a>
+                                <?php if ($canEditReturns): ?>
+                                    <a href="<?= url('warehouse/purchases/returns/edit/' . $r['id']) ?>" class="btn btn-outline-warning" title="Edit Return / Exchange">
+                                        <i class="bi bi-pencil-square"></i>
+                                    </a>
+                                <?php endif; ?>
                                 <a href="<?= url('warehouse/purchases/returns/invoice/' . $r['id']) ?>" target="_blank" class="btn btn-outline-primary" title="Print Tax Invoice / Exchange Slip">
                                     <i class="bi bi-printer"></i>
                                 </a>
@@ -378,7 +392,7 @@ $canProcessReturns = hasPermission('purchases_returns', 'process') || hasPermiss
             <div class="modal-header px-4 py-3 border-bottom bg-white" style="flex-direction: column; align-items: stretch; gap: 0;">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <h5 class="fw-bold mb-0 text-dark" id="returnExchangeModalLabel" style="font-size: 1.15rem;">
-                        <i class="bi bi-arrow-return-left text-primary me-2"></i>Step 2: Select Items &amp; Transaction Type
+                        <i class="bi bi-arrow-return-left text-primary me-2"></i><?= $isEditingReturn ? 'Edit Return / Exchange Transaction' : 'Step 2: Select Items &amp; Transaction Type' ?>
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
@@ -464,7 +478,9 @@ $canProcessReturns = hasPermission('purchases_returns', 'process') || hasPermiss
                 <!-- Hidden legacy select for JS compatibility -->
                 <select id="actionTypeSelect" class="d-none" onchange="switchActionMode(this.value)">
                     <option value="RETURN">Direct Return</option>
+                    <option value="EXCHANGE_SAME">Same Product Exchange</option>
                     <option value="EXCHANGE_DIFFERENT">Warehouse Exchange</option>
+                    <option value="CREDIT_NOTE">Credit Note</option>
                 </select>
 
                 <!-- Dynamic Replacement QR Scanner Box (Shown for Exchange) -->
@@ -509,8 +525,8 @@ $canProcessReturns = hasPermission('purchases_returns', 'process') || hasPermiss
                                 <tr>
                                     <th class="ps-3" style="width:40px;">
                                         <input type="checkbox" id="selectAllCheckbox" class="form-check-input"
-                                               onchange="toggleSelectAll(this)" <?= $canProcessReturns ? '' : 'disabled' ?>
-                                               title="<?= $canProcessReturns ? 'Select all invoice items' : 'Return processing permission is required' ?>">
+                                               onchange="toggleSelectAll(this)" <?= ($canProcessReturns || $isEditingReturn) ? '' : 'disabled' ?>
+                                               title="<?= ($canProcessReturns || $isEditingReturn) ? 'Select all invoice items' : 'Return processing permission is required' ?>">
                                     </th>
                                     <th style="min-width:280px;">Product Item (Purchased)</th>
                                     <th style="width:70px; text-align:center;">Sold</th>
@@ -639,10 +655,10 @@ $canProcessReturns = hasPermission('purchases_returns', 'process') || hasPermiss
             <!-- Modal Footer -->
             <div class="modal-footer bg-white py-3 px-4 border-top">
                 <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
-                <?php if ($canProcessReturns): ?>
+                <?php if ($canProcessReturns || $isEditingReturn): ?>
                     <button type="button" class="btn btn-primary rounded-pill px-5 fw-bold shadow-sm" id="btnConfirmSubmit" onclick="submitReturnProcess()">
                         <span id="submitSpinner" class="spinner-border spinner-border-sm me-1 d-none" role="status"></span>
-                        <i class="bi bi-check2-circle me-1"></i> Confirm &amp; Generate Tax Slip
+                        <i class="bi bi-check2-circle me-1"></i> <?= $isEditingReturn ? 'Save Return / Exchange Changes' : 'Confirm &amp; Generate Tax Slip' ?>
                     </button>
                 <?php endif; ?>
             </div>
@@ -703,6 +719,8 @@ $canProcessReturns = hasPermission('purchases_returns', 'process') || hasPermiss
 <!-- ========================================================================= -->
 <script>
 let currentPurchaseData = null;
+let currentEditReturnId = 0;
+const currentEditReplacementQuantities = {};
 let invoiceCountTimer = null;
 let invoiceCountRequestId = 0;
 const pendingReplacementScans = new Set();
@@ -882,9 +900,11 @@ async function executeLookup(selectedInvoice = null) {
     }
 }
 
-function openReturnModal(data) {
+function openReturnModal(data, editTransaction = null) {
     const po = data.purchase;
     const items = data.items;
+    currentEditReturnId = editTransaction ? Number(editTransaction.transaction.id) : 0;
+    Object.keys(currentEditReplacementQuantities).forEach(variantId => delete currentEditReplacementQuantities[variantId]);
 
     document.getElementById('modalPoNumber').innerText = po.po_number || ('PO #' + po.id);
     document.getElementById('modalCustomerName').innerText = po.customer_name || 'Direct Customer';
@@ -899,12 +919,141 @@ function openReturnModal(data) {
     const totalEl = document.getElementById('modalOrderTotal');
     if (totalEl) totalEl.innerText = '₹' + parseFloat(po.total_amount || po.grand_total || 0).toLocaleString('en-IN', {minimumFractionDigits: 2});
 
-    // Default to RETURN card
-    selectActionCard('RETURN');
+    const actionType = editTransaction ? getEditActionType(editTransaction.transaction) : 'RETURN';
+    selectActionCard(actionType);
     renderReturnItemsTable(items);
+    switchActionMode(actionType);
+    if (editTransaction) {
+        restoreReturnTransaction(editTransaction);
+    }
 
     const modal = new bootstrap.Modal(document.getElementById('returnExchangeModal'));
     modal.show();
+}
+
+function getEditActionType(transaction) {
+    const match = String(transaction.notes || '').match(/Warehouse Direct Action:\s*(EXCHANGE_SAME|EXCHANGE_DIFFERENT|CREDIT_NOTE|RETURN)/);
+    if (match) return match[1];
+    return transaction.return_type === 'EXCHANGE' ? 'EXCHANGE_DIFFERENT' : 'RETURN';
+}
+
+function restoreReturnTransaction(editTransaction) {
+    const transaction = editTransaction.transaction;
+    const items = currentPurchaseData.items || [];
+    const reasonSelect = document.getElementById('returnReasonSelect');
+    const reason = String(transaction.reason || '');
+    if (reason && !Array.from(reasonSelect.options).some(option => option.value === reason)) {
+        reasonSelect.add(new Option(reason, reason));
+    }
+    reasonSelect.value = reason;
+
+    const mode = getEditActionType(transaction);
+    const settlementMode = mode.startsWith('EXCHANGE_')
+        ? (editTransaction.exchange && editTransaction.exchange.settlement_mode)
+        : transaction.refund_mode;
+    const refundSelect = document.getElementById('refundModeSelect');
+    if (settlementMode && !Array.from(refundSelect.options).some(option => option.value === settlementMode)) {
+        refundSelect.add(new Option(settlementMode, settlementMode));
+    }
+    if (settlementMode) refundSelect.value = settlementMode;
+
+    const noteLines = String(transaction.notes || '').split(/\r?\n/);
+    const settlementLine = noteLines.find(line => line.startsWith('Warehouse Settlement:'));
+    let settlementDetails = null;
+    if (settlementLine) {
+        try {
+            settlementDetails = JSON.parse(settlementLine.slice('Warehouse Settlement:'.length).trim());
+        } catch (error) {
+            console.error('Unable to restore the saved split settlement details.', error);
+        }
+    }
+    document.getElementById('returnNotesInput').value = noteLines.slice(1)
+        .filter(line => !line.startsWith('Warehouse Settlement:'))
+        .join('\n').trim();
+
+    const availableQty = items.map(item => Number(item.returnable_qty || 0));
+    const returnedQtyByRow = items.map(() => 0);
+    (editTransaction.return_items || []).forEach(returnItem => {
+        let remainingQty = Number(returnItem.quantity) || 0;
+        const unitRate = remainingQty > 0 ? Number(returnItem.refund_amount || 0) / remainingQty : 0;
+        const candidates = items.map((item, index) => ({item, index}))
+            .filter(({item, index}) => Number(item.variant_id) === Number(returnItem.variant_id) && availableQty[index] > 0)
+            .sort((a, b) => {
+                const aRate = Math.abs(Number(a.item.unit_price || 0) - unitRate);
+                const bRate = Math.abs(Number(b.item.unit_price || 0) - unitRate);
+                return aRate - bRate;
+            });
+
+        candidates.forEach(({index}) => {
+            if (remainingQty <= 0) return;
+            const quantity = Math.min(remainingQty, availableQty[index]);
+            if (quantity <= 0) return;
+
+            const checkbox = document.querySelector(`.item-select-cb[data-idx="${index}"]`);
+            const quantityInput = document.querySelector(`.return-qty-input[data-idx="${index}"]`);
+            const conditionSelect = document.querySelector(`.item-condition-select[data-idx="${index}"]`);
+            if (checkbox) {
+                checkbox.checked = true;
+                checkbox.closest('tr').classList.add('row-selected');
+            }
+            returnedQtyByRow[index] += quantity;
+            if (quantityInput) quantityInput.value = String(returnedQtyByRow[index]);
+            if (conditionSelect) conditionSelect.value = returnItem.item_condition || 'GOOD';
+
+            const tagsMatch = String(returnItem.reason || '').match(/Piece Tags:\s*(.+)$/);
+            const tags = tagsMatch
+                ? tagsMatch[1].split(',').map(tag => tag.trim()).filter(Boolean)
+                : [];
+            rowPieceTags[index] = new Set(tags);
+            renderTagBadges(index);
+
+            availableQty[index] -= quantity;
+            remainingQty -= quantity;
+        });
+    });
+
+    const checkboxes = Array.from(document.querySelectorAll('.item-select-cb'));
+    const master = document.getElementById('selectAllCheckbox');
+    const selectedCount = checkboxes.filter(checkbox => checkbox.checked).length;
+    if (master) {
+        master.checked = checkboxes.length > 0 && selectedCount === checkboxes.length;
+        master.indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+    }
+
+    const selectedIndexes = checkboxes
+        .map((checkbox, index) => checkbox.checked ? index : -1)
+        .filter(index => index >= 0);
+    (editTransaction.exchange_items || [])
+        .filter(exchangeItem => exchangeItem.item_type === 'NEW')
+        .forEach((exchangeItem, itemIndex) => {
+            const targetIndex = selectedIndexes[itemIndex];
+            if (targetIndex === undefined) return;
+            const variantId = Number(exchangeItem.variant_id);
+            const quantity = Number(exchangeItem.quantity) || 0;
+            currentEditReplacementQuantities[variantId] =
+                (currentEditReplacementQuantities[variantId] || 0) + quantity;
+            rowReplacements[targetIndex] = {
+                variant_id: variantId,
+                product_name: exchangeItem.product_name || 'Product',
+                product_code: exchangeItem.product_code || '',
+                sku: exchangeItem.sku || '',
+                unit_price: Number(exchangeItem.unit_price) || 0,
+                available_stock: Number(exchangeItem.available_stock) || quantity,
+                quantity,
+                scanned_tags: String(exchangeItem.piece_tag || '').split(',').map(tag => tag.trim()).filter(Boolean),
+                scanned_codes: []
+            };
+            renderReplacementProductCell(targetIndex);
+        });
+
+    toggleSplitPaymentUI();
+    if (settlementDetails) {
+        document.getElementById('splitCashInput').value = Number(settlementDetails.cash || 0).toFixed(2);
+        document.getElementById('splitUpiInput').value = Number(settlementDetails.upi || 0).toFixed(2);
+        document.getElementById('splitUpiRefInput').value = settlementDetails.upi_ref || '';
+        calculateSplitPayment();
+    }
+    recalculateTotals();
 }
 
 // Card selector for Action Type (strictly single-select)
@@ -912,7 +1061,8 @@ function selectActionCard(mode) {
     document.querySelectorAll('.action-type-card').forEach(c => {
         c.classList.remove('selected-action');
     });
-    const card = document.getElementById('card_' + mode);
+    const cardId = mode === 'EXCHANGE_SAME' ? 'EXCHANGE_DIFFERENT' : (mode === 'CREDIT_NOTE' ? 'RETURN' : mode);
+    const card = document.getElementById('card_' + cardId);
     if (card) {
         card.classList.add('selected-action');
     }
@@ -965,7 +1115,7 @@ function renderReturnItemsTable(items) {
         tr.innerHTML = `
             <td class="ps-3">
                 <input type="checkbox" class="form-check-input item-select-cb" data-idx="${idx}"
-                       onchange="handleReturnItemCheckboxChange(this)" <?= $canProcessReturns ? '' : 'disabled' ?>>
+                       onchange="handleReturnItemCheckboxChange(this)" <?= ($canProcessReturns || $isEditingReturn) ? '' : 'disabled' ?>>
             </td>
             <td style="max-width:330px;">
                 <div class="fw-semibold text-dark mb-1">${it.product_name || 'Garment'}</div>
@@ -1082,7 +1232,7 @@ function switchActionMode(mode) {
     const replacementHeader = document.getElementById('replacementProductHeader');
     const replacementCells = document.querySelectorAll('.replacement-product-cell');
     const scanInput = document.getElementById('modalExchangeScanInput');
-    const isExchange = mode === 'EXCHANGE_DIFFERENT';
+    const isExchange = mode === 'EXCHANGE_DIFFERENT' || mode === 'EXCHANGE_SAME';
 
     if (lastColHdr) lastColHdr.textContent = 'Item Credit';
     if (scannerBox) scannerBox.classList.toggle('d-none', !isExchange);
@@ -1202,7 +1352,8 @@ function onModalScanExchangeItem(code) {
     const mode = document.getElementById('actionTypeSelect').value;
     const whId = currentPurchaseData && currentPurchaseData.purchase ? (currentPurchaseData.purchase.warehouse_id || 1) : 1;
 
-    fetch(`<?= url("api/warehouse/purchases/lookup-scan") ?>?warehouse_id=${whId}&code=${encodeURIComponent(code)}`)
+    const scanPurpose = currentEditReturnId > 0 ? '&purpose=purchase_return_edit' : '';
+    fetch(`<?= url("api/warehouse/purchases/lookup-scan") ?>?warehouse_id=${whId}${scanPurpose}&code=${encodeURIComponent(code)}`)
         .then(res => res.json())
         .then(data => {
             if (data.success && data.variant) {
@@ -1221,11 +1372,12 @@ function onModalScanExchangeItem(code) {
                     return;
                 }
 
-                if (mode !== 'EXCHANGE_DIFFERENT') {
+                if (mode !== 'EXCHANGE_DIFFERENT' && mode !== 'EXCHANGE_SAME') {
                     showModalScanFeedback('Switch to Warehouse Exchange to scan replacement products.', 'warning');
                 } else {
                     const variantId = Number(scannedVar.id);
-                    const availableStock = Number(scannedVar.available_stock) || 0;
+                    const availableStock = (Number(scannedVar.available_stock) || 0)
+                        + (currentEditReplacementQuantities[variantId] || 0);
                     const packQuantity = Math.max(1, Number.parseInt(scannedVar.pack_quantity, 10) || 1);
                     const quantityToAdd = (scannedVar.is_series || scannedVar.is_complementary) ? packQuantity : 1;
                     const invoiceItems = currentPurchaseData.items || [];
@@ -1261,12 +1413,16 @@ function onModalScanExchangeItem(code) {
                         }
 
                         if (!item) {
+                            const isComplementary = Boolean(scannedVar.is_complementary)
+                                || scannedVar.category_type === 'COMPLEMENTARY';
+                            const retailPrice = Number(scannedVar.selling_price) || 0;
+                            const stockPrice = Number(scannedVar.stock_price) || retailPrice;
                             item = {
                                 variant_id: variantId,
                                 product_name: scannedVar.product_name || 'Product',
                                 product_code: scannedVar.product_code || '',
                                 sku: scannedVar.sku || '',
-                                unit_price: Number(scannedVar.selling_price) || 0,
+                                unit_price: isComplementary ? stockPrice : retailPrice,
                                 available_stock: availableStock,
                                 quantity: 0,
                                 scanned_tags: [],
@@ -1321,7 +1477,7 @@ function recalculateTotals() {
 
         if (cb.checked) {
             totalRefund += lineRefund;
-            if (mode === 'EXCHANGE_DIFFERENT' && rowReplacements[Number(idx)]) {
+            if ((mode === 'EXCHANGE_DIFFERENT' || mode === 'EXCHANGE_SAME') && rowReplacements[Number(idx)]) {
                 const replacement = rowReplacements[Number(idx)];
                 totalNew += (Number(replacement.unit_price) || 0) * (Number(replacement.quantity) || 0);
             }
@@ -1449,9 +1605,11 @@ async function submitReturnProcess() {
         const it = currentPurchaseData.items[idx];
         const qty = parseInt(document.querySelector(`.return-qty-input[data-idx="${idx}"]`).value) || 1;
         const condition = document.querySelector(`.item-condition-select[data-idx="${idx}"]`).value;
+        const replacement = rowReplacements[Number(idx)] || null;
 
         const tags = getRowPieceTags(parseInt(idx));
-        const tagsStr = (tags && tags.length > 0) ? tags.join(', ') : (it.batch_lot_no || it.qr_code || (it.notes && it.notes.includes('QR:') ? it.notes.replace(/^QR:\s*/i, '').trim() : '') || '');
+        const originalTags = it.batch_lot_no || it.qr_code || (it.notes && it.notes.includes('QR:') ? it.notes.replace(/^QR:\s*/i, '').trim() : '') || '';
+        const tagsStr = tags.length > 0 ? tags.join(', ') : (currentEditReturnId ? '' : originalTags);
 
         items.push({
             selected: 1,
@@ -1460,12 +1618,18 @@ async function submitReturnProcess() {
             quantity: qty,
             condition: condition,
             unit_price: it.unit_price,
-            piece_tags: tagsStr
+            piece_tags: tagsStr,
+            replacement_variant_id: mode === 'EXCHANGE_SAME' && replacement ? replacement.variant_id : null,
+            replacement_piece_tag: mode === 'EXCHANGE_SAME'
+                ? (replacement ? (replacement.scanned_tags || []).join(', ') : '')
+                : ''
         });
     });
 
-    if (mode === 'EXCHANGE_DIFFERENT') {
-        const hasMissingReplacement = selectedReplacementItems.some(item => !item);
+    if (mode === 'EXCHANGE_DIFFERENT' || mode === 'EXCHANGE_SAME') {
+        const hasMissingReplacement = currentEditReturnId > 0
+            ? !selectedReplacementItems.some(item => item)
+            : selectedReplacementItems.some(item => !item);
         const hasInvalidReplacement = selectedReplacementItems.some(item => item && (
             !Number.isInteger(Number(item.quantity))
             || Number(item.quantity) < 1
@@ -1525,7 +1689,8 @@ async function submitReturnProcess() {
             variant_id: item.variant_id,
             quantity: item.quantity,
             scanned_tags: item.scanned_tags
-        })) : [],
+        })).filter(Boolean) : [],
+        return_id: currentEditReturnId || undefined,
         is_ajax: 1,
         _csrf_token: '<?= CSRF::token() ?>'
     };
@@ -1550,7 +1715,7 @@ async function submitReturnProcess() {
         if (res.success) {
             window.location.href = res.invoice_url;
         } else {
-            alert('Error processing return: ' + (res.message || 'Unknown error'));
+            alert((currentEditReturnId ? 'Error updating return: ' : 'Error processing return: ') + (res.message || 'Unknown error'));
             btn.disabled = false;
             spinner.classList.add('d-none');
         }
@@ -1559,5 +1724,13 @@ async function submitReturnProcess() {
         btn.disabled = false;
         spinner.classList.add('d-none');
     }
+}
+
+const purchaseReturnEditData = <?= $isEditingReturn && is_array($editData) ? json_encode($editData, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) : 'null' ?>;
+if (purchaseReturnEditData) {
+    document.addEventListener('DOMContentLoaded', function() {
+        currentPurchaseData = purchaseReturnEditData.purchase_data;
+        openReturnModal(currentPurchaseData, purchaseReturnEditData);
+    });
 }
 </script>

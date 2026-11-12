@@ -649,7 +649,8 @@ class Router {
         // Direct Purchases Customer Returns & Exchanges
         $this->get('warehouse/purchases/returns', 'WarehouseController', 'purchaseReturnsIndex', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'view']]);
         $this->get('warehouse/purchases/returns/lookup', 'WarehouseController', 'purchaseReturnsLookup', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'view']]);
-        $this->post('warehouse/purchases/returns/process', 'WarehouseController', 'processPurchaseReturn', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'create']]);
+        $this->post('warehouse/purchases/returns/process', 'WarehouseController', 'processPurchaseReturn', ['AuthMiddleware']);
+        $this->get('warehouse/purchases/returns/edit/{id}', 'WarehouseController', 'purchaseReturnEdit', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'edit']]);
         $this->get('warehouse/purchases/returns/view/{id}', 'WarehouseController', 'purchaseReturnView', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'view']]);
         $this->get('warehouse/purchases/returns/invoice/{id}', 'WarehouseController', 'purchaseReturnInvoice', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'view']]);
 
