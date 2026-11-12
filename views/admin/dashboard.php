@@ -289,19 +289,19 @@
                                         <small class="text-muted"><?= e($unit['phone'] ?: '-') ?></small>
                                     </td>
                                     <td class="text-end pe-3">
-                                        <div class="btn-group btn-group-sm">
-                                            <button type="button" class="btn btn-outline-secondary" title="View Unit Details"
+                                        <div class="action-btns-group justify-content-end">
+                                            <button type="button" class="btn btn-action-icon btn-outline-info" title="View Unit Details"
                                                     onclick="viewFacilityDetails('unit', <?= htmlspecialchars(json_encode($unit), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-eye"></i>
                                             </button>
                                             <?php if ($canEditUnit): ?>
-                                            <button type="button" class="btn btn-outline-primary" title="Edit Unit" 
+                                            <button type="button" class="btn btn-action-icon btn-outline-primary" title="Edit Unit" 
                                                     onclick="editUnit(<?= htmlspecialchars(json_encode($unit), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
                                             <?php endif; ?>
                                             <?php if ($canDeleteUnit): ?>
-                                            <button type="button" class="btn btn-outline-danger" title="Delete Production Unit"
+                                            <button type="button" class="btn btn-action-icon btn-outline-danger" title="Delete Production Unit"
                                                     onclick="confirmDeleteFacility('unit', <?= (int)$unit['id'] ?>, '<?= addslashes(e($unit['name'])) ?>', '<?= url('admin/production-units/delete/' . $unit['id']) ?>')">
                                                 <i class="bi bi-trash"></i>
                                             </button>
@@ -364,19 +364,19 @@
                                         <small class="text-muted"><?= e($wh['phone'] ?: '-') ?></small>
                                     </td>
                                     <td class="text-end pe-3">
-                                        <div class="btn-group btn-group-sm">
-                                            <button type="button" class="btn btn-outline-secondary" title="View Warehouse Details"
+                                        <div class="action-btns-group justify-content-end">
+                                            <button type="button" class="btn btn-action-icon btn-outline-info" title="View Warehouse Details"
                                                     onclick="viewFacilityDetails('warehouse', <?= htmlspecialchars(json_encode($wh), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-eye"></i>
                                             </button>
                                             <?php if ($canEditWarehouse): ?>
-                                            <button type="button" class="btn btn-outline-primary" title="Edit Warehouse" 
+                                            <button type="button" class="btn btn-action-icon btn-outline-primary" title="Edit Warehouse" 
                                                     onclick="editWarehouse(<?= htmlspecialchars(json_encode($wh), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
                                             <?php endif; ?>
                                             <?php if ($canDeleteWarehouse): ?>
-                                            <button type="button" class="btn btn-outline-danger" title="Delete Warehouse"
+                                            <button type="button" class="btn btn-action-icon btn-outline-danger" title="Delete Warehouse"
                                                     onclick="confirmDeleteFacility('warehouse', <?= (int)$wh['id'] ?>, '<?= addslashes(e($wh['name'])) ?>', '<?= url('admin/warehouses/delete/' . $wh['id']) ?>')">
                                                 <i class="bi bi-trash"></i>
                                             </button>
@@ -439,19 +439,19 @@
                                         <small class="text-muted"><?= e($shop['phone'] ?: '-') ?></small>
                                     </td>
                                     <td class="text-end pe-3">
-                                        <div class="btn-group btn-group-sm">
-                                            <button type="button" class="btn btn-outline-secondary" title="View Shop Details"
+                                        <div class="action-btns-group justify-content-end">
+                                            <button type="button" class="btn btn-action-icon btn-outline-info" title="View Shop Details"
                                                     onclick="viewFacilityDetails('shop', <?= htmlspecialchars(json_encode($shop), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-eye"></i>
                                             </button>
                                             <?php if ($canEditShop): ?>
-                                            <button type="button" class="btn btn-outline-primary" title="Edit Shop" 
+                                            <button type="button" class="btn btn-action-icon btn-outline-primary" title="Edit Shop" 
                                                     onclick="editShop(<?= htmlspecialchars(json_encode($shop), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
                                             <?php endif; ?>
                                             <?php if ($canDeleteShop): ?>
-                                            <button type="button" class="btn btn-outline-danger" title="Delete Shop"
+                                            <button type="button" class="btn btn-action-icon btn-outline-danger" title="Delete Shop"
                                                     onclick="confirmDeleteFacility('shop', <?= (int)$shop['id'] ?>, '<?= addslashes(e($shop['name'])) ?>', '<?= url('admin/shops/delete/' . $shop['id']) ?>')">
                                                 <i class="bi bi-trash"></i>
                                             </button>

@@ -159,6 +159,167 @@ if (!empty($authUser['shop_name'])) {
             overflow-y: auto !important;
             scrollbar-width: thin;
         }
+
+        /* Modern Rounded Square Action Buttons (Global Standard) */
+        .action-btns-group,
+        td .btn-group.btn-group-sm,
+        td .btn-group {
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 6px !important;
+            flex-wrap: nowrap !important;
+        }
+        .action-btns-group > .btn,
+        .action-btns-group > form,
+        .action-btns-group > form > .btn,
+        td .btn-group.btn-group-sm > .btn,
+        td .btn-group.btn-group-sm > form > .btn,
+        td .btn-group > .btn,
+        td .btn-group > form > .btn,
+        .btn-action-icon {
+            width: 34px !important;
+            height: 34px !important;
+            min-width: 34px !important;
+            min-height: 34px !important;
+            padding: 0 !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            border-radius: 8px !important;
+            font-size: 14px !important;
+            line-height: 1 !important;
+            background-color: #ffffff;
+            border-width: 1.5px !important;
+            border-style: solid !important;
+            transition: all 0.15s ease-in-out !important;
+            text-decoration: none !important;
+            flex-shrink: 0 !important;
+            box-shadow: none !important;
+        }
+
+        .action-btns-group > .btn:hover,
+        td .btn-group.btn-group-sm > .btn:hover,
+        .btn-action-icon:hover {
+            transform: translateY(-1px);
+        }
+
+        /* 1. VIEW / INFO BUTTON (Cyan / Light Blue) */
+        .btn-action-icon.btn-outline-info,
+        .btn-action-icon.btn-action-view,
+        .action-btns-group > .btn-outline-info,
+        td .btn-group.btn-group-sm > .btn-outline-info,
+        td .btn-outline-secondary:has(.bi-eye) {
+            border-color: #00c0ef !important;
+            color: #00c0ef !important;
+            background-color: #ffffff !important;
+        }
+        .btn-action-icon.btn-outline-info:hover,
+        .btn-action-icon.btn-action-view:hover,
+        .action-btns-group > .btn-outline-info:hover,
+        td .btn-group.btn-group-sm > .btn-outline-info:hover,
+        td .btn-outline-secondary:has(.bi-eye):hover {
+            background-color: #00c0ef !important;
+            border-color: #00c0ef !important;
+            color: #ffffff !important;
+            box-shadow: 0 2px 8px rgba(0, 192, 239, 0.35) !important;
+        }
+
+        /* 2. EDIT / PRIMARY BUTTON (Blue) */
+        .btn-action-icon.btn-outline-primary,
+        .btn-action-icon.btn-action-edit,
+        .action-btns-group > .btn-outline-primary,
+        td .btn-group.btn-group-sm > .btn-outline-primary {
+            border-color: #2563eb !important;
+            color: #2563eb !important;
+            background-color: #ffffff !important;
+        }
+        .btn-action-icon.btn-outline-primary:hover,
+        .btn-action-icon.btn-action-edit:hover,
+        .action-btns-group > .btn-outline-primary:hover,
+        td .btn-group.btn-group-sm > .btn-outline-primary:hover {
+            background-color: #2563eb !important;
+            border-color: #2563eb !important;
+            color: #ffffff !important;
+            box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35) !important;
+        }
+
+        /* 3. VERIFY / SUCCESS BUTTON (Green) */
+        .btn-action-icon.btn-outline-success,
+        .btn-action-icon.btn-action-check,
+        .action-btns-group > .btn-outline-success,
+        td .btn-group.btn-group-sm > .btn-outline-success {
+            border-color: #10b981 !important;
+            color: #10b981 !important;
+            background-color: #ffffff !important;
+        }
+        .btn-action-icon.btn-outline-success:hover,
+        .btn-action-icon.btn-action-check:hover,
+        .action-btns-group > .btn-outline-success:hover,
+        td .btn-group.btn-group-sm > .btn-outline-success:hover {
+            background-color: #10b981 !important;
+            border-color: #10b981 !important;
+            color: #ffffff !important;
+            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35) !important;
+        }
+
+        /* 4. DELETE / DANGER BUTTON (Red) */
+        .btn-action-icon.btn-outline-danger,
+        .btn-action-icon.btn-action-delete,
+        .action-btns-group > .btn-outline-danger,
+        td .btn-group.btn-group-sm > .btn-outline-danger,
+        td .btn-group.btn-group-sm > form > .btn-outline-danger,
+        .action-btns-group > form > .btn-outline-danger {
+            border-color: #ef4444 !important;
+            color: #ef4444 !important;
+            background-color: #ffffff !important;
+        }
+        .btn-action-icon.btn-outline-danger:hover,
+        .btn-action-icon.btn-action-delete:hover,
+        .action-btns-group > .btn-outline-danger:hover,
+        td .btn-group.btn-group-sm > .btn-outline-danger:hover,
+        td .btn-group.btn-group-sm > form > .btn-outline-danger:hover,
+        .action-btns-group > form > .btn-outline-danger:hover {
+            background-color: #ef4444 !important;
+            border-color: #ef4444 !important;
+            color: #ffffff !important;
+            box-shadow: 0 2px 8px rgba(239, 68, 68, 0.35) !important;
+        }
+
+        /* 5. WARNING / SPECIAL ACTIONS (Amber) */
+        .btn-action-icon.btn-outline-warning,
+        .btn-action-icon.btn-action-warning,
+        .action-btns-group > .btn-outline-warning,
+        td .btn-group.btn-group-sm > .btn-outline-warning {
+            border-color: #f59e0b !important;
+            color: #f59e0b !important;
+            background-color: #ffffff !important;
+        }
+        .btn-action-icon.btn-outline-warning:hover,
+        .btn-action-icon.btn-action-warning:hover,
+        .action-btns-group > .btn-outline-warning:hover,
+        td .btn-group.btn-group-sm > .btn-outline-warning:hover {
+            background-color: #f59e0b !important;
+            border-color: #f59e0b !important;
+            color: #ffffff !important;
+            box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35) !important;
+        }
+
+        /* 6. DARK BUTTONS (e.g. Roll QR print) */
+        .btn-action-icon.btn-dark,
+        .action-btns-group > .btn-dark,
+        td .btn-group.btn-group-sm > .btn-dark {
+            border-color: #1e293b !important;
+            color: #f8fafc !important;
+            background-color: #1e293b !important;
+        }
+        .btn-action-icon.btn-dark:hover,
+        .action-btns-group > .btn-dark:hover,
+        td .btn-group.btn-group-sm > .btn-dark:hover {
+            background-color: #0f172a !important;
+            border-color: #0f172a !important;
+            color: #ffffff !important;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.35) !important;
+        }
     </style>
     <?php if (($activeModule ?? '') === 'reports'): ?>
     <link href="<?= asset('css/reports.css') ?>?v=<?= file_exists(BASE_PATH . '/public/assets/css/reports.css') ? filemtime(BASE_PATH . '/public/assets/css/reports.css') : '1' ?>" rel="stylesheet">
