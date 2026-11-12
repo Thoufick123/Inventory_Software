@@ -50,15 +50,7 @@ if (!function_exists('renderCategoryTypeBadge')) {
     <div>
         <h2 class="mb-1"><i class="bi bi-boxes me-2 text-primary"></i>Warehouse Stock &amp; Inventory</h2>
     </div>
-    <div class="d-flex gap-2 flex-wrap align-items-center">
 
-        <?php if (hasPermission('inward', 'create') && (hasPermission('inward', 'view') || hasPermission('warehouse', 'view'))): ?>
-        <a href="<?= url('warehouse/inward') ?>" class="btn btn-primary">
-            <i class="bi bi-box-arrow-in-down me-1"></i> Receive Stock
-        </a>
-        <?php endif; ?>
-
-    </div>
 </div>
 
 <!-- Warehouse Summary Cards -->
