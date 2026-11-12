@@ -9412,6 +9412,215 @@ class ProductionController {
         Response::redirect(url('production/inventory'));
     }
 
+    /**
+     * Update in-stock quantity for a QC Batch variant item in Production Inventory.
+     */
+    public function updateProductionInventoryQcStock(): void {
+        if (!hasPermission('inventory', 'edit')) {
+            Session::flash('error', 'You do not have permission to edit Production inventory stock.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        $qcBatchId = (int)($_POST['qc_batch_id'] ?? 0);
+        $variantId = (int)($_POST['variant_id'] ?? 0);
+        $newQty = max(0.0, (float)($_POST['new_quantity'] ?? 0));
+        $reason = trim((string)($_POST['adjustment_reason'] ?? 'QC inventory stock update'));
+
+        $qcBatch = Database::fetchOne(
+            "SELECT qb.*, pp.program_number, COALESCE(p.name, pp.name) as product_name
+             FROM qc_batches qb
+             JOIN production_programs pp ON qb.program_id = pp.id
+             LEFT JOIN products p ON pp.product_id = p.id
+             WHERE qb.id = ?",
+            [$qcBatchId]
+        );
+
+        if (!$qcBatch) {
+            Session::flash('error', 'QC Batch record not found.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        $currentAvailable = 0.0;
+        if ($variantId > 0) {
+            $currentAvailable = (float)(Database::fetchOne(
+                "SELECT COALESCE(SUM(quantity), 0) AS cnt FROM stock_balances WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                [$variantId]
+            )['cnt'] ?? 0);
+        }
+
+        $userId = Session::userId() ?? 1;
+        $wh = Database::fetchOne("SELECT id, name FROM warehouses WHERE is_active = 1 ORDER BY id ASC LIMIT 1");
+        $warehouseId = (int)($wh['id'] ?? 1);
+
+        try {
+            Database::beginTransaction();
+
+            $diff = $newQty - $currentAvailable;
+            if ($variantId > 0 && abs($diff) > 0.0001) {
+                if ($diff > 0) {
+                    StockService::increase(
+                        variantId: $variantId,
+                        locationType: 'WAREHOUSE',
+                        locationId: $warehouseId,
+                        stockState: 'AVAILABLE',
+                        quantity: $diff,
+                        transactionType: 'INVENTORY_ADJUSTMENT',
+                        referenceType: 'qc_batches',
+                        referenceId: $qcBatchId,
+                        userId: $userId,
+                        notes: "Stock adjustment for QC Batch #{$qcBatchId}: +{$diff} pcs ({$reason})"
+                    );
+                } else {
+                    StockService::decrease(
+                        variantId: $variantId,
+                        locationType: 'WAREHOUSE',
+                        locationId: $warehouseId,
+                        stockState: 'AVAILABLE',
+                        quantity: abs($diff),
+                        transactionType: 'INVENTORY_ADJUSTMENT',
+                        referenceType: 'qc_batches',
+                        referenceId: $qcBatchId,
+                        userId: $userId,
+                        notes: "Stock adjustment for QC Batch #{$qcBatchId}: -{$diff} pcs ({$reason})"
+                    );
+                }
+
+                // Ensure exact stock_balances matches $newQty
+                Database::execute(
+                    "UPDATE stock_balances SET quantity = ? WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                    [$newQty, $variantId]
+                );
+            }
+
+            // Also synchronize qc_items passed_qty if variant matches
+            if ($variantId > 0) {
+                Database::execute(
+                    "UPDATE qc_items SET passed_qty = ? WHERE qc_batch_id = ? AND variant_id = ?",
+                    [(int)$newQty, $qcBatchId, $variantId]
+                );
+            }
+
+            AuditService::log('production', 'UPDATE_QC_STOCK', 'qc_batches', $qcBatchId, $qcBatch, [
+                'old_qty'    => $currentAvailable,
+                'new_qty'    => $newQty,
+                'variant_id' => $variantId,
+                'reason'     => $reason,
+            ]);
+
+            Database::commit();
+
+            Session::flash('success', "In-stock quantity for QC Batch #{$qcBatchId} updated to " . number_format($newQty) . " pcs successfully.");
+        } catch (\Throwable $e) {
+            Database::rollback();
+            Session::flash('error', 'Error updating QC stock: ' . $e->getMessage());
+        }
+
+        Response::redirect(url('production/inventory'));
+    }
+
+    /**
+     * Delete/zero-out stock for a QC batch item in Production Inventory.
+     */
+    public function deleteProductionInventoryQcStock(): void {
+        if (!hasPermission('inventory', 'delete')) {
+            Session::flash('error', 'You do not have permission to delete Production inventory stock.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        $qcBatchId = (int)($_POST['qc_batch_id'] ?? 0);
+        $variantId = (int)($_POST['variant_id'] ?? 0);
+
+        $qcBatch = Database::fetchOne(
+            "SELECT qb.*, pp.program_number, COALESCE(p.name, pp.name) as product_name
+             FROM qc_batches qb
+             JOIN production_programs pp ON qb.program_id = pp.id
+             LEFT JOIN products p ON pp.product_id = p.id
+             WHERE qb.id = ?",
+            [$qcBatchId]
+        );
+
+        if (!$qcBatch) {
+            Session::flash('error', 'QC Batch record not found.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        $userId = Session::userId() ?? 1;
+
+        try {
+            Database::beginTransaction();
+
+            if ($variantId > 0) {
+                $curBal = (float)(Database::fetchOne(
+                    "SELECT COALESCE(SUM(quantity), 0) AS cnt FROM stock_balances WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                    [$variantId]
+                )['cnt'] ?? 0);
+
+                if ($curBal > 0) {
+                    StockService::decrease(
+                        variantId: $variantId,
+                        locationType: 'WAREHOUSE',
+                        locationId: 1,
+                        stockState: 'AVAILABLE',
+                        quantity: $curBal,
+                        transactionType: 'INVENTORY_ADJUSTMENT',
+                        referenceType: 'qc_batches',
+                        referenceId: $qcBatchId,
+                        userId: $userId,
+                        notes: "Stock deleted/removed from Production Inventory for QC Batch #{$qcBatchId}"
+                    );
+                }
+
+                Database::execute(
+                    "UPDATE stock_balances SET quantity = 0 WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                    [$variantId]
+                );
+            }
+
+            // Zero out passed_qty in qc_items for this variant so inventory recognizes 0
+            if ($variantId > 0) {
+                Database::execute(
+                    "UPDATE qc_items SET passed_qty = 0 WHERE qc_batch_id = ? AND variant_id = ?",
+                    [$qcBatchId, $variantId]
+                );
+            } else {
+                Database::execute(
+                    "UPDATE qc_items SET passed_qty = 0 WHERE qc_batch_id = ?",
+                    [$qcBatchId]
+                );
+            }
+
+            AuditService::log('production', 'DELETE_QC_STOCK', 'qc_batches', $qcBatchId, $qcBatch, [
+                'variant_id' => $variantId,
+                'message'    => "Stock for QC Batch #{$qcBatchId} removed from inventory",
+            ]);
+
+            Database::commit();
+
+            Session::flash('success', "Stock for QC Batch #{$qcBatchId} successfully removed from inventory.");
+        } catch (\Throwable $e) {
+            Database::rollback();
+            Session::flash('error', 'Error removing QC batch stock: ' . $e->getMessage());
+        }
+
+        Response::redirect(url('production/inventory'));
+    }
+
     public function createLabel(): void {
         $programId = $_GET['program_id'] ?? null;
         $stitchingBatchId = $_GET['stitching_batch_id'] ?? null;
@@ -11999,11 +12208,12 @@ class ProductionController {
                 if (!isset($batches[$batchId]['variant_indexes'][$variantKey])) {
                     $batches[$batchId]['variant_indexes'][$variantKey] = count($batches[$batchId]['variants']);
                     $batches[$batchId]['variants'][] = [
-                        'size_name'  => $it['size_name'],
-                        'color_name' => $it['color_name'],
-                        'passed_qty' => 0,
+                        'variant_id'  => (int)($it['variant_id'] ?? 0),
+                        'size_name'   => $it['size_name'],
+                        'color_name'  => $it['color_name'],
+                        'passed_qty'  => 0,
                         'outward_qty' => 0,
-                        'qc_items'   => [],
+                        'qc_items'    => [],
                     ];
                 }
                 $variantIndex = $batches[$batchId]['variant_indexes'][$variantKey];

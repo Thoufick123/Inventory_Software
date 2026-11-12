@@ -504,6 +504,8 @@ class Router {
         $this->post('production/inventory/delete-piece', 'ProductionController', 'deleteProductionInventoryPiece', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'delete']]);
         $this->post('production/inventory/supply/update-stock', 'ProductionController', 'updateProductionInventorySupplyStock', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'edit']]);
         $this->post('production/inventory/supply/delete', 'ProductionController', 'deleteProductionInventorySupplyStock', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'delete']]);
+        $this->post('production/inventory/qc/update-stock', 'ProductionController', 'updateProductionInventoryQcStock', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'edit']]);
+        $this->post('production/inventory/qc/delete', 'ProductionController', 'deleteProductionInventoryQcStock', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'delete']]);
 
         // Batch & Outward
         $this->get('production/batches', 'ProductionController', 'batchList', ['AuthMiddleware', ['PermissionMiddleware', 'batches', 'view']]);
