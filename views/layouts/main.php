@@ -433,6 +433,7 @@ if (!empty($authUser['shop_name'])) {
                     $canViewWarehouse = hasPermission('warehouse', 'view')
                         || hasPermission('inward', 'view')
                         || hasPermission('stock', 'view')
+                        || hasPermission('stock_adjustments', 'view')
                         || hasPermission('wh_sellers', 'view')
                         || hasPermission('wh_catalog', 'view')
                         || hasPermission('wh_labels', 'view')
@@ -461,6 +462,8 @@ if (!empty($authUser['shop_name'])) {
                             <?php endif; ?>
                             <?php if (hasPermission('stock', 'view')): ?>
                             <li><a href="<?= url('warehouse/stock') ?>" class="<?= ($activeMenu ?? '') === 'wh-stock' ? 'active' : '' ?>">Stock</a></li>
+                            <?php endif; ?>
+                            <?php if (hasPermission('stock_adjustments', 'view')): ?>
                             <li><a href="<?= url('warehouse/adjustments') ?>" class="<?= in_array(($activeMenu ?? ''), ['wh-adjustments', 'wh-adjustment-increase', 'wh-adjustment-decrease'], true) ? 'active' : '' ?>"><i class="bi bi-sliders"></i><span>Stock Adjustments</span></a></li>
                             <?php endif; ?>
                             <?php if (hasPermission('wh_catalog', 'view')): ?>
