@@ -4,21 +4,6 @@
         <span class="text-muted"><?= !empty($isOfficeCopy) ? 'Office soft-copy for purchase records' : 'Official direct customer sales invoice, itemized tax ledger &amp; dispatch slip' ?></span>
     </div>
     <div class="d-flex align-items-center gap-2 flex-wrap">
-        <!-- Toggle to Hide/Show Amounts for Customer Delivery Slip -->
-        <div class="form-check form-switch me-2 d-print-none bg-light border rounded-pill px-3 py-1.5 shadow-2xs d-flex align-items-center gap-2">
-            <input class="form-check-input ms-0 mt-0" type="checkbox" id="toggleHideAmounts" onchange="toggleInvoiceAmounts(this.checked)" style="cursor: pointer;">
-            <label class="form-check-label small fw-semibold text-secondary user-select-none mb-0" for="toggleHideAmounts" style="cursor: pointer;">
-                <i class="bi bi-eye-slash me-1"></i> Hide Amounts (Delivery Challan)
-            </label>
-        </div>
-        <button onclick="window.print()" class="btn btn-success shadow-sm">
-            <i class="bi bi-printer me-1"></i> Print Tax Invoice
-        </button>
-        <?php if (!empty($isOfficeCopy)): ?>
-            <a href="<?= url('warehouse/purchases/receive/' . $po['id']) ?>" class="btn btn-outline-success">
-                <i class="bi bi-receipt me-1"></i> Customer Handover Bill
-            </a>
-        <?php endif; ?>
         <a href="<?= url('warehouse/purchases') ?>" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i> Back to Direct Purchases
         </a>
@@ -30,14 +15,9 @@
 <div class="card border-0 shadow-sm rounded-3 bg-white p-3 mb-4 invoice-container d-print-none">
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2 pb-2 border-bottom">
         <span class="fw-bold text-dark"><i class="bi bi-receipt text-primary me-1"></i> Original Supplier Bill / Invoice Upload:</span>
-        <a href="<?= e($po['payment_screenshot_url']) ?>" target="_blank" class="btn btn-sm btn-outline-primary">
-            <i class="bi bi-box-arrow-up-right me-1"></i> Open Full Resolution
-        </a>
     </div>
     <div class="text-center bg-light p-3 rounded border">
-        <a href="<?= e($po['payment_screenshot_url']) ?>" target="_blank">
-            <img src="<?= e($po['payment_screenshot_url']) ?>" alt="Supplier Bill" class="img-fluid rounded border shadow-sm" style="max-height: 420px; object-fit: contain;">
-        </a>
+        <img src="<?= e($po['payment_screenshot_url']) ?>" alt="Supplier Bill" class="img-fluid rounded border shadow-sm" style="max-height: 420px; object-fit: contain;">
     </div>
 </div>
 <?php endif; ?>
@@ -67,7 +47,7 @@
             </p>
         </div>
         <div class="col-sm-5 text-sm-end mt-3 mt-sm-0">
-            <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 fs-6 fw-bold mb-2 d-inline-block" id="invoiceTypeBadge">
+            <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 fs-6 fw-bold mb-2 d-inline-block">
                 TAX INVOICE / DIRECT SALE
             </span>
             <?php if (!empty($isOfficeCopy)): ?>
@@ -129,11 +109,11 @@
                     <th class="text-center" style="width: 12%;">Size / Color</th>
                     <th class="text-center" style="width: 9%;">HSN Code</th>
                     <th class="text-center" style="width: 6%;">Qty</th>
-                    <th class="text-end col-amount" style="width: 10%;">Rate (₹)</th>
-                    <th class="text-end col-amount" style="width: 8%;">Disc (₹)</th>
-                    <th class="text-end col-amount" style="width: 10%;">Taxable (₹)</th>
-                    <th class="text-center col-amount" style="width: 6%;">GST %</th>
-                    <th class="text-end col-amount" style="width: 11%;">Amount (₹)</th>
+                    <th class="text-end" style="width: 10%;">Rate (₹)</th>
+                    <th class="text-end" style="width: 8%;">Disc (₹)</th>
+                    <th class="text-end" style="width: 10%;">Taxable (₹)</th>
+                    <th class="text-center" style="width: 6%;">GST %</th>
+                    <th class="text-end" style="width: 11%;">Amount (₹)</th>
                 </tr>
             </thead>
             <tbody>
@@ -175,11 +155,11 @@
                         </td>
                         <td class="text-center font-monospace"><?= e($item['resolved_hsn_code'] ?? '') ?: '-' ?></td>
                         <td class="text-center fw-bold fs-6"><?= number_format($qty) ?></td>
-                        <td class="text-end font-monospace col-amount">₹<?= number_format($billedRate, 2) ?></td>
-                        <td class="text-end font-monospace text-danger col-amount"><?= $lineDisc > 0 ? '-₹' . number_format($lineDisc, 2) : '-' ?></td>
-                        <td class="text-end font-monospace col-amount">₹<?= number_format($lineTaxable, 2) ?></td>
-                        <td class="text-center font-monospace small col-amount"><?= $gstPct ?>%</td>
-                        <td class="text-end fw-bold text-dark font-monospace col-amount">₹<?= number_format($lineTotal, 2) ?></td>
+                        <td class="text-end font-monospace">₹<?= number_format($billedRate, 2) ?></td>
+                        <td class="text-end font-monospace text-danger"><?= $lineDisc > 0 ? '-₹' . number_format($lineDisc, 2) : '-' ?></td>
+                        <td class="text-end font-monospace">₹<?= number_format($lineTaxable, 2) ?></td>
+                        <td class="text-center font-monospace small"><?= $gstPct ?>%</td>
+                        <td class="text-end fw-bold text-dark font-monospace">₹<?= number_format($lineTotal, 2) ?></td>
                     </tr>
                 <?php endforeach; ?>
             </tbody>
@@ -188,7 +168,7 @@
 
     <!-- Financial Totals & Authorised Sign-off Footer -->
     <div class="row g-4 align-items-start mt-2">
-        <div class="col-sm-6 ms-auto invoice-totals-row">
+        <div class="col-sm-6 ms-auto">
             <?php
             $displayGross = $calcGross > 0 ? $calcGross : ((float)$po['total_amount'] + (float)($po['discount_amount'] ?? 0));
             $displayDisc = (float)($po['discount_amount'] ?? 0) > 0 ? (float)$po['discount_amount'] : $calcDisc;
@@ -263,12 +243,6 @@
     vertical-align: middle;
 }
 
-/* Hide amounts mode (Delivery Challan / Packing Slip Mode) */
-.hide-amounts-mode .col-amount,
-.hide-amounts-mode .invoice-totals-row {
-    display: none !important;
-}
-
 @media print {
     .no-print, .page-header, .sidebar, .navbar, .breadcrumb, footer, .d-print-none {
         display: none !important;
@@ -305,24 +279,3 @@
 }
 </style>
 
-<script>
-function toggleInvoiceAmounts(hide) {
-    const container = document.querySelector('.invoice-container');
-    const badge = document.getElementById('invoiceTypeBadge');
-    if (hide) {
-        container.classList.add('hide-amounts-mode');
-        if (badge) {
-            badge.innerText = 'DELIVERY CHALLAN / DISPATCH SLIP';
-            badge.classList.remove('bg-success-subtle', 'text-success', 'border-success-subtle');
-            badge.classList.add('bg-secondary-subtle', 'text-secondary', 'border-secondary-subtle');
-        }
-    } else {
-        container.classList.remove('hide-amounts-mode');
-        if (badge) {
-            badge.innerText = 'TAX INVOICE / DIRECT SALE';
-            badge.classList.remove('bg-secondary-subtle', 'text-secondary', 'border-secondary-subtle');
-            badge.classList.add('bg-success-subtle', 'text-success', 'border-success-subtle');
-        }
-    }
-}
-</script>

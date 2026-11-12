@@ -472,7 +472,7 @@ $displayNotes = trim(preg_replace('/\[Split Payment:.*?\]\r?\n?/', '', $po['note
                                                                     data-name="<?= e($v['product_name']) ?>"
                                                                     data-sku="<?= e($v['sku']) ?>"
                                                                     data-qr="<?= e($rowQrTag) ?>"
-                                                                    data-hsn="<?= e($v['hsn_code'] ?? '') ?>"
+                                                                    data-hsn="<?= e($v['hsn_code'] ?? $v['resolved_hsn_code'] ?? '') ?>"
                                                                     data-category="<?= e($vCat) ?>"
                                                                     data-cat-type="<?= e($vCatType) ?>"
                                                                     data-is-comp="<?= $vIsComp ? 1 : 0 ?>"
@@ -518,22 +518,17 @@ $displayNotes = trim(preg_replace('/\[Split Payment:.*?\]\r?\n?/', '', $po['note
                                         </div>
                                     </td>
                                     <td class="text-center">
-                                        <select name="hsn_code[]" class="form-select form-select-sm hsn-select font-monospace" aria-label="HSN code" style="min-width:100px; font-size:12px;">
-                                            <option value="">-- HSN --</option>
-                                            <?php foreach (($hsnCodes ?? []) as $h): ?>
-                                                <option value="<?= htmlspecialchars($h['hsn_code']) ?>" data-gst="<?= (float)($h['gst_rate'] ?? 5) ?>" <?= (isset($hsnCode) && $hsnCode === $h['hsn_code']) ? 'selected' : '' ?>><?= htmlspecialchars($h['hsn_code']) ?> &bull; <?= htmlspecialchars($h['description'] ?? '') ?></option>
-                                            <?php endforeach; ?>
-                                            <?php if (!empty($hsnCode) && !in_array($hsnCode, array_column($hsnCodes ?? [], 'hsn_code'))): ?>
-                                                <option value="<?= e($hsnCode) ?>" selected><?= e($hsnCode) ?></option>
-                                            <?php endif; ?>
-                                        </select>
+                                        <input type="text" class="form-control form-control-sm hsn-display font-monospace"
+                                               aria-label="HSN code" placeholder="Auto from product" value="<?= e($hsnCode) ?>" readonly>
+                                        <input type="hidden" name="hsn_code[]" class="hsn-code-input" value="<?= e($hsnCode) ?>">
+                                        <small class="hsn-status text-muted d-none"></small>
                                     </td>
                                     <td class="text-end fw-semibold text-secondary font-monospace base-price-cell" style="font-size: 12.5px;">
                                         <span class="base-price-display">₹<?= number_format($lineTaxable, 2) ?></span>
                                     </td>
                                     <td class="text-end gst-cell">
                                         <div class="input-group input-group-sm gst-rate-control">
-                                            <input type="number" name="gst_percentage[]" class="form-control form-control-sm text-end fw-bold font-monospace gst-input" value="<?= $gstRate ?>" min="0" max="100" step="0.01" required oninput="calculateTotals()" aria-label="GST percentage" title="Enter GST percentage (0 to 100)">
+                                            <input type="number" name="gst_percentage[]" class="form-control form-control-sm text-end fw-bold font-monospace gst-input" value="<?= $gstRate ?>" min="0" max="100" step="0.01" required oninput="onGstRateChange(this)" aria-label="GST percentage" title="Enter GST percentage (0 to 100)">
                                             <span class="input-group-text px-1">%</span>
                                         </div>
                                         <div class="text-muted font-monospace mt-0.5 gst-val-display" style="font-size: 10px; white-space: nowrap;">+₹<?= number_format($lineTax, 2) ?></div>
@@ -725,6 +720,64 @@ const CUSTOMERS_LIST = <?= json_encode($customers ?? []) ?>;
 const HSN_CODES_LIST = <?= json_encode($hsnCodes ?? []) ?>;
 let activeSearchIndex = -1;
 let searchDebounceTimer = null;
+
+function resolveHsnCodeForGst(gstRate, preferredCodes = []) {
+    const rate = Number(gstRate);
+    const matchingCodes = HSN_CODES_LIST.filter(hsn => Math.abs(Number(hsn.gst_rate) - rate) < 0.005);
+    for (const rawCode of preferredCodes) {
+        const code = String(rawCode || '').trim();
+        if (!code) continue;
+        const savedHsn = HSN_CODES_LIST.find(hsn => String(hsn.hsn_code) === code);
+        if (!savedHsn || Math.abs(Number(savedHsn.gst_rate) - rate) < 0.005) return code;
+    }
+    if (matchingCodes.length === 0) {
+        return String(preferredCodes.find(code => String(code || '').trim()) || '').trim();
+    }
+    return matchingCodes.length === 1 ? String(matchingCodes[0].hsn_code) : '';
+}
+
+function updateRowHsn(row, gstRate, preferredCodes = []) {
+    const display = row.querySelector('.hsn-display');
+    const hidden = row.querySelector('.hsn-code-input');
+    const status = row.querySelector('.hsn-status');
+    const code = resolveHsnCodeForGst(gstRate, preferredCodes);
+    if (display) display.value = code;
+    if (hidden) hidden.value = code;
+    if (status) {
+        const matches = HSN_CODES_LIST.filter(hsn => Math.abs(Number(hsn.gst_rate) - Number(gstRate)) < 0.005);
+        status.textContent = code ? '' : (matches.length > 1
+            ? 'Multiple HSN codes match this GST. Set the product HSN code.'
+            : 'No HSN code is configured for this GST rate.');
+        status.classList.toggle('d-none', Boolean(code));
+    }
+}
+
+function clearRowHsn(row) {
+    const display = row.querySelector('.hsn-display');
+    const hidden = row.querySelector('.hsn-code-input');
+    const status = row.querySelector('.hsn-status');
+    if (display) display.value = '';
+    if (hidden) hidden.value = '';
+    if (status) {
+        status.textContent = '';
+        status.classList.add('d-none');
+    }
+}
+
+function onGstRateChange(input) {
+    const row = input.closest('tr');
+    const variantSelect = row.querySelector('.variant-select');
+    const variantOption = variantSelect && variantSelect.selectedOptions[0];
+    if (!variantOption || !variantOption.value) {
+        clearRowHsn(row);
+        calculateTotals();
+        return;
+    }
+    const currentCode = row.querySelector('.hsn-code-input')?.value || '';
+    const productCode = variantOption.getAttribute('data-hsn') || '';
+    updateRowHsn(row, input.value, [currentCode, productCode]);
+    calculateTotals();
+}
 
 // Audio Synthesizer Beep on Scan
 function playBeep(type = 'success') {
@@ -1315,7 +1368,6 @@ function onVariantChange(selectEl, customTags = null) {
     const priceInput = row.querySelector('.price-input');
     const mrpInput = row.querySelector('.mrp-input');
     const gstInput = row.querySelector('.gst-input');
-    const hsnSelect = row.querySelector('.hsn-select');
 
     if (opt && opt.value) {
         const name = opt.getAttribute('data-name') || opt.text.split('|')[0].trim();
@@ -1331,16 +1383,7 @@ function onVariantChange(selectEl, customTags = null) {
         const defaultQr = opt.getAttribute('data-qr') || sku;
 
         const resolvedHsn = (opt.getAttribute('data-hsn') || '').trim();
-        if (hsnSelect) {
-            hsnSelect.value = resolvedHsn;
-            if (hsnSelect.value !== resolvedHsn && resolvedHsn) {
-                const newOpt = document.createElement('option');
-                newOpt.value = resolvedHsn;
-                newOpt.textContent = resolvedHsn;
-                hsnSelect.appendChild(newOpt);
-                hsnSelect.value = resolvedHsn;
-            }
-        }
+        updateRowHsn(row, gstRate, [resolvedHsn]);
         if (mrpInput) mrpInput.value = mrp.toFixed(2);
         if (priceInput) {
             priceInput.value = price.toFixed(2);
@@ -1426,6 +1469,7 @@ function onVariantChange(selectEl, customTags = null) {
             gstInput.value = '5';
             gstInput.readOnly = false;
         }
+        clearRowHsn(row);
         if (selectBox) selectBox.classList.remove('d-none');
         if (infoDisplay) infoDisplay.classList.add('d-none');
         if (scannedTagBox) scannedTagBox.classList.add('d-none');
@@ -1614,18 +1658,17 @@ function addItemRow(selectedVariantId = null, initialQr = null) {
             </div>
         </td>
         <td class="text-center">
-            <select name="hsn_code[]" class="form-select form-select-sm hsn-select font-monospace" aria-label="HSN code" style="min-width:100px; font-size:12px;">
-                <option value="">-- HSN --</option>
-                ${HSN_CODES_LIST.map(h => `<option value="${escapeHtml(h.hsn_code)}" data-gst="${parseFloat(h.gst_rate || 5)}" ${(h.hsn_code === initHsn) ? 'selected' : ''}>${escapeHtml(h.hsn_code)} &bull; ${escapeHtml(h.description || '')}</option>`).join('')}
-                ${(initHsn && !HSN_CODES_LIST.find(h => h.hsn_code === initHsn)) ? `<option value="${escapeHtml(initHsn)}" selected>${escapeHtml(initHsn)}</option>` : ''}
-            </select>
+            <input type="text" class="form-control form-control-sm hsn-display font-monospace"
+                   aria-label="HSN code" placeholder="Auto from product" value="${escapeHtml(initHsn)}" readonly>
+            <input type="hidden" name="hsn_code[]" class="hsn-code-input" value="${escapeHtml(initHsn)}">
+            <small class="hsn-status text-muted d-none"></small>
         </td>
         <td class="text-end fw-semibold text-secondary font-monospace base-price-cell" style="font-size: 12.5px;">
             <span class="base-price-display">₹${initTaxable.toFixed(2)}</span>
         </td>
         <td class="text-end gst-cell">
             <div class="input-group input-group-sm gst-rate-control">
-                <input type="number" name="gst_percentage[]" class="form-control form-control-sm text-end fw-bold font-monospace gst-input" value="${initGst}" min="0" max="100" step="0.01" required oninput="calculateTotals()" aria-label="GST percentage" title="Enter GST percentage (0 to 100)">
+                <input type="number" name="gst_percentage[]" class="form-control form-control-sm text-end fw-bold font-monospace gst-input" value="${initGst}" min="0" max="100" step="0.01" required oninput="onGstRateChange(this)" aria-label="GST percentage" title="Enter GST percentage (0 to 100)">
                 <span class="input-group-text px-1">%</span>
             </div>
             <div class="text-muted font-monospace mt-0.5 gst-val-display" style="font-size: 10px; white-space: nowrap;">+₹${initTax.toFixed(2)}</div>
@@ -1652,6 +1695,7 @@ function addItemRow(selectedVariantId = null, initialQr = null) {
         </td>
     `;
     tbody.appendChild(row);
+    if (matchedVariant) updateRowHsn(row, initGst, [initHsn]);
     if (scannedVal) {
         renderRowQrThumbnail(row, scannedVal);
     }
