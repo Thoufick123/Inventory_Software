@@ -129,9 +129,12 @@ foreach ($variants as $variantOption) {
                                     <span class="fw-semibold"><?= e($adj['reason']) ?></span>
                                     <?php
                                     $adjustmentQrCodes = json_decode((string)($adj['qr_codes'] ?? '[]'), true);
-                                    if (is_array($adjustmentQrCodes) && !empty($adjustmentQrCodes)):
+                                    $adjustmentQrCodes = is_array($adjustmentQrCodes) ? $adjustmentQrCodes : [];
+                                    if (!empty($adjustmentQrCodes)):
                                     ?>
-                                        <br><small class="text-danger-emphasis fw-semibold"><?= $adj['status'] === 'APPROVED' ? ($adj['adjustment_type'] === 'INCREASE' ? 'Added QR' : 'Removed QR') : 'QR tags' ?>: <?= e(implode(', ', $adjustmentQrCodes)) ?></small>
+                                        <br><small class="text-danger-emphasis fw-semibold"><?= count($adjustmentQrCodes) ?> QR tag(s)</small>
+                                    <?php else: ?>
+                                        <br><small class="text-muted">Quantity-only</small>
                                     <?php endif; ?>
                                     <?php if (!empty($adj['notes'])): ?>
                                         <br><small class="text-muted"><?= e($adj['notes']) ?></small>
@@ -149,8 +152,16 @@ foreach ($variants as $variantOption) {
                                     </span>
                                 </td>
                                 <td class="text-end">
-                                    <?php if ($adj['status'] === 'PENDING' && hasPermission('stock', 'adjust')): ?>
-                                        <div class="d-inline-flex gap-1">
+                                    <div class="d-inline-flex flex-wrap justify-content-end gap-1">
+                                        <button type="button" class="btn btn-sm btn-outline-primary view-adjustment-btn" data-adjustment-id="<?= (int)$adj['id'] ?>">
+                                            <i class="bi bi-eye me-1"></i>View
+                                        </button>
+                                        <?php if (hasPermission('stock', 'adjust')): ?>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary edit-adjustment-btn" data-adjustment-id="<?= (int)$adj['id'] ?>">
+                                                <i class="bi bi-pencil me-1"></i>Edit
+                                            </button>
+                                        <?php endif; ?>
+                                        <?php if ($adj['status'] === 'PENDING' && hasPermission('stock', 'adjust')): ?>
                                             <form method="POST" action="<?= url('warehouse/adjustments/approve/' . $adj['id']) ?>" class="d-inline">
                                                 <?= CSRF::input() ?>
                                                 <input type="hidden" name="action" value="APPROVE">
@@ -167,12 +178,10 @@ foreach ($variants as $variantOption) {
                                                     <i class="bi bi-x-lg"></i>
                                                 </button>
                                             </form>
-                                        </div>
-                                    <?php elseif ($adj['status'] === 'PENDING'): ?>
-                                        <span class="badge bg-warning-subtle text-warning-emphasis">Pending Review</span>
-                                    <?php else: ?>
-                                        <span class="text-muted small">Processed</span>
-                                    <?php endif; ?>
+                                        <?php elseif ($adj['status'] === 'PENDING'): ?>
+                                            <span class="badge bg-warning-subtle text-warning-emphasis">Pending Review</span>
+                                        <?php endif; ?>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -182,6 +191,89 @@ foreach ($variants as $variantOption) {
         <?php endif; ?>
     </div>
 </div>
+
+<div class="modal fade" id="adjustmentDetailsModal" tabindex="-1" aria-labelledby="adjustmentDetailsModalLabel" aria-hidden="true" data-details-url="<?= url('api/warehouse/adjustments') ?>">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="adjustmentDetailsModalLabel">Stock Adjustment Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="adjustmentDetailsLoading" class="text-center py-4 d-none"><span class="spinner-border spinner-border-sm me-2" role="status"></span>Loading adjustment details...</div>
+                <div id="adjustmentDetailsError" class="alert alert-danger d-none" role="alert"></div>
+                <div id="adjustmentDetailsContent" class="d-none">
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                        <div>
+                            <div class="fw-bold font-monospace text-primary fs-5" id="detailAdjustmentNumber"></div>
+                            <div class="small text-muted" id="detailCreatedAt"></div>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <span class="badge" id="detailAdjustmentType"></span>
+                            <span class="badge" id="detailAdjustmentStatus"></span>
+                        </div>
+                    </div>
+                    <div class="card bg-light border-0 mb-3">
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-6"><div class="small text-muted">Warehouse</div><div class="fw-semibold" id="detailWarehouse"></div></div>
+                                <div class="col-md-6"><div class="small text-muted">Product</div><div class="fw-semibold" id="detailProduct"></div><div class="small text-muted" id="detailProductVariant"></div></div>
+                                <div class="col-md-6"><div class="small text-muted">Quantity</div><div class="fw-semibold" id="detailQuantity"></div></div>
+                                <div class="col-md-6"><div class="small text-muted">Requested by</div><div class="fw-semibold" id="detailRequestedBy"></div><div class="small text-muted" id="detailApprovedBy"></div></div>
+                                <div class="col-12"><div class="small text-muted">Reason</div><div class="fw-semibold" id="detailReason"></div></div>
+                                <div class="col-12" id="detailNotesRow"><div class="small text-muted">Notes</div><div id="detailNotes" class="text-break"></div></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="fw-bold mb-0" id="detailQrHeading">QR codes for this adjustment</h6>
+                        <span class="badge bg-secondary" id="detailQrCount"></span>
+                    </div>
+                    <div id="detailQrEmpty" class="alert alert-light border small mb-0 d-none"></div>
+                    <div class="row g-2" id="detailQrList"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<?php if (hasPermission('stock', 'adjust')): ?>
+<div class="modal fade" id="editAdjustmentModal" tabindex="-1" aria-labelledby="editAdjustmentModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="POST" action="#" id="editAdjustmentForm" data-metadata-url="<?= url('warehouse/adjustments') ?>">
+            <?= CSRF::input() ?>
+            <input type="hidden" name="return_adjustment_type" value="<?= e($activeAdjustmentType) ?>">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold" id="editAdjustmentModalLabel">Edit Adjustment Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="editAdjustmentError" class="alert alert-danger d-none" role="alert"></div>
+                    <div class="alert alert-info py-2 small">Only the reason and notes can be edited. Stock quantity, adjustment type, and QR codes are not changed.</div>
+                    <div class="mb-3">
+                        <label for="editAdjustmentReason" class="form-label small fw-semibold">Reason <span class="text-danger">*</span></label>
+                        <textarea id="editAdjustmentReason" name="reason" class="form-control" rows="2" required></textarea>
+                    </div>
+                    <div class="mb-0">
+                        <label for="editAdjustmentNotes" class="form-label small fw-semibold">Notes</label>
+                        <textarea id="editAdjustmentNotes" name="notes" class="form-control" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="editAdjustmentSaveButton" disabled><i class="bi bi-check2-circle me-1"></i>Save Details</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
+<script src="<?= url('assets/js/qrcode.min.js') ?>"></script>
+<script src="<?= asset('js/warehouse-adjustment-details.js') ?>?v=<?= file_exists(BASE_PATH . '/public/assets/js/warehouse-adjustment-details.js') ? filemtime(BASE_PATH . '/public/assets/js/warehouse-adjustment-details.js') : '1' ?>"></script>
 
 <?php if (hasPermission('stock', 'adjust')): ?>
 <!-- Modal: Stock Adjustment -->
@@ -295,7 +387,6 @@ foreach ($variants as $variantOption) {
                     </div>
                 </div>
 
-                <script src="<?= url('assets/js/qrcode.min.js') ?>"></script>
                 <script src="<?= asset('js/warehouse-stock-adjustment.js') ?>?v=<?= file_exists(BASE_PATH . '/public/assets/js/warehouse-stock-adjustment.js') ? filemtime(BASE_PATH . '/public/assets/js/warehouse-stock-adjustment.js') : '1' ?>"></script>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>

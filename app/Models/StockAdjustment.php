@@ -176,4 +176,13 @@ class StockAdjustment {
             [$status, $approvedBy, $id]
         ) > 0;
     }
+
+    public static function updateMetadata(int $id, string $reason, string $notes): void {
+        Database::execute(
+            "UPDATE stock_adjustments
+             SET reason = ?, notes = ?, updated_at = NOW()
+             WHERE id = ?",
+            [$reason, $notes !== '' ? $notes : null, $id]
+        );
+    }
 }
