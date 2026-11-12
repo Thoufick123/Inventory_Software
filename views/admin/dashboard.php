@@ -1040,6 +1040,7 @@
                 <div class="row g-3 mb-3">
                     <div class="col-md-6">
                         <div class="p-3 bg-light rounded border h-100">
+                            <img id="facilityDetailLogo" class="d-none rounded border bg-white p-1 mb-2" alt="Facility logo" style="width:72px;height:72px;object-fit:contain;">
                             <div class="text-muted small fw-semibold text-uppercase mb-2"><i class="bi bi-card-text me-1"></i>Basic Information</div>
                             <div class="mb-2">
                                 <span class="text-muted small d-block">Facility / Unit Name:</span>
@@ -1636,6 +1637,7 @@ function viewFacilityDetails(type, data) {
     const title = document.getElementById('facilityDetailTitle');
     const subtitle = document.getElementById('facilityDetailSubtitle');
     const name = document.getElementById('facilityDetailName');
+    const logo = document.getElementById('facilityDetailLogo');
     const code = document.getElementById('facilityDetailCode');
     const gst = document.getElementById('facilityDetailGst');
     const manager = document.getElementById('facilityDetailManager');
@@ -1662,6 +1664,22 @@ function viewFacilityDetails(type, data) {
     manager.textContent = data.manager_name || 'Unassigned';
     phone.textContent = data.phone || 'N/A';
     address.textContent = data.address || 'No address specified';
+    logo.classList.add('d-none');
+    logo.removeAttribute('src');
+    const logoUrl = String(data.logo_url || '').trim();
+    if (logoUrl) {
+        try {
+            const parsedLogoUrl = new URL(logoUrl, window.location.href);
+            if (parsedLogoUrl.protocol === 'http:' || parsedLogoUrl.protocol === 'https:') {
+                logo.src = parsedLogoUrl.href;
+                logo.alt = `${data.name || 'Facility'} logo`;
+                logo.classList.remove('d-none');
+                logo.onerror = () => logo.classList.add('d-none');
+            }
+        } catch (error) {
+            logo.classList.add('d-none');
+        }
+    }
 
     metricsCont.innerHTML = '';
 

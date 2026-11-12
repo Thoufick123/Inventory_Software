@@ -3,28 +3,18 @@
         <h2 class="mb-1"><i class="bi bi-receipt me-2 text-primary"></i><?= e($purchase['purchase_number']) ?></h2>
     </div>
     <?php
-    $hasRolls = false;
     $hasSupplies = false;
     foreach ($items as $it) {
-        if (($it['item_type'] ?? '') === 'FABRIC_ROLL') $hasRolls = true;
         if (($it['item_type'] ?? '') === 'GENERAL_SUPPLY') $hasSupplies = true;
     }
     ?>
     <div class="d-flex gap-2 flex-wrap">
         <a href="<?= url('production/purchases') ?>" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
-        <?php if ($hasRolls): ?>
-            <a href="<?= url('production/purchases/roll-qr/' . $purchase['id']) ?>" class="btn btn-outline-dark" target="_blank" rel="noopener" title="Print Roll QR Labels">
-                <i class="bi bi-qr-code text-warning me-1"></i> Roll QR Labels
-            </a>
-        <?php endif; ?>
         <?php if ($hasSupplies): ?>
             <a href="<?= url('production/purchases/supply-qr/' . $purchase['id']) ?>" class="btn btn-success" target="_blank" rel="noopener" title="Print Other Garment Supplies QR Labels">
                 <i class="bi bi-tags-fill me-1"></i> Supply QR Labels
             </a>
         <?php endif; ?>
-        <a href="<?= url('production/purchases/print/' . $purchase['id']) ?>" class="btn btn-outline-primary" target="_blank" rel="noopener" title="Print PO Invoice">
-            <i class="bi bi-printer me-1"></i> Print Invoice
-        </a>
     </div>
 </div>
 

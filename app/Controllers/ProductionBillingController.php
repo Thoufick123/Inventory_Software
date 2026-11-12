@@ -159,6 +159,23 @@ class ProductionBillingController
             return;
         }
 
+        $items = $this->getAvailableInventory($billId);
+        $exactAvailableItems = [];
+        foreach ($items as $item) {
+            $exactTag = array_values(array_filter(
+                $item['available_tags'],
+                static fn(string $tag): bool => strtoupper(trim($tag)) === $needle
+            ));
+            if ($exactTag) {
+                $item['available_tags'] = $exactTag;
+                $exactAvailableItems[] = $item;
+            }
+        }
+        if ($exactAvailableItems) {
+            Response::jsonSuccess('Available finished-goods QR found.', ['items' => $exactAvailableItems]);
+            return;
+        }
+
         // Check if scanned QR / roll has already been outwarded to warehouse
         $outwardedRoll = null;
         if (preg_match('/^([A-Z]{2}\d{4})(\d+)$/', $needle, $m)) {
@@ -231,7 +248,6 @@ class ProductionBillingController
             return;
         }
 
-        $items = $this->getAvailableInventory($billId);
         $matches = [];
 
         foreach ($items as $item) {
@@ -251,6 +267,24 @@ class ProductionBillingController
                 if (count($matches) >= 20) {
                     break;
                 }
+            }
+        }
+
+        if (!$matches && preg_match('/^([A-Z]{2}\d{4})(\d+)$/', $needle, $fabricCode)) {
+            $fabricRoll = Database::fetchOne(
+                "SELECT roll_number FROM seller_rolls
+                 WHERE UPPER(LEFT(start_code, 6)) = ? AND UPPER(LEFT(end_code, 6)) = ?
+                   AND ? BETWEEN start_seq AND end_seq
+                 LIMIT 1",
+                [$fabricCode[1], $fabricCode[1], (int)$fabricCode[2]]
+            );
+            if ($fabricRoll) {
+                Response::jsonSuccess('Fabric roll QR is not billable finished inventory.', [
+                    'items' => [],
+                    'is_fabric_roll' => true,
+                    'message' => "QR {$needle} is a purchased fabric-roll label ({$fabricRoll['roll_number']}). Production billing accepts only available finished-goods QR labels that passed QC; use the fabric roll in production first.",
+                ]);
+                return;
             }
         }
 
