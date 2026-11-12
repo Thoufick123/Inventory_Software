@@ -18,12 +18,7 @@ class WebsiteController {
      * Helper to get Website channel record
      */
     private function getChannel(): array {
-        $chan = Database::fetchOne(
-            "SELECT * FROM sales_channels 
-             WHERE LOWER(name) LIKE '%website%' OR LOWER(code) LIKE '%website%' OR channel_type = 'WEBSITE' OR code = 'online 2' OR code = 'WE-01'
-             ORDER BY id ASC LIMIT 1"
-        );
-        return $chan ?: ['id' => 2, 'name' => 'MARAKATHAI', 'code' => 'WE-01'];
+        return SalesChannel::getForType('WEBSITE');
     }
 
     private function getWebsiteChannelIds(): array {

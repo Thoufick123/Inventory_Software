@@ -37,12 +37,10 @@
 }
 
 @media print {
-    /* Hide Non-Print Elements */
     .sidebar, #sidebar, .top-navbar, header, footer, .navbar, .no-print, .btn, .breadcrumb, nav[aria-label="breadcrumb"], .alert, .flash-alert {
         display: none !important;
     }
 
-    /* Full Page Reset */
     html, body, .app-wrapper, .main-content, .page-content, .container, .container-fluid {
         background: #ffffff !important;
         margin: 0 !important;
@@ -54,50 +52,98 @@
 
     @page {
         size: A4 portrait;
-        margin: 10mm;
+        margin: 8mm;
     }
 
-    /* Print Header & Banner */
     .invoice-header-banner {
         background: #f8fafc !important;
         color: #0f172a !important;
-        border: 1.5px solid #cbd5e1 !important;
-        padding: 14px 18px !important;
-        margin-bottom: 14px !important;
+        border: 1px solid #cbd5e1 !important;
+        border-radius: 5px !important;
+        box-shadow: none !important;
+        padding: 8px 12px !important;
+        margin: 0 0 7px !important;
     }
 
     .invoice-header-banner * {
         color: #0f172a !important;
     }
 
+    .invoice-header-banner .col-md-7 {
+        flex: 0 0 58.3333% !important;
+        width: 58.3333% !important;
+        max-width: 58.3333% !important;
+    }
+
+    .invoice-header-banner .col-md-5 {
+        flex: 0 0 41.6667% !important;
+        width: 41.6667% !important;
+        max-width: 41.6667% !important;
+        text-align: right !important;
+    }
+
+    .invoice-header-banner img {
+        max-width: 130px !important;
+        max-height: 42px !important;
+        margin-bottom: 2px !important;
+    }
+
+    .invoice-header-banner h3 {
+        font-size: 15pt !important;
+    }
+
+    .invoice-header-banner h5 {
+        font-size: 10pt !important;
+    }
+
     .row {
         display: flex !important;
         flex-wrap: wrap !important;
-        margin-left: -6px !important;
-        margin-right: -6px !important;
+        margin-left: -4px !important;
+        margin-right: -4px !important;
+    }
+
+    .row.g-3 {
+        --bs-gutter-x: 8px !important;
+        --bs-gutter-y: 6px !important;
     }
 
     .col-md-6 {
+        flex: 0 0 50% !important;
         width: 50% !important;
-        padding-left: 6px !important;
-        padding-right: 6px !important;
+        max-width: 50% !important;
+        padding-left: 4px !important;
+        padding-right: 4px !important;
     }
 
     .col-12 {
+        flex: 0 0 100% !important;
         width: 100% !important;
-        padding-left: 6px !important;
-        padding-right: 6px !important;
+        max-width: 100% !important;
+        padding-left: 4px !important;
+        padding-right: 4px !important;
+    }
+
+    .row > .col-md-6.col-12 {
+        flex-basis: 50% !important;
+        width: 50% !important;
+        max-width: 50% !important;
     }
 
     .invoice-card {
         border: 1px solid #cbd5e1 !important;
         box-shadow: none !important;
-        margin-bottom: 12px !important;
-        border-radius: 6px !important;
-        page-break-inside: avoid;
+        margin-bottom: 6px !important;
+        border-radius: 4px !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
     }
 
-    /* Full Width Items Table in Print */
+    .invoice-card.p-3,
+    .invoice-card .p-3 {
+        padding: 8px !important;
+    }
+
     .table-responsive {
         overflow: visible !important;
         width: 100% !important;
@@ -105,33 +151,46 @@
 
     .table {
         width: 100% !important;
-        font-size: 9pt !important;
+        font-size: 7.5pt !important;
         border-collapse: collapse !important;
         margin-bottom: 0 !important;
-        table-layout: auto !important;
+        table-layout: fixed !important;
     }
 
     .table th {
         background-color: #f1f5f9 !important;
         color: #000000 !important;
         border: 1px solid #cbd5e1 !important;
-        padding: 6px 8px !important;
-        font-size: 8.5pt !important;
+        padding: 4px 5px !important;
+        font-size: 7pt !important;
+        overflow-wrap: anywhere !important;
     }
 
     .table td {
         border: 1px solid #cbd5e1 !important;
-        padding: 6px 8px !important;
+        padding: 4px 5px !important;
         color: #000000 !important;
-        font-size: 9pt !important;
+        font-size: 7.5pt !important;
+        overflow-wrap: anywhere !important;
+    }
+
+    .invoice-table tr {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+    }
+
+    .summary-table td {
+        padding: 2px 6px !important;
+        font-size: 8pt !important;
     }
 
     .badge {
         border: 1px solid #94a3b8 !important;
         color: #000000 !important;
         background: transparent !important;
-        padding: 2px 4px !important;
-        font-size: 7.5pt !important;
+        padding: 1px 3px !important;
+        font-size: 6.5pt !important;
+        white-space: normal !important;
     }
 
     .text-primary, .text-success, .text-danger {
@@ -140,6 +199,14 @@
 
     .fw-bold, .fw-bolder {
         font-weight: 700 !important;
+    }
+
+    .mb-3 {
+        margin-bottom: 6px !important;
+    }
+
+    .mb-4 {
+        margin-bottom: 8px !important;
     }
 }
 </style>
@@ -180,8 +247,13 @@
                 <small class="text-light opacity-75">Order Date &amp; Time: <?= date('d M Y, h:i A', strtotime($sale['created_at'])) ?></small>
             </div>
             <div class="col-md-5 text-md-end mt-2 mt-md-0">
+                <?php if (!empty($channel['logo_url'])): ?>
+                    <img src="<?= htmlspecialchars($channel['logo_url'], ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars($channel['name'] ?? 'WhatsApp channel', ENT_QUOTES, 'UTF-8') ?> logo" class="mb-2" style="max-width:150px;max-height:64px;object-fit:contain;">
+                <?php endif; ?>
                 <small class="text-uppercase tracking-wider opacity-75 d-block text-white" style="font-size: 11px;">Sales Channel</small>
-                <h5 class="fw-bold text-success-subtle mb-0">WhatsApp Direct Sales</h5>
+                <h5 class="fw-bold text-success-subtle mb-0"><?= htmlspecialchars($channel['name'] ?? 'WhatsApp Direct Sales', ENT_QUOTES, 'UTF-8') ?></h5>
+                <?php if (!empty($channel['phone'])): ?><small class="text-light opacity-75 d-block"><?= htmlspecialchars($channel['phone'], ENT_QUOTES, 'UTF-8') ?></small><?php endif; ?>
+                <?php if (!empty($channel['gst_number'])): ?><small class="text-light opacity-75 d-block">GSTIN: <?= htmlspecialchars($channel['gst_number'], ENT_QUOTES, 'UTF-8') ?></small><?php endif; ?>
             </div>
         </div>
     </div>
@@ -323,9 +395,16 @@
                 <div class="p-3 bg-light rounded-3 h-100">
                     <h6 class="fw-bold text-dark mb-2"><i class="bi bi-info-circle me-1 text-success"></i>Tax &amp; Order Information</h6>
                     <div class="small text-muted mb-1">
-                        <span>GST Applied: <strong><?= number_format($sale['gst_percentage'] ?? 5, 1) ?>% Inclusive</strong></span>
-                        <span class="ms-2">| CGST: <strong>₹<?= number_format($sale['cgst_amount'] ?? (($sale['gst_amount'] ?? 0) / 2), 2) ?></strong></span>
-                        <span class="ms-2">| SGST: <strong>₹<?= number_format($sale['sgst_amount'] ?? (($sale['gst_amount'] ?? 0) / 2), 2) ?></strong></span>
+                        <?php if (($sale['gst_type'] ?? 'CGST_SGST') === 'EXEMPT'): ?>
+                            <span>GST Applied: <strong>Exemption</strong></span>
+                        <?php elseif (($sale['gst_type'] ?? 'CGST_SGST') === 'IGST'): ?>
+                            <span>GST Applied: <strong><?= number_format($sale['gst_percentage'] ?? 5, 1) ?>% Inclusive</strong></span>
+                            <span class="ms-2">| IGST: <strong>₹<?= number_format($sale['igst_amount'] ?? ($sale['gst_amount'] ?? 0), 2) ?></strong></span>
+                        <?php else: ?>
+                            <span>GST Applied: <strong><?= number_format($sale['gst_percentage'] ?? 5, 1) ?>% Inclusive</strong></span>
+                            <span class="ms-2">| CGST: <strong>₹<?= number_format($sale['cgst_amount'] ?? (($sale['gst_amount'] ?? 0) / 2), 2) ?></strong></span>
+                            <span class="ms-2">| SGST: <strong>₹<?= number_format($sale['sgst_amount'] ?? (($sale['gst_amount'] ?? 0) / 2), 2) ?></strong></span>
+                        <?php endif; ?>
                     </div>
                     <div class="small text-muted">
                         Payment Mode: <strong class="text-dark"><?= htmlspecialchars($sale['payment_mode'] ?? 'UPI') ?></strong> | Status: <strong class="text-success"><?= htmlspecialchars($sale['payment_status'] ?? 'PAID') ?></strong>

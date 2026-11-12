@@ -20,6 +20,11 @@ class ProductionUnit {
                 Database::execute("ALTER TABLE production_units ADD COLUMN manager_name VARCHAR(150) NULL AFTER manager_id");
             }
         } catch (Throwable $e) {}
+
+        $logoColumn = Database::fetchOne("SHOW COLUMNS FROM production_units LIKE 'logo_url'");
+        if (!$logoColumn) {
+            Database::execute("ALTER TABLE production_units ADD COLUMN logo_url VARCHAR(500) NULL AFTER gst_number");
+        }
     }
 
     /**
@@ -73,6 +78,7 @@ class ProductionUnit {
             'code'       => 'PU-01',
             'phone'      => '9876543210',
             'gst_number' => '33AAAAA0000A1Z5',
+            'logo_url'   => null,
             'address'    => 'Tirupur Manufacturing Hub, Avinashi Road, Tirupur - 641603',
             'location'   => 'Tirupur',
         ];
@@ -180,8 +186,8 @@ class ProductionUnit {
         }
 
         Database::execute(
-            "INSERT INTO production_units (name, code, manager_name, address, phone, gst_number, manager_id, is_active, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+            "INSERT INTO production_units (name, code, manager_name, address, phone, gst_number, logo_url, manager_id, is_active, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
             [
                 trim($data['name']),
                 $code,
@@ -189,6 +195,7 @@ class ProductionUnit {
                 $data['address'] ?? null,
                 trim($data['phone'] ?? ''),
                 $data['gst_number'] ?? null,
+                $data['logo_url'] ?? null,
                 !empty($data['manager_id']) ? (int)$data['manager_id'] : null,
                 isset($data['is_active']) ? (int)$data['is_active'] : 1
             ]
@@ -203,7 +210,7 @@ class ProductionUnit {
         self::ensureSchema();
         return Database::execute(
             "UPDATE production_units 
-             SET name = ?, code = ?, manager_name = ?, address = ?, phone = ?, gst_number = ?, manager_id = ?, is_active = ?, updated_at = NOW()
+             SET name = ?, code = ?, manager_name = ?, address = ?, phone = ?, gst_number = ?, logo_url = ?, manager_id = ?, is_active = ?, updated_at = NOW()
              WHERE id = ?",
             [
                 trim($data['name']),
@@ -212,6 +219,7 @@ class ProductionUnit {
                 $data['address'] ?? null,
                 trim($data['phone'] ?? ''),
                 $data['gst_number'] ?? null,
+                $data['logo_url'] ?? null,
                 !empty($data['manager_id']) ? (int)$data['manager_id'] : null,
                 isset($data['is_active']) ? (int)$data['is_active'] : 1,
                 $id

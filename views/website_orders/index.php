@@ -5,6 +5,34 @@
     </div>
 </div>
 
+<?php if (!empty($channel)): ?>
+<div class="card border-0 shadow-sm rounded-3 mb-4">
+    <div class="card-body d-flex flex-wrap align-items-center gap-3">
+        <?php if (!empty($channel['logo_url'])): ?>
+            <img src="<?= e($channel['logo_url']) ?>" alt="<?= e($channel['name'] ?? 'Website') ?> logo" style="max-width:140px;max-height:64px;object-fit:contain;">
+        <?php else: ?>
+            <div class="rounded-circle bg-primary-subtle text-primary p-3"><i class="bi bi-globe fs-4"></i></div>
+        <?php endif; ?>
+        <div class="flex-grow-1">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <h5 class="mb-0 fw-bold"><?= e($channel['name'] ?? 'Website') ?></h5>
+                <?php if (!empty($channel['code'])): ?><span class="badge bg-light text-dark border"><?= e($channel['code']) ?></span><?php endif; ?>
+            </div>
+            <div class="small text-muted mt-1">
+                <?php if (!empty($channel['manager_name'])): ?>Manager: <?= e($channel['manager_name']) ?> · <?php endif; ?>
+                <?php if (!empty($channel['description'])): ?><?= e($channel['description']) ?> · <?php endif; ?>
+                <?php if (!empty($channel['address'])): ?><?= e($channel['address']) ?><?php endif; ?>
+                <?php if (!empty($channel['phone'])): ?><?= !empty($channel['address']) ? ' · ' : '' ?><?= e($channel['phone']) ?><?php endif; ?>
+                <?php if (!empty($channel['gst_number'])): ?><?= (!empty($channel['address']) || !empty($channel['phone'])) ? ' · ' : '' ?>GSTIN: <?= e($channel['gst_number']) ?><?php endif; ?>
+            </div>
+        </div>
+        <?php if (!empty($channel['id']) && hasPermission('dashboard', 'view') && (hasPermission('dashboard', 'edit') || hasPermission('sales_channels', 'edit') || hasPermission('whatsapp_dashboard', 'edit'))): ?>
+            <a class="btn btn-sm btn-outline-primary" href="<?= url('admin/dashboard?edit_type=website&edit_id=' . (int)$channel['id']) ?>"><i class="bi bi-pencil me-1"></i>Edit details</a>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- 5 Dynamic KPI Cards -->
 <div class="row g-3 mb-4">
     <!-- Card 1: Website Inventory Count (Allocated) -->

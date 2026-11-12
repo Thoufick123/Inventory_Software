@@ -5,6 +5,7 @@ $subtotal = (float)$sale['subtotal'];
 $totalAmountBeforeDisc = $subtotal + $totalGst;
 $discountAmount = (float)($sale['discount_amount'] ?? 0);
 $netAmount = (float)$sale['total_amount'];
+$gstType = $sale['gst_type'] ?? 'CGST_SGST';
 $unroundedNet = max(0, $totalAmountBeforeDisc - $discountAmount);
 $roundOff = round($netAmount - $unroundedNet, 2);
 $totalQuantity = $totalQty ?? array_sum(array_column($items, 'quantity'));
@@ -261,6 +262,9 @@ $purchasedAt = formatUtcDateTime($sale['created_at'] ?? null);
     <!-- 1. GRM LOGO -->
     <div class="logo-container">
         <div class="logo-box">
+            <?php if (!empty($sale['shop_logo_url'])): ?>
+                <img src="<?= e($sale['shop_logo_url']) ?>" alt="<?= e($sale['shop_name'] ?? 'Shop') ?> logo" style="max-width:130px;max-height:65px;object-fit:contain;">
+            <?php else: ?>
             <svg viewBox="0 0 150 75" width="130" height="65" xmlns="http://www.w3.org/2000/svg">
                 <!-- Stipple shaded background -->
                 <defs>
@@ -273,6 +277,7 @@ $purchasedAt = formatUtcDateTime($sale['created_at'] ?? null);
                 <!-- Stylized GRM Monogram -->
                 <text x="75" y="54" font-family="'Times New Roman', Georgia, serif" font-size="52" font-weight="900" text-anchor="middle" fill="#000" letter-spacing="-2">GRM</text>
             </svg>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -400,6 +405,22 @@ $purchasedAt = formatUtcDateTime($sale['created_at'] ?? null);
         <span>GST Amount (Incl.): <?= number_format($totalGst, 2) ?></span>
         <span>Round Off: <?= number_format($roundOff, 2) ?></span>
     </div>
+    <?php if ($gstType === 'IGST'): ?>
+    <div class="totals-row">
+        <span>IGST:</span>
+        <span><?= number_format((float)$sale['igst_amount'], 2) ?></span>
+    </div>
+    <?php elseif ($gstType === 'EXEMPT'): ?>
+    <div class="totals-row">
+        <span>GST Type:</span>
+        <span>Exemption</span>
+    </div>
+    <?php else: ?>
+    <div class="totals-row">
+        <span>CGST: <?= number_format((float)$sale['cgst_amount'], 2) ?></span>
+        <span>SGST: <?= number_format((float)$sale['sgst_amount'], 2) ?></span>
+    </div>
+    <?php endif; ?>
 
     <div class="divider-double"></div>
 

@@ -19,6 +19,7 @@ require_once BASE_PATH . '/app/Models/ShopReturnedProduct.php';
 
 class ShopService {
     private static bool $saleItemHsnColumnEnsured = false;
+    private static bool $salesGstTypeColumnEnsured = false;
 
     public static function ensureSaleItemHsnColumn(): void {
         if (self::$saleItemHsnColumnEnsured) {
@@ -31,10 +32,22 @@ class ShopService {
         self::$saleItemHsnColumnEnsured = true;
     }
 
+    public static function ensureSalesGstTypeColumn(): void {
+        if (self::$salesGstTypeColumnEnsured) {
+            return;
+        }
+
+        if (!Database::fetchOne("SHOW COLUMNS FROM sales LIKE 'gst_type'")) {
+            Database::execute("ALTER TABLE sales ADD COLUMN gst_type VARCHAR(20) NOT NULL DEFAULT 'CGST_SGST' AFTER gst_percentage");
+        }
+        self::$salesGstTypeColumnEnsured = true;
+    }
+
     /**
      * Get the active primary shop record (auto-creates if missing).
      */
     public static function getActiveShop(?int $requestedShopId = null): array {
+        Shop::ensureSchema();
         // If staff is restricted to a specific shop, always enforce their assigned shop
         $scopedShopId = function_exists('currentShopId') ? currentShopId() : null;
         if ($scopedShopId) {
@@ -963,8 +976,13 @@ class ShopService {
      */
     public static function processPOSSale(array $payload, int $userId): array {
         self::ensureSaleItemHsnColumn();
+        self::ensureSalesGstTypeColumn();
         $shopId = (int)($payload['shop_id'] ?? 1);
         $items = $payload['items'] ?? [];
+        $gstType = strtoupper(trim((string)($payload['gst_type'] ?? 'CGST_SGST')));
+        if (!in_array($gstType, ['CGST_SGST', 'IGST', 'EXEMPT'], true)) {
+            throw new RuntimeException('Please select a valid GST type.');
+        }
         $paymentMode = $payload['payment_mode'] ?? 'CASH';
         $splitCash = (float)($payload['cash_amount'] ?? 0);
         $splitUpi = (float)($payload['upi_amount'] ?? 0);
@@ -1074,6 +1092,7 @@ class ShopService {
             $subtotal = 0.0;
             $cgstTotal = 0.0;
             $sgstTotal = 0.0;
+            $igstTotal = 0.0;
             $totalDiscountAmount = 0.0;
             $totalBilledGross = 0.0;
             $allowNegative = SettingsService::get('allow_negative_stock', false);
@@ -1110,6 +1129,9 @@ class ShopService {
                     throw new RuntimeException("GST percentage must be between 0 and 100 for item '{$variantId}'.");
                 }
                 $gstRate = (float)$gstInput;
+                if ($gstType === 'EXEMPT') {
+                    $gstRate = 0.0;
+                }
 
                 if ($isComp) {
                     $billedPrice = 0.00;
@@ -1174,12 +1196,14 @@ class ShopService {
                 // Inclusive GST Calculation on Billed Amount: Taxable Base = Billed Total / (1 + GST%)
                 $taxableBase = $isComp ? 0.00 : round($lineBilledTotal / (1 + ($gstRate / 100)), 2);
                 $taxAmount = $isComp ? 0.00 : round($lineBilledTotal - $taxableBase, 2);
-                $cgst = $isComp ? 0.00 : round($taxAmount / 2, 2);
-                $sgst = $isComp ? 0.00 : round($taxAmount - $cgst, 2);
+                $cgst = $gstType === 'CGST_SGST' ? round($taxAmount / 2, 2) : 0.00;
+                $sgst = $gstType === 'CGST_SGST' ? round($taxAmount - $cgst, 2) : 0.00;
+                $igst = $gstType === 'IGST' ? $taxAmount : 0.00;
 
                 $subtotal += $taxableBase;
                 $cgstTotal += $cgst;
                 $sgstTotal += $sgst;
+                $igstTotal += $igst;
                 $totalDiscountAmount += $itemDiscount;
                 $totalBilledGross += $lineBilledTotal;
 
@@ -1194,7 +1218,7 @@ class ShopService {
                     'hsn_code'          => $hsnCode,
                     'cgst_amount'       => $cgst,
                     'sgst_amount'       => $sgst,
-                    'igst_amount'       => 0.00,
+                    'igst_amount'       => $igst,
                     'total_amount'      => $lineBilledTotal,
                     'scanned_qr_codes'  => $scannedTagsStr,
                 ];
@@ -1203,13 +1227,15 @@ class ShopService {
             $unroundedTotal = $totalBilledGross;
             $totalAmount = (float)ceil($unroundedTotal);
             $roundOff = round($totalAmount - $unroundedTotal, 2);
+            $gstAmountTotal = $cgstTotal + $sgstTotal + $igstTotal;
+            $gstPercentage = $subtotal > 0 ? round(($gstAmountTotal / $subtotal) * 100, 2) : 0.0;
 
             // 4. Insert into `sales`
             Database::execute(
                 "INSERT INTO sales (invoice_number, sale_type, shop_id, customer_id, customer_name, customer_phone, customer_address, subtotal, discount_amount, 
-                                    cgst_amount, sgst_amount, igst_amount, total_amount, payment_mode, 
+                                    gst_percentage, gst_amount, cgst_amount, sgst_amount, igst_amount, gst_type, total_amount, payment_mode, 
                                     payment_status, status, billing_staff_id, employee_name, notes, created_at)
-                 VALUES (?, 'SHOP', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.00, ?, ?, 'PAID', 'PAID', ?, ?, ?, ?)",
+                 VALUES (?, 'SHOP', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PAID', 'PAID', ?, ?, ?, ?)",
                 [
                     $invoiceNumber,
                     $shopId,
@@ -1219,8 +1245,12 @@ class ShopService {
                     $customerAddress,
                     $subtotal,
                     $totalDiscountAmount,
+                    $gstPercentage,
+                    $gstAmountTotal,
                     $cgstTotal,
                     $sgstTotal,
+                    $igstTotal,
+                    $gstType,
                     $totalAmount,
                     $paymentMode,
                     $billingStaffId,
@@ -1406,17 +1436,21 @@ class ShopService {
      * Get Complete Invoice Details for Printing.
      */
     public static function getInvoiceDetails(int $saleId): ?array {
+        Shop::ensureSchema();
+        SalesChannel::ensureSchema();
         self::ensureSaleItemHsnColumn();
         $sale = Database::fetchOne(
             "SELECT s.*, c.name as customer_name, c.phone as customer_phone, 
                     COALESCE(s.customer_address, c.address) as customer_address, 
                     c.gst_number as customer_gst,
                     u.full_name as staff_name, sh.name as shop_name, sh.address as shop_address, 
-                    sh.phone as shop_phone, sh.gst_number as shop_gstin
+                    sh.phone as shop_phone, sh.gst_number as shop_gstin, sh.logo_url as shop_logo_url,
+                    sc.logo_url as channel_logo_url
              FROM sales s
              LEFT JOIN customers c ON s.customer_id = c.id
              LEFT JOIN users u ON s.billing_staff_id = u.id
              LEFT JOIN shops sh ON s.shop_id = sh.id
+             LEFT JOIN sales_channels sc ON s.channel_id = sc.id
              WHERE s.id = ?",
             [$saleId]
         );
@@ -4615,7 +4649,12 @@ class ShopService {
             throw new InvalidArgumentException("Customer Phone / Mobile number is required.");
         }
 
+        $previousCustomer = null;
         if ($id) {
+            $previousCustomer = Database::fetchOne("SELECT * FROM customers WHERE id = ?", [$id]);
+            if (!$previousCustomer) {
+                throw new RuntimeException('Customer not found.');
+            }
             $existing = Database::fetchOne("SELECT id FROM customers WHERE phone = ? AND id != ?", [$phone, $id]);
         } else {
             $existing = Database::fetchOne("SELECT id FROM customers WHERE phone = ?", [$phone]);
@@ -4643,7 +4682,6 @@ class ShopService {
                 ]
             );
             $customerId = $id;
-            AuditService::log('SHOP', 'UPDATE_CUSTOMER', 'customers', $customerId, null, ['name' => $name, 'phone' => $phone]);
         } else {
             $sourceChannel = $data['source_channel'] ?? 'SHOP';
             Database::execute(
@@ -4662,21 +4700,38 @@ class ShopService {
                 ]
             );
             $customerId = (int)Database::lastInsertId();
-            AuditService::log('SHOP', 'CREATE_CUSTOMER', 'customers', $customerId, null, ['name' => $name, 'phone' => $phone]);
         }
 
-        return Database::fetchOne("SELECT * FROM customers WHERE id = ?", [$customerId]);
+        $customer = Database::fetchOne("SELECT * FROM customers WHERE id = ?", [$customerId]);
+        AuditService::log(
+            'SHOP',
+            $id ? 'UPDATE_CUSTOMER' : 'CREATE_CUSTOMER',
+            'customers',
+            $customerId,
+            $previousCustomer,
+            $customer
+        );
+        return $customer;
     }
 
     /**
      * Toggle Customer Active Status
      */
     public static function toggleCustomerStatus(int $customerId): bool {
-        $cust = Database::fetchOne("SELECT is_active FROM customers WHERE id = ?", [$customerId]);
-        if (!$cust) return false;
+        $cust = Database::fetchOne("SELECT * FROM customers WHERE id = ?", [$customerId]);
+        if (!$cust) {
+            throw new RuntimeException('Customer not found.');
+        }
         $newStatus = $cust['is_active'] ? 0 : 1;
         Database::execute("UPDATE customers SET is_active = ?, updated_at = NOW() WHERE id = ?", [$newStatus, $customerId]);
-        AuditService::log('SHOP', 'TOGGLE_CUSTOMER_STATUS', 'customers', $customerId, null, ['new_status' => $newStatus]);
+        AuditService::log(
+            'SHOP',
+            'TOGGLE_CUSTOMER_STATUS',
+            'customers',
+            $customerId,
+            $cust,
+            array_merge($cust, ['is_active' => $newStatus])
+        );
         return (bool)$newStatus;
     }
 }

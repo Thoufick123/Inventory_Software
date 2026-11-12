@@ -267,7 +267,11 @@ input[type=number] {
                 <i class="bi bi-arrow-left"></i>
             </a>
             <div>
+                <?php if (!empty($channel['logo_url'])): ?>
+                    <img src="<?= htmlspecialchars($channel['logo_url'], ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars($channel['name'] ?? 'WhatsApp channel', ENT_QUOTES, 'UTF-8') ?> logo" class="mb-1" style="max-width:140px;max-height:48px;object-fit:contain;">
+                <?php endif; ?>
                 <h4 class="fw-bold mb-0 text-dark"><i class="bi bi-whatsapp me-2 text-success"></i>WhatsApp Order Creation</h4>
+                <small class="text-muted d-block"><?= htmlspecialchars($channel['name'] ?? 'WhatsApp', ENT_QUOTES, 'UTF-8') ?><?= !empty($channel['code']) ? ' · ' . htmlspecialchars($channel['code'], ENT_QUOTES, 'UTF-8') : '' ?><?= !empty($channel['phone']) ? ' · ' . htmlspecialchars($channel['phone'], ENT_QUOTES, 'UTF-8') : '' ?><?= !empty($channel['gst_number']) ? ' · GSTIN: ' . htmlspecialchars($channel['gst_number'], ENT_QUOTES, 'UTF-8') : '' ?></small>
                 <small class="text-muted"><i class="bi bi-person-check me-1"></i>Biller: <?= htmlspecialchars($defaultBillerName ?? 'System Administrator') ?></small>
             </div>
         </div>
@@ -440,6 +444,22 @@ input[type=number] {
                             </div>
                         </div>
 
+                        <!-- GST mode -->
+                        <div class="row g-2 mb-2">
+                            <div class="col-12 col-md-4">
+                                <div class="pos-field-wrap">
+                                    <label class="pos-field-label" for="gstTypeSelect">
+                                        <i class="bi bi-receipt text-success me-1"></i>GST Type
+                                    </label>
+                                    <select name="gst_type" id="gstTypeSelect" class="form-select form-select-sm">
+                                        <option value="CGST_SGST">Both CGST &amp; SGST</option>
+                                        <option value="IGST">IGST</option>
+                                        <option value="EXEMPT">Exemption</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- ROW 3: Order Take Staff Name, Billing Staff ID, Billing Staff Name (3 Cols) -->
                         <div class="row g-2">
                             <!-- 7. Order Take Staff Name -->
@@ -543,8 +563,10 @@ input[type=number] {
                                         <span class="badge bg-success-subtle text-success fw-bold font-monospace px-2 py-0.5" id="displayTax">Incl. ₹0.00</span>
                                     </div>
                                     <div class="d-flex justify-content-between mt-1 text-muted px-1" style="font-size: 11.5px;">
-                                        <span>CGST: <strong id="displayCgst" class="text-dark font-monospace">₹0.00</strong></span>
-                                        <span>SGST: <strong id="displaySgst" class="text-dark font-monospace">₹0.00</strong></span>
+                                        <span id="displayCgstRow">CGST: <strong id="displayCgst" class="text-dark font-monospace">₹0.00</strong></span>
+                                        <span id="displaySgstRow">SGST: <strong id="displaySgst" class="text-dark font-monospace">₹0.00</strong></span>
+                                        <span id="displayIgstRow" class="d-none">IGST: <strong id="displayIgst" class="text-dark font-monospace">₹0.00</strong></span>
+                                        <span id="displayExemptRow" class="d-none">Exempt: <strong class="text-dark font-monospace">₹0.00</strong></span>
                                     </div>
                                     <div class="text-muted mt-1 px-1" style="font-size: 10px;">
                                         <i class="bi bi-info-circle me-1"></i>Auto-calculated from product GST %
@@ -747,12 +769,33 @@ const displaySubtotal = document.getElementById('displaySubtotal');
 const displayTax = document.getElementById('displayTax');
 const displayCgst = document.getElementById('displayCgst');
 const displaySgst = document.getElementById('displaySgst');
+const displayIgst = document.getElementById('displayIgst');
+const displayCgstRow = document.getElementById('displayCgstRow');
+const displaySgstRow = document.getElementById('displaySgstRow');
+const displayIgstRow = document.getElementById('displayIgstRow');
+const displayExemptRow = document.getElementById('displayExemptRow');
+const gstTypeSelect = document.getElementById('gstTypeSelect');
 const displayDiscount = document.getElementById('displayDiscount');
 const displayDiscountDetail = document.getElementById('displayDiscountDetail');
 const displayTotal = document.getElementById('displayTotal');
 const btnCheckout = document.getElementById('btnCheckout');
 const cartItemCountBadge = document.getElementById('cartItemCountBadge');
 const orderDiscountInput = document.getElementById('orderDiscountInput');
+
+function updateGstBreakdown(cgstAmount, sgstAmount, igstAmount) {
+    const gstType = gstTypeSelect ? gstTypeSelect.value : 'CGST_SGST';
+    if (displayCgstRow) displayCgstRow.classList.toggle('d-none', gstType !== 'CGST_SGST');
+    if (displaySgstRow) displaySgstRow.classList.toggle('d-none', gstType !== 'CGST_SGST');
+    if (displayIgstRow) displayIgstRow.classList.toggle('d-none', gstType !== 'IGST');
+    if (displayExemptRow) displayExemptRow.classList.toggle('d-none', gstType !== 'EXEMPT');
+    if (displayCgst) displayCgst.innerText = `₹${cgstAmount.toFixed(2)}`;
+    if (displaySgst) displaySgst.innerText = `₹${sgstAmount.toFixed(2)}`;
+    if (displayIgst) displayIgst.innerText = `₹${igstAmount.toFixed(2)}`;
+}
+
+if (gstTypeSelect) {
+    gstTypeSelect.addEventListener('change', () => renderCart());
+}
 
 // Split Payment elements
 const splitPaymentSection = document.getElementById('splitPaymentSection');
@@ -962,6 +1005,12 @@ function clearCart() {
     focusQR();
 }
 
+function getCartItemGst(item) {
+    if (item.is_complementary == 1 || (gstTypeSelect && gstTypeSelect.value === 'EXEMPT')) return 0;
+    const gst = Number(item.gst_percentage);
+    return Number.isFinite(gst) ? Math.min(100, Math.max(0, gst)) : 5.0;
+}
+
 function updateSummaryTotals() {
     let subtotalTaxable = 0;
     let totalGst = 0;
@@ -972,8 +1021,7 @@ function updateSummaryTotals() {
     cart.forEach(item => {
         const orig = parseFloat(item.original_price) || 0;
         const billed = parseFloat(item.billed_price) >= 0 ? parseFloat(item.billed_price) : orig;
-        const parsedGstPct = Number(item.gst_percentage);
-        const gstPct = Number.isFinite(parsedGstPct) ? Math.min(100, Math.max(0, parsedGstPct)) : 5.0;
+        const gstPct = getCartItemGst(item);
         mainGstPct = gstPct;
 
         const lineTaxable = Math.round((billed / (1 + (gstPct / 100))) * 100) / 100;
@@ -987,14 +1035,15 @@ function updateSummaryTotals() {
     });
 
     const shipping = parseFloat(document.getElementById('shippingCostInput')?.value) || 0;
-    const cgstTotal = Math.round((totalGst / 2) * 100) / 100;
-    const sgstTotal = Math.round((totalGst - cgstTotal) * 100) / 100;
+    const gstType = gstTypeSelect ? gstTypeSelect.value : 'CGST_SGST';
+    const cgstTotal = gstType === 'CGST_SGST' ? Math.round((totalGst / 2) * 100) / 100 : 0;
+    const sgstTotal = gstType === 'CGST_SGST' ? Math.round((totalGst - cgstTotal) * 100) / 100 : 0;
+    const igstTotal = gstType === 'IGST' ? totalGst : 0;
     const netTotal = Math.ceil(totalBilled + shipping);
 
     if (displaySubtotal) displaySubtotal.innerText = `₹${subtotalTaxable.toFixed(2)}`;
     if (displayTax) displayTax.innerText = `Incl. ₹${totalGst.toFixed(2)}`;
-    if (displayCgst) displayCgst.innerText = `₹${cgstTotal.toFixed(2)}`;
-    if (displaySgst) displaySgst.innerText = `₹${sgstTotal.toFixed(2)}`;
+    updateGstBreakdown(cgstTotal, sgstTotal, igstTotal);
     if (displayDiscount) displayDiscount.innerText = `-₹${totalDiscount.toFixed(2)}`;
     if (displayDiscountDetail) displayDiscountDetail.innerText = `₹${totalDiscount.toFixed(2)}`;
     if (displayTotal) displayTotal.innerText = `₹${netTotal.toFixed(2)}`;
@@ -1051,8 +1100,7 @@ function renderCart() {
         if (btnCheckout) btnCheckout.disabled = true;
         if (displaySubtotal) displaySubtotal.innerText = '₹0.00';
         if (displayTax) displayTax.innerText = 'Incl. ₹0.00';
-        if (displayCgst) displayCgst.innerText = '₹0.00';
-        if (displaySgst) displaySgst.innerText = '₹0.00';
+        updateGstBreakdown(0, 0, 0);
         if (displayDiscount) displayDiscount.innerText = '-₹0.00';
         if (displayDiscountDetail) displayDiscountDetail.innerText = '₹0.00';
         if (displayTotal) displayTotal.innerText = '₹0.00';
@@ -1066,8 +1114,7 @@ function renderCart() {
         const isSeries = (item.is_series == 1 || item.category_type === 'SERIES' || item.qr_type === 'SERIES_BATCH');
         const orig = isComp ? 0.00 : (parseFloat(item.original_price) || 0);
         const billed = isComp ? 0.00 : (parseFloat(item.billed_price) >= 0 ? parseFloat(item.billed_price) : orig);
-        const parsedGstPercentage = Number(item.gst_percentage);
-        const gstPercentage = isComp ? 0.00 : (Number.isFinite(parsedGstPercentage) ? Math.min(100, Math.max(0, parsedGstPercentage)) : 5.0);
+        const gstPercentage = getCartItemGst(item);
 
         const lineTaxable = isComp ? 0.00 : (Math.round((billed / (1 + (gstPercentage / 100))) * 100) / 100);
         const lineGst = isComp ? 0.00 : (Math.round((billed - lineTaxable) * 100) / 100);
@@ -1169,7 +1216,8 @@ function attachCartRowEvents() {
             const rate = parseFloat(this.value);
             item.gst_percentage = Number.isFinite(rate) ? Math.min(100, Math.max(0, rate)) : 0;
             const billed = Math.max(0, parseFloat(item.billed_price) || 0);
-            const taxable = Math.round((billed / (1 + item.gst_percentage / 100)) * 100) / 100;
+            const effectiveGstPercentage = getCartItemGst(item);
+            const taxable = Math.round((billed / (1 + effectiveGstPercentage / 100)) * 100) / 100;
             const tax = Math.round((billed - taxable) * 100) / 100;
             const row = this.closest('tr');
             if (row) {
@@ -1217,8 +1265,7 @@ function attachCartRowEvents() {
                 item.discount_percent = 0;
             }
 
-            const parsedGstPct = Number(item.gst_percentage);
-            const gstPct = Number.isFinite(parsedGstPct) ? Math.min(100, Math.max(0, parsedGstPct)) : 5.0;
+            const gstPct = getCartItemGst(item);
             const lineTaxable = Math.round((enteredVal / (1 + (gstPct / 100))) * 100) / 100;
             const lineGst = Math.round((enteredVal - lineTaxable) * 100) / 100;
 

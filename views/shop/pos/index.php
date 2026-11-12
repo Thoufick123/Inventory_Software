@@ -47,6 +47,9 @@
                 <i class="bi bi-arrow-left"></i>
             </a>
             <div>
+                <?php if (!empty($shop['logo_url'])): ?>
+                    <img src="<?= e($shop['logo_url']) ?>" alt="<?= e($shop['name'] ?? 'Shop') ?> logo" class="mb-1" style="max-width:140px;max-height:48px;object-fit:contain;">
+                <?php endif; ?>
                 <h4 class="fw-bold mb-0 text-dark"><i class="bi bi-qr-code-scan text-primary me-2"></i>POS Billing Terminal</h4>
                 <small class="text-muted"><i class="bi bi-shop me-1"></i><?= e($shop['name']) ?> • Staff: <?= e(Session::user()['full_name'] ?? 'Cashier') ?></small>
             </div>
@@ -129,7 +132,7 @@
                         </div>
                     </div>
 
-                    <!-- 4 Structured Fields in 2x2 Layout -->
+                    <!-- Customer details and GST mode -->
                     <div class="row g-2.5 position-relative">
                         <!-- 1. Customer Phone (Required with Live Auto-suggest) -->
                         <div class="col-12 col-sm-6">
@@ -194,6 +197,19 @@
                                 </div>
                             </div>
                         </div>
+
+                        <div class="col-12 col-sm-6">
+                            <div class="pos-field-wrap">
+                                <label class="pos-field-label" for="gstTypeSelect">
+                                    <i class="bi bi-receipt text-primary me-1"></i>GST Type
+                                </label>
+                                <select id="gstTypeSelect" class="form-select form-select-sm">
+                                    <option value="CGST_SGST">Both CGST &amp; SGST</option>
+                                    <option value="IGST">IGST</option>
+                                    <option value="EXEMPT">Exemption</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -253,8 +269,10 @@
                                     <span class="badge bg-success-subtle text-success fw-bold font-monospace px-2 py-0.5" id="displayTax">Incl. ₹0.00</span>
                                 </div>
                                 <div class="d-flex justify-content-between mt-1 text-muted px-1" style="font-size: 11.5px;">
-                                    <span>CGST: <strong id="displayCgst" class="text-dark font-monospace">₹0.00</strong></span>
-                                    <span>SGST: <strong id="displaySgst" class="text-dark font-monospace">₹0.00</strong></span>
+                                    <span id="displayCgstRow">CGST: <strong id="displayCgst" class="text-dark font-monospace">₹0.00</strong></span>
+                                    <span id="displaySgstRow">SGST: <strong id="displaySgst" class="text-dark font-monospace">₹0.00</strong></span>
+                                    <span id="displayIgstRow" class="d-none">IGST: <strong id="displayIgst" class="text-dark font-monospace">₹0.00</strong></span>
+                                    <span id="displayExemptRow" class="d-none">Exempt: <strong class="text-dark font-monospace">₹0.00</strong></span>
                                 </div>
                                 <div class="text-muted mt-1 px-1" style="font-size: 10px;">
                                     <i class="bi bi-info-circle me-1"></i>Auto-calculated from product GST %
@@ -406,6 +424,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const displayTax = document.getElementById('displayTax');
     const displayCgst = document.getElementById('displayCgst');
     const displaySgst = document.getElementById('displaySgst');
+    const displayIgst = document.getElementById('displayIgst');
+    const displayCgstRow = document.getElementById('displayCgstRow');
+    const displaySgstRow = document.getElementById('displaySgstRow');
+    const displayIgstRow = document.getElementById('displayIgstRow');
+    const displayExemptRow = document.getElementById('displayExemptRow');
+    const gstTypeSelect = document.getElementById('gstTypeSelect');
     const displayDiscount = document.getElementById('displayDiscount');
     const displayDiscountDetail = document.getElementById('displayDiscountDetail');
     const displayTotal = document.getElementById('displayTotal');
@@ -421,6 +445,21 @@ document.addEventListener('DOMContentLoaded', function() {
     const lblSplitSum = document.getElementById('lblSplitSum');
     const lblSplitDiff = document.getElementById('lblSplitDiff');
     const btnAutoBalanceSplit = document.getElementById('btnAutoBalanceSplit');
+
+    function updateGstBreakdown(cgstAmount, sgstAmount, igstAmount) {
+        const gstType = gstTypeSelect ? gstTypeSelect.value : 'CGST_SGST';
+        if (displayCgstRow) displayCgstRow.classList.toggle('d-none', gstType !== 'CGST_SGST');
+        if (displaySgstRow) displaySgstRow.classList.toggle('d-none', gstType !== 'CGST_SGST');
+        if (displayIgstRow) displayIgstRow.classList.toggle('d-none', gstType !== 'IGST');
+        if (displayExemptRow) displayExemptRow.classList.toggle('d-none', gstType !== 'EXEMPT');
+        if (displayCgst) displayCgst.innerText = `₹${cgstAmount.toFixed(2)}`;
+        if (displaySgst) displaySgst.innerText = `₹${sgstAmount.toFixed(2)}`;
+        if (displayIgst) displayIgst.innerText = `₹${igstAmount.toFixed(2)}`;
+    }
+
+    if (gstTypeSelect) {
+        gstTypeSelect.addEventListener('change', renderCart);
+    }
 
     // Helper: Calculate current Net Payable total from cart
     function getNetPayableAmount() {
@@ -620,7 +659,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function getCartItemGst(item) {
-        if (item.is_complementary == 1) return 0;
+        if (item.is_complementary == 1 || (gstTypeSelect && gstTypeSelect.value === 'EXEMPT')) return 0;
         const gst = parseFloat(item.gst_percentage);
         return Number.isFinite(gst) ? Math.min(100, Math.max(0, gst)) : 5.0;
     }
@@ -704,15 +743,16 @@ document.addEventListener('DOMContentLoaded', function() {
             totalBilled += billed;
         });
 
-        const cgstTotal = Math.round((totalGst / 2) * 100) / 100;
-        const sgstTotal = Math.round((totalGst - cgstTotal) * 100) / 100;
+        const gstType = gstTypeSelect ? gstTypeSelect.value : 'CGST_SGST';
+        const cgstTotal = gstType === 'CGST_SGST' ? Math.round((totalGst / 2) * 100) / 100 : 0;
+        const sgstTotal = gstType === 'CGST_SGST' ? Math.round((totalGst - cgstTotal) * 100) / 100 : 0;
+        const igstTotal = gstType === 'IGST' ? totalGst : 0;
         const netTotal = Math.ceil(totalBilled);
         const roundOff = Math.round((netTotal - totalBilled) * 100) / 100;
 
         if (displaySubtotal) displaySubtotal.innerText = `₹${subtotalTaxable.toFixed(2)}`;
         if (displayTax) displayTax.innerText = `Incl. ₹${totalGst.toFixed(2)}`;
-        if (displayCgst) displayCgst.innerText = `₹${cgstTotal.toFixed(2)}`;
-        if (displaySgst) displaySgst.innerText = `₹${sgstTotal.toFixed(2)}`;
+        updateGstBreakdown(cgstTotal, sgstTotal, igstTotal);
         if (displayDiscount) displayDiscount.innerText = `-₹${totalDiscount.toFixed(2)}`;
         if (displayDiscountDetail) displayDiscountDetail.innerText = `₹${totalDiscount.toFixed(2)}`;
         if (displayTotal) displayTotal.innerText = `₹${netTotal.toFixed(2)}`;
@@ -758,8 +798,7 @@ document.addEventListener('DOMContentLoaded', function() {
             btnCheckout.disabled = true;
             if (displaySubtotal) displaySubtotal.innerText = '₹0.00';
             if (displayTax) displayTax.innerText = 'Incl. ₹0.00';
-            if (displayCgst) displayCgst.innerText = '₹0.00';
-            if (displaySgst) displaySgst.innerText = '₹0.00';
+            updateGstBreakdown(0, 0, 0);
             if (displayDiscount) displayDiscount.innerText = '-₹0.00';
             if (displayDiscountDetail) displayDiscountDetail.innerText = '₹0.00';
             if (displayTotal) displayTotal.innerText = '₹0.00';
@@ -1199,6 +1238,7 @@ document.addEventListener('DOMContentLoaded', function() {
             customer_email: custEmailInput ? custEmailInput.value.trim() : '',
             employee_name: employeeInput ? employeeInput.value.trim() : '',
             employee_id: employeeInput ? employeeInput.value.trim() : '',
+            gst_type: gstTypeSelect ? gstTypeSelect.value : 'CGST_SGST',
             discount_amount: totalDiscount,
             subtotal: totalTaxable,
             total_amount: netPayableTotal,

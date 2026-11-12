@@ -352,6 +352,7 @@
                                 <tr>
                                     <td class="ps-3">
                                         <div class="d-flex align-items-center gap-2">
+                                            <?php if (!empty($wh['logo_url'])): ?><img src="<?= e($wh['logo_url']) ?>" alt="<?= e($wh['name']) ?> logo" class="rounded border bg-white p-1" style="width:44px;height:44px;object-fit:contain;"><?php endif; ?>
                                             <span class="badge bg-success-subtle text-success font-monospace fw-bold px-2 py-1"><?= e($wh['code']) ?></span>
                                             <div>
                                                 <div class="fw-bold text-dark"><?= e($wh['name']) ?></div>
@@ -427,6 +428,7 @@
                                 <tr>
                                     <td class="ps-3">
                                         <div class="d-flex align-items-center gap-2">
+                                            <?php if (!empty($shop['logo_url'])): ?><img src="<?= e($shop['logo_url']) ?>" alt="<?= e($shop['name']) ?> logo" class="rounded border bg-white p-1" style="width:44px;height:44px;object-fit:contain;"><?php endif; ?>
                                             <span class="badge bg-info-subtle text-info font-monospace fw-bold px-2 py-1"><?= e($shop['code']) ?></span>
                                             <div>
                                                 <div class="fw-bold text-dark"><?= e($shop['name']) ?></div>
@@ -502,6 +504,7 @@
                                 <tr>
                                     <td class="ps-3">
                                         <div class="d-flex align-items-center gap-2">
+                                            <?php if (!empty($chan['logo_url'])): ?><img src="<?= e($chan['logo_url']) ?>" alt="<?= e($chan['name']) ?> logo" class="rounded border bg-white p-1" style="width:44px;height:44px;object-fit:contain;"><?php endif; ?>
                                             <span class="badge bg-success-subtle text-success font-monospace fw-bold px-2 py-1"><?= e($chan['code']) ?></span>
                                             <div class="fw-bold text-dark"><?= e($chan['name']) ?></div>
                                         </div>
@@ -568,6 +571,7 @@
                                 <tr>
                                     <td class="ps-3">
                                         <div class="d-flex align-items-center gap-2">
+                                            <?php if (!empty($chan['logo_url'])): ?><img src="<?= e($chan['logo_url']) ?>" alt="<?= e($chan['name']) ?> logo" class="rounded border bg-white p-1" style="width:44px;height:44px;object-fit:contain;"><?php endif; ?>
                                             <span class="badge bg-primary-subtle text-primary font-monospace fw-bold px-2 py-1"><?= e($chan['code']) ?></span>
                                             <div class="fw-bold text-dark"><?= e($chan['name']) ?></div>
                                         </div>
@@ -746,7 +750,7 @@
 <div class="modal fade" id="modalProductionUnit" tabindex="-1" aria-labelledby="modalProductionUnitLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content shadow">
-            <form method="POST" id="formProductionUnit" action="<?= url('admin/production-units/store') ?>" class="needs-validation" novalidate>
+            <form method="POST" id="formProductionUnit" action="<?= url('admin/production-units/store') ?>" enctype="multipart/form-data" class="needs-validation" novalidate>
                 <?= csrf_field() ?>
                 <div class="modal-header bg-primary text-white">
                     <h5 class="modal-title fw-700" id="modalProductionUnitLabel"><i class="bi bi-gear-wide-connected me-2"></i>Add Production Unit</h5>
@@ -792,6 +796,14 @@
                         <label class="form-label fw-600">Facility Address</label>
                         <textarea name="address" id="unit_address" class="form-control" rows="2" placeholder="Full address of the production unit..."></textarea>
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-600" for="unit_logo">Unit Logo</label>
+                        <input type="file" name="logo" id="unit_logo" class="form-control" accept="image/jpeg,image/png,image/webp">
+                        <small class="text-muted">JPG, PNG, or WEBP; up to 5 MB. Uploaded to Cloudinary.</small>
+                        <div id="unitLogoPreviewContainer" class="mt-2 d-none">
+                            <img id="unitLogoPreview" src="" alt="Production unit logo preview" class="img-thumbnail" style="max-width: 180px; max-height: 90px; object-fit: contain;">
+                        </div>
+                    </div>
                     <input type="hidden" name="is_active" value="1">
                 </div>
                 <div class="modal-footer bg-light">
@@ -807,7 +819,7 @@
 <div class="modal fade" id="modalWarehouse" tabindex="-1" aria-labelledby="modalWarehouseLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content shadow">
-            <form method="POST" id="formWarehouse" action="<?= url('admin/warehouses/store') ?>" class="needs-validation" novalidate>
+            <form method="POST" id="formWarehouse" action="<?= url('admin/warehouses/store') ?>" enctype="multipart/form-data" class="needs-validation" novalidate>
                 <?= csrf_field() ?>
                 <div class="modal-header bg-success text-white">
                     <h5 class="modal-title fw-700" id="modalWarehouseLabel"><i class="bi bi-buildings me-2"></i>Add Warehouse</h5>
@@ -848,6 +860,12 @@
                         <label class="form-label fw-600">Warehouse Address</label>
                         <textarea name="address" id="wh_address" class="form-control" rows="2" placeholder="Full address of the warehouse facility..."></textarea>
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-600" for="wh_logo">Warehouse Logo</label>
+                        <input type="file" name="logo" id="wh_logo" class="form-control" accept="image/jpeg,image/png,image/webp">
+                        <small class="text-muted">JPG, PNG, or WEBP; up to 5 MB. Uploaded to Cloudinary.</small>
+                        <div id="whLogoPreviewContainer" class="mt-2 d-none"><img id="whLogoPreview" src="" alt="Warehouse logo preview" class="img-thumbnail" style="max-width:180px;max-height:90px;object-fit:contain;"></div>
+                    </div>
                     <input type="hidden" name="is_active" value="1">
                 </div>
                 <div class="modal-footer bg-light">
@@ -863,7 +881,7 @@
 <div class="modal fade" id="modalShop" tabindex="-1" aria-labelledby="modalShopLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content shadow">
-            <form method="POST" id="formShop" action="<?= url('admin/shops/store') ?>" class="needs-validation" novalidate>
+            <form method="POST" id="formShop" action="<?= url('admin/shops/store') ?>" enctype="multipart/form-data" class="needs-validation" novalidate>
                 <?= csrf_field() ?>
                 <div class="modal-header bg-info text-white">
                     <h5 class="modal-title fw-700" id="modalShopLabel"><i class="bi bi-shop me-2"></i>Add Retail Shop</h5>
@@ -906,6 +924,12 @@
                         <label class="form-label fw-600">Store Address</label>
                         <textarea name="address" id="shop_address" class="form-control" rows="2" placeholder="Full physical address of the retail outlet..."></textarea>
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-600" for="shop_logo">Shop Logo</label>
+                        <input type="file" name="logo" id="shop_logo" class="form-control" accept="image/jpeg,image/png,image/webp">
+                        <small class="text-muted">JPG, PNG, or WEBP; up to 5 MB. Uploaded to Cloudinary.</small>
+                        <div id="shopLogoPreviewContainer" class="mt-2 d-none"><img id="shopLogoPreview" src="" alt="Shop logo preview" class="img-thumbnail" style="max-width:180px;max-height:90px;object-fit:contain;"></div>
+                    </div>
                     <input type="hidden" name="is_active" value="1">
                 </div>
                 <div class="modal-footer bg-light">
@@ -921,7 +945,7 @@
 <div class="modal fade" id="modalChannel" tabindex="-1" aria-labelledby="modalChannelLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content border-0 shadow">
-            <form id="formChannel" method="POST" action="<?= url('admin/channels/store') ?>" class="needs-validation" novalidate>
+            <form id="formChannel" method="POST" action="<?= url('admin/channels/store') ?>" enctype="multipart/form-data" class="needs-validation" novalidate>
                 <?= csrf_field() ?>
                 <input type="hidden" name="channel_type" id="channel_type" value="">
                 <div class="modal-header bg-dark text-white">
@@ -961,8 +985,18 @@
                         </div>
                     </div>
                     <div class="mb-3">
+                        <label class="form-label fw-600">Address</label>
+                        <textarea name="address" id="chan_address" class="form-control" rows="2" placeholder="Business or service address..."></textarea>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label fw-600">Description</label>
                         <textarea name="description" id="chan_description" class="form-control" rows="2" placeholder="Optional details..."></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-600" for="chan_logo">Channel Logo</label>
+                        <input type="file" name="logo" id="chan_logo" class="form-control" accept="image/jpeg,image/png,image/webp">
+                        <small class="text-muted">JPG, PNG, or WEBP; up to 5 MB. Uploaded to Cloudinary.</small>
+                        <div id="chanLogoPreviewContainer" class="mt-2 d-none"><img id="chanLogoPreview" src="" alt="Channel logo preview" class="img-thumbnail" style="max-width:180px;max-height:90px;object-fit:contain;"></div>
                     </div>
                     <input type="hidden" name="is_active" value="1">
                 </div>
@@ -1062,6 +1096,7 @@ document.addEventListener('DOMContentLoaded', function() {
             form.classList.add('was-validated');
         }, false);
     });
+    ['wh', 'shop', 'chan'].forEach(setupConcernLogoPreview);
 
     // Handle Active Tab State & Persistence across Refreshes
     const tabMap = {
@@ -1086,6 +1121,24 @@ document.addEventListener('DOMContentLoaded', function() {
         switchOrgTab(tabMap[tabParam], false);
     } else if (savedLocalTab && document.getElementById(savedLocalTab)) {
         switchOrgTab(savedLocalTab, false);
+    }
+
+    const editType = urlParams.get('edit_type');
+    const editId = Number(urlParams.get('edit_id') || 0);
+    const editConfig = {
+        production_unit: { tab: 'tab-prod-units', records: profileEditRecords.production_unit, open: editUnit },
+        warehouse: { tab: 'tab-warehouses', records: profileEditRecords.warehouse, open: editWarehouse },
+        shop: { tab: 'tab-shops', records: profileEditRecords.shop, open: editShop },
+        whatsapp: { tab: 'tab-whatsapp', records: profileEditRecords.whatsapp, open: editChannel },
+        website: { tab: 'tab-website', records: profileEditRecords.website, open: editChannel }
+    };
+    const editTarget = editConfig[editType];
+    if (editTarget && editId > 0) {
+        switchOrgTab(editTarget.tab, false);
+        window.setTimeout(function() {
+            const record = editTarget.records.find(item => Number(item.id) === editId);
+            if (record) editTarget.open(record);
+        }, 200);
     }
 
     // Persist active tab when user clicks any tab button
@@ -1123,6 +1176,36 @@ const existingUnitCodes = <?= json_encode(array_values(array_filter(array_column
 const existingWhCodes = <?= json_encode(array_values(array_filter(array_column($warehouses ?? [], 'code')))) ?>;
 const existingShopCodes = <?= json_encode(array_values(array_filter(array_column($shops ?? [], 'code')))) ?>;
 const existingChannels = <?= json_encode(array_values(array_filter(array_column($channels ?? [], 'code')))) ?>;
+const profileEditRecords = {
+    production_unit: <?= json_encode($productionUnits ?? [], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+    warehouse: <?= json_encode($warehouses ?? [], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+    shop: <?= json_encode($shops ?? [], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+    whatsapp: <?= json_encode($whatsappChannels ?? [], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+    website: <?= json_encode($websiteChannels ?? [], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>
+};
+
+function setConcernLogoPreview(prefix, source) {
+    const image = document.getElementById(prefix + 'LogoPreview');
+    const container = document.getElementById(prefix + 'LogoPreviewContainer');
+    if (!image || !container) return;
+    if (image.src.startsWith('blob:')) URL.revokeObjectURL(image.src);
+    if (source) {
+        image.src = source;
+        container.classList.remove('d-none');
+    } else {
+        image.removeAttribute('src');
+        container.classList.add('d-none');
+    }
+}
+
+function setupConcernLogoPreview(prefix) {
+    const input = document.getElementById(prefix + '_logo');
+    if (!input) return;
+    input.addEventListener('change', function() {
+        const file = this.files && this.files[0];
+        setConcernLogoPreview(prefix, file ? URL.createObjectURL(file) : '');
+    });
+}
 
 function getNextSequentialCode(prefix, existingList) {
     let num = 1;
@@ -1144,6 +1227,20 @@ function clearUnitValidationStates() {
     if (btn) btn.disabled = false;
 }
 
+function setUnitLogoPreview(source) {
+    const container = document.getElementById('unitLogoPreviewContainer');
+    const image = document.getElementById('unitLogoPreview');
+    if (!container || !image) return;
+    if (image.src.startsWith('blob:')) URL.revokeObjectURL(image.src);
+    if (source) {
+        image.src = source;
+        container.classList.remove('d-none');
+    } else {
+        image.removeAttribute('src');
+        container.classList.add('d-none');
+    }
+}
+
 function resetUnitModal() {
     window.currentEditingUnitId = null;
     clearUnitValidationStates();
@@ -1158,6 +1255,8 @@ function resetUnitModal() {
     document.getElementById('unit_phone').value = '';
     document.getElementById('unit_gst_number').value = '';
     document.getElementById('unit_address').value = '';
+    document.getElementById('unit_logo').value = '';
+    setUnitLogoPreview('');
     document.getElementById('btnSubmitUnit').textContent = 'Save Production Unit';
 }
 
@@ -1173,6 +1272,8 @@ function editUnit(unit) {
     document.getElementById('unit_phone').value = unit.phone || '';
     document.getElementById('unit_gst_number').value = unit.gst_number || '';
     document.getElementById('unit_address').value = unit.address || '';
+    document.getElementById('unit_logo').value = '';
+    setUnitLogoPreview(unit.logo_url || '');
     document.getElementById('btnSubmitUnit').textContent = 'Update Production Unit';
     const modal = new bootstrap.Modal(document.getElementById('modalProductionUnit'));
     modal.show();
@@ -1190,8 +1291,16 @@ function editUnit(unit) {
         const codeInp = document.getElementById('unit_code');
         const phoneInp = document.getElementById('unit_phone');
         const gstInp = document.getElementById('unit_gst_number');
+        const logoInp = document.getElementById('unit_logo');
         const form = document.getElementById('formProductionUnit');
         const btnSubmit = document.getElementById('btnSubmitUnit');
+
+        if (logoInp) {
+            logoInp.addEventListener('change', function() {
+                const file = this.files && this.files[0];
+                setUnitLogoPreview(file ? URL.createObjectURL(file) : '');
+            });
+        }
 
         const nameFeedback = document.getElementById('unitNameFeedback');
         const nameValidFeedback = document.getElementById('unitNameValidFeedback');
@@ -1380,6 +1489,8 @@ function resetWarehouseModal() {
     document.getElementById('wh_phone').value = '';
     document.getElementById('wh_gst_number').value = '';
     document.getElementById('wh_address').value = '';
+    document.getElementById('wh_logo').value = '';
+    setConcernLogoPreview('wh', '');
     document.getElementById('btnSubmitWarehouse').textContent = 'Save Warehouse';
 }
 
@@ -1393,6 +1504,8 @@ function editWarehouse(wh) {
     document.getElementById('wh_phone').value = wh.phone || '';
     document.getElementById('wh_gst_number').value = wh.gst_number || '';
     document.getElementById('wh_address').value = wh.address || '';
+    document.getElementById('wh_logo').value = '';
+    setConcernLogoPreview('wh', wh.logo_url || '');
     document.getElementById('btnSubmitWarehouse').textContent = 'Update Warehouse';
     const modal = new bootstrap.Modal(document.getElementById('modalWarehouse'));
     modal.show();
@@ -1411,6 +1524,8 @@ function resetShopModal() {
     document.getElementById('shop_gst_number').value = '';
     document.getElementById('shop_phone').value = '';
     document.getElementById('shop_address').value = '';
+    document.getElementById('shop_logo').value = '';
+    setConcernLogoPreview('shop', '');
     document.getElementById('btnSubmitShop').textContent = 'Save Retail Shop';
 }
 
@@ -1424,6 +1539,8 @@ function editShop(shop) {
     document.getElementById('shop_gst_number').value = shop.gst_number || '';
     document.getElementById('shop_phone').value = shop.phone || '';
     document.getElementById('shop_address').value = shop.address || '';
+    document.getElementById('shop_logo').value = '';
+    setConcernLogoPreview('shop', shop.logo_url || '');
     document.getElementById('btnSubmitShop').textContent = 'Update Retail Shop';
     const modal = new bootstrap.Modal(document.getElementById('modalShop'));
     modal.show();
@@ -1451,7 +1568,10 @@ function resetChannelModal(type) {
     document.getElementById('chan_manager_name').value = '';
     document.getElementById('chan_phone').value = '';
     document.getElementById('chan_gst_number').value = '';
+    document.getElementById('chan_address').value = '';
     document.getElementById('chan_description').value = '';
+    document.getElementById('chan_logo').value = '';
+    setConcernLogoPreview('chan', '');
     document.getElementById('btnSubmitChannel').className = `btn ${bgClass} text-white fw-600`;
     document.getElementById('btnSubmitChannel').textContent = `Save ${title}`;
 }
@@ -1474,7 +1594,10 @@ function editChannel(chan) {
     document.getElementById('chan_manager_name').value = chan.manager_name || '';
     document.getElementById('chan_phone').value = chan.phone || '';
     document.getElementById('chan_gst_number').value = chan.gst_number || '';
+    document.getElementById('chan_address').value = chan.address || '';
     document.getElementById('chan_description').value = chan.description || '';
+    document.getElementById('chan_logo').value = '';
+    setConcernLogoPreview('chan', chan.logo_url || '');
     
     document.getElementById('btnSubmitChannel').className = `btn ${bgClass} text-white fw-600`;
     document.getElementById('btnSubmitChannel').textContent = `Update ${title}`;

@@ -13,6 +13,7 @@ class PurchaseOrder {
      * Find purchase order by ID.
      */
     public static function find(int $id): ?array {
+        Warehouse::ensureSchema();
         return Database::fetchOne(
             "SELECT po.*, 
                     c.name as customer_name, c.phone as customer_phone, c.email as customer_email, 
@@ -22,6 +23,8 @@ class PurchaseOrder {
                     COALESCE(c.phone, s.phone, '') as display_customer_phone,
                     s.name as seller_name, s.company as seller_company, s.phone as seller_phone, s.gst_number as seller_gst,
                     w.name as warehouse_name, w.code as warehouse_code,
+                    w.logo_url as warehouse_logo_url, w.address as warehouse_address,
+                    w.phone as warehouse_phone, w.gst_number as warehouse_gst_number,
                     u.full_name as created_by_name
              FROM purchase_orders po
              LEFT JOIN customers c ON po.customer_id = c.id

@@ -43,11 +43,15 @@ class WarehouseController {
             return;
         }
 
+        Warehouse::ensureSchema();
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
         $stats = WarehouseService::getDashboardStats($scopedWarehouseId);
 
         // Also fetch Person 2 outbound stats & recent records for full dashboard compatibility
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Database::fetchAll("SELECT * FROM warehouses WHERE is_active = 1");
+        $warehouseProfile = $scopedWarehouseId
+            ? Warehouse::find((int)$scopedWarehouseId)
+            : ($warehouses[0] ?? null);
         $whStockClause = $scopedWarehouseId ? " AND location_id = $scopedWarehouseId" : "";
         $whAllocClause = $scopedWarehouseId ? " AND warehouse_id = $scopedWarehouseId" : "";
         $whOutClause = $scopedWarehouseId ? " AND ao.warehouse_id = $scopedWarehouseId" : "";
@@ -87,6 +91,7 @@ class WarehouseController {
             'activeModule'      => 'warehouse',
             'activeMenu'        => 'wh-dashboard',
             'warehouses'        => $warehouses,
+            'warehouseProfile'  => $warehouseProfile,
             'scopedWarehouseId' => $scopedWarehouseId,
             'recentAllocations' => $recentAllocations,
             'recentOutwards'    => $recentOutwards,
@@ -249,6 +254,9 @@ class WarehouseController {
         $sql .= " ORDER BY pb.id DESC";
         $batches = Database::fetchAll($sql, $params);
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+        $warehouses = array_values(array_filter($warehouses, static function (array $warehouse): bool {
+            return (int)($warehouse['is_active'] ?? 0) === 1;
+        }));
         $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $productionUnits = function_exists('getScopedProductionUnits') ? getScopedProductionUnits() : ProductionUnit::getAll(['is_active' => 1]);
 
@@ -5337,6 +5345,7 @@ class WarehouseController {
             Response::redirect(url('warehouse/purchases'));
             return;
         }
+        Warehouse::ensureSchema();
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
         $customers = Database::fetchAll("SELECT * FROM customers WHERE is_active = 1 ORDER BY name ASC");
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
@@ -17623,6 +17632,25 @@ class WarehouseController {
             return;
         }
 
+        $warehouseId = filter_var($_POST['warehouse_id'] ?? null, FILTER_VALIDATE_INT);
+        $availableWarehouses = function_exists('getScopedWarehouses')
+            ? getScopedWarehouses()
+            : Database::fetchAll("SELECT * FROM warehouses WHERE is_active = 1 ORDER BY name ASC");
+        $activeWarehouseIds = [];
+        foreach ($availableWarehouses as $warehouse) {
+            if ((int)($warehouse['is_active'] ?? 0) === 1) {
+                $activeWarehouseIds[] = (int)$warehouse['id'];
+            }
+        }
+        if (!$activeWarehouseIds) {
+            $rejectValidation('No active warehouse is available. Create or activate a warehouse before continuing.');
+            return;
+        }
+        if ($warehouseId === false || $warehouseId <= 0 || !in_array($warehouseId, $activeWarehouseIds, true)) {
+            $rejectValidation('Select a valid active destination warehouse before continuing.');
+            return;
+        }
+
         if ($newBrandName !== '') {
             if (mb_strlen($newBrandName) < 2) {
                 $rejectValidation('Brand name must be at least 2 characters.');
@@ -17850,7 +17878,7 @@ class WarehouseController {
 
             // Save Phase 1 Bill & Settlement setup into session for Phase 2
             Session::set('seller_bill_setup_' . $sellerId, [
-                'warehouse_id'     => (int)($_POST['warehouse_id'] ?? 1),
+                'warehouse_id'     => $warehouseId,
                 'order_date'       => !empty($_POST['order_date']) ? $_POST['order_date'] : date('Y-m-d'),
                 'expected_date'    => !empty($_POST['expected_date']) ? $_POST['expected_date'] : date('Y-m-d'),
                 'payment_method'   => $_POST['payment_method'] ?? 'CASH',
@@ -17991,7 +18019,12 @@ class WarehouseController {
         $subSubcategories = Database::fetchAll("SELECT * FROM warehouse_sub_subcategories WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
 
         // Fetch warehouses, sizes, colors, brands
-        $warehouses = Database::fetchAll("SELECT * FROM warehouses WHERE is_active = 1 ORDER BY name ASC");
+        $warehouses = function_exists('getScopedWarehouses')
+            ? getScopedWarehouses()
+            : Database::fetchAll("SELECT * FROM warehouses WHERE is_active = 1 ORDER BY name ASC");
+        $warehouses = array_values(array_filter($warehouses, static function (array $warehouse): bool {
+            return (int)($warehouse['is_active'] ?? 0) === 1;
+        }));
         $sizes = Database::fetchAll("SELECT * FROM sizes WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
         $colors = Database::fetchAll("SELECT * FROM colors WHERE is_active = 1 ORDER BY name ASC");
         $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
@@ -18079,7 +18112,32 @@ class WarehouseController {
         }
 
         $billSetup = Session::get('seller_bill_setup_' . $id) ?? [];
-        $warehouseId = (int)($_POST['warehouse_id'] ?? $billSetup['warehouse_id'] ?? 1);
+        $warehouseId = filter_var(
+            $_POST['warehouse_id'] ?? $billSetup['warehouse_id'] ?? null,
+            FILTER_VALIDATE_INT
+        );
+        $availableWarehouses = function_exists('getScopedWarehouses')
+            ? getScopedWarehouses()
+            : Database::fetchAll("SELECT * FROM warehouses WHERE is_active = 1 ORDER BY name ASC");
+        $activeWarehouseIds = [];
+        foreach ($availableWarehouses as $warehouse) {
+            if ((int)($warehouse['is_active'] ?? 0) === 1) {
+                $activeWarehouseIds[] = (int)$warehouse['id'];
+            }
+        }
+        if (!$activeWarehouseIds || $warehouseId === false || $warehouseId <= 0 || !in_array($warehouseId, $activeWarehouseIds, true)) {
+            $message = !$activeWarehouseIds
+                ? 'No active warehouse is available. Create or activate a warehouse, then try again.'
+                : 'The selected destination warehouse is invalid or inactive. Select an active warehouse and try again.';
+            if ($isAjax) {
+                Response::json(['success' => false, 'message' => $message], 400);
+                return;
+            }
+            Session::flash('error', $message);
+            Response::redirect(url("warehouse/sellers/{$id}/add-products"));
+            return;
+        }
+        $warehouseId = (int)$warehouseId;
         $orderDate = !empty($_POST['order_date']) ? $_POST['order_date'] : ($billSetup['order_date'] ?? date('Y-m-d'));
         $expectedDate = !empty($_POST['expected_date']) ? $_POST['expected_date'] : ($billSetup['expected_date'] ?? $orderDate);
         $paymentMethod = $_POST['payment_method'] ?? ($billSetup['payment_method'] ?? 'CASH');

@@ -20,6 +20,11 @@ class Warehouse {
                 Database::execute("ALTER TABLE warehouses ADD COLUMN manager_name VARCHAR(150) NULL AFTER manager_id");
             }
         } catch (Throwable $e) {}
+
+        $logoColumn = Database::fetchOne("SHOW COLUMNS FROM warehouses LIKE 'logo_url'");
+        if (!$logoColumn) {
+            Database::execute("ALTER TABLE warehouses ADD COLUMN logo_url VARCHAR(500) NULL AFTER gst_number");
+        }
     }
 
     /**
@@ -118,8 +123,8 @@ class Warehouse {
         }
 
         Database::execute(
-            "INSERT INTO warehouses (name, code, manager_name, address, phone, gst_number, manager_id, is_active, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+            "INSERT INTO warehouses (name, code, manager_name, address, phone, gst_number, logo_url, manager_id, is_active, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
             [
                 trim($data['name']),
                 $code,
@@ -127,6 +132,7 @@ class Warehouse {
                 $data['address'] ?? null,
                 trim($data['phone'] ?? ''),
                 $data['gst_number'] ?? null,
+                $data['logo_url'] ?? null,
                 !empty($data['manager_id']) ? (int)$data['manager_id'] : null,
                 $data['is_active'] ?? 1
             ]
@@ -141,7 +147,7 @@ class Warehouse {
         self::ensureSchema();
         return Database::execute(
             "UPDATE warehouses 
-             SET name = ?, code = ?, manager_name = ?, address = ?, phone = ?, gst_number = ?, manager_id = ?, is_active = ?, updated_at = NOW()
+             SET name = ?, code = ?, manager_name = ?, address = ?, phone = ?, gst_number = ?, logo_url = ?, manager_id = ?, is_active = ?, updated_at = NOW()
              WHERE id = ?",
             [
                 trim($data['name']),
@@ -150,6 +156,7 @@ class Warehouse {
                 $data['address'] ?? null,
                 trim($data['phone'] ?? ''),
                 $data['gst_number'] ?? null,
+                $data['logo_url'] ?? null,
                 !empty($data['manager_id']) ? (int)$data['manager_id'] : null,
                 isset($data['is_active']) ? (int)$data['is_active'] : 1,
                 $id

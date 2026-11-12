@@ -8,6 +8,7 @@ $startDate = $startDate ?? date('Y-m-01');
 $endDate = $endDate ?? date('Y-m-d');
 $staffUsers = $staffUsers ?? [];
 $canCreateExpense = hasPermission('whatsapp_expenses', 'create');
+$canEditExpense = $canCreateExpense;
 $canDeleteExpense = hasPermission('whatsapp_expenses', 'delete');
 
 ?>
@@ -119,6 +120,14 @@ $canDeleteExpense = hasPermission('whatsapp_expenses', 'delete');
                         <?php endforeach; ?>
                     </select>
                 </div>
+                <div class="col-12 col-md-3">
+                    <label class="form-label small text-muted mb-1">Voucher status</label>
+                    <select name="status" class="form-select form-select-sm rounded-pill">
+                        <option value="ACTIVE" <?= ($filters['payment_status'] ?? 'ACTIVE') === 'ACTIVE' ? 'selected' : '' ?>>Active</option>
+                        <option value="CANCELLED" <?= ($filters['payment_status'] ?? '') === 'CANCELLED' ? 'selected' : '' ?>>Cancelled</option>
+                        <option value="ALL" <?= ($filters['payment_status'] ?? '') === 'ALL' ? 'selected' : '' ?>>All</option>
+                    </select>
+                </div>
                 <div class="col-12 col-md-3 d-flex gap-2 align-items-end mt-3 mt-md-0">
                     <button type="submit" class="btn btn-dark btn-sm rounded-pill w-100 fw-semibold">
                         <i class="bi bi-funnel me-1"></i> Filter
@@ -224,10 +233,15 @@ $canDeleteExpense = hasPermission('whatsapp_expenses', 'delete');
                                         <a href="<?= url('warehouse/whatsapp-orders/expenses/voucher/' . $exp['id']) ?>" target="_blank" class="btn btn-outline-success" title="Print WhatsApp Voucher">
                                             <i class="bi bi-printer"></i>
                                         </a>
-                                        <?php if ($canDeleteExpense): ?>
+                                        <?php if ($canEditExpense && ($exp['payment_status'] ?? '') !== 'CANCELLED'): ?>
+                                            <a href="<?= url('warehouse/whatsapp-orders/expenses/edit/' . (int)$exp['id']) ?>" class="btn btn-outline-primary" title="Edit Expense">
+                                                <i class="bi bi-pencil"></i>
+                                            </a>
+                                        <?php endif; ?>
+                                        <?php if ($canDeleteExpense && ($exp['payment_status'] ?? '') !== 'CANCELLED'): ?>
                                         <form method="POST" action="<?= url('warehouse/whatsapp-orders/expenses/delete/' . (int)$exp['id']) ?>" class="d-inline js-delete-wa-expense" data-expense-number="<?= e($exp['expense_number']) ?>">
                                             <?= csrf_field() ?>
-                                            <button type="submit" class="btn btn-outline-danger" title="Delete Expense">
+                                            <button type="submit" class="btn btn-outline-danger" title="Cancel Expense">
                                             <i class="bi bi-trash"></i>
                                             </button>
                                         </form>
@@ -369,7 +383,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.js-delete-wa-expense').forEach(function(form) {
         form.addEventListener('submit', function(event) {
             const number = form.dataset.expenseNumber;
-            if (!confirm(`Are you sure you want to delete expense voucher ${number}? This will remove it permanently.`)) {
+            if (!confirm(`Cancel expense voucher ${number}? The cancelled record will remain in the audit history.`)) {
                 event.preventDefault();
             }
         });

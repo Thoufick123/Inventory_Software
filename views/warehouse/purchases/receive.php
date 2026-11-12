@@ -44,16 +44,21 @@
     <div class="row align-items-start border-bottom pb-4 mb-4">
         <div class="col-sm-7">
             <div class="d-flex align-items-center gap-2 mb-2">
+                <?php if (!empty($po['warehouse_logo_url'])): ?>
+                    <img src="<?= e($po['warehouse_logo_url']) ?>" alt="<?= e($po['warehouse_name'] ?? 'Warehouse') ?> logo" style="max-width:130px;max-height:64px;object-fit:contain;">
+                <?php else: ?>
                 <div class="bg-primary text-white rounded p-2 fw-bold fs-4">GRM</div>
+                <?php endif; ?>
                 <div>
-                    <h4 class="mb-0 fw-bold text-dark">GRM APPARELS &amp; TEXTILES</h4>
+                    <h4 class="mb-0 fw-bold text-dark"><?= e($po['warehouse_name'] ?? 'GRM APPARELS & TEXTILES') ?></h4>
                     <span class="small text-muted">Direct Warehouse Sales &amp; Dispatch Division</span>
                 </div>
             </div>
             <p class="text-muted small mb-0">
                 <strong>Dispatch Warehouse:</strong> <?= e($po['warehouse_name'] ?? 'Main Warehouse') ?> (<?= e($po['warehouse_code'] ?? 'WH') ?>)<br>
-                <strong>GSTIN:</strong> 33AAACG1234F1Z5<br>
-                <strong>Email:</strong> sales@grmapparels.com &nbsp;|&nbsp; <strong>Phone:</strong> +91 421 2233445
+                <?php if (!empty($po['warehouse_address'])): ?><strong>Address:</strong> <?= e($po['warehouse_address']) ?><br><?php endif; ?>
+                <?php if (!empty($po['warehouse_gst_number'])): ?><strong>GSTIN:</strong> <?= e($po['warehouse_gst_number']) ?><br><?php endif; ?>
+                <?php if (!empty($po['warehouse_phone'])): ?><strong>Phone:</strong> <?= e($po['warehouse_phone']) ?><?php endif; ?>
             </p>
         </div>
         <div class="col-sm-5 text-sm-end mt-3 mt-sm-0">

@@ -647,12 +647,7 @@ class WhatsappController {
      * Helper to get WhatsApp channel record
      */
     private function getChannel(): array {
-        $chan = Database::fetchOne(
-            "SELECT * FROM sales_channels 
-             WHERE LOWER(name) LIKE '%whatsapp%' OR LOWER(code) LIKE '%whatsapp%' OR channel_type = 'WHATSAPP' OR code = 'online 1' OR code = 'WA-01'
-             ORDER BY id DESC LIMIT 1"
-        );
-        return $chan ?: ['id' => 3, 'name' => 'MARAKATHAI WHATSAPP', 'code' => 'WA-01'];
+        return SalesChannel::getForType('WHATSAPP');
     }
 
     private function getWhatsappChannelIds(): array {
@@ -5577,12 +5572,17 @@ class WhatsappController {
         $endDate = $_GET['end_date'] ?? date('Y-m-d');
         $category = $_GET['category'] ?? 'all';
         $paymentMethod = $_GET['payment_method'] ?? 'all';
+        $paymentStatus = strtoupper(trim($_GET['status'] ?? 'ACTIVE'));
+        if (!in_array($paymentStatus, ['ACTIVE', 'CANCELLED', 'ALL'], true)) {
+            $paymentStatus = 'ACTIVE';
+        }
         $search = trim($_GET['search'] ?? '');
 
         $filters = [
             'search'         => $search,
             'category'       => $category,
             'payment_method' => $paymentMethod,
+            'payment_status' => $paymentStatus,
             'start_date'     => $startDate,
             'end_date'       => $endDate,
             'limit'          => 150
@@ -5660,24 +5660,68 @@ class WhatsappController {
         ]);
     }
 
+    public function editExpense(int $id): void {
+        require_once BASE_PATH . '/app/Services/ExpenseService.php';
+        $channel = $this->getChannel();
+        $expense = ExpenseService::getVoucherDetails($id);
+        if (!$expense || ($expense['location_type'] ?? '') !== 'WHATSAPP' || (int)($expense['location_id'] ?? 0) !== (int)$channel['id'] || ($expense['payment_status'] ?? '') === 'CANCELLED') {
+            Session::flash('error', 'Active WhatsApp expense record not found.');
+            Response::redirect(url('warehouse/whatsapp-orders/expenses'));
+            return;
+        }
+
+        Response::view('whatsapp_orders.expenses.edit', [
+            'pageTitle' => 'Edit WhatsApp Channel Expense',
+            'activeModule' => 'whatsapp',
+            'activeMenu' => 'wh-whatsapp-expenses',
+            'expense' => $expense,
+            'breadcrumb' => [
+                ['label' => 'WhatsApp Orders', 'url' => url('warehouse/whatsapp-orders')],
+                ['label' => 'Channel Expenses', 'url' => url('warehouse/whatsapp-orders/expenses')],
+                ['label' => 'Edit Voucher'],
+            ],
+        ]);
+    }
+
+    public function updateExpense(int $id): void {
+        if (!hasPermission('whatsapp_expenses', 'create')) {
+            Session::flash('error', 'Access denied. You do not have permission to edit WhatsApp expenses.');
+            Response::redirect(url('warehouse/whatsapp-orders/expenses'));
+            return;
+        }
+
+        CSRF::verify();
+        require_once BASE_PATH . '/app/Services/ExpenseService.php';
+        $channel = $this->getChannel();
+        try {
+            ExpenseService::updateExpense($id, 'WHATSAPP', (int)$channel['id'], $_POST, Session::userId() ?? 1);
+            Session::flash('success', 'WhatsApp expense updated. The previous values were recorded in the audit log.');
+        } catch (Throwable $e) {
+            Session::flash('error', $e->getMessage());
+            Response::redirect(url("warehouse/whatsapp-orders/expenses/edit/{$id}"));
+            return;
+        }
+        Response::redirect(url('warehouse/whatsapp-orders/expenses'));
+    }
+
     public function confirmDeleteExpense(int $id): void {
         require_once BASE_PATH . '/app/Services/ExpenseService.php';
         $expense = ExpenseService::getVoucherDetails($id);
         $channel = $this->getChannel();
-        if (!$expense || ($expense['location_type'] ?? '') !== 'WHATSAPP' || (int)($expense['location_id'] ?? 0) !== (int)$channel['id']) {
+        if (!$expense || ($expense['location_type'] ?? '') !== 'WHATSAPP' || (int)($expense['location_id'] ?? 0) !== (int)$channel['id'] || ($expense['payment_status'] ?? '') === 'CANCELLED') {
             Session::flash('error', 'WhatsApp expense record not found.');
             Response::redirect(url('warehouse/whatsapp-orders/expenses'));
             return;
         }
 
         Response::view('whatsapp_orders.expenses.delete_confirm', [
-            'pageTitle' => 'Confirm WhatsApp Expense Deletion',
+            'pageTitle' => 'Cancel WhatsApp Expense',
             'activeModule' => 'whatsapp',
             'activeMenu' => 'wh-whatsapp-expenses',
             'breadcrumb' => [
                 ['label' => 'WhatsApp Orders', 'url' => url('warehouse/whatsapp-orders')],
                 ['label' => 'Channel Expenses', 'url' => url('warehouse/whatsapp-orders/expenses')],
-                ['label' => 'Confirm Deletion'],
+                ['label' => 'Cancel Voucher'],
             ],
             'expense' => $expense,
         ]);
@@ -5701,13 +5745,13 @@ class WhatsappController {
         }
 
         $userId = Session::userId() ?? 1;
-        if (!ExpenseService::deleteExpense($id, $userId)) {
-            Session::flash('error', 'WhatsApp expense could not be deleted.');
+        if (!ExpenseService::cancelExpense($id, 'WHATSAPP', (int)$channel['id'], $userId)) {
+            Session::flash('error', 'WhatsApp expense could not be cancelled.');
             Response::redirect(url('warehouse/whatsapp-orders/expenses'));
             return;
         }
 
-        Session::flash('success', "Expense record deleted successfully.");
+        Session::flash('success', 'Expense voucher cancelled and retained in the audit history.');
         Response::redirect(url('warehouse/whatsapp-orders/expenses'));
     }
 

@@ -180,8 +180,13 @@
                 <small class="text-light opacity-75">Order Date &amp; Time: <?= date('d M Y, h:i A', strtotime($sale['created_at'])) ?></small>
             </div>
             <div class="col-md-5 text-md-end mt-2 mt-md-0">
+                <?php if (!empty($channel['logo_url'])): ?>
+                    <img src="<?= htmlspecialchars($channel['logo_url'], ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars($channel['name'] ?? 'Website channel', ENT_QUOTES, 'UTF-8') ?> logo" class="mb-2" style="max-width:150px;max-height:64px;object-fit:contain;">
+                <?php endif; ?>
                 <small class="text-uppercase tracking-wider opacity-75 d-block text-white" style="font-size: 11px;">Sales Channel</small>
-                <h5 class="fw-bold text-info mb-0">Website E-Commerce Portal</h5>
+                <h5 class="fw-bold text-info mb-0"><?= htmlspecialchars($channel['name'] ?? 'Website E-Commerce Portal', ENT_QUOTES, 'UTF-8') ?></h5>
+                <?php if (!empty($channel['phone'])): ?><small class="text-light opacity-75 d-block"><?= htmlspecialchars($channel['phone'], ENT_QUOTES, 'UTF-8') ?></small><?php endif; ?>
+                <?php if (!empty($channel['gst_number'])): ?><small class="text-light opacity-75 d-block">GSTIN: <?= htmlspecialchars($channel['gst_number'], ENT_QUOTES, 'UTF-8') ?></small><?php endif; ?>
             </div>
         </div>
     </div>
