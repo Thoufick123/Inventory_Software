@@ -553,6 +553,102 @@
     const numericTextPattern = /^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/;
     let activeHsnTarget = null;
 
+    function sanitizeNumericInput(input) {
+        if (!input || !input.matches('.numeric-text-input')) return;
+        const isIntegerOnly = input.matches('.roll-design-count, .roll-quantity') || input.dataset.step === '1' || input.getAttribute('inputmode') === 'numeric';
+        const raw = input.value;
+        let clean = '';
+        if (isIntegerOnly) {
+            clean = raw.replace(/\D/g, '');
+        } else {
+            clean = raw.replace(/[^0-9.]/g, '');
+            const parts = clean.split('.');
+            if (parts.length > 2) {
+                clean = parts[0] + '.' + parts.slice(1).join('');
+            }
+        }
+        if (raw !== clean) {
+            const start = input.selectionStart;
+            input.value = clean;
+            if (start !== null) {
+                const newPos = Math.min(start - (raw.length - clean.length), clean.length);
+                input.setSelectionRange(Math.max(0, newPos), Math.max(0, newPos));
+            }
+        }
+    }
+
+    function handleNumericKeyDown(event) {
+        const input = event.target;
+        if (!input || !input.matches('.numeric-text-input')) return;
+
+        if (
+            event.ctrlKey || event.metaKey || event.altKey ||
+            ['Backspace', 'Delete', 'Tab', 'Enter', 'Escape', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)
+        ) {
+            return;
+        }
+
+        const isIntegerOnly = input.matches('.roll-design-count, .roll-quantity') || input.dataset.step === '1' || input.getAttribute('inputmode') === 'numeric';
+
+        if (isIntegerOnly) {
+            if (!/^[0-9]$/.test(event.key)) {
+                event.preventDefault();
+            }
+        } else {
+            if (event.key === '.') {
+                if (input.value.includes('.')) {
+                    const selStart = input.selectionStart;
+                    const selEnd = input.selectionEnd;
+                    const selectedText = (selStart !== null && selEnd !== null) ? input.value.substring(selStart, selEnd) : '';
+                    if (!selectedText.includes('.')) {
+                        event.preventDefault();
+                    }
+                }
+            } else if (!/^[0-9]$/.test(event.key)) {
+                event.preventDefault();
+            }
+        }
+    }
+
+    function handleNumericBeforeInput(event) {
+        const input = event.target;
+        if (!input || !input.matches('.numeric-text-input')) return;
+        if (!event.data) return;
+
+        const isIntegerOnly = input.matches('.roll-design-count, .roll-quantity') || input.dataset.step === '1' || input.getAttribute('inputmode') === 'numeric';
+
+        if (isIntegerOnly) {
+            if (/[^0-9]/.test(event.data)) {
+                event.preventDefault();
+            }
+        } else {
+            if (/[^0-9.]/.test(event.data)) {
+                event.preventDefault();
+            } else if (event.data.includes('.') && input.value.includes('.')) {
+                const selStart = input.selectionStart;
+                const selEnd = input.selectionEnd;
+                const selectedText = (selStart !== null && selEnd !== null) ? input.value.substring(selStart, selEnd) : '';
+                if (!selectedText.includes('.')) {
+                    event.preventDefault();
+                }
+            }
+        }
+    }
+
+    function handleNumericPaste(event) {
+        const input = event.target;
+        if (!input || !input.matches('.numeric-text-input')) return;
+        setTimeout(() => {
+            sanitizeNumericInput(input);
+            validateNumericTextInput(input);
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        }, 0);
+    }
+
+    document.addEventListener('keydown', handleNumericKeyDown);
+    document.addEventListener('beforeinput', handleNumericBeforeInput);
+    document.addEventListener('paste', handleNumericPaste);
+
     function validateNumericTextInput(input) {
         const value = input.value.trim();
         let message = '';
@@ -584,6 +680,7 @@
 
     form.addEventListener('input', event => {
         if (event.target.matches('.numeric-text-input')) {
+            sanitizeNumericInput(event.target);
             validateNumericTextInput(event.target);
         }
     });
