@@ -231,7 +231,11 @@ $inventoryVariantCount = array_sum(array_map(
                     data-filter-match="true">
                     <td class="text-nowrap">
                         <?php if (!empty($batch['is_supply'])): ?>
-                            <div class="fw-semibold text-success"><i class="bi bi-box-seam me-1"></i>Supply Inward #<?= (int)($batch['supply_item_id'] ?? 0) ?></div>
+                            <div class="fw-semibold text-success">
+                                <a href="<?= url('production/inventory/supply/' . $batch['supply_item_id']) ?>" class="text-decoration-none text-success">
+                                    <i class="bi bi-box-seam me-1"></i>Supply Inward #<?= (int)($batch['supply_item_id'] ?? 0) ?>
+                                </a>
+                            </div>
                         <?php else: ?>
                             <div class="fw-semibold">QC Batch #<?= (int)$batch['qc_batch_id'] ?></div>
                         <?php endif; ?>
@@ -278,12 +282,12 @@ $inventoryVariantCount = array_sum(array_map(
                     <td class="text-end">
                         <div class="action-btns-group justify-content-end">
                             <?php if (!empty($batch['is_supply'])): ?>
-                                <a href="<?= url('production/purchases/view/' . $batch['purchase_id']) ?>"
-                                   class="btn btn-outline-secondary btn-action-icon" title="View Purchase Details">
+                                <a href="<?= url('production/inventory/supply/' . $batch['supply_item_id']) ?>"
+                                   class="btn btn-outline-secondary btn-action-icon" title="View Supply Batch & Inventory">
                                     <i class="bi bi-eye"></i>
                                 </a>
-                                <a href="<?= url('production/purchases/supply-qr/' . $batch['purchase_id'] . '?item_id=' . $batch['supply_item_id'] . '&inwarded_only=1') ?>"
-                                   class="btn btn-outline-info btn-action-icon" title="View Inwarded QR Labels">
+                                <a href="<?= url('production/inventory/supply/' . $batch['supply_item_id'] . '#qrSection') ?>"
+                                   class="btn btn-outline-info btn-action-icon" title="View Supply QR Labels">
                                     <i class="bi bi-qr-code"></i>
                                 </a>
                                 <button type="button" class="btn btn-outline-primary btn-action-icon" title="Edit In-Stock Quantity"
@@ -301,7 +305,7 @@ $inventoryVariantCount = array_sum(array_map(
                                         onclick="confirmDeleteSupplyStock(<?= (int)$batch['supply_item_id'] ?>, '<?= e(addslashes($batch['product_name'])) ?>')">
                                     <i class="bi bi-trash"></i>
                                 </button>
-                                <a href="<?= url('production/purchases/supply-qr/' . $batch['purchase_id'] . '?mode=package&item_id=' . $batch['supply_item_id'] . '&inwarded_only=1') ?>"
+                                <a href="<?= url('production/inventory/supply/' . $batch['supply_item_id'] . '?mode=package') ?>"
                                    class="btn btn-outline-success btn-action-icon" title="Master Batch Box Package QR Labels">
                                     <i class="bi bi-box-seam"></i>
                                 </a>
@@ -397,9 +401,9 @@ $inventoryVariantCount = array_sum(array_map(
                     <div>
                         <div class="d-flex align-items-center gap-2 mb-1">
                             <?php if (!empty($batch['is_supply'])): ?>
-                                <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 fs-6 fw-bold text-nowrap">
+                                <a href="<?= url('production/inventory/supply/' . $batch['supply_item_id']) ?>" class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 fs-6 fw-bold text-nowrap text-decoration-none">
                                     <i class="bi bi-box-seam me-1"></i>Supply Inward #<?= (int)($batch['supply_item_id'] ?? 0) ?>
-                                </span>
+                                </a>
                             <?php else: ?>
                                 <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-2 fs-6 fw-bold text-nowrap">
                                     <i class="bi bi-patch-check-fill me-1"></i>QC Batch #<?= $batch['qc_batch_id'] ?>
@@ -534,12 +538,12 @@ $inventoryVariantCount = array_sum(array_map(
                 <!-- Actions (Both Option A & Option B) -->
                 <div class="d-flex gap-1.5 batch-list-actions flex-wrap">
                     <?php if (!empty($batch['is_supply'])): ?>
-                        <a href="<?= url('production/purchases/view/' . $batch['purchase_id']) ?>" 
-                           class="btn btn-outline-secondary btn-sm fw-semibold" title="View Purchase Details">
+                        <a href="<?= url('production/inventory/supply/' . $batch['supply_item_id']) ?>" 
+                           class="btn btn-outline-secondary btn-sm fw-semibold" title="View Supply Batch & Inventory">
                             <i class="bi bi-eye me-1"></i> View
                         </a>
-                        <a href="<?= url('production/purchases/supply-qr/' . $batch['purchase_id'] . '?item_id=' . $batch['supply_item_id'] . '&inwarded_only=1') ?>" 
-                           class="btn btn-outline-info btn-sm fw-semibold" title="View Inwarded QR Labels">
+                        <a href="<?= url('production/inventory/supply/' . $batch['supply_item_id'] . '#qrSection') ?>" 
+                           class="btn btn-outline-info btn-sm fw-semibold" title="View Supply QR Labels">
                             <i class="bi bi-qr-code me-1"></i> QR
                         </a>
                         <button type="button" class="btn btn-outline-primary btn-sm fw-semibold" title="Edit In-Stock Quantity"
@@ -557,7 +561,7 @@ $inventoryVariantCount = array_sum(array_map(
                                 onclick="confirmDeleteSupplyStock(<?= (int)$batch['supply_item_id'] ?>, '<?= e(addslashes($batch['product_name'])) ?>')">
                             <i class="bi bi-trash"></i>
                         </button>
-                        <a href="<?= url('production/purchases/supply-qr/' . $batch['purchase_id'] . '?mode=package&item_id=' . $batch['supply_item_id'] . '&inwarded_only=1') ?>" 
+                        <a href="<?= url('production/inventory/supply/' . $batch['supply_item_id'] . '?mode=package') ?>" 
                            class="btn btn-outline-success btn-sm fw-semibold" title="Master Batch Box Package QR Labels">
                             <i class="bi bi-box-seam me-1"></i> Batch (WH)
                         </a>

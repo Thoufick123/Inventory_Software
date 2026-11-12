@@ -12473,12 +12473,7 @@ class ProductionController {
     public function productionInventoryBatch($id): void {
         if (is_string($id) && (str_starts_with($id, 'SUP-') || !is_numeric($id))) {
             $itemId = (int)str_replace('SUP-', '', $id);
-            $item = Database::fetchOne("SELECT purchase_id FROM production_purchase_items WHERE id = ?", [$itemId]);
-            if ($item) {
-                Response::redirect(url('production/purchases/supply-qr/' . $item['purchase_id'] . '?item_id=' . $itemId));
-                return;
-            }
-            Response::redirect(url('production/purchases'));
+            $this->productionInventorySupplyBatch($itemId);
             return;
         }
 
@@ -12760,6 +12755,231 @@ class ProductionController {
                 ['label' => 'Production', 'url' => url('production/dashboard')],
                 ['label' => 'Inventory', 'url' => url('production/inventory')],
                 ['label' => 'QC Batch #' . $id],
+            ],
+        ]);
+    }
+
+    /**
+     * Show detailed piece-by-piece / unit inventory for a single Supply Inward batch,
+     * with real-time remaining stock calculation, QR labels, and outward dispatch history,
+     * exactly formatted like the QC Batch inventory page.
+     */
+    public function productionInventorySupplyBatch($id): void {
+        self::ensureDatabaseSchema();
+        $supplyItemId = (int)$id;
+
+        $supplyItem = Database::fetchOne(
+            "SELECT ppi.*,
+                    pp.purchase_number, pp.purchase_date, pp.invoice_number, pp.total_amount AS purchase_total_amount,
+                    pp.notes AS purchase_notes,
+                    s.name AS supplier_name, s.company AS supplier_company, s.phone AS supplier_phone, s.email AS supplier_email,
+                    s.address AS supplier_address, s.gst_number AS supplier_gst,
+                    p.id AS catalog_product_id, p.name AS catalog_product_name, p.code AS product_sku, p.image_url AS product_image,
+                    c.name AS category_name,
+                    u.full_name AS inwarded_by_name
+             FROM production_purchase_items ppi
+             JOIN production_purchases pp ON ppi.purchase_id = pp.id
+             LEFT JOIN sellers s ON pp.seller_id = s.id
+             LEFT JOIN products p ON ppi.product_id = p.id
+             LEFT JOIN categories c ON p.category_id = c.id
+             LEFT JOIN users u ON ppi.inwarded_by = u.id
+             WHERE ppi.id = ?",
+            [$supplyItemId]
+        );
+
+        if (!$supplyItem) {
+            Session::flash('error', 'Supply inward record #' . $supplyItemId . ' not found.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        $purchaseId = (int)$supplyItem['purchase_id'];
+        $rawQty = (float)($supplyItem['quantity'] ?? 1);
+        $inwardedQty = (float)($supplyItem['inwarded_qty'] > 0 ? $supplyItem['inwarded_qty'] : ($supplyItem['is_inwarded'] ? $supplyItem['quantity'] : 0));
+        if ($inwardedQty <= 0 && !empty($supplyItem['variant_id'])) {
+            $inwardedQrCnt = (int)(Database::fetchOne(
+                "SELECT COUNT(*) as cnt FROM warehouse_qr_codes WHERE variant_id = ? AND inwarded_at IS NOT NULL",
+                [(int)$supplyItem['variant_id']]
+            )['cnt'] ?? 0);
+            $inwardedQty = $inwardedQrCnt > 0 ? (float)$inwardedQrCnt : $rawQty;
+        }
+        if ($inwardedQty <= 0) {
+            $inwardedQty = $rawQty;
+        }
+
+        // Query current available stock balance
+        $currentAvailable = null;
+        if (!empty($supplyItem['variant_id'])) {
+            $sbRow = Database::fetchOne(
+                "SELECT COALESCE(SUM(quantity), 0) AS cnt FROM stock_balances WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                [(int)$supplyItem['variant_id']]
+            );
+            if ($sbRow !== null) {
+                $currentAvailable = (float)$sbRow['cnt'];
+            }
+        }
+        if ($currentAvailable === null) {
+            $currentAvailable = $inwardedQty;
+        }
+
+        $remainingPieces = (int)round(max(0.0, $currentAvailable));
+        $totalPieces = (int)round($inwardedQty);
+        $totalOutwardPieces = max(0, $totalPieces - $remainingPieces);
+        $unitPrice = (float)($supplyItem['unit_price'] ?? 0);
+        $totalValue = $totalPieces * $unitPrice;
+        $remainingValue = $remainingPieces * $unitPrice;
+
+        $mode = $_GET['mode'] ?? 'piece';
+        $supplierTitle = mb_strtoupper(trim($supplyItem['supplier_company'] ?: ($supplyItem['supplier_name'] ?? 'SUPPLIER')));
+        $prefix = 'SP' . date('my', strtotime($supplyItem['purchase_date']));
+        $itemName = mb_strtoupper(trim($supplyItem['catalog_product_name'] ?: ($supplyItem['item_name'] ?? 'SUPPLY ITEM')));
+        $unit = mb_strtoupper(trim($supplyItem['unit'] ?? 'PCS'));
+        $hsnCode = !empty($supplyItem['hsn_code']) ? trim((string)$supplyItem['hsn_code']) : '—';
+        $isIntQty = (floor($rawQty) === $rawQty);
+        $qtyInt = (int)$rawQty;
+
+        // Query inwarded QR codes for this purchase prefix
+        $inwardedQrs = Database::fetchAll(
+            "SELECT qr_code, inwarded_at FROM warehouse_qr_codes WHERE qr_code LIKE ? AND inwarded_at IS NOT NULL",
+            [$prefix . '%']
+        );
+        $inwardedMap = [];
+        foreach ($inwardedQrs as $iq) {
+            $inwardedMap[$iq['qr_code']] = $iq['inwarded_at'];
+        }
+
+        // Calculate offset if there were earlier items in the same purchase
+        $earlierItems = Database::fetchAll(
+            "SELECT quantity FROM production_purchase_items WHERE purchase_id = ? AND item_type = 'GENERAL_SUPPLY' AND id < ? ORDER BY id ASC",
+            [$purchaseId, $supplyItemId]
+        );
+        $globalStickerIndex = 1;
+        foreach ($earlierItems as $eit) {
+            $eQty = (float)($eit['quantity'] ?? 1);
+            $globalStickerIndex += (floor($eQty) === $eQty && $eQty <= 100) ? (int)$eQty : 1;
+        }
+
+        $pieceItems = [];
+        $stickers = [];
+        if ($mode === 'package' || !$isIntQty || $qtyInt <= 1 || $qtyInt > 100) {
+            $pieceCode = sprintf('%s%02d', $prefix, $globalStickerIndex++);
+            $isDispatched = ($totalOutwardPieces >= $totalPieces && $totalPieces > 0);
+            $pieceItems[] = [
+                'piece_no'        => 1,
+                'piece_seq'       => 1,
+                'tag_code'        => $pieceCode,
+                'code'            => $pieceCode,
+                'qr_payload'      => $pieceCode,
+                'product_name'    => $itemName,
+                'product_sku'     => $supplyItem['product_sku'] ?? ('SUP-' . $supplyItemId),
+                'sku'             => $supplyItem['product_sku'] ?? ('SUP-' . $supplyItemId),
+                'category_name'   => $supplyItem['category_name'] ?: 'Garment Supplies',
+                'size_name'       => number_format($rawQty, $isIntQty ? 0 : 2) . ' ' . $unit,
+                'color_name'      => 'Standard',
+                'base_price'      => $unitPrice * $rawQty,
+                'discount_price'  => $unitPrice * $rawQty,
+                'unit_price'      => $unitPrice,
+                'total_price'     => $unitPrice * $rawQty,
+                'hsn_code'        => $hsnCode,
+                'program_number'  => $supplyItem['purchase_number'],
+                'inspector_name'  => $supplyItem['inwarded_by_name'] ?: ($supplyItem['supplier_company'] ?: $supplyItem['supplier_name']),
+                'batch_created_at'=> $supplyItem['inwarded_at'] ?: $supplyItem['purchase_date'],
+                'is_dispatched'   => $isDispatched,
+                'can_delete'      => false,
+                'unit'            => $unit,
+                'is_package'      => true,
+            ];
+            $stickers[] = [
+                'code'           => $pieceCode,
+                'display_title'  => $itemName . ' (Master Package)',
+                'quantity_label' => number_format($rawQty, $isIntQty ? 0 : 2) . ' ' . $unit,
+                'unit_price'     => $unitPrice,
+                'hsn_code'       => $hsnCode,
+                'supplier_name'  => $supplierTitle,
+                'po_number'      => $supplyItem['purchase_number'],
+            ];
+        } else {
+            for ($p = 0; $p < $qtyInt; $p++) {
+                $pieceCode = sprintf('%s%02d', $prefix, $globalStickerIndex++);
+                $pieceNo = $p + 1;
+                $isDispatched = ($pieceNo <= $totalOutwardPieces);
+                $pieceLabel = $itemName . ' (' . $pieceNo . '/' . $qtyInt . ')';
+                $pieceItems[] = [
+                    'piece_no'        => $pieceNo,
+                    'piece_seq'       => $p,
+                    'tag_code'        => $pieceCode,
+                    'code'            => $pieceCode,
+                    'qr_payload'      => $pieceCode,
+                    'product_name'    => $itemName,
+                    'product_sku'     => $supplyItem['product_sku'] ?? ('SUP-' . $supplyItemId),
+                    'sku'             => $supplyItem['product_sku'] ?? ('SUP-' . $supplyItemId),
+                    'category_name'   => $supplyItem['category_name'] ?: 'Garment Supplies',
+                    'size_name'       => '1 ' . $unit,
+                    'color_name'      => 'Standard',
+                    'base_price'      => $unitPrice,
+                    'discount_price'  => $unitPrice,
+                    'unit_price'      => $unitPrice,
+                    'total_price'     => $unitPrice,
+                    'hsn_code'        => $hsnCode,
+                    'program_number'  => $supplyItem['purchase_number'],
+                    'inspector_name'  => $supplyItem['inwarded_by_name'] ?: ($supplyItem['supplier_company'] ?: $supplyItem['supplier_name']),
+                    'batch_created_at'=> $supplyItem['inwarded_at'] ?: $supplyItem['purchase_date'],
+                    'is_dispatched'   => $isDispatched,
+                    'can_delete'      => false,
+                    'unit'            => $unit,
+                    'is_package'      => false,
+                ];
+                $stickers[] = [
+                    'code'           => $pieceCode,
+                    'display_title'  => $pieceLabel,
+                    'quantity_label' => '1 ' . $unit . ' (of ' . $qtyInt . ')',
+                    'unit_price'     => $unitPrice,
+                    'hsn_code'       => $hsnCode,
+                    'supplier_name'  => $supplierTitle,
+                    'po_number'      => $supplyItem['purchase_number'],
+                ];
+            }
+        }
+
+        // Fetch outward records for this supply variant if outwarded
+        $outwards = [];
+        if (!empty($supplyItem['variant_id'])) {
+            try {
+                $outwards = Database::fetchAll(
+                    "SELECT po.*,
+                            w.name as warehouse_name,
+                            w.code as warehouse_code,
+                            u.full_name as dispatched_by_name
+                     FROM stock_movements sm
+                     JOIN production_outwards po ON sm.reference_id = po.id
+                     LEFT JOIN warehouses w ON po.warehouse_id = w.id
+                     LEFT JOIN users u ON po.created_by = u.id
+                     WHERE sm.variant_id = ? AND sm.movement_type = 'OUTWARD'
+                     ORDER BY po.id DESC",
+                    [(int)$supplyItem['variant_id']]
+                );
+            } catch (\Throwable $e) {}
+        }
+
+        Response::view('production.inventory.supply_batch', [
+            'pageTitle'           => 'Supply Inward #' . $supplyItemId . ' — Inventory Detail',
+            'activeModule'        => 'production',
+            'activeMenu'          => 'prod-inventory',
+            'supplyItemId'        => $supplyItemId,
+            'supplyItem'          => $supplyItem,
+            'pieceItems'          => $pieceItems,
+            'stickers'            => $stickers,
+            'totalPieces'         => $totalPieces,
+            'totalValue'          => $totalValue,
+            'totalOutwardPieces'  => $totalOutwardPieces,
+            'remainingPieces'     => $remainingPieces,
+            'remainingValue'      => $remainingValue,
+            'outwards'            => $outwards,
+            'mode'                => $mode,
+            'breadcrumb'          => [
+                ['label' => 'Production', 'url' => url('production/dashboard')],
+                ['label' => 'Inventory', 'url' => url('production/inventory')],
+                ['label' => 'Supply Inward #' . $supplyItemId],
             ],
         ]);
     }
