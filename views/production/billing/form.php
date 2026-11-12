@@ -117,7 +117,7 @@ $existingItems = array_map(static function (array $item): array {
                         <button class="btn btn-outline-primary" type="button" id="openCameraScanner" aria-label="Scan QR with camera" title="Scan QR with camera"><i class="bi bi-camera"></i><span class="ms-1">Camera</span></button>
                     </div>
                     <div id="searchResults" class="list-group mt-2"></div>
-                    <div id="cartMessage" class="small text-muted mt-2">Only unbilled, available QC-passed QR pieces can be added.</div>
+                    <div id="cartMessage" class="small text-muted mt-2">Scan an unbilled finished-goods QR label after QC approval. Purchased fabric-roll labels are not billable here.</div>
                 </div>
             </div>
 
@@ -560,6 +560,15 @@ $existingItems = array_map(static function (array $item): array {
                 return;
             }
 
+            if (payload.data && payload.data.is_fabric_roll) {
+                const alertEl = document.createElement('div');
+                alertEl.className = 'list-group-item list-group-item-warning border-warning small';
+                alertEl.textContent = payload.data.message;
+                resultBox.append(alertEl);
+                document.getElementById('cartMessage').textContent = payload.data.message;
+                return;
+            }
+
             const assigned = assignedTags();
             let resultCount = 0;
             payload.data.items.forEach(item => {
@@ -651,7 +660,7 @@ $existingItems = array_map(static function (array $item): array {
                         cameraMessage.textContent = 'QR added to this bill.';
                         cameraModal.hide();
                     } else {
-                        cameraMessage.textContent = 'QR was not added. Check the inventory result and try again.';
+                        cameraMessage.textContent = resultBox.textContent.trim() || 'No available matching finished-goods QR item was found.';
                         cameraScanBusy = false;
                     }
                 },

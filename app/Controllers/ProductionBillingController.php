@@ -254,6 +254,24 @@ class ProductionBillingController
             }
         }
 
+        if (!$matches && preg_match('/^([A-Z]{2}\d{4})(\d+)$/', $needle, $fabricCode)) {
+            $fabricRoll = Database::fetchOne(
+                "SELECT roll_number FROM seller_rolls
+                 WHERE UPPER(LEFT(start_code, 6)) = ? AND UPPER(LEFT(end_code, 6)) = ?
+                   AND ? BETWEEN start_seq AND end_seq
+                 LIMIT 1",
+                [$fabricCode[1], $fabricCode[1], (int)$fabricCode[2]]
+            );
+            if ($fabricRoll) {
+                Response::jsonSuccess('Fabric roll QR is not billable finished inventory.', [
+                    'items' => [],
+                    'is_fabric_roll' => true,
+                    'message' => "QR {$needle} is a purchased fabric-roll label ({$fabricRoll['roll_number']}). Production billing accepts only available finished-goods QR labels that passed QC; use the fabric roll in production first.",
+                ]);
+                return;
+            }
+        }
+
         Response::jsonSuccess('Inventory items loaded.', ['items' => $matches]);
     }
 
