@@ -698,6 +698,9 @@ class Router {
         $this->get('warehouse/whatsapp-orders/damage/create', 'WhatsappController', 'createWhatsappDamage', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_damage', 'create']]);
         $this->post('warehouse/whatsapp-orders/damage/store', 'WhatsappController', 'storeWhatsappDamage', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_damage', 'create']]);
         $this->get('warehouse/whatsapp-orders/damage/view/{id}', 'WhatsappController', 'viewWhatsappDamage', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_damage', 'view']]);
+        $this->get('warehouse/whatsapp-orders/damage/edit/{id}', 'WhatsappController', 'editWhatsappDamage', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_damage', 'edit']]);
+        $this->post('warehouse/whatsapp-orders/damage/update/{id}', 'WhatsappController', 'updateWhatsappDamage', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_damage', 'edit']]);
+        $this->post('warehouse/whatsapp-orders/damage/delete/{id}', 'WhatsappController', 'deleteWhatsappDamage', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_damage', 'delete']]);
         $this->get('warehouse/whatsapp-orders/damage/outward', 'WhatsappController', 'whatsappDamageOutwardList', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_damage', 'view']]);
         $this->get('warehouse/whatsapp-orders/damage/outward/create', 'WhatsappController', 'createWhatsappDamageOutward', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_damage', 'outward']]);
         $this->post('warehouse/whatsapp-orders/damage/outward/store', 'WhatsappController', 'storeWhatsappDamageOutward', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_damage', 'outward']]);
@@ -878,6 +881,7 @@ class Router {
         $this->get('shop/damage/create', 'ShopController', 'createDamage', ['AuthMiddleware', ['PermissionMiddleware', 'shop_damage', 'create']]);
         $this->post('shop/damage/store', 'ShopController', 'storeDamage', ['AuthMiddleware', ['PermissionMiddleware', 'shop_damage', 'create']]);
         $this->get('shop/damage/view/{id}', 'ShopController', 'viewDamage', ['AuthMiddleware', ['PermissionMiddleware', 'shop_damage', 'view']]);
+        $this->post('shop/damage/delete/{id}', 'ShopController', 'deleteDamage', ['AuthMiddleware', ['PermissionMiddleware', 'shop_damage', 'delete']]);
         $this->post('shop/damage/update-status/{id}', 'ShopController', 'updateDamageStatus', ['AuthMiddleware', ['PermissionMiddleware', 'shop_damage', 'edit']]);
         $this->get('api/shop/damage/lookup-scan', 'ShopController', 'ajaxLookupDamageProduct', ['AuthMiddleware', ['PermissionMiddleware', 'shop_damage', 'view']]);
         $this->post('api/shop/damage/lookup-scan', 'ShopController', 'ajaxLookupDamageProduct', ['AuthMiddleware', ['PermissionMiddleware', 'shop_damage', 'view']]);
@@ -885,6 +889,11 @@ class Router {
         // Selled Products (Sales Register)
         $this->get('shop/sales', 'ShopController', 'soldProductsList', ['AuthMiddleware', ['PermissionMiddleware', 'sales', 'view']]);
         $this->get('api/shop/sales/{id}', 'ShopController', 'ajaxGetSaleDetails', ['AuthMiddleware', ['PermissionMiddleware', 'sales', 'view']]);
+        $this->get('shop/sales/edit/{id}', 'ShopController', 'editSale', ['AuthMiddleware', ['PermissionMiddleware', 'sales', 'edit']]);
+        $this->post('shop/sales/update/{id}', 'ShopController', 'updateSale', ['AuthMiddleware', ['PermissionMiddleware', 'sales', 'edit']]);
+        $this->post('shop/sales/delete/{id}', 'ShopController', 'voidSale', ['AuthMiddleware', ['PermissionMiddleware', 'sales', 'delete']]);
+        $this->get('api/shop/sales/products/search', 'ShopController', 'searchSaleVariants', ['AuthMiddleware', ['PermissionMiddleware', 'sales', 'edit']]);
+        $this->get('api/shop/sales/products/scan', 'ShopController', 'scanSaleVariant', ['AuthMiddleware', ['PermissionMiddleware', 'sales', 'edit']]);
 
         // Customer Returns & Exchanges
         $this->get('shop/returns', 'ShopController', 'returnList', ['AuthMiddleware', ['PermissionMiddleware', 'shop_returns', 'view']]);
@@ -924,6 +933,8 @@ class Router {
         $this->post('shop/cash/expense', 'CashController', 'storeExpense', ['AuthMiddleware', ['PermissionMiddleware', 'shop_cash', 'create']]);
         $this->post('shop/cash/cash-in', 'CashController', 'storeCashIn', ['AuthMiddleware', ['PermissionMiddleware', 'shop_cash', 'create']]);
         $this->post('shop/cash/bank-deposit', 'CashController', 'storeBankDeposit', ['AuthMiddleware', ['PermissionMiddleware', 'shop_cash', 'create']]);
+        $this->post('shop/cash/transactions/update/{id}', 'CashController', 'updateLedgerTransaction', ['AuthMiddleware', ['PermissionMiddleware', 'shop_cash', 'edit']]);
+        $this->post('shop/cash/transactions/void/{id}', 'CashController', 'voidLedgerTransaction', ['AuthMiddleware', ['PermissionMiddleware', 'shop_cash', 'delete']]);
         $this->get('shop/cash/shift-receipt/{id}', 'CashController', 'shiftReceipt', ['AuthMiddleware', ['PermissionMiddleware', 'shop_cash', 'voucher']]);
         $this->get('shop/cash/expense-voucher/{id}', 'CashController', 'expenseVoucher', ['AuthMiddleware', ['PermissionMiddleware', 'shop_cash', 'voucher']]);
         $this->get('api/shop/cash/status', 'CashController', 'ajaxRegisterStatus', ['AuthMiddleware', ['PermissionMiddleware', 'shop_cash', 'view']]);

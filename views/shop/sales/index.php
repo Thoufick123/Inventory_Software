@@ -1,9 +1,9 @@
 <?php
 // views/shop/sales/index.php — Selled Products (Sales Ledger)
-$cashRevenueTotal = array_sum(array_column($items, 'cash_revenue'));
-$onlineRevenueTotal = array_sum(array_column($items, 'online_revenue'));
-$cashRecordCount = count(array_filter($items, static fn($item) => (float)($item['cash_revenue'] ?? 0) > 0));
-$onlineRecordCount = count(array_filter($items, static fn($item) => (float)($item['online_revenue'] ?? 0) > 0));
+$cashRevenueTotal = array_sum(array_column($invoices, 'cash_revenue'));
+$onlineRevenueTotal = array_sum(array_column($invoices, 'online_revenue'));
+$cashRecordCount = count(array_filter($invoices, static fn($invoice) => (float)($invoice['cash_revenue'] ?? 0) > 0));
+$onlineRecordCount = count(array_filter($invoices, static fn($invoice) => (float)($invoice['online_revenue'] ?? 0) > 0));
 ?>
 <div class="container-fluid py-4">
     <!-- Header Section -->
@@ -94,21 +94,21 @@ $onlineRecordCount = count(array_filter($items, static fn($item) => (float)($ite
                     <i class="bi bi-list-ul"></i>
                     <span>All</span>
                     <span class="badge bg-white text-dark" id="allPaymentTabTotal">₹<?= number_format($cashRevenueTotal + $onlineRevenueTotal, 2) ?></span>
-                    <span class="small opacity-75" id="allPaymentTabCount"><?= number_format(count($items)) ?> records</span>
+                    <span class="small opacity-75" id="allPaymentTabCount"><?= number_format(count($invoices)) ?> invoices</span>
                 </button>
                 <button type="button" class="nav-link rounded-3 d-flex align-items-center gap-2 text-dark"
                         id="cashPaymentTab" data-payment-tab="cash" role="tab" aria-selected="false">
                     <i class="bi bi-cash-stack"></i>
                     <span>Cash</span>
                     <span class="badge bg-white text-success" id="cashPaymentTabTotal">₹<?= number_format($cashRevenueTotal, 2) ?></span>
-                    <span class="small opacity-75" id="cashPaymentTabCount"><?= number_format($cashRecordCount) ?> records</span>
+                    <span class="small opacity-75" id="cashPaymentTabCount"><?= number_format($cashRecordCount) ?> invoices</span>
                 </button>
                 <button type="button" class="nav-link rounded-3 d-flex align-items-center gap-2 text-dark"
                         id="onlinePaymentTab" data-payment-tab="online" role="tab" aria-selected="false">
                     <i class="bi bi-globe2"></i>
                     <span>Online</span>
                     <span class="badge bg-light text-primary" id="onlinePaymentTabTotal">₹<?= number_format($onlineRevenueTotal, 2) ?></span>
-                    <span class="small opacity-75" id="onlinePaymentTabCount"><?= number_format($onlineRecordCount) ?> records</span>
+                    <span class="small opacity-75" id="onlinePaymentTabCount"><?= number_format($onlineRecordCount) ?> invoices</span>
                 </button>
             </div>
         </div>
@@ -164,129 +164,93 @@ $onlineRecordCount = count(array_filter($items, static fn($item) => (float)($ite
         </div>
     </div>
 
-    <!-- Sold Products Itemized Table -->
+    <!-- Invoice Register -->
     <div class="card border-0 shadow-sm rounded-4 bg-white">
         <div class="card-header bg-white py-3 border-0 d-flex justify-content-between align-items-center">
-            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-cart-check-fill me-2 text-primary"></i>Itemized Sold Products</h5>
+            <h5 class="fw-bold text-dark mb-0"><i class="bi bi-receipt-cutoff me-2 text-primary"></i>Shop Sales Invoices</h5>
             <span class="badge bg-primary-subtle text-primary fw-semibold px-3 py-2 rounded-pill" id="salesCountBadge">
-                Showing <?= count($items) ?> records &middot; <?= number_format((int)($kpis['total_units_sold'] ?? 0)) ?> pcs
+                Showing <?= count($invoices) ?> invoices &middot; <?= number_format((int)($kpis['total_units_sold'] ?? 0)) ?> pcs
             </span>
         </div>
         <div class="card-body p-0 table-responsive">
             <table class="table table-hover align-middle mb-0" id="salesTable">
                 <thead class="table-light small text-uppercase">
                     <tr>
-                        <th class="ps-4" style="width: 4%;">s.no</th>
-                        <th style="width: 20%;">Product Details</th>
-                        <th style="width: 12%;">Piece QR Serial Tag</th>
-                        <th style="width: 12%;">Invoice s.no</th>
-                        <th style="width: 12%;">Customer</th>
-                        <th class="text-center" style="width: 5%;">Qty</th>
-                        <th class="text-end" style="width: 12%;">Rate &amp; Discount</th>
-                        <th class="text-end" style="width: 9%;">Net Total</th>
-                        <th class="text-center" style="width: 6%;">Mode</th>
+                        <th class="ps-4">S.No.</th>
+                        <th>Invoice Number</th>
+                        <th>Customer</th>
+                        <th>Items</th>
+                        <th class="text-center">Qty</th>
+                        <th class="text-end">Discount</th>
+                        <th class="text-end">Invoice Total</th>
+                        <th class="text-center">Mode</th>
+                        <th class="text-end pe-4">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="salesTableBody">
-                    <?php if (empty($items)): ?>
+                    <?php if (empty($invoices)): ?>
                         <tr id="emptySalesRow">
                             <td colspan="9" class="text-center py-5 text-muted">
                                 <div class="py-4">
                                     <i class="bi bi-inbox fs-1 text-secondary d-block mb-2"></i>
-                                    <h6>No sold products found matching your search criteria.</h6>
-                                    <p class="small text-muted mb-0">Complete a sale in POS Billing to view records here.</p>
+                                    <h6>No sales invoices found matching your search criteria.</h6>
+                                    <p class="small text-muted mb-0">Complete a sale in POS Billing to view invoices here.</p>
                                 </div>
                             </td>
                         </tr>
                     <?php else: ?>
-                        <?php foreach ($items as $idx => $it): 
-                            $searchHaystack = strtolower(($it['product_name'] ?? '') . ' ' . ($it['sku'] ?? '') . ' ' . ($it['scanned_qr_codes'] ?? '') . ' ' . ($it['invoice_number'] ?? '') . ' ' . ($it['customer_name'] ?? '') . ' ' . ($it['customer_phone'] ?? '') . ' ' . ($it['size_name'] ?? '') . ' ' . ($it['color_name'] ?? ''));
-                            $saleDateFormatted = !empty($it['sale_date']) ? formatUtcDateTime($it['sale_date'], 'Y-m-d') : '';
+                        <?php foreach ($invoices as $idx => $invoice):
+                            $searchHaystack = strtolower(
+                                ($invoice['invoice_number'] ?? '') . ' ' .
+                                ($invoice['product_summary'] ?? '') . ' ' .
+                                ($invoice['tags_summary'] ?? '') . ' ' .
+                                ($invoice['customer_name'] ?? '') . ' ' .
+                                ($invoice['customer_phone'] ?? '')
+                            );
+                            $saleDateFormatted = !empty($invoice['created_at']) ? formatUtcDateTime($invoice['created_at'], 'Y-m-d') : '';
                         ?>
-                            <tr class="sales-row" 
+                            <tr class="sales-row"
                                 data-search="<?= e($searchHaystack) ?>"
-                                data-cat="<?= (int)($it['category_id'] ?? 0) ?>"
+                                data-cat="<?= e($invoice['category_ids'] ?? '') ?>"
                                 data-date="<?= e($saleDateFormatted) ?>"
-                                data-quantity="<?= (int)($it['quantity'] ?? 0) ?>"
-                                data-cash-revenue="<?= number_format((float)($it['cash_revenue'] ?? 0), 2, '.', '') ?>"
-                                data-online-revenue="<?= number_format((float)($it['online_revenue'] ?? 0), 2, '.', '') ?>">
+                                data-quantity="<?= (int)($invoice['total_qty'] ?? 0) ?>"
+                                data-cash-revenue="<?= number_format((float)($invoice['cash_revenue'] ?? 0), 2, '.', '') ?>"
+                                data-online-revenue="<?= number_format((float)($invoice['online_revenue'] ?? 0), 2, '.', '') ?>">
                                 <td class="ps-4 text-muted small fw-bold sales-idx"><?= $idx + 1 ?></td>
-                                <td>
-                                    <div>
-                                        <div class="fw-bold text-dark small text-truncate" style="max-width: 220px;" title="<?= e($it['product_name']) ?>">
-                                            <?= e($it['product_name']) ?>
-                                        </div>
-                                        <div class="text-muted font-monospace" style="font-size: 11px;">
-                                            <span class="fw-semibold text-primary"><?= e($it['sku']) ?></span>
-                                            <?= !empty($it['size_name']) ? ' • ' . e($it['size_name']) : '' ?>
-                                            <?= !empty($it['color_name']) ? ' • ' . e($it['color_name']) : '' ?>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td>
-                                    <?php if (!empty($it['scanned_qr_codes'])): ?>
-                                        <div class="d-flex flex-wrap gap-1">
-                                            <?php foreach (explode(',', $it['scanned_qr_codes']) as $tag): ?>
-                                                <span class="badge bg-dark-subtle text-dark border font-monospace" style="font-size: 10px;">
-                                                    <i class="bi bi-qr-code text-primary me-1"></i><?= e(trim($tag)) ?>
-                                                </span>
-                                            <?php endforeach; ?>
-                                        </div>
-                                    <?php else: ?>
-                                        <span class="badge bg-light text-dark border font-monospace" style="font-size: 10px;">
-                                            <i class="bi bi-qr-code text-primary me-1"></i>QR: <?= e($it['sku'] ?? 'QR-CODE') ?>
-                                        </span>
-                                    <?php endif; ?>
-                                </td>
                                 <td style="white-space: nowrap;">
-                                    <a href="javascript:void(0)" onclick="openSoldProductModal(<?= $it['id'] ?>, 'thermal')" class="fw-bold font-monospace text-primary text-decoration-none small d-inline-flex align-items-center gap-1" title="Click to view exact POS bill & receipt">
-                                        <i class="bi bi-receipt"></i> <?= e($it['invoice_number']) ?>
+                                    <a href="javascript:void(0)" onclick="openSoldProductModal(<?= (int)$invoice['id'] ?>, 'thermal', 'sale')" class="fw-bold font-monospace text-primary text-decoration-none small d-inline-flex align-items-center gap-1" title="View this invoice">
+                                        <i class="bi bi-receipt"></i> <?= e($invoice['invoice_number']) ?>
                                     </a>
                                     <div class="text-muted" style="font-size: 10px; white-space: nowrap;">
-                                        <?= e($it['sale_date_display'] ?? formatUtcDateTime($it['sale_date'])) ?>
+                                        <?= e($invoice['sale_date_display'] ?? '') ?>
                                     </div>
                                 </td>
                                 <td>
                                     <div class="fw-semibold text-dark small text-truncate" style="max-width: 140px;">
-                                        <?= e($it['customer_name'] ?? 'Walk-in Customer') ?>
+                                        <?= e($invoice['customer_name'] ?? 'Walk-in Customer') ?>
                                     </div>
-                                    <?php if (!empty($it['customer_phone'])): ?>
-                                        <small class="text-muted font-monospace"><i class="bi bi-telephone me-1"></i><?= e($it['customer_phone']) ?></small>
+                                    <?php if (!empty($invoice['customer_phone'])): ?>
+                                        <small class="text-muted font-monospace"><i class="bi bi-telephone me-1"></i><?= e($invoice['customer_phone']) ?></small>
                                     <?php endif; ?>
+                                </td>
+                                <td>
+                                    <div class="fw-semibold text-dark small" title="<?= e($invoice['product_summary'] ?? '') ?>">
+                                        <?= (int)($invoice['items_count'] ?? 0) ?> line item(s)
+                                    </div>
+                                    <small class="text-muted text-truncate d-inline-block" style="max-width: 220px;">
+                                        <?= e($invoice['product_summary'] ?? '') ?>
+                                    </small>
                                 </td>
                                 <td class="text-center">
-                                    <span class="badge bg-primary-subtle text-primary rounded-pill px-3 fw-bold"><?= $it['quantity'] ?></span>
+                                    <span class="badge bg-primary-subtle text-primary rounded-pill px-3 fw-bold"><?= (int)($invoice['total_qty'] ?? 0) ?></span>
                                 </td>
-                                <td class="text-end">
-                                    <?php if (!empty($it['has_discount'])): ?>
-                                        <div class="fw-bold text-primary small">
-                                            ₹<?= number_format((float)$it['billed_unit_price'], 2) ?> <span class="text-muted fw-normal" style="font-size: 10px;">/ pc</span>
-                                        </div>
-                                        <div class="d-flex align-items-center justify-content-end gap-1 mt-1">
-                                            <del class="text-muted" style="font-size: 10.5px;">₹<?= number_format((float)$it['original_unit_price'], 2) ?></del>
-                                            <span class="badge bg-danger-subtle text-danger" style="font-size: 9.5px; padding: 1px 4px;">
-                                                -₹<?= number_format((float)$it['unit_discount'], 2) ?> (<?= round($it['discount_percent']) ?>%)
-                                            </span>
-                                        </div>
-                                    <?php else: ?>
-                                        <div class="fw-bold text-dark small">
-                                            ₹<?= number_format((float)$it['original_unit_price'], 2) ?> <span class="text-muted fw-normal" style="font-size: 10px;">/ pc</span>
-                                        </div>
-                                        <small class="text-muted" style="font-size: 10px;">Regular Rate</small>
-                                    <?php endif; ?>
+                                <td class="text-end text-danger fw-semibold">
+                                    -₹<?= number_format((float)($invoice['discount_amount'] ?? 0), 2) ?>
                                 </td>
-                                <td class="text-end fw-bold text-success">
-                                    <div>₹<?= number_format((float)$it['total_amount'], 2) ?></div>
-                                    <?php if ($it['tax_total'] > 0): ?>
-                                        <div class="text-muted" style="font-size: 9.5px; font-weight: normal;">+GST: ₹<?= number_format($it['tax_total'], 2) ?></div>
-                                    <?php endif; ?>
-                                    <?php if (!empty($it['discount_amount']) && $it['discount_amount'] > 0): ?>
-                                        <div class="text-danger" style="font-size: 9.5px; font-weight: normal;">Saved: ₹<?= number_format($it['discount_amount'], 2) ?></div>
-                                    <?php endif; ?>
-                                </td>
+                                <td class="text-end fw-bold text-success">₹<?= number_format((float)($invoice['total_amount'] ?? 0), 2) ?></td>
                                 <td class="text-center">
                                     <?php
-                                        $modeBadge = match($it['payment_mode']) {
+                                        $modeBadge = match($invoice['payment_mode']) {
                                             'CASH'     => 'bg-secondary',
                                             'UPI'      => 'bg-success',
                                             'CARD'     => 'bg-info text-dark',
@@ -295,7 +259,27 @@ $onlineRecordCount = count(array_filter($items, static fn($item) => (float)($ite
                                             default    => 'bg-secondary'
                                         };
                                     ?>
-                                    <span class="badge <?= $modeBadge ?> rounded-pill px-2" style="font-size: 10px;"><?= $it['payment_mode'] === 'CASH_UPI' ? 'Cash+UPI' : e($it['payment_mode']) ?></span>
+                                    <span class="badge <?= $modeBadge ?> rounded-pill px-2" style="font-size: 10px;"><?= ($invoice['payment_mode'] ?? '') === 'CASH_UPI' ? 'Cash+UPI' : e($invoice['payment_mode'] ?? '—') ?></span>
+                                </td>
+                                <td class="text-end pe-4">
+                                    <div class="d-inline-flex align-items-center gap-1">
+                                        <button type="button" class="btn btn-sm btn-outline-primary" title="View invoice" onclick="openSoldProductModal(<?= (int)$invoice['id'] ?>, 'thermal', 'sale')">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                        <?php if (hasPermission('sales', 'edit')): ?>
+                                            <a href="<?= url('shop/sales/edit/' . (int)$invoice['id']) ?>" class="btn btn-sm btn-outline-secondary" title="Edit invoice">
+                                                <i class="bi bi-pencil"></i>
+                                            </a>
+                                        <?php endif; ?>
+                                        <?php if (hasPermission('sales', 'delete')): ?>
+                                            <form method="POST" action="<?= url('shop/sales/delete/' . (int)$invoice['id']) ?>" class="d-inline" onsubmit="return confirm('Void this invoice, restore its items to stock, and reverse its payment entries?');">
+                                                <?= CSRF::field() ?>
+                                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Void invoice">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
+                                        <?php endif; ?>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -487,34 +471,33 @@ $onlineRecordCount = count(array_filter($items, static fn($item) => (float)($ite
                     <!-- VIEW 2: EXACT THERMAL POS RECEIPT SLIP -->
                     <div id="soldThermalView" style="display: none;" class="justify-content-center">
                         <div class="thermal-receipt-card shadow-sm mx-auto">
-                            <!-- GRM Stylized Logo -->
-                            <div class="text-center mb-2">
-                                <div class="thermal-logo-box">
-                                    <svg viewBox="0 0 150 75" width="120" height="55" xmlns="http://www.w3.org/2000/svg">
-                                        <defs>
-                                            <pattern id="stippleThermalSold" width="3" height="3" patternUnits="userSpaceOnUse">
-                                                <circle cx="1.5" cy="1.5" r="0.6" fill="#000" />
-                                            </pattern>
-                                        </defs>
-                                        <rect width="150" height="75" fill="url(#stippleThermalSold)" opacity="0.3" />
-                                        <rect width="150" height="75" fill="none" stroke="#000" stroke-width="1.5" />
-                                        <text x="75" y="52" font-family="'Times New Roman', Georgia, serif" font-size="50" font-weight="900" text-anchor="middle" fill="#000" letter-spacing="-2">GRM</text>
-                                    </svg>
+                            <div class="thermal-store-header">
+                                <div class="thermal-logo-container">
+                                    <div class="thermal-logo-box">
+                                        <img id="thShopLogo" alt="Shop logo" style="display:none;">
+                                        <svg id="thShopLogoFallback" viewBox="0 0 150 75" width="66" height="42" xmlns="http://www.w3.org/2000/svg">
+                                            <defs>
+                                                <pattern id="stippleThermalSold" width="3" height="3" patternUnits="userSpaceOnUse">
+                                                    <circle cx="1.5" cy="1.5" r="0.6" fill="#000" />
+                                                </pattern>
+                                            </defs>
+                                            <rect width="150" height="75" fill="url(#stippleThermalSold)" opacity="0.3" />
+                                            <rect width="150" height="75" fill="none" stroke="#000" stroke-width="1.5" />
+                                            <text x="75" y="52" font-family="'Times New Roman', Georgia, serif" font-size="50" font-weight="900" text-anchor="middle" fill="#000" letter-spacing="-2">GRM</text>
+                                        </svg>
+                                    </div>
                                 </div>
-                            </div>
 
-                            <!-- Store Header -->
-                            <div class="thermal-title" id="thShopName">GRM SHOP</div>
-                            <div class="thermal-address" id="thShopAddress">
-                                SULUR KMCH HOSPITAL<br>
-                                OPPOSITE, TRICHY<br>
-                                ROAD, SULUR, COIMBATORE
-                            </div>
-                            <div class="thermal-contact">
-                                Phone No: <span id="thShopPhone">8807144175, 8610612625</span>
-                            </div>
-                            <div class="thermal-gst">
-                                GST NO: <span id="thShopGst">33BFQPQ7507C1ZX</span>
+                                <div class="thermal-store-details">
+                                    <div class="thermal-title" id="thShopName">GRM SHOP</div>
+                                    <div class="thermal-address" id="thShopAddress"></div>
+                                    <div class="thermal-contact" id="thShopContact">
+                                        <div id="thShopPhoneLine" style="display:none;">Phone: <span id="thShopPhone"></span></div>
+                                    </div>
+                                    <div class="thermal-gst" id="thShopGstLine" style="display:none;">
+                                        GST NO: <span id="thShopGst"></span>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="thermal-divider-dashed"></div>
@@ -522,7 +505,7 @@ $onlineRecordCount = count(array_filter($items, static fn($item) => (float)($ite
                             <!-- Bill Metadata -->
                             <div class="thermal-meta-row">
                                 <span>Bill No: <strong id="thBillNumber">--</strong></span>
-                                <span>BID: <strong id="thBillId">--</strong></span>
+                                <span>Bill ID: <strong id="thBillId">--</strong></span>
                             </div>
                             <div class="thermal-meta-row">
                                 <span>Purchased At: <strong id="thPurchasedAt">--</strong></span>
@@ -562,34 +545,53 @@ $onlineRecordCount = count(array_filter($items, static fn($item) => (float)($ite
                                 <tbody id="thItemsBody">
                                     <!-- Populated via JavaScript -->
                                 </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td colspan="5" id="thTotalQty">Total Qty: 0</td>
+                                    </tr>
+                                </tfoot>
                             </table>
 
                             <div class="thermal-divider-dashed"></div>
 
                             <!-- Financial Totals -->
                             <div class="thermal-totals-row">
-                                <span>Sub Total (Taxable):</span>
-                                <span id="thSubtotal">₹0.00</span>
+                                <span>Total Discount:</span>
+                                <span id="thDiscount" class="text-danger">0.00</span>
                             </div>
                             <div class="thermal-totals-row">
-                                <span>Total GST:</span>
-                                <span id="thTotalGst">+₹0.00</span>
+                                <span>Taxable Base:</span>
+                                <span id="thSubtotal">0.00</span>
                             </div>
-                            <div class="thermal-totals-row" id="thDiscRow">
-                                <span>Gross Discount:</span>
-                                <span id="thDiscount" class="text-danger">-₹0.00</span>
+                            <div class="thermal-totals-row">
+                                <span>GST Amount (Incl.):</span>
+                                <span id="thTotalGst">0.00</span>
                             </div>
-                            <div class="thermal-totals-row" id="thRoundOffRow" style="display: none;">
+                            <div class="thermal-totals-row thermal-totals-row-left" id="thIgstRow" style="display:none;">
+                                <span>IGST:</span>
+                                <span id="thIgst">0.00</span>
+                            </div>
+                            <div class="thermal-totals-row" id="thCgstRow" style="display:none;">
+                                <span>CGST: <span id="thCgst">0.00</span></span>
+                            </div>
+                            <div class="thermal-totals-row" id="thSgstRow" style="display:none;">
+                                <span>SGST: <span id="thSgst">0.00</span></span>
+                            </div>
+                            <div class="thermal-totals-row" id="thExemptRow" style="display:none;">
+                                <span>GST Type:</span>
+                                <span>Exemption</span>
+                            </div>
+                            <div class="thermal-totals-row" id="thRoundOffRow">
                                 <span>Round Off:</span>
-                                <span id="thRoundOff">₹0.00</span>
+                                <span id="thRoundOff">0.00</span>
                             </div>
 
                             <div class="thermal-divider-solid"></div>
 
                             <!-- Net Total -->
                             <div class="thermal-net-row">
-                                <span>NET AMOUNT:</span>
-                                <span id="thNetTotal">₹0.00</span>
+                                <span>Net Amount</span>
+                                <span id="thNetTotal">0.00</span>
                             </div>
 
                             <div class="thermal-divider-double"></div>
@@ -734,34 +736,61 @@ $onlineRecordCount = count(array_filter($items, static fn($item) => (float)($ite
 .thermal-logo-box {
     display: inline-block;
     border: 1.5px solid #000;
-    padding: 4px 10px;
+    padding: 3px;
     background: #fff;
+    max-width: 100%;
+}
+.thermal-store-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+.thermal-logo-container {
+    flex: 0 0 74px;
+    text-align: center;
+}
+.thermal-logo-box img {
+    width: 66px;
+    height: 42px;
+    object-fit: contain;
+}
+.thermal-store-details {
+    flex: 1;
+    min-width: 0;
 }
 .thermal-title {
-    text-align: center;
-    font-size: 13px;
+    text-align: left;
+    font-size: 11px;
     font-weight: 800;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-top: 4px;
+    letter-spacing: 0.2px;
 }
 .thermal-address {
-    text-align: center;
-    font-size: 10.5px;
+    text-align: left;
+    font-size: 9px;
     font-weight: 600;
     text-transform: uppercase;
     line-height: 1.3;
     margin-top: 2px;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
 }
 .thermal-contact, .thermal-gst {
-    text-align: center;
-    font-size: 10.5px;
+    text-align: left;
+    font-size: 9px;
     font-weight: 600;
     margin-top: 2px;
+    overflow-wrap: anywhere;
 }
 .thermal-gst {
     font-weight: 800;
-    font-size: 11px;
+    font-size: 9px;
+}
+.thermal-items-table tfoot td {
+    text-align: right;
+    padding-top: 3px;
+    border-top: 1px dashed #000;
 }
 .thermal-divider-dashed {
     border-top: 1px dashed #000;
@@ -815,6 +844,10 @@ $onlineRecordCount = count(array_filter($items, static fn($item) => (float)($ite
     font-weight: 600;
     margin: 2px 0;
 }
+.thermal-totals-row-left {
+    justify-content: flex-start;
+    gap: 4px;
+}
 .thermal-net-row {
     display: flex;
     justify-content: space-between;
@@ -861,8 +894,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
 });
 
-window.openSoldProductModal = function(saleItemId, defaultView = 'specs') {
-    if (!saleItemId) return;
+window.openSoldProductModal = function(saleId, defaultView = 'specs', lookupType = 'item') {
+    if (!saleId) return;
 
     // Reset view mode switcher
     switchSoldModalView(defaultView);
@@ -880,7 +913,7 @@ window.openSoldProductModal = function(saleItemId, defaultView = 'specs') {
         soldModalInstance.show();
     }
 
-    fetch(`<?= url('api/shop/sales') ?>/${saleItemId}?type=item`)
+    fetch(`<?= url('api/shop/sales') ?>/${saleId}?type=${encodeURIComponent(lookupType)}`)
         .then(res => res.json())
         .then(res => {
             if (res.success && res.data) {
@@ -1078,18 +1111,39 @@ window.populateSoldModal = function(data) {
     const totalGst = (cgst + sgst + igst) > 0 ? (cgst + sgst + igst) : taxTotal;
     const invDiscount = parseFloat(sale.discount_amount || item.invoice_discount_total || discAmt);
     const invNetTotal = parseFloat(sale.total_amount || item.invoice_total_amount || lineTotal);
-    const roundOff = parseFloat(sale.round_off || (invNetTotal - (subtotal + totalGst - invDiscount)));
+    const roundOff = invNetTotal - invoiceItems.reduce((sum, invoiceItem) => sum + parseFloat(invoiceItem.total_amount || 0), 0);
 
     document.getElementById('thShopName').textContent = sale.shop_name || item.shop_name || 'GRM SHOP';
-    if (sale.shop_address && sale.shop_address.length > 5) {
-        document.getElementById('thShopAddress').innerHTML = sale.shop_address.replace(/\n/g, '<br>');
+    const shopAddress = document.getElementById('thShopAddress');
+    const addressValue = sale.shop_address || item.shop_address || '';
+    shopAddress.textContent = addressValue;
+    shopAddress.style.display = addressValue ? '' : 'none';
+
+    const shopLogo = document.getElementById('thShopLogo');
+    const shopLogoFallback = document.getElementById('thShopLogoFallback');
+    shopLogo.onerror = () => {
+        shopLogo.style.display = 'none';
+        shopLogoFallback.style.display = '';
+    };
+    const logoUrl = sale.shop_logo_url || item.shop_logo_url;
+    if (logoUrl) {
+        shopLogo.src = logoUrl;
+        shopLogo.alt = (sale.shop_name || item.shop_name || 'Shop') + ' logo';
+        shopLogo.style.display = 'block';
+        shopLogoFallback.style.display = 'none';
+    } else {
+        shopLogo.removeAttribute('src');
+        shopLogo.style.display = 'none';
+        shopLogoFallback.style.display = '';
     }
-    if (sale.shop_phone) {
-        document.getElementById('thShopPhone').textContent = sale.shop_phone;
-    }
-    if (sale.shop_gstin) {
-        document.getElementById('thShopGst').textContent = sale.shop_gstin;
-    }
+
+    const shopPhone = sale.shop_phone || item.shop_phone || '';
+    document.getElementById('thShopPhone').textContent = shopPhone;
+    document.getElementById('thShopPhoneLine').style.display = shopPhone ? '' : 'none';
+    document.getElementById('thShopContact').style.display = shopPhone ? '' : 'none';
+    const shopGst = sale.shop_gstin || item.shop_gstin || '';
+    document.getElementById('thShopGst').textContent = shopGst;
+    document.getElementById('thShopGstLine').style.display = shopGst ? '' : 'none';
 
     let billNo = CURRENT_ACTIVE_INVOICE_NUM;
     const matchNo = billNo.match(/(\d+)$/);
@@ -1099,7 +1153,7 @@ window.populateSoldModal = function(data) {
     document.getElementById('thPurchasedAt').textContent = sale.created_at_display
         || item.sale_date_display
         || formatDateTimeDisplay(item.sale_date || sale.created_at);
-    document.getElementById('thBillId').textContent = CURRENT_ACTIVE_SALE_ID || '1026';
+    document.getElementById('thBillId').textContent = sale.id || CURRENT_ACTIVE_SALE_ID || '1026';
     document.getElementById('thStaffName').textContent = sale.staff_name || item.cashier_name || 'Cashier';
     document.getElementById('thCustomerName').textContent = (item.customer_name || sale.customer_name || 'WALK-IN').toUpperCase();
     document.getElementById('thPayMode').textContent = (item.payment_mode || sale.payment_mode) === 'CASH_UPI' ? 'CASH + UPI' : (item.payment_mode || sale.payment_mode || 'CASH');
@@ -1152,18 +1206,21 @@ window.populateSoldModal = function(data) {
         thBody.appendChild(trData);
     });
 
-    document.getElementById('thSubtotal').textContent = '₹' + subtotal.toFixed(2);
-    document.getElementById('thTotalGst').textContent = '+₹' + totalGst.toFixed(2);
-    document.getElementById('thDiscount').textContent = invDiscount > 0 ? '-₹' + invDiscount.toFixed(2) : '₹0.00';
-    document.getElementById('thNetTotal').textContent = '₹' + invNetTotal.toFixed(2);
+    document.getElementById('thTotalQty').textContent = 'Total Qty: ' + invoiceItems.reduce((sum, invoiceItem) => sum + (parseInt(invoiceItem.quantity) || 0), 0);
+    document.getElementById('thSubtotal').textContent = subtotal.toFixed(2);
+    document.getElementById('thTotalGst').textContent = totalGst.toFixed(2);
+    document.getElementById('thDiscount').textContent = (invDiscount > 0 ? '-' : '') + invDiscount.toFixed(2);
+    document.getElementById('thNetTotal').textContent = invNetTotal.toFixed(2);
+    document.getElementById('thRoundOff').textContent = roundOff.toFixed(2);
 
-    const roundRow = document.getElementById('thRoundOffRow');
-    if (Math.abs(roundOff) > 0.009) {
-        roundRow.style.display = 'flex';
-        document.getElementById('thRoundOff').textContent = (roundOff > 0 ? '+' : '') + '₹' + roundOff.toFixed(2);
-    } else {
-        roundRow.style.display = 'none';
-    }
+    const gstType = (sale.gst_type || 'CGST_SGST').toUpperCase();
+    document.getElementById('thIgstRow').style.display = gstType === 'IGST' ? 'flex' : 'none';
+    document.getElementById('thCgstRow').style.display = gstType === 'IGST' || gstType === 'EXEMPT' ? 'none' : 'flex';
+    document.getElementById('thSgstRow').style.display = gstType === 'IGST' || gstType === 'EXEMPT' ? 'none' : 'flex';
+    document.getElementById('thExemptRow').style.display = gstType === 'EXEMPT' ? 'flex' : 'none';
+    document.getElementById('thIgst').textContent = igst.toFixed(2);
+    document.getElementById('thCgst').textContent = cgst.toFixed(2);
+    document.getElementById('thSgst').textContent = sgst.toFixed(2);
 
     // 3. POPULATE FULL INVOICE DETAILED AUDIT VIEW
     document.getElementById('detInvNum').textContent = CURRENT_ACTIVE_INVOICE_NUM;
@@ -1285,7 +1342,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const rowOnlineRevenue = parseFloat(row.getAttribute('data-online-revenue')) || 0;
 
             const matchQuery = !query || searchData.includes(query);
-            const matchCat = (catId === 'ALL') || (rowCat === catId);
+            const matchCat = (catId === 'ALL') || rowCat.split(',').includes(catId);
             const matchStart = !startDate || (rowDate >= startDate);
             const matchEnd = !endDate || (rowDate <= endDate);
             const matchesOtherFilters = matchQuery && matchCat && matchStart && matchEnd;
@@ -1319,15 +1376,15 @@ document.addEventListener('DOMContentLoaded', function() {
         const cashCountEl = document.getElementById('cashPaymentTabCount');
         const onlineCountEl = document.getElementById('onlinePaymentTabCount');
         if (allTotalEl) allTotalEl.textContent = `₹${allRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        if (allCountEl) allCountEl.textContent = `${allCount.toLocaleString('en-IN')} records`;
+        if (allCountEl) allCountEl.textContent = `${allCount.toLocaleString('en-IN')} invoices`;
         if (totalUnitsEl) totalUnitsEl.textContent = allUnits.toLocaleString('en-IN');
         if (cashTotalEl) cashTotalEl.textContent = `₹${cashRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         if (onlineTotalEl) onlineTotalEl.textContent = `₹${onlineRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        if (cashCountEl) cashCountEl.textContent = `${cashCount.toLocaleString('en-IN')} records`;
-        if (onlineCountEl) onlineCountEl.textContent = `${onlineCount.toLocaleString('en-IN')} records`;
+        if (cashCountEl) cashCountEl.textContent = `${cashCount.toLocaleString('en-IN')} invoices`;
+        if (onlineCountEl) onlineCountEl.textContent = `${onlineCount.toLocaleString('en-IN')} invoices`;
 
         if (countBadge) {
-            countBadge.textContent = `Showing ${visibleCount} records · ${visibleUnits.toLocaleString('en-IN')} pcs`;
+            countBadge.textContent = `Showing ${visibleCount} invoices · ${visibleUnits.toLocaleString('en-IN')} pcs`;
         }
 
         paymentTabs.forEach(tab => {
@@ -1352,7 +1409,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 emptyRow.innerHTML = `
                     <td colspan="9" class="text-center py-5 text-muted">
                         <i class="bi bi-search fs-1 d-block mb-2 text-secondary opacity-50"></i>
-                        <h6 class="fw-bold text-secondary">No Matching Sold Products Found</h6>
+                        <h6 class="fw-bold text-secondary">No Matching Invoices Found</h6>
                         <p class="small text-muted mb-2">No transactions match your live search criteria.</p>
                         <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3" onclick="clearSalesSearch()">
                             Clear Search
