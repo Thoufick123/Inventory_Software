@@ -176,7 +176,7 @@ $unitPrice = (float)($supplyItem['unit_price'] ?? 0);
                 <div>
                     <span class="text-uppercase text-muted fw-semibold small d-block">Total Inwarded</span>
                     <h3 class="fw-bold text-dark mb-0 mt-1"><?= number_format($totalPieces) ?> <span class="fs-6 fw-normal text-muted"><?= e(strtolower($unit)) ?></span></h3>
-                    <small class="text-muted d-block mt-1">1 supply item variant</small>
+                    <small class="text-muted d-block mt-1"><?= $poTotalPieces > $totalPieces ? 'PO Total: ' . number_format($poTotalPieces) . ' ' . e(strtolower($unit)) : '1 supply item variant' ?></small>
                     <div class="d-flex flex-wrap gap-1 mt-2">
                         <span class="badge bg-primary-subtle text-primary border border-primary-subtle">HSN: <?= e($hsnCode) ?></span>
                         <span class="badge bg-success-subtle text-success border border-success-subtle">Inward Complete</span>
@@ -196,7 +196,7 @@ $unitPrice = (float)($supplyItem['unit_price'] ?? 0);
                 <div>
                     <span class="text-uppercase text-muted fw-semibold small d-block">In-Stock Valuation</span>
                     <h3 class="fw-bold text-primary mb-0 mt-1">₹<?= number_format($remainingValue, 2) ?></h3>
-                    <small class="text-muted d-block mt-1">Total: ₹<?= number_format($totalValue, 2) ?></small>
+                    <small class="text-muted d-block mt-1">Total: ₹<?= number_format($totalValue, 2) ?><?= $poTotalPieces > $totalPieces ? ' (PO: ₹' . number_format($poTotalValue, 2) . ')' : '' ?></small>
                 </div>
                 <div class="bg-primary text-white rounded-3 p-3">
                     <i class="bi bi-currency-rupee fs-4"></i>
@@ -247,7 +247,7 @@ $unitPrice = (float)($supplyItem['unit_price'] ?? 0);
                             <div class="fw-semibold text-dark"><?= e($supplierName) ?></div>
                             <small class="text-muted">PO: <?= e($supplyItem['purchase_number']) ?><?= !empty($supplyItem['invoice_number']) ? ' · Inv: ' . e($supplyItem['invoice_number']) : '' ?></small>
                         </td>
-                        <td class="text-center fw-semibold"><?= number_format((float)$supplyItem['quantity']) ?> <?= e($unit) ?></td>
+                        <td class="text-center fw-semibold"><?= number_format($poTotalPieces) ?> <?= e($unit) ?></td>
                         <td class="text-center fw-bold text-success"><?= number_format($totalPieces) ?> <?= e($unit) ?></td>
                         <td class="text-end fw-semibold">₹<?= number_format($unitPrice, 2) ?></td>
                         <td class="text-end fw-bold text-primary">₹<?= number_format($totalValue, 2) ?></td>
@@ -389,12 +389,12 @@ $unitPrice = (float)($supplyItem['unit_price'] ?? 0);
                 <i class="bi bi-table text-primary"></i>
                 Inwarded Garment Supplies
                 <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill fs-7 px-2" id="headerCountBadge">
-                    <?= $remainingPieces ?> In Stock / <?= count($pieceItems) ?> Total Pieces
+                    <?= $remainingPieces ?> In Stock / <?= $poTotalPieces ?> Total Pieces
                 </span>
             </h5>
             <span class="text-muted small">
                 <i class="bi bi-lightning-charge-fill text-warning me-1"></i>
-                Piece-by-piece listing for Supply Inward #<?= $supplyItemId ?> (<?= $remainingPieces ?> <?= e($unit) ?> remaining in stock)
+                Piece-by-piece listing for Supply Inward #<?= $supplyItemId ?> (<?= $remainingPieces ?> <?= e($unit) ?> remaining in stock of <?= $poTotalPieces ?> total)
             </span>
         </div>
         <!-- View Mode Switch -->

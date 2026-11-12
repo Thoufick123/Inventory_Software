@@ -12828,6 +12828,8 @@ class ProductionController {
         $unitPrice = (float)($supplyItem['unit_price'] ?? 0);
         $totalValue = $totalPieces * $unitPrice;
         $remainingValue = $remainingPieces * $unitPrice;
+        $poTotalPieces = (int)round($rawQty);
+        $poTotalValue = $poTotalPieces * $unitPrice;
 
         $mode = $_GET['mode'] ?? 'piece';
         $supplierTitle = mb_strtoupper(trim($supplyItem['supplier_company'] ?: ($supplyItem['supplier_name'] ?? 'SUPPLIER')));
@@ -12836,16 +12838,26 @@ class ProductionController {
         $unit = mb_strtoupper(trim($supplyItem['unit'] ?? 'PCS'));
         $hsnCode = !empty($supplyItem['hsn_code']) ? trim((string)$supplyItem['hsn_code']) : '—';
         $isIntQty = (floor($rawQty) === $rawQty);
-        $qtyInt = (int)$rawQty;
 
-        // Query inwarded QR codes for this purchase prefix
-        $inwardedQrs = Database::fetchAll(
-            "SELECT qr_code, inwarded_at FROM warehouse_qr_codes WHERE qr_code LIKE ? AND inwarded_at IS NOT NULL",
-            [$prefix . '%']
-        );
-        $inwardedMap = [];
-        foreach ($inwardedQrs as $iq) {
-            $inwardedMap[$iq['qr_code']] = $iq['inwarded_at'];
+        // Query specific inwarded QR codes for this variant
+        $variantQrs = [];
+        if (!empty($supplyItem['variant_id'])) {
+            $variantQrs = Database::fetchAll(
+                "SELECT qr_code, inwarded_at FROM warehouse_qr_codes WHERE variant_id = ? AND inwarded_at IS NOT NULL ORDER BY id ASC",
+                [(int)$supplyItem['variant_id']]
+            );
+        }
+        $inwardedQrCodes = array_column($variantQrs, 'qr_code');
+        $inwardedCount = count($inwardedQrCodes);
+        if ($inwardedCount > 0) {
+            $totalPieces = $inwardedCount;
+            $totalOutwardPieces = max(0, $totalPieces - $remainingPieces);
+            $totalValue = $totalPieces * $unitPrice;
+        }
+
+        $displayPiecesCount = $totalPieces;
+        if ($displayPiecesCount <= 0) {
+            $displayPiecesCount = 1;
         }
 
         // Calculate offset if there were earlier items in the same purchase
@@ -12861,8 +12873,8 @@ class ProductionController {
 
         $pieceItems = [];
         $stickers = [];
-        if ($mode === 'package' || !$isIntQty || $qtyInt <= 1 || $qtyInt > 100) {
-            $pieceCode = sprintf('%s%02d', $prefix, $globalStickerIndex++);
+        if ($mode === 'package' || $displayPiecesCount > 100) {
+            $pieceCode = !empty($inwardedQrCodes[0]) ? $inwardedQrCodes[0] : sprintf('%s%02d', $prefix, $globalStickerIndex);
             $isDispatched = ($totalOutwardPieces >= $totalPieces && $totalPieces > 0);
             $pieceItems[] = [
                 'piece_no'        => 1,
@@ -12874,12 +12886,12 @@ class ProductionController {
                 'product_sku'     => $supplyItem['product_sku'] ?? ('SUP-' . $supplyItemId),
                 'sku'             => $supplyItem['product_sku'] ?? ('SUP-' . $supplyItemId),
                 'category_name'   => $supplyItem['category_name'] ?: 'Garment Supplies',
-                'size_name'       => number_format($rawQty, $isIntQty ? 0 : 2) . ' ' . $unit,
+                'size_name'       => number_format($totalPieces) . ' ' . $unit,
                 'color_name'      => 'Standard',
-                'base_price'      => $unitPrice * $rawQty,
-                'discount_price'  => $unitPrice * $rawQty,
+                'base_price'      => $unitPrice * $totalPieces,
+                'discount_price'  => $unitPrice * $totalPieces,
                 'unit_price'      => $unitPrice,
-                'total_price'     => $unitPrice * $rawQty,
+                'total_price'     => $unitPrice * $totalPieces,
                 'hsn_code'        => $hsnCode,
                 'program_number'  => $supplyItem['purchase_number'],
                 'inspector_name'  => $supplyItem['inwarded_by_name'] ?: ($supplyItem['supplier_company'] ?: $supplyItem['supplier_name']),
@@ -12892,18 +12904,18 @@ class ProductionController {
             $stickers[] = [
                 'code'           => $pieceCode,
                 'display_title'  => $itemName . ' (Master Package)',
-                'quantity_label' => number_format($rawQty, $isIntQty ? 0 : 2) . ' ' . $unit,
+                'quantity_label' => number_format($totalPieces) . ' ' . $unit . ($poTotalPieces > $totalPieces ? ' (Inwarded of ' . $poTotalPieces . ' ' . $unit . ')' : ''),
                 'unit_price'     => $unitPrice,
                 'hsn_code'       => $hsnCode,
                 'supplier_name'  => $supplierTitle,
                 'po_number'      => $supplyItem['purchase_number'],
             ];
         } else {
-            for ($p = 0; $p < $qtyInt; $p++) {
-                $pieceCode = sprintf('%s%02d', $prefix, $globalStickerIndex++);
+            for ($p = 0; $p < $displayPiecesCount; $p++) {
+                $pieceCode = !empty($inwardedQrCodes[$p]) ? $inwardedQrCodes[$p] : sprintf('%s%02d', $prefix, $globalStickerIndex + $p);
                 $pieceNo = $p + 1;
                 $isDispatched = ($pieceNo <= $totalOutwardPieces);
-                $pieceLabel = $itemName . ' (' . $pieceNo . '/' . $qtyInt . ')';
+                $pieceLabel = $itemName . ' (' . $pieceNo . '/' . $displayPiecesCount . ')';
                 $pieceItems[] = [
                     'piece_no'        => $pieceNo,
                     'piece_seq'       => $p,
@@ -12932,7 +12944,7 @@ class ProductionController {
                 $stickers[] = [
                     'code'           => $pieceCode,
                     'display_title'  => $pieceLabel,
-                    'quantity_label' => '1 ' . $unit . ' (of ' . $qtyInt . ')',
+                    'quantity_label' => '1 ' . $unit . ' (of ' . $displayPiecesCount . ')',
                     'unit_price'     => $unitPrice,
                     'hsn_code'       => $hsnCode,
                     'supplier_name'  => $supplierTitle,
@@ -12971,6 +12983,8 @@ class ProductionController {
             'stickers'            => $stickers,
             'totalPieces'         => $totalPieces,
             'totalValue'          => $totalValue,
+            'poTotalPieces'       => $poTotalPieces,
+            'poTotalValue'        => $poTotalValue,
             'totalOutwardPieces'  => $totalOutwardPieces,
             'remainingPieces'     => $remainingPieces,
             'remainingValue'      => $remainingValue,
