@@ -3,22 +3,6 @@ $activeAdjustmentType = strtoupper((string)($type ?? ''));
 if (!in_array($activeAdjustmentType, ['INCREASE', 'DECREASE'], true)) {
     $activeAdjustmentType = '';
 }
-
-$adjustmentTabFilters = [];
-if (!empty($warehouseId)) {
-    $adjustmentTabFilters['warehouse_id'] = $warehouseId;
-}
-if (!empty($status)) {
-    $adjustmentTabFilters['status'] = $status;
-}
-$adjustmentTabQuery = http_build_query($adjustmentTabFilters);
-$allAdjustmentsUrl = url('warehouse/adjustments' . ($adjustmentTabQuery !== '' ? '?' . $adjustmentTabQuery : ''));
-$increaseTabFilters = $adjustmentTabFilters;
-$increaseTabFilters['adjustment_type'] = 'INCREASE';
-$increaseAdjustmentsUrl = url('warehouse/adjustments?' . http_build_query($increaseTabFilters));
-$decreaseTabFilters = $adjustmentTabFilters;
-$decreaseTabFilters['adjustment_type'] = 'DECREASE';
-$decreaseAdjustmentsUrl = url('warehouse/adjustments?' . http_build_query($decreaseTabFilters));
 ?>
 <div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
     <div>
@@ -33,18 +17,6 @@ $decreaseAdjustmentsUrl = url('warehouse/adjustments?' . http_build_query($decre
         <?php endif; ?>
     </div>
 </div>
-
-<ul class="nav nav-tabs mb-4">
-    <li class="nav-item">
-        <a class="nav-link <?= $activeAdjustmentType === '' ? 'active' : '' ?>" href="<?= $allAdjustmentsUrl ?>">All Adjustments</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link <?= $activeAdjustmentType === 'INCREASE' ? 'active' : '' ?>" href="<?= $increaseAdjustmentsUrl ?>">Stock Increase</a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link <?= $activeAdjustmentType === 'DECREASE' ? 'active' : '' ?>" href="<?= $decreaseAdjustmentsUrl ?>">Stock Decrease</a>
-    </li>
-</ul>
 
 <!-- Filters Card -->
 <div class="card border-0 shadow-sm mb-4">
