@@ -226,6 +226,17 @@
                 <a href="<?= url('production/purchases') ?>" class="btn btn-outline-secondary btn-sm">
                     <i class="bi bi-arrow-left me-1"></i> Back to Purchases
                 </a>
+                <?php
+                $purchaseSupplyCount = (int)(Database::fetchOne(
+                    "SELECT COUNT(*) as cnt FROM production_purchase_items WHERE purchase_id = ? AND item_type = 'GENERAL_SUPPLY'",
+                    [(int)$purchase['id']]
+                )['cnt'] ?? 0);
+                ?>
+                <?php if ($purchaseSupplyCount > 0): ?>
+                    <a href="<?= url('production/purchases/supply-qr/' . $purchase['id']) ?>" class="btn btn-outline-success btn-sm" title="View Other Garment Supplies Labels">
+                        <i class="bi bi-tags-fill me-1"></i> Supply QR (<?= $purchaseSupplyCount ?>)
+                    </a>
+                <?php endif; ?>
                 <div class="form-check form-switch d-inline-flex align-items-center gap-2 mb-0 bg-light border px-2 py-1 rounded">
                     <input class="form-check-input ms-0" type="checkbox" id="selectAllRolls" <?= $canManageRolls ? 'checked onchange="toggleSelectAllRolls(this.checked)" style="cursor: pointer;"' : 'disabled style="cursor: not-allowed; opacity: 0.5;"' ?>>
                     <label class="form-check-label small fw-bold text-dark <?= $canManageRolls ? 'cursor-pointer' : '' ?> mb-0" for="selectAllRolls">Select All (<span id="selectedCount"><?= count($stickers) ?></span>/<?= count($stickers) ?>)<?= !$canManageRolls ? ' <span class="badge bg-secondary-subtle text-secondary border px-1.5 py-0.5 ms-1" style="font-size:10px;">View Only</span>' : '' ?></label>
@@ -243,7 +254,12 @@
             <i class="bi bi-inbox fs-1 text-secondary opacity-50 mb-3"></i>
             <h4 class="fw-bold text-dark">No Fabric Rolls In This Purchase</h4>
             <p class="text-muted">This purchase record contains general supplies only or no roll items were recorded.</p>
-            <div class="mt-3">
+            <div class="mt-3 d-flex justify-content-center gap-2">
+                <?php if (!empty($purchaseSupplyCount) && $purchaseSupplyCount > 0): ?>
+                    <a href="<?= url('production/purchases/supply-qr/' . $purchase['id']) ?>" class="btn btn-success btn-sm">
+                        <i class="bi bi-tags-fill me-1"></i> View Other Garment Supplies Labels (<?= $purchaseSupplyCount ?>)
+                    </a>
+                <?php endif; ?>
                 <a href="<?= url('production/purchases/edit/' . $purchase['id']) ?>" class="btn btn-primary btn-sm">
                     <i class="bi bi-plus-circle me-1"></i> Edit Purchase &amp; Add Rolls
                 </a>
@@ -294,7 +310,7 @@
                                 <?php endif; ?>
                             </div>
                             <div class="meta-line">
-                                <span>Code:</span> <span class="font-monospace text-muted" style="font-size:8px"><?= htmlspecialchars($stk['code']) ?></span>
+                                <span>Code:</span> <strong class="font-monospace" style="font-size: 10.5px; font-weight: 800; color: #0f172a; letter-spacing: 0.3px;"><?= htmlspecialchars($stk['code']) ?></strong>
                             </div>
                         </div>
                     </div>

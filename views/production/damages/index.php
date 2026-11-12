@@ -889,11 +889,14 @@ function renderDamageScannedLabels() {
         metadata.className = 'text-muted small mt-0.5';
 
         const isProd = (item.itemType === 'PRODUCT');
+        const isSupply = (item.damageKind === 'SUPPLY');
         const typeBadge = document.createElement('span');
-        typeBadge.className = `badge ${isProd ? 'bg-primary-subtle text-primary' : 'bg-secondary-subtle text-secondary'} border me-1`;
-        typeBadge.textContent = isProd ? 'Product' : 'Roll';
+        typeBadge.className = `badge ${isSupply ? 'bg-info-subtle text-info' : (isProd ? 'bg-primary-subtle text-primary' : 'bg-secondary-subtle text-secondary')} border me-1`;
+        typeBadge.textContent = isSupply ? 'Supply' : (isProd ? 'Product' : 'Roll');
         metadata.append(typeBadge, document.createTextNode(
-            `${item.sellerName} • ${item.rollNumber} • ${item.weight.toFixed(2)} kg • ₹${item.loss.toFixed(2)}`
+            isSupply
+                ? `${item.sellerName} • ${item.rollNumber} • ${item.quantityLabel} • ₹${item.loss.toFixed(2)}`
+                : `${item.sellerName} • ${item.rollNumber} • ${item.weight.toFixed(2)} kg • ₹${item.loss.toFixed(2)}`
         ));
         details.append(code, metadata);
 
@@ -941,8 +944,12 @@ function renderDamageScannedLabels() {
         });
         const addReasonButton = document.createElement('button');
         addReasonButton.type = 'button';
-        addReasonButton.className = 'btn btn-sm btn-outline-primary flex-shrink-0';
-        addReasonButton.textContent = 'New';
+        addReasonButton.className = 'btn btn-sm btn-outline-primary rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0';
+        addReasonButton.style.width = '32px';
+        addReasonButton.style.height = '32px';
+        addReasonButton.title = 'Add damage reason';
+        addReasonButton.setAttribute('aria-label', 'Add damage reason');
+        addReasonButton.innerHTML = '<i class="bi bi-plus" aria-hidden="true"></i>';
         addReasonButton.addEventListener('click', () => addDamageReason(reasonSelect.id));
         reasonControls.append(reasonSelect, addReasonButton);
         reasonColumn.append(reasonLabel, reasonControls);
@@ -972,6 +979,12 @@ function renderDamageScannedLabels() {
         hiddenCode.name = `qr_codes[${index}]`;
         hiddenCode.value = item.code;
         inputs.appendChild(hiddenCode);
+
+        const hiddenSupplyItemId = document.createElement('input');
+        hiddenSupplyItemId.type = 'hidden';
+        hiddenSupplyItemId.name = `damage_supply_item_ids[${index}]`;
+        hiddenSupplyItemId.value = item.supplyItemId || '';
+        inputs.appendChild(hiddenSupplyItemId);
     });
 
     document.getElementById('inputDamagedWeight').value = totalWeight.toFixed(2);
@@ -1006,27 +1019,24 @@ function scanDamageRollQr() {
             }
             return data;
         })
-        .then(data => {
-            const isProd = (data.item_type === 'PRODUCT');
-            const pieceWeight = parseFloat(data.piece_weight !== undefined ? data.piece_weight : data.weight) || 0;
-            const loss = parseFloat(data.piece_loss !== undefined ? data.piece_loss : (data.loss !== undefined ? data.loss : data.price)) || 0;
+        .then(async data => {
+            if (data.needs_supply_selection) {
+                const candidate = (data.candidates || [])[0];
+                if (!candidate) {
+                    throw new Error('No matching purchase supply was found for this label.');
+                }
 
-            damageScannedLabels.push({
-                code: data.code,
-                itemType: data.item_type || 'FABRIC_ROLL',
-                sellerName: data.seller_name || 'Own Production',
-                rollNumber: data.roll_number,
-                weight: pieceWeight,
-                loss: loss,
-                damageReason: ''
-            });
-            renderDamageScannedLabels();
-            const badgeType = isProd ? 'Finished Product' : 'Fabric Roll';
-            setDamageRollScanStatus(`Added [${badgeType}] ${data.code} — ${data.roll_number}. Scan another label or submit.`);
-            if (scanInput) {
-                scanInput.value = '';
-                scanInput.focus();
+                setDamageRollScanStatus('Verifying matching purchase supply…');
+                const query = new URLSearchParams({code: data.code, supply_item_id: candidate.id});
+                const response = await fetch('<?= url('api/production/damages/scan-roll') ?>?' + query.toString());
+                const supplyData = await response.json();
+                if (!response.ok || !supplyData.success || supplyData.needs_supply_selection) {
+                    throw new Error(supplyData.message || 'The matching purchase supply could not be verified.');
+                }
+                addScannedDamageItem(supplyData, scanInput);
+                return;
             }
+            addScannedDamageItem(data, scanInput);
         })
         .catch(error => {
             setDamageRollScanStatus(error.message || 'Unable to scan this item.', true);
@@ -1034,6 +1044,32 @@ function scanDamageRollQr() {
         .finally(() => {
             damageScanInProgress = false;
         });
+}
+
+function addScannedDamageItem(data, scanInput) {
+    const isProduct = data.item_type === 'PRODUCT';
+    const pieceWeight = parseFloat(data.piece_weight !== undefined ? data.piece_weight : data.weight) || 0;
+    const loss = parseFloat(data.piece_loss !== undefined ? data.piece_loss : (data.loss !== undefined ? data.loss : data.price)) || 0;
+
+    damageScannedLabels.push({
+        code: data.code,
+        itemType: data.item_type || 'FABRIC_ROLL',
+        damageKind: data.damage_kind || null,
+        sellerName: data.seller_name || 'Own Production',
+        rollNumber: data.roll_number,
+        quantityLabel: data.quantity_label || '',
+        supplyItemId: data.supply_item_id || null,
+        weight: pieceWeight,
+        loss: loss,
+        damageReason: ''
+    });
+    renderDamageScannedLabels();
+    const badgeType = data.damage_kind === 'SUPPLY' ? 'Other Garment Supply' : (isProduct ? 'Finished Product' : 'Fabric Roll');
+    setDamageRollScanStatus(`Added [${badgeType}] ${data.code} — ${data.roll_number}. Scan another label or submit.`);
+    if (scanInput) {
+        scanInput.value = '';
+        scanInput.focus();
+    }
 }
 
 function getRollMetrics(r) {
