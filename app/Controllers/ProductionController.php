@@ -3943,6 +3943,51 @@ class ProductionController {
         $defectNotes = trim($_POST['defect_notes'] ?? '');
         $damagedQty = max(1, (int)($_POST['damaged_quantity'] ?? 1));
 
+        $isPurchasedSupplyDamage = (
+            preg_match('/^SP\d+/i', trim((string)($existing['qr_code'] ?? ''))) ||
+            (!empty($existing['item_type']) && $existing['item_type'] === 'PRODUCT' && empty($existing['product_id']) && empty($existing['variant_id']) && empty($existing['seller_roll_id']))
+        );
+
+        if ($damageReason === '') {
+            Session::flash('error', 'Please enter a Damage / Defect Reason.');
+            Response::back();
+            return;
+        }
+        if (mb_strlen($damageReason) > 255) {
+            Session::flash('error', 'Damage / Defect Reason must not exceed 255 characters.');
+            Response::back();
+            return;
+        }
+
+        if ($isPurchasedSupplyDamage) {
+            $photoUrl = $existing['photo_url'];
+            if (!empty($_FILES['photo']['name']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
+                $uploaded = CloudinaryService::upload($_FILES['photo'], 'grm_inventory/damages', 'image');
+                if ($uploaded) {
+                    $photoUrl = $uploaded;
+                }
+            }
+
+            try {
+                Database::execute(
+                    "UPDATE roll_damages SET damage_reason = ?, defect_notes = ?, photo_url = ?, updated_at = NOW() WHERE id = ?",
+                    [$damageReason, $defectNotes ?: null, $photoUrl, $damageId]
+                );
+                AuditService::log('production', 'update', 'roll_damages', $damageId, $existing, [
+                    'damage_reason' => $damageReason,
+                    'defect_notes' => $defectNotes,
+                    'photo_url' => $photoUrl,
+                    'loss_amount_preserved' => (float)$existing['loss_amount'],
+                ]);
+                Session::flash('success', "Damage record #{$existing['damage_number']} updated successfully.");
+                Response::redirect(url('production/damages'));
+            } catch (Exception $e) {
+                Session::flash('error', 'Error updating damage record: ' . $e->getMessage());
+                Response::back();
+            }
+            return;
+        }
+
         if (!empty($existing['qr_code'])) {
             if ($sellerId !== (int)$existing['seller_id'] || $sellerRollId !== (int)$existing['seller_roll_id']) {
                 Session::flash('error', 'A QR-linked damage record must remain assigned to its scanned supplier and roll.');
@@ -3954,17 +3999,6 @@ class ProductionController {
 
         if (!$sellerId || !$sellerRollId) {
             Session::flash('error', 'Please select a Material Supplier and Defective Fabric Roll.');
-            Response::back();
-            return;
-        }
-
-        if ($damageReason === '') {
-            Session::flash('error', 'Please enter a Damage / Defect Reason.');
-            Response::back();
-            return;
-        }
-        if (mb_strlen($damageReason) > 255) {
-            Session::flash('error', 'Damage / Defect Reason must not exceed 255 characters.');
             Response::back();
             return;
         }
@@ -4877,15 +4911,45 @@ class ProductionController {
             return;
         }
 
-        $variants = Database::fetchAll(
+        // Clean up / deactivate duplicate 0-price placeholder variants if priced/color variants exist for the same size
+        try {
+            Database::execute(
+                "UPDATE product_variants pv_empty
+                 JOIN product_variants pv_real 
+                   ON pv_empty.product_id = pv_real.product_id 
+                  AND pv_empty.size_id = pv_real.size_id 
+                  AND pv_empty.id != pv_real.id
+                 SET pv_empty.is_active = 0
+                 WHERE pv_empty.product_id = ?
+                   AND pv_empty.is_active = 1
+                   AND (pv_empty.color_id IS NULL OR pv_empty.color_id = 0)
+                   AND (pv_empty.mrp = 0 OR pv_empty.mrp IS NULL)
+                   AND (pv_empty.selling_price = 0 OR pv_empty.selling_price IS NULL)
+                   AND (pv_real.is_active = 1 AND (pv_real.mrp > 0 OR pv_real.color_id IS NOT NULL))",
+                [$id]
+            );
+        } catch (\Throwable $e) {}
+
+        $rawVariants = Database::fetchAll(
             "SELECT pv.*, s.name as size_name, s.code as size_code, col.name as color_name, col.hex_code as color_hex
              FROM product_variants pv
              LEFT JOIN sizes s ON pv.size_id = s.id
              LEFT JOIN colors col ON pv.color_id = col.id
              WHERE pv.product_id = ? AND pv.is_active = 1
-             ORDER BY s.sort_order ASC, col.name ASC",
+             ORDER BY s.sort_order ASC, (pv.selling_price > 0 OR pv.mrp > 0) DESC, pv.id DESC",
             [$id]
         );
+
+        // Deduplicate variants so each size appears exactly once (prioritizing priced/configured variants)
+        $variants = [];
+        $seenSizes = [];
+        foreach ($rawVariants as $v) {
+            $szKey = !empty($v['size_id']) ? (int)$v['size_id'] : ($v['size_code'] ?? $v['sku']);
+            if (!isset($seenSizes[$szKey])) {
+                $seenSizes[$szKey] = true;
+                $variants[] = $v;
+            }
+        }
 
         $programs = Database::fetchAll(
             "SELECT pp.*, u.name as unit_name
@@ -4919,6 +4983,25 @@ class ProductionController {
             return;
         }
 
+        // Clean up / deactivate duplicate 0-price placeholder variants if priced/color variants exist for the same size
+        try {
+            Database::execute(
+                "UPDATE product_variants pv_empty
+                 JOIN product_variants pv_real 
+                   ON pv_empty.product_id = pv_real.product_id 
+                  AND pv_empty.size_id = pv_real.size_id 
+                  AND pv_empty.id != pv_real.id
+                 SET pv_empty.is_active = 0
+                 WHERE pv_empty.product_id = ?
+                   AND pv_empty.is_active = 1
+                   AND (pv_empty.color_id IS NULL OR pv_empty.color_id = 0)
+                   AND (pv_empty.mrp = 0 OR pv_empty.mrp IS NULL)
+                   AND (pv_empty.selling_price = 0 OR pv_empty.selling_price IS NULL)
+                   AND (pv_real.is_active = 1 AND (pv_real.mrp > 0 OR pv_real.color_id IS NOT NULL))",
+                [$id]
+            );
+        } catch (\Throwable $e) {}
+
         $categories = Database::fetchAll("SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order ASC, name ASC");
         $subcategories = $product['category_id'] ? Database::fetchAll("SELECT * FROM subcategories WHERE category_id = ? AND is_active = 1 ORDER BY sort_order ASC, name ASC", [$product['category_id']]) : [];
         $subSubcategories = $product['subcategory_id'] ? Database::fetchAll("SELECT * FROM sub_subcategories WHERE subcategory_id = ? AND is_active = 1 ORDER BY name ASC", [$product['subcategory_id']]) : [];
@@ -4926,15 +5009,26 @@ class ProductionController {
         $sizes = Database::fetchAll("SELECT * FROM sizes WHERE is_active = 1 ORDER BY sort_order ASC, id ASC");
         $colors = Database::fetchAll("SELECT * FROM colors WHERE is_active = 1 ORDER BY name ASC");
 
-        $variants = Database::fetchAll(
+        $rawVariants = Database::fetchAll(
             "SELECT pv.*, s.name as size_name, s.code as size_code, col.name as color_name, col.hex_code as color_hex
              FROM product_variants pv
              LEFT JOIN sizes s ON pv.size_id = s.id
              LEFT JOIN colors col ON pv.color_id = col.id
              WHERE pv.product_id = ? AND pv.is_active = 1
-             ORDER BY s.sort_order ASC, col.name ASC",
+             ORDER BY s.sort_order ASC, (pv.selling_price > 0 OR pv.mrp > 0) DESC, pv.id DESC",
             [$id]
         );
+
+        // Deduplicate variants so each size appears exactly once
+        $variants = [];
+        $seenSizes = [];
+        foreach ($rawVariants as $v) {
+            $szKey = !empty($v['size_id']) ? (int)$v['size_id'] : ($v['size_code'] ?? $v['sku']);
+            if (!isset($seenSizes[$szKey])) {
+                $seenSizes[$szKey] = true;
+                $variants[] = $v;
+            }
+        }
 
         Response::view('production.catalog.edit', [
             'pageTitle'        => 'Edit ' . $product['name'] . ' | Catalog',
@@ -5097,16 +5191,46 @@ class ProductionController {
                 );
             }
         } elseif (!empty($selectedSizes) || !empty($selectedColors)) {
-            try {
-                Database::execute("DELETE FROM product_variants WHERE product_id = ?", [$id]);
-            } catch (Exception $e) {
-                Database::execute("UPDATE product_variants SET is_active = 0 WHERE product_id = ?", [$id]);
+            // First, if specific sizes were submitted, deactivate any variant belonging to deselected sizes
+            if (!empty($selectedSizes)) {
+                $placeholders = implode(',', array_fill(0, count($selectedSizes), '?'));
+                Database::execute("UPDATE product_variants SET is_active = 0 WHERE product_id = ? AND size_id IS NOT NULL AND size_id NOT IN ($placeholders)", array_merge([$id], $selectedSizes));
             }
+
+            // Clean up / deactivate duplicate 0-price placeholder variants if priced/color variants exist for the same size
+            try {
+                Database::execute(
+                    "UPDATE product_variants pv_empty
+                     JOIN product_variants pv_real 
+                       ON pv_empty.product_id = pv_real.product_id 
+                      AND pv_empty.size_id = pv_real.size_id 
+                      AND pv_empty.id != pv_real.id
+                     SET pv_empty.is_active = 0
+                     WHERE pv_empty.product_id = ?
+                       AND pv_empty.is_active = 1
+                       AND (pv_empty.color_id IS NULL OR pv_empty.color_id = 0)
+                       AND (pv_empty.mrp = 0 OR pv_empty.mrp IS NULL)
+                       AND (pv_empty.selling_price = 0 OR pv_empty.selling_price IS NULL)
+                       AND (pv_real.is_active = 1 AND (pv_real.mrp > 0 OR pv_real.color_id IS NOT NULL))",
+                    [$id]
+                );
+            } catch (\Throwable $e) {}
 
             $sizesList = !empty($selectedSizes) ? $selectedSizes : [null];
             $colorsList = !empty($selectedColors) ? $selectedColors : [null];
 
             foreach ($sizesList as $sizeId) {
+                // If an active variant already exists for this size, keep it active without inserting a redundant placeholder
+                if ($sizeId) {
+                    $existingVar = Database::fetchOne(
+                        "SELECT id FROM product_variants WHERE product_id = ? AND size_id = ? AND is_active = 1 ORDER BY (selling_price > 0 OR mrp > 0) DESC, id DESC",
+                        [$id, $sizeId]
+                    );
+                    if ($existingVar) {
+                        continue;
+                    }
+                }
+
                 $sCode = '';
                 if ($sizeId) {
                     $sCode = Database::fetchOne("SELECT code FROM sizes WHERE id = ?", [$sizeId])['code'] ?? ('SZ' . $sizeId);
@@ -5717,23 +5841,9 @@ class ProductionController {
                     $attr['attr_type'] = 'MULTI_SELECT';
                     $attr['sort_order'] = 1;
                 } elseif (in_array($attrNameUpper, ['COLOR', 'COLORS', 'COLOR ATTRIBUTE', 'COLOR ATTRIBUTES'], true)) {
-                    $hasColorAttr = true;
-                    $attr['attr_name'] = 'COLOR';
-
-                    if (!empty($catalogColors)) {
-                        $opts = $catalogColors;
-                    } else {
-                        $opts = !empty($attr['attr_options']) ? array_map('trim', explode(',', $attr['attr_options'])) : [];
-                        $opts = array_values(array_unique(array_filter($opts)));
-                    }
-
-                    // Suppress empty color attribute if no options or catalog colors exist
-                    if (empty($opts)) {
-                        continue;
-                    }
-                    $attr['attr_options'] = implode(',', $opts);
-                    $attr['attr_type'] = 'MULTI_SELECT';
-                    $attr['sort_order'] = 2;
+                    // In apparel roll management, fabric roll colors are tracked at the individual roll card level.
+                    // Do not inject or require separate COLOR attribute checkboxes in cutting specifications.
+                    continue;
                 } else {
                     // Suppress empty select/multi_select attributes with zero options
                     if (in_array($attr['attr_type'], ['SELECT', 'MULTI_SELECT'], true) && empty(trim($attr['attr_options'] ?? ''))) {
@@ -5757,22 +5867,6 @@ class ProductionController {
                     'attr_options'       => implode(',', $sizeOptions),
                     'is_required'        => 0,
                     'sort_order'         => 1,
-                    'is_active'          => 1,
-                ];
-            }
-
-            // If catalog has COLOR variants and no COLOR attribute was in wh_category_attributes, add COLOR attribute dynamically
-            if (!$hasColorAttr && !empty($catalogColors)) {
-                $finalAttributes[] = [
-                    'id'                 => 0,
-                    'category_id'        => $categoryId,
-                    'subcategory_id'     => $subcategoryId,
-                    'sub_subcategory_id' => $subSubcategoryId,
-                    'attr_name'          => 'COLOR',
-                    'attr_type'          => 'MULTI_SELECT',
-                    'attr_options'       => implode(',', $catalogColors),
-                    'is_required'        => 0,
-                    'sort_order'         => 2,
                     'is_active'          => 1,
                 ];
             }

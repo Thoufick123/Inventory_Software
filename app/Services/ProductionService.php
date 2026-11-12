@@ -1620,6 +1620,19 @@ class ProductionService {
                 [$productId, $sizeId, $colorId]
             );
             if ($v) return (int)$v['id'];
+
+            // If a placeholder variant exists for this size with NULL color and 0 price, reuse and assign color instead of duplicating
+            $placeholder = Database::fetchOne(
+                "SELECT id FROM product_variants WHERE product_id = ? AND size_id = ? AND (color_id IS NULL OR color_id = 0) AND (selling_price = 0 OR selling_price IS NULL) AND is_active = 1 ORDER BY id ASC",
+                [$productId, $sizeId]
+            );
+            if ($placeholder) {
+                Database::execute(
+                    "UPDATE product_variants SET color_id = ? WHERE id = ?",
+                    [$colorId, $placeholder['id']]
+                );
+                return (int)$placeholder['id'];
+            }
         } elseif ($sizeId) {
             $v = Database::fetchOne(
                 "SELECT id FROM product_variants WHERE product_id = ? AND size_id = ? AND (color_id IS NULL OR color_id = 0) AND is_active = 1",
