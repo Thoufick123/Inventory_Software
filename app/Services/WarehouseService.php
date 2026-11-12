@@ -1074,15 +1074,16 @@ class WarehouseService {
                 );
                 $isComp = ($vInfo && ($vInfo['is_comp'] == 1 || strtoupper($vInfo['cat_type'] ?? '') === 'COMPLEMENTARY'));
 
-                $unitPrice = $isComp ? 0.0 : (float)($item['unit_price'] ?? 0.0);
-                $mrp = $isComp ? 0.0 : (float)($item['mrp'] ?? $unitPrice);
-                if (!$isComp) {
-                    if ($mrp <= 0) $mrp = $unitPrice;
-                    if ($unitPrice <= 0 && $mrp > 0) $unitPrice = $mrp;
+                $unitPrice = (float)($item['unit_price'] ?? 0.0);
+                if ($isComp && $unitPrice <= 0) {
+                    throw new InvalidArgumentException('Complementary products must have a price greater than zero.');
                 }
+                $mrp = (float)($item['mrp'] ?? $unitPrice);
+                if ($mrp <= 0) $mrp = $unitPrice;
+                if ($unitPrice <= 0 && $mrp > 0) $unitPrice = $mrp;
 
-                $discountPct = $isComp ? 0.0 : max(0.0, min(100.0, (float)($item['discount_percentage'] ?? 0.0)));
-                $gstRate = $isComp ? 0.0 : max(0.0, (float)($item['gst_percentage'] ?? 5.0));
+                $discountPct = max(0.0, min(100.0, (float)($item['discount_percentage'] ?? 0.0)));
+                $gstRate = max(0.0, (float)($item['gst_percentage'] ?? 5.0));
 
                 $lineMrpGross = $qty * $mrp;
                 $lineBilledTotal = round($qty * $unitPrice, 2);
@@ -1226,26 +1227,13 @@ class WarehouseService {
                 $qty = (int)($item['quantity'] ?? 0);
                 if ($qty <= 0) continue;
 
-                $vInfo = Database::fetchOne(
-                    "SELECT pv.id, pv.qr_type, pv.pack_quantity, COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
-                            COALESCE(wc.category_type, 'NORMAL') as cat_type
-                     FROM product_variants pv
-                     JOIN products p ON pv.product_id = p.id
-                     LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
-                     WHERE pv.id = ?",
-                    [(int)$item['variant_id']]
-                );
-                $isComp = ($vInfo && ($vInfo['is_comp'] == 1 || strtoupper($vInfo['cat_type'] ?? '') === 'COMPLEMENTARY'));
+                $unitPrice = (float)($item['unit_price'] ?? 0.0);
+                $mrp = (float)($item['mrp'] ?? $unitPrice);
+                if ($mrp <= 0) $mrp = $unitPrice;
+                if (!$lockProductItems && $unitPrice <= 0 && $mrp > 0) $unitPrice = $mrp;
 
-                $unitPrice = $isComp ? 0.0 : (float)($item['unit_price'] ?? 0.0);
-                $mrp = $isComp ? 0.0 : (float)($item['mrp'] ?? $unitPrice);
-                if (!$isComp) {
-                    if ($mrp <= 0) $mrp = $unitPrice;
-                    if ($unitPrice <= 0 && $mrp > 0) $unitPrice = $mrp;
-                }
-
-                $discountPct = $isComp ? 0.0 : max(0.0, min(100.0, (float)($item['discount_percentage'] ?? 0.0)));
-                $gstRate = $isComp ? 0.0 : max(0.0, (float)($item['gst_percentage'] ?? 5.0));
+                $discountPct = max(0.0, min(100.0, (float)($item['discount_percentage'] ?? 0.0)));
+                $gstRate = max(0.0, (float)($item['gst_percentage'] ?? 5.0));
 
                 $lineMrpGross = $qty * $mrp;
                 $lineBilledTotal = round($qty * $unitPrice, 2);

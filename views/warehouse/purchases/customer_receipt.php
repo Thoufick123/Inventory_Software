@@ -19,9 +19,6 @@ if ($storeGst === '') {
 $storeEmail = trim((string)($companySettings['company_email'] ?? ''));
 $warehouseLogo = trim((string)($po['warehouse_logo_url'] ?? ''));
 $billNumber = (string)($po['po_number'] ?? $po['id'] ?? '');
-if (preg_match('/(\d+)$/', $billNumber, $billNumberMatch)) {
-    $billNumber = $billNumberMatch[1];
-}
 $customerName = trim((string)($po['display_customer_name'] ?? ''));
 if ($customerName === '') {
     $customerName = 'Walk-in Customer';
