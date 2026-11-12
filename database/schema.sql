@@ -1,10 +1,11 @@
 -- =================================================
 -- GRM Inventory Management System Canonical Database Schema
--- Updated: 2026-11-11
+-- Updated: 2026-11-12
 -- Total Tables: 112
 -- Full rebuild only: DROP TABLE statements make this unsafe for live databases.
 -- Includes the 2026-11-11 migrations for product_price_logs and
--- sellers.production_deleted_at; use additive migrations for existing databases.
+-- sellers.production_deleted_at, plus current production supply-inward columns.
+-- Use additive migrations for existing databases.
 -- =================================================
 
 SET FOREIGN_KEY_CHECKS = 0;
@@ -1385,6 +1386,11 @@ CREATE TABLE `production_purchase_items` (
   `seller_roll_id` int(10) unsigned DEFAULT NULL,
   `hsn_code` varchar(20) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `is_inwarded` tinyint(1) DEFAULT 0,
+  `inwarded_at` datetime DEFAULT NULL,
+  `inwarded_by` int(10) unsigned DEFAULT NULL,
+  `product_id` int(10) unsigned DEFAULT NULL,
+  `variant_id` int(10) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_production_purchase_seller_roll` (`seller_roll_id`),
   KEY `idx_production_purchase_items_purchase` (`purchase_id`),
@@ -1409,6 +1415,8 @@ CREATE TABLE `production_purchases` (
   `created_by` int(10) unsigned DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `is_inwarded` tinyint(1) DEFAULT 0,
+  `inwarded_at` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_production_purchase_number` (`purchase_number`),
   KEY `idx_production_purchases_seller_date` (`seller_id`,`purchase_date`),

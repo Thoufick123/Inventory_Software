@@ -3268,7 +3268,7 @@ class ShopController {
         ];
 
         $categories = Database::fetchAll("SELECT id, name FROM categories WHERE is_active = 1 ORDER BY name ASC");
-        $data = ShopService::getSoldProducts($shopId, $filters);
+        $data = ShopService::getSoldInvoices($shopId, $filters);
 
         Response::view('shop.sales.index', [
             'pageTitle'    => 'Selled Products Ledger',
@@ -3279,11 +3279,232 @@ class ShopController {
                 ['label' => 'Selled Products'],
             ],
             'shop'         => $shop,
-            'items'        => $data['items'],
+            'invoices'     => $data['invoices'],
             'kpis'         => $data['kpis'],
             'filters'      => $filters,
             'categories'   => $categories,
         ]);
+    }
+
+    public function editSale(string $id): void {
+        $shop = ShopService::getActiveShop();
+        $details = ShopService::getInvoiceDetails((int)$id);
+        $sale = $details['sale'] ?? null;
+        if (!$sale || (int)$sale['shop_id'] !== (int)$shop['id'] || ($sale['sale_type'] ?? '') !== 'SHOP') {
+            Response::error(404, 'Shop invoice not found.');
+            return;
+        }
+        if (($sale['status'] ?? '') === 'CANCELLED' || ($sale['payment_status'] ?? '') === 'REFUNDED') {
+            Session::setFlash('error', 'Voided invoices cannot be edited.');
+            Response::redirect(url('shop/sales'));
+            return;
+        }
+
+        $splitCash = 0.0;
+        $splitUpi = 0.0;
+        $upiReference = '';
+        $paymentReference = '';
+        foreach ($details['payments'] ?? [] as $payment) {
+            if (($payment['status'] ?? '') !== 'COMPLETED') {
+                continue;
+            }
+            if (($payment['payment_mode'] ?? '') === 'CASH') {
+                $splitCash += (float)$payment['amount'];
+            } else {
+                $splitUpi += (float)$payment['amount'];
+            }
+            if (($payment['payment_mode'] ?? '') === 'UPI') {
+                $upiReference = (string)($payment['reference_number'] ?? '');
+            }
+            if (($payment['payment_mode'] ?? '') !== 'CASH') {
+                $paymentReference = (string)($payment['reference_number'] ?? '');
+            }
+        }
+
+        $notes = (string)($sale['notes'] ?? '');
+        $notes = preg_replace('/^\[Split Payment:[^\]]+\]\s*(?:\|\s*)?/', '', $notes);
+        $notes = preg_replace('/(?:\s*\|\s*)?Staff:\s*[^|]+$/', '', $notes);
+
+        Response::view('shop.sales.edit', [
+            'pageTitle' => 'Edit Invoice: ' . $sale['invoice_number'],
+            'activeModule' => 'shop',
+            'activeMenu' => 'shop-sales',
+            'breadcrumb' => [
+                ['label' => 'Shop', 'url' => url('shop/dashboard')],
+                ['label' => 'Sales Invoices', 'url' => url('shop/sales')],
+                ['label' => 'Edit ' . $sale['invoice_number']],
+            ],
+            'shop' => $shop,
+            'sale' => $sale,
+            'items' => $details['items'],
+            'splitCash' => $splitCash,
+            'splitUpi' => $splitUpi,
+            'upiReference' => $upiReference,
+            'paymentReference' => $paymentReference,
+            'notes' => trim($notes, " \t\n\r\0\x0B|"),
+        ]);
+    }
+
+    public function updateSale(string $id): void {
+        CSRF::verify();
+        $saleId = (int)$id;
+        if ($saleId <= 0) {
+            Session::setFlash('error', 'A valid invoice is required.');
+            Response::redirect(url('shop/sales'));
+            return;
+        }
+        $shop = ShopService::getActiveShop();
+        $payload = $_POST;
+        $payload['sale_id'] = $saleId;
+        $payload['shop_id'] = (int)$shop['id'];
+
+        if (empty($payload['items']) || !is_array($payload['items'])) {
+            Session::setFlash('error', 'An invoice must contain at least one product.');
+            Response::redirect(url('shop/sales/edit/' . $saleId));
+            return;
+        }
+        $userId = Session::userId();
+        if (!$userId) {
+            Session::setFlash('error', 'Your session has expired. Please sign in again.');
+            Response::redirect(url('login'));
+            return;
+        }
+
+        try {
+            $result = ShopService::processPOSSale($payload, $userId);
+            Session::setFlash('success', "Invoice #{$result['invoice_number']} updated successfully.");
+            Response::redirect(url('shop/sales'));
+        } catch (Exception $e) {
+            Session::setFlash('error', $e->getMessage());
+            Response::redirect(url('shop/sales/edit/' . $saleId));
+        }
+    }
+
+    public function voidSale(string $id): void {
+        CSRF::verify();
+        $userId = Session::userId();
+        if (!$userId) {
+            Session::setFlash('error', 'Your session has expired. Please sign in again.');
+            Response::redirect(url('login'));
+            return;
+        }
+        $shop = ShopService::getActiveShop();
+        try {
+            $invoiceNumber = ShopService::voidPOSSale(
+                (int)$id,
+                (int)$shop['id'],
+                $userId
+            );
+            Session::setFlash('success', "Invoice #{$invoiceNumber} voided. Items were restored to stock and payments were reversed.");
+        } catch (Exception $e) {
+            Session::setFlash('error', $e->getMessage());
+        }
+        Response::redirect(url('shop/sales'));
+    }
+
+    public function searchSaleVariants(): void {
+        $query = trim((string)($_GET['q'] ?? ''));
+        if ($query === '') {
+            Response::jsonSuccess('Products found', []);
+            return;
+        }
+        $shop = ShopService::getActiveShop();
+        $shopId = (int)$shop['id'];
+        $search = '%' . $query . '%';
+        $products = Database::fetchAll(
+            "SELECT pv.id as variant_id, pv.sku, pv.qr_code, pv.mrp, pv.purchase_price, pv.production_cost,
+                    pv.selling_price, pv.hsn_code, pv.qr_type, COALESCE(pv.pack_quantity, 1) as pack_quantity,
+                    p.id as product_id, p.name as product_name, p.gst_percentage,
+                    COALESCE(wc.category_type, 'NORMAL') as category_type,
+                    GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
+                    COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), '') as resolved_hsn_code,
+                    sz.name as size_name, cl.name as color_name,
+                    COALESCE((SELECT SUM(sb.quantity) FROM stock_balances sb
+                              WHERE sb.variant_id = pv.id AND sb.location_type = 'SHOP'
+                                AND sb.location_id = ? AND sb.stock_state = 'AVAILABLE'), 0) as available_stock
+             FROM product_variants pv
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN warehouse_sub_subcategories wssc ON p.warehouse_sub_subcategory_id = wssc.id
+             LEFT JOIN warehouse_subcategories wssc_parent ON wssc.subcategory_id = wssc_parent.id
+             LEFT JOIN warehouse_subcategories wsc ON COALESCE(p.warehouse_subcategory_id, wssc.subcategory_id) = wsc.id
+             LEFT JOIN warehouse_categories wc ON COALESCE(p.warehouse_category_id, wsc.category_id, wssc_parent.category_id) = wc.id
+             LEFT JOIN sizes sz ON sz.id = pv.size_id
+             LEFT JOIN colors cl ON cl.id = pv.color_id
+             WHERE pv.is_active = 1
+               AND (p.name LIKE ? OR pv.sku LIKE ? OR pv.qr_code LIKE ? OR p.code LIKE ?)
+               AND EXISTS (SELECT 1 FROM stock_balances sb
+                           WHERE sb.variant_id = pv.id AND sb.location_type = 'SHOP'
+                             AND sb.location_id = ? AND sb.stock_state = 'AVAILABLE' AND sb.quantity > 0)
+             ORDER BY p.name ASC, sz.name ASC
+             LIMIT 25",
+            [$shopId, $search, $search, $search, $search, $shopId]
+        );
+        foreach ($products as &$product) {
+            ShopService::resolveVariantPrices($product);
+        }
+        unset($product);
+        Response::jsonSuccess('Products found', $products);
+    }
+
+    public function scanSaleVariant(): void {
+        $code = trim((string)($_GET['code'] ?? ''));
+        if ($code === '') {
+            Response::jsonError('Scan a product QR code or SKU.', [], 400);
+            return;
+        }
+
+        $shop = ShopService::getActiveShop();
+        $variant = ShopService::findVariantByQR($code, (int)$shop['id']);
+        if (!$variant) {
+            Response::jsonError('Product QR code or SKU was not found.', [], 404);
+            return;
+        }
+        $classification = Database::fetchOne(
+            "SELECT COALESCE(wc.category_type, 'NORMAL') as category_type,
+                    GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
+                    pv.qr_type, COALESCE(pv.pack_quantity, 1) as pack_quantity
+             FROM product_variants pv
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN warehouse_sub_subcategories wssc ON p.warehouse_sub_subcategory_id = wssc.id
+             LEFT JOIN warehouse_subcategories wssc_parent ON wssc.subcategory_id = wssc_parent.id
+             LEFT JOIN warehouse_subcategories wsc ON COALESCE(p.warehouse_subcategory_id, wssc.subcategory_id) = wsc.id
+             LEFT JOIN warehouse_categories wc ON COALESCE(p.warehouse_category_id, wsc.category_id, wssc_parent.category_id) = wc.id
+             WHERE pv.id = ?",
+            [(int)$variant['id']]
+        );
+        if ($classification) {
+            $variant['category_type'] = strtoupper((string)$classification['category_type']);
+            $variant['is_complementary'] = (int)$classification['is_complementary'];
+            $variant['is_series'] = $variant['category_type'] === 'SERIES'
+                || strtoupper((string)$classification['qr_type']) === 'SERIES_BATCH'
+                || (int)$classification['pack_quantity'] > 1 ? 1 : 0;
+        }
+        if (!empty($variant['is_damaged'])) {
+            Response::jsonError(
+                'This piece is damaged and cannot be sold.',
+                ['damage_number' => $variant['damage_number'] ?? ''],
+                422
+            );
+            return;
+        }
+        if ((float)($variant['available_stock'] ?? 0) <= 0) {
+            Response::jsonError('This product has no good stock available in the shop.', [], 422);
+            return;
+        }
+
+        $isAggregate = !empty($variant['is_complementary'])
+            || !empty($variant['is_series'])
+            || in_array(strtoupper((string)($variant['category_type'] ?? '')), ['SERIES', 'COMPLEMENTARY'], true);
+        if (!$isAggregate && !empty($variant['already_sold_invoice'])) {
+            Response::jsonError(
+                "This piece was already sold in Invoice #{$variant['already_sold_invoice']}.",
+                ['invoice_number' => $variant['already_sold_invoice']],
+                409
+            );
+            return;
+        }
+
+        Response::jsonSuccess('Good-stock product scanned.', $variant);
     }
 
     /**
@@ -4166,6 +4387,350 @@ class ShopController {
         ]);
     }
 
+    public function editDamage(string $id): void {
+        if (!hasPermission('shop_damage', 'edit')) {
+            Session::setFlash('error', 'Access denied: You do not have permission to edit shop damage records.');
+            Response::redirect(url('shop/damage'));
+            return;
+        }
+
+        $damageId = (int)$id;
+        $damage = ShopDamage::find($damageId);
+        $shop = ShopService::getActiveShop();
+        if (!$damage || (int)$damage['shop_id'] !== (int)$shop['id']) {
+            Session::setFlash('error', 'Shop damage record not found for the active shop.');
+            Response::redirect(url('shop/damage'));
+            return;
+        }
+        if (!$this->canEditShopDamage($damage)) {
+            Session::setFlash('error', 'Only manual damage records that remain quarantined can be edited.');
+            Response::redirect(url('shop/damage'));
+            return;
+        }
+
+        $shopId = (int)$shop['id'];
+        $variants = Database::fetchAll(
+            "SELECT pv.id, pv.sku, p.name AS product_name, p.code AS product_code,
+                    s.name AS size_name, c.name AS color_name,
+                    COALESCE((SELECT SUM(sb.quantity) FROM stock_balances sb
+                              WHERE sb.variant_id = pv.id AND sb.location_type = 'SHOP'
+                                AND sb.location_id = ? AND sb.stock_state = 'AVAILABLE'), 0) AS available_qty
+             FROM product_variants pv
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN sizes s ON s.id = pv.size_id
+             LEFT JOIN colors c ON c.id = pv.color_id
+             WHERE (pv.is_active = 1 AND EXISTS (
+                       SELECT 1 FROM stock_balances sb
+                       WHERE sb.variant_id = pv.id AND sb.location_type = 'SHOP'
+                         AND sb.location_id = ? AND sb.stock_state = 'AVAILABLE' AND sb.quantity > 0
+                   ))
+                OR pv.id = ?
+             ORDER BY p.name, pv.sku",
+            [$shopId, $shopId, (int)$damage['variant_id']]
+        );
+
+        Response::view('shop.damage.edit', [
+            'pageTitle'    => 'Edit Shop Damage: ' . $damage['damage_number'],
+            'activeModule' => 'shop',
+            'activeMenu'   => 'shop-damage',
+            'shop'         => $shop,
+            'damage'       => $damage,
+            'variants'     => $variants,
+            'breadcrumb'   => [
+                ['label' => 'Shop', 'url' => url('shop/dashboard')],
+                ['label' => 'Damage Management', 'url' => url('shop/damage')],
+                ['label' => 'Edit ' . $damage['damage_number']],
+            ],
+        ]);
+    }
+
+    public function updateDamage(string $id): void {
+        if (!hasPermission('shop_damage', 'edit')) {
+            Session::setFlash('error', 'Access denied: You do not have permission to edit shop damage records.');
+            Response::redirect(url('shop/damage'));
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            Session::setFlash('error', 'Invalid security token. Please try again.');
+            Response::back();
+        }
+
+        $damageId = (int)$id;
+        $shop = ShopService::getActiveShop();
+        $shopId = (int)$shop['id'];
+        $damage = ShopDamage::find($damageId);
+        if (!$damage || (int)$damage['shop_id'] !== $shopId) {
+            Session::setFlash('error', 'Shop damage record not found for the active shop.');
+            Response::redirect(url('shop/damage'));
+            return;
+        }
+        if (!$this->canEditShopDamage($damage)) {
+            Session::setFlash('error', 'Only manual damage records that remain quarantined can be edited.');
+            Response::redirect(url('shop/damage'));
+            return;
+        }
+
+        try {
+            $variantId = (int)($_POST['variant_id'] ?? 0);
+            $tagCode = trim((string)($_POST['tag_code'] ?? ''));
+            $sourceType = strtoupper(trim((string)($_POST['source_type'] ?? '')));
+            $defectType = strtoupper(trim((string)($_POST['defect_type'] ?? '')));
+            $quantity = filter_var($_POST['quantity'] ?? null, FILTER_VALIDATE_INT);
+            $costPerUnit = $_POST['cost_per_unit'] ?? null;
+            $totalLoss = $_POST['total_loss'] ?? null;
+            $damageReason = trim((string)($_POST['damage_reason'] ?? ''));
+            $defectNotes = trim((string)($_POST['defect_notes'] ?? ''));
+            $allowedSources = ['SHOP_BIN_HANDLING', 'STORAGE_HANDLING', 'CUSTOMER_RETURN', 'EXPIRED_SPOILED', 'OTHER'];
+            $allowedDefects = ['FABRIC_DEFECT', 'COLOR_FADE', 'STITCHING_ERROR', 'PACKAGING_DAMAGE', 'WATER_STAIN', 'TRANSIT_DAMAGE', 'EXPIRED', 'SHOP_SOIL', 'OTHER'];
+
+            if ($variantId <= 0 || !is_int($quantity) || $quantity < 1
+                || !is_numeric($costPerUnit) || (float)$costPerUnit < 0
+                || !is_numeric($totalLoss) || (float)$totalLoss < 0
+                || !in_array($sourceType, $allowedSources, true)
+                || !in_array($defectType, $allowedDefects, true)
+                || $damageReason === '' || strlen($damageReason) > 255
+                || strlen($tagCode) > 100) {
+                throw new RuntimeException('Please provide valid damage details.');
+            }
+
+            $variant = Database::fetchOne(
+                "SELECT pv.id, pv.product_id, pv.is_active, pv.sku, pv.qr_code, pv.qr_type, pv.pack_quantity,
+                        GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) AS is_complementary,
+                        p.code AS product_code,
+                        COALESCE(wc.category_type, 'NORMAL') AS category_type
+                 FROM product_variants pv
+                 JOIN products p ON p.id = pv.product_id
+                 LEFT JOIN warehouse_sub_subcategories wssc ON wssc.id = p.warehouse_sub_subcategory_id
+                 LEFT JOIN warehouse_subcategories wssc_parent ON wssc.subcategory_id = wssc_parent.id
+                 LEFT JOIN warehouse_subcategories wsc ON COALESCE(p.warehouse_subcategory_id, wssc.subcategory_id) = wsc.id
+                 LEFT JOIN warehouse_categories wc ON COALESCE(p.warehouse_category_id, wsc.category_id, wssc_parent.category_id) = wc.id
+                 WHERE pv.id = ?",
+                [$variantId]
+            );
+            if (!$variant || ((int)$variant['is_active'] !== 1 && $variantId !== (int)$damage['variant_id'])) {
+                throw new RuntimeException('The selected product variant is not available.');
+            }
+
+            $categoryType = strtoupper((string)$variant['category_type']);
+            $isAggregate = !empty($variant['is_complementary']) || $categoryType === 'COMPLEMENTARY'
+                || $categoryType === 'SERIES'
+                || in_array(strtoupper((string)$variant['qr_type']), ['SERIES_BATCH', 'SERIES'], true)
+                || (int)$variant['pack_quantity'] > 1;
+            if (!$isAggregate && ($quantity !== 1 || $tagCode === '')) {
+                throw new RuntimeException('Normal products require one scanned piece QR tag.');
+            }
+
+            $oldTag = strtoupper(trim((string)($damage['tag_code'] ?? '')));
+            $samePiece = $variantId === (int)$damage['variant_id']
+                && $oldTag !== '' && strtoupper($tagCode) === $oldTag;
+            if ($tagCode !== '' && !$samePiece) {
+                if ($this->isShopPieceActivelyDamaged($variantId, $shopId, $tagCode, $damageId)) {
+                    throw new RuntimeException("Piece tag '{$tagCode}' is already recorded in Shop Damage Management.");
+                }
+                if (!$isAggregate && ($this->isShopPieceSold($variantId, $shopId, $tagCode)
+                    || $this->getShopPieceStatus($variantId, $shopId, $tagCode) !== 'IN STOCK')) {
+                    throw new RuntimeException("Piece tag '{$tagCode}' is sold, damaged, or not currently in good available shop stock.");
+                }
+                if ($isAggregate) {
+                    $registeredCodes = array_map('strtoupper', array_filter([
+                        trim((string)$variant['sku']),
+                        trim((string)$variant['qr_code']),
+                        trim((string)$variant['product_code']),
+                    ]));
+                    if (!in_array(strtoupper($tagCode), $registeredCodes, true)
+                        && !in_array($this->getShopPieceStatus($variantId, $shopId, $tagCode), ['IN STOCK', 'PARTIALLY DAMAGED'], true)) {
+                        throw new RuntimeException('Use the product SKU/QR or a currently available piece tag.');
+                    }
+                }
+            }
+
+            $photoUrl = $damage['photo_url'] ?? null;
+            if (!empty($_FILES['photo']['name'])) {
+                if (($_FILES['photo']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                    throw new RuntimeException('The damage photo could not be uploaded.');
+                }
+                $extension = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
+                if (!in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true)) {
+                    throw new RuntimeException('Damage photos must be JPG, PNG, or WebP images.');
+                }
+                $photoUrl = CloudinaryService::upload($_FILES['photo'], 'grm_inventory/shop/damages', 'image');
+                if (!$photoUrl) {
+                    throw new RuntimeException('The damage photo could not be saved.');
+                }
+            }
+
+            $userId = Session::userId();
+            Database::beginTransaction();
+            $locked = Database::fetchOne(
+                "SELECT * FROM shop_damages WHERE id = ? AND shop_id = ? FOR UPDATE",
+                [$damageId, $shopId]
+            );
+            if (!$locked || !$this->canEditShopDamage($locked)) {
+                throw new RuntimeException('This damage record is no longer editable.');
+            }
+
+            $movement = Database::fetchOne(
+                "SELECT id FROM stock_transactions
+                 WHERE reference_type = 'shop_damages' AND reference_id = ?
+                   AND location_type = 'SHOP' AND location_id = ?
+                   AND variant_id = ? AND stock_state = 'DAMAGED'
+                   AND transaction_type IN ('DAMAGE_IN', 'DAMAGE_EDIT_QUARANTINE')
+                 ORDER BY id DESC LIMIT 1",
+                [$damageId, $shopId, (int)$locked['variant_id']]
+            );
+            if (!$movement) {
+                throw new RuntimeException('This record has no matching quarantine stock movement and cannot be safely edited.');
+            }
+
+            StockService::decrease((int)$locked['variant_id'], 'SHOP', $shopId, 'DAMAGED', (float)$locked['quantity'], 'DAMAGE_EDIT_RESTORE', 'shop_damages', $damageId, $userId, 'Restore old damage quantity before editing.');
+            StockService::increase((int)$locked['variant_id'], 'SHOP', $shopId, 'AVAILABLE', (float)$locked['quantity'], 'DAMAGE_EDIT_RESTORE', 'shop_damages', $damageId, $userId, 'Restore old damage quantity before editing.');
+            if (StockService::getBalance($variantId, 'SHOP', $shopId, 'AVAILABLE') < $quantity) {
+                throw new RuntimeException('The selected product does not have enough good stock in this shop.');
+            }
+
+            StockService::decrease($variantId, 'SHOP', $shopId, 'AVAILABLE', (float)$quantity, 'DAMAGE_EDIT_QUARANTINE', 'shop_damages', $damageId, $userId, 'Quarantine edited damage details.');
+            StockService::increase($variantId, 'SHOP', $shopId, 'DAMAGED', (float)$quantity, 'DAMAGE_EDIT_QUARANTINE', 'shop_damages', $damageId, $userId, 'Quarantine edited damage details.');
+
+            $previous = $locked;
+            if (!ShopDamage::update($damageId, [
+                'variant_id' => $variantId,
+                'product_id' => (int)$variant['product_id'],
+                'source_type' => $sourceType,
+                'tag_code' => $tagCode !== '' ? $tagCode : null,
+                'defect_type' => $defectType,
+                'quantity' => $quantity,
+                'cost_per_unit' => round((float)$costPerUnit, 2),
+                'estimated_cost' => round((float)$costPerUnit, 2),
+                'total_loss' => round((float)$totalLoss, 2),
+                'damage_reason' => $damageReason,
+                'defect_notes' => $defectNotes !== '' ? $defectNotes : null,
+                'photo_url' => $photoUrl,
+            ])) {
+                throw new RuntimeException('Damage details could not be saved.');
+            }
+            $updated = ShopDamage::find($damageId);
+            AuditService::logStrict('SHOP', 'DAMAGE_UPDATED', 'shop_damages', $damageId, $previous, $updated, $userId);
+            Database::commit();
+
+            Session::setFlash('success', "Shop damage record {$damage['damage_number']} was updated and stock balances were adjusted.");
+            Response::redirect(url('shop/damage'));
+        } catch (Throwable $e) {
+            if (Database::inTransaction()) {
+                Database::rollback();
+            }
+            Session::setFlash('error', 'Unable to update damage record: ' . $e->getMessage());
+            Response::redirect(url('shop/damage/edit/' . $damageId));
+        }
+    }
+
+    public function deleteDamage(string $id): void {
+        if (!hasPermission('shop_damage', 'delete')) {
+            Session::setFlash('error', 'Access denied: You do not have permission to delete shop damage records.');
+            Response::redirect(url('shop/damage'));
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            Session::setFlash('error', 'Invalid security token. Please try again.');
+            Response::back();
+        }
+
+        $damageId = (int)$id;
+        $shop = ShopService::getActiveShop();
+        $shopId = (int)$shop['id'];
+        try {
+            Database::beginTransaction();
+            $damage = Database::fetchOne(
+                "SELECT * FROM shop_damages WHERE id = ? AND shop_id = ? FOR UPDATE",
+                [$damageId, $shopId]
+            );
+            if (!$damage) {
+                throw new RuntimeException('Shop damage record was not found.');
+            }
+            $damageRows = [$damage];
+            ShopDamage::addWarehouseReturnFlags($damageRows);
+            $damage = $damageRows[0];
+            $status = strtoupper((string)($damage['status'] ?? ''));
+            if (!in_array($status, ['LOGGED', 'INSPECTED', 'RETURN_TO_WH'], true)
+                && empty($damage['has_outward_return'])
+                && strtoupper((string)($damage['source_type'] ?? '')) !== 'INWARD_TRANSIT') {
+                throw new RuntimeException('This damage record has already been processed and cannot be deleted from this list.');
+            }
+            $movement = null;
+            if (strtoupper((string)($damage['source_type'] ?? '')) !== 'INWARD_TRANSIT') {
+                $movement = Database::fetchOne(
+                    "SELECT id FROM stock_transactions
+                     WHERE reference_type = 'shop_damages' AND reference_id = ?
+                       AND location_type = 'SHOP' AND location_id = ?
+                       AND variant_id = ? AND stock_state = 'DAMAGED'
+                       AND transaction_type IN ('DAMAGE_IN', 'DAMAGE_EDIT_QUARANTINE')
+                     ORDER BY id DESC LIMIT 1",
+                    [$damageId, $shopId, (int)$damage['variant_id']]
+                );
+            }
+
+            $userId = Session::userId();
+            $returnedQuantity = min(
+                (float)$damage['quantity'],
+                (float)($damage['outward_return_quantity'] ?? 0)
+            );
+            $restoreQuantity = $movement
+                ? max(0, (float)$damage['quantity'] - $returnedQuantity)
+                : 0;
+            if ($restoreQuantity > 0) {
+                $damagedBalance = StockService::getBalance(
+                    (int)$damage['variant_id'],
+                    'SHOP',
+                    $shopId,
+                    'DAMAGED'
+                );
+                if ($damagedBalance < $restoreQuantity) {
+                    throw new RuntimeException(sprintf(
+                        'Cannot delete this damage record: only %s of %s remaining damaged units are quarantined. Reconcile the stock before deleting.',
+                        rtrim(rtrim(number_format($damagedBalance, 2, '.', ''), '0'), '.'),
+                        rtrim(rtrim(number_format($restoreQuantity, 2, '.', ''), '0'), '.')
+                    ));
+                }
+                StockService::decrease((int)$damage['variant_id'], 'SHOP', $shopId, 'DAMAGED', $restoreQuantity, 'DAMAGE_DELETE_RESTORE', 'shop_damages', $damageId, $userId, 'Restore remaining quarantined stock after audited damage deletion.');
+                StockService::increase((int)$damage['variant_id'], 'SHOP', $shopId, 'AVAILABLE', $restoreQuantity, 'DAMAGE_DELETE_RESTORE', 'shop_damages', $damageId, $userId, 'Restore remaining quarantined stock after audited damage deletion.');
+            }
+            AuditService::logStrict(
+                'SHOP',
+                'DAMAGE_DELETED',
+                'shop_damages',
+                $damageId,
+                $damage,
+                [
+                    'returned_quantity' => $returnedQuantity,
+                    'restored_quantity' => $restoreQuantity,
+                    'quarantine_movement_found' => (bool)$movement,
+                ],
+                $userId
+            );
+            if (Database::execute("DELETE FROM shop_damages WHERE id = ? AND shop_id = ?", [$damageId, $shopId]) !== 1) {
+                throw new RuntimeException('Damage record could not be deleted.');
+            }
+            Database::commit();
+
+            $message = $restoreQuantity > 0
+                ? "Shop damage record {$damage['damage_number']} was deleted; {$restoreQuantity} remaining quarantined unit(s) were restored."
+                : (!empty($damage['has_outward_return'])
+                    ? "Shop damage record {$damage['damage_number']} was deleted. Already returned stock was not restored again."
+                    : "Shop damage record {$damage['damage_number']} was deleted without changing stock balances.");
+            Session::setFlash('success', $message);
+        } catch (Throwable $e) {
+            if (Database::inTransaction()) {
+                Database::rollback();
+            }
+            Session::setFlash('error', 'Unable to delete damage record: ' . $e->getMessage());
+        }
+        Response::redirect(url('shop/damage'));
+    }
+
+    private function canEditShopDamage(array $damage): bool {
+        return in_array(strtoupper((string)($damage['status'] ?? '')), ['LOGGED', 'INSPECTED'], true)
+            && strtoupper((string)($damage['source_type'] ?? '')) !== 'INWARD_TRANSIT';
+    }
+
     /**
      * Update Damage Case Status & Disposition
      */
@@ -4792,15 +5357,18 @@ class ShopController {
         return false;
     }
 
-    private function isShopPieceActivelyDamaged(int $variantId, int $shopId, string $tagCode): bool {
-        $damageCases = Database::fetchAll(
-            "SELECT tag_code
+    private function isShopPieceActivelyDamaged(int $variantId, int $shopId, string $tagCode, ?int $excludeDamageId = null): bool {
+        $sql = "SELECT id, tag_code
              FROM shop_damages
              WHERE variant_id = ? AND shop_id = ?
                AND status NOT IN ('RESTOCKED', 'REPAIRED', 'SALVAGED', 'WRITTEN_OFF', 'CANCELLED')
-               AND tag_code IS NOT NULL AND tag_code <> ''",
-            [$variantId, $shopId]
-        );
+               AND tag_code IS NOT NULL AND tag_code <> ''";
+        $params = [$variantId, $shopId];
+        if ($excludeDamageId !== null) {
+            $sql .= " AND id <> ?";
+            $params[] = $excludeDamageId;
+        }
+        $damageCases = Database::fetchAll($sql, $params);
         $normalizedTag = strtoupper(trim($tagCode, " \t\n\r\0\x0B\"'"));
         foreach ($damageCases as $damageCase) {
             foreach (ShopDamage::resolvePieceTags($damageCase) as $damageTag) {

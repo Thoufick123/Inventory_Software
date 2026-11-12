@@ -63,7 +63,14 @@ class ChannelDamage {
                        u_rep.full_name as reported_by_name,
                        u_insp.full_name as inspected_by_name,
                        wa.allocation_number,
-                       wr.return_number as outward_batch_number, wr.status as outward_batch_status
+                       wr.return_number as outward_batch_number, wr.status as outward_batch_status,
+                       EXISTS (
+                           SELECT 1 FROM stock_transactions st
+                           WHERE st.reference_type = 'channel_damages' AND st.reference_id = cd.id
+                             AND st.variant_id = cd.variant_id AND st.location_type = 'CHANNEL'
+                             AND st.stock_state = 'DAMAGED'
+                             AND st.transaction_type IN ('DAMAGE_LOGGED', 'DAMAGE_EDIT_QUARANTINE')
+                       ) AS has_quarantine_movement
                 FROM channel_damages cd
                 JOIN product_variants pv ON cd.variant_id = pv.id
                 JOIN products p ON pv.product_id = p.id
@@ -328,6 +335,33 @@ class ChannelDamage {
         $rec['piece_tags'] = $rec['resolved_tags'];
         $rec['notes'] = $rec['damage_reason'] . (!empty($rec['defect_notes']) ? ("\n" . $rec['defect_notes']) : '');
         return $rec;
+    }
+
+    /**
+     * Update editable damage details without changing workflow status or linkage.
+     */
+    public static function update(int $id, array $data): bool {
+        $allowed = [
+            'variant_id', 'product_id', 'tag_code', 'source_type', 'defect_type',
+            'quantity', 'cost_per_unit', 'estimated_cost', 'total_loss',
+            'damage_reason', 'defect_notes', 'photo_url',
+        ];
+        $fields = [];
+        $params = [];
+        foreach ($allowed as $field) {
+            if (array_key_exists($field, $data)) {
+                $fields[] = "`$field` = ?";
+                $params[] = $data[$field];
+            }
+        }
+        if (!$fields) {
+            return false;
+        }
+        $params[] = $id;
+        return Database::execute(
+            "UPDATE channel_damages SET " . implode(', ', $fields) . ", updated_at = NOW() WHERE id = ?",
+            $params
+        ) >= 0;
     }
 
     /**

@@ -48,13 +48,52 @@
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">QC Inspector</label>
-                        <select name="inspector_id" class="form-select">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <label class="form-label fw-semibold mb-0" for="qcInspectorSelect">
+                                <i class="bi bi-person-badge text-primary me-1"></i>QC Inspector
+                            </label>
+                            <button type="button" class="btn btn-sm btn-link p-0 text-decoration-none fw-semibold" id="btnToggleAddInspector" onclick="toggleQuickAddInspector()">
+                                <i class="bi bi-person-plus-fill me-1"></i>+ Add New Inspector
+                            </button>
+                        </div>
+                        <select name="inspector_id" id="qcInspectorSelect" class="form-select" onchange="handleInspectorSelectChange(this)">
                             <option value="">Select Inspector Name</option>
+                            <option value="__NEW__" class="fw-bold text-primary bg-light">+ Add New QC Inspector...</option>
                             <?php foreach ($users as $u): ?>
                                 <option value="<?= $u['id'] ?>"><?= e($u['full_name']) ?></option>
                             <?php endforeach; ?>
                         </select>
+
+                        <!-- Inline Quick Add QC Inspector Box -->
+                        <div id="quickAddInspectorBox" class="mt-2 p-3 rounded-3 border border-primary bg-light shadow-sm" style="display: none;">
+                            <div class="d-flex justify-content-between align-items-center mb-2 pb-1 border-bottom border-primary-subtle">
+                                <span class="fw-bold small text-primary">
+                                    <i class="bi bi-person-plus-fill me-1"></i>Quick Add New QC Inspector
+                                </span>
+                                <button type="button" class="btn-close btn-sm" onclick="closeQuickAddInspector()" aria-label="Close" style="font-size: 10px;"></button>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small fw-semibold text-dark mb-1">Inspector Full Name <span class="text-danger">*</span></label>
+                                <input type="text" id="quickInspectorName" class="form-control form-control-sm" placeholder="e.g. Ramesh Kumar / Inspector Name" autocomplete="off" onkeyup="if(event.key==='Enter') saveQuickQcInspector()">
+                            </div>
+                            <div class="row g-2 mb-2">
+                                <div class="col-6">
+                                    <label class="form-label small fw-semibold text-dark mb-1">Phone Number (Optional)</label>
+                                    <input type="text" id="quickInspectorPhone" class="form-control form-control-sm" placeholder="e.g. 9876543210" maxlength="15" autocomplete="off" onkeyup="if(event.key==='Enter') saveQuickQcInspector()">
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label small fw-semibold text-dark mb-1">Emp / ID Code (Optional)</label>
+                                    <input type="text" id="quickInspectorEmpId" class="form-control form-control-sm" placeholder="Auto-generated" autocomplete="off" onkeyup="if(event.key==='Enter') saveQuickQcInspector()">
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-end align-items-center gap-2 mt-3 pt-2 border-top">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="closeQuickAddInspector()">Cancel</button>
+                                <button type="button" class="btn btn-primary btn-sm fw-semibold" id="btnSaveQuickInspector" onclick="saveQuickQcInspector()">
+                                    <i class="bi bi-check-circle me-1"></i> Save &amp; Select
+                                </button>
+                            </div>
+                            <div id="quickInspectorAlert" class="small mt-2" style="display: none;"></div>
+                        </div>
                     </div>
 
                     <div class="mb-3">
@@ -192,6 +231,130 @@ function filterQCCreateTable(targetCat, btn) {
         } else {
             tr.style.display = 'none';
         }
+    });
+}
+
+// Quick Add QC Inspector Handler
+let previousInspectorValue = '';
+
+function handleInspectorSelectChange(selectEl) {
+    if (selectEl.value === '__NEW__') {
+        openQuickAddInspector();
+        selectEl.value = previousInspectorValue;
+    } else {
+        previousInspectorValue = selectEl.value;
+    }
+}
+
+function toggleQuickAddInspector() {
+    const box = document.getElementById('quickAddInspectorBox');
+    if (box.style.display === 'none' || box.style.display === '') {
+        openQuickAddInspector();
+    } else {
+        closeQuickAddInspector();
+    }
+}
+
+function openQuickAddInspector() {
+    const box = document.getElementById('quickAddInspectorBox');
+    box.style.display = 'block';
+    const nameInput = document.getElementById('quickInspectorName');
+    nameInput.focus();
+}
+
+function closeQuickAddInspector() {
+    const box = document.getElementById('quickAddInspectorBox');
+    box.style.display = 'none';
+    const alertEl = document.getElementById('quickInspectorAlert');
+    alertEl.style.display = 'none';
+    alertEl.className = 'small mt-2';
+    alertEl.textContent = '';
+}
+
+function saveQuickQcInspector() {
+    const nameInput = document.getElementById('quickInspectorName');
+    const phoneInput = document.getElementById('quickInspectorPhone');
+    const empInput = document.getElementById('quickInspectorEmpId');
+    const alertEl = document.getElementById('quickInspectorAlert');
+    const saveBtn = document.getElementById('btnSaveQuickInspector');
+    const selectEl = document.getElementById('qcInspectorSelect');
+
+    const fullName = (nameInput.value || '').trim();
+    const phone = (phoneInput.value || '').trim();
+    const empId = (empInput.value || '').trim();
+
+    if (!fullName || fullName.length < 2) {
+        alertEl.className = 'small mt-2 text-danger fw-semibold';
+        alertEl.textContent = 'Please enter inspector full name (at least 2 characters).';
+        alertEl.style.display = 'block';
+        nameInput.focus();
+        return;
+    }
+
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span> Saving...';
+    alertEl.style.display = 'none';
+
+    const formData = new FormData();
+    formData.append('full_name', fullName);
+    formData.append('phone', phone);
+    formData.append('emp_id', empId);
+
+    // Append CSRF token if present
+    const csrfInput = document.querySelector('input[name="_csrf_token"]');
+    if (csrfInput) {
+        formData.append('_csrf_token', csrfInput.value);
+    }
+
+    fetch('<?= url('production/qc/ajax-add-inspector') ?>', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Save &amp; Select';
+
+        if (data.success && data.inspector) {
+            // Dynamically add option to select
+            const newOpt = document.createElement('option');
+            newOpt.value = data.inspector.id;
+            newOpt.textContent = data.inspector.full_name;
+            newOpt.selected = true;
+
+            selectEl.appendChild(newOpt);
+            selectEl.value = data.inspector.id;
+            previousInspectorValue = data.inspector.id;
+
+            // Reset inputs
+            nameInput.value = '';
+            phoneInput.value = '';
+            empInput.value = '';
+
+            // Brief success feedback
+            alertEl.className = 'small mt-2 text-success fw-semibold';
+            alertEl.textContent = 'QC Inspector "' + data.inspector.full_name + '" added & selected!';
+            alertEl.style.display = 'block';
+
+            setTimeout(() => {
+                closeQuickAddInspector();
+            }, 1200);
+        } else {
+            alertEl.className = 'small mt-2 text-danger fw-semibold';
+            alertEl.textContent = data.message || 'Failed to save inspector.';
+            alertEl.style.display = 'block';
+        }
+    })
+    .catch(err => {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Save &amp; Select';
+        alertEl.className = 'small mt-2 text-danger fw-semibold';
+        alertEl.textContent = 'Network or server error while adding inspector.';
+        alertEl.style.display = 'block';
+        console.error('Error adding QC inspector:', err);
     });
 }
 </script>

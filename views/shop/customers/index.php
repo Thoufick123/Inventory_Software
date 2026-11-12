@@ -138,7 +138,7 @@
                         <th class="text-end">Total Spend</th>
                         <th class="text-end">Avg / Order</th>
                         <th>Last Activity</th>
-                        <th class="text-end pe-3" style="width: 100px;">Actions</th>
+                        <th class="text-end pe-3" style="width: 170px;">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="customerTableBody">
@@ -229,12 +229,28 @@
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-end pe-3">
-                                    <!-- Only View Details Button -->
-                                    <a href="<?= url('shop/customers/view/' . $c['id']) ?>" 
-                                       class="btn btn-sm btn-outline-primary rounded-pill px-3 shadow-none fw-semibold" 
-                                       title="View Customer Profile & Purchase History">
-                                        <i class="bi bi-eye me-1"></i> View
-                                    </a>
+                                    <div class="d-inline-flex align-items-center gap-1">
+                                        <a href="<?= url('shop/customers/view/' . $c['id']) ?>"
+                                           class="btn btn-sm btn-outline-primary rounded-pill px-3 shadow-none fw-semibold"
+                                           title="View Customer Profile & Purchase History">
+                                            <i class="bi bi-eye me-1"></i> View
+                                        </a>
+                                        <?php if (hasPermission('customers', 'edit')): ?>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 shadow-none fw-semibold btn-edit-customer"
+                                                    data-id="<?= (int)$c['id'] ?>"
+                                                    data-name="<?= e($c['name'] ?? '') ?>"
+                                                    data-phone="<?= e($c['phone'] ?? '') ?>"
+                                                    data-email="<?= e($c['email'] ?? '') ?>"
+                                                    data-address="<?= e($c['address'] ?? '') ?>"
+                                                    data-city="<?= e($c['city'] ?? '') ?>"
+                                                    data-state="<?= e($c['state'] ?? 'Tamil Nadu') ?>"
+                                                    data-gst="<?= e($c['gst_number'] ?? '') ?>"
+                                                    data-status="<?= (int)($c['is_active'] ?? 0) ?>"
+                                                    title="Edit customer profile">
+                                                <i class="bi bi-pencil-square me-1"></i> Edit
+                                            </button>
+                                        <?php endif; ?>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -351,39 +367,41 @@ window.clearCustomerSearch = function() {
 
 document.addEventListener('DOMContentLoaded', function() {
     const modalEl = document.getElementById('customerModal');
-    const customerModal = new bootstrap.Modal(modalEl);
-    const form = document.getElementById('customerForm');
-    const modalTitle = document.getElementById('customerModalTitle');
-    const editIdInput = document.getElementById('editCustomerId');
+    const form = modalEl ? document.getElementById('customerForm') : null;
+    if (modalEl && form && typeof bootstrap !== 'undefined') {
+        const customerModal = new bootstrap.Modal(modalEl);
+        const modalTitle = document.getElementById('customerModalTitle');
+        const editIdInput = document.getElementById('editCustomerId');
 
-    window.openCreateCustomerModal = function() {
-        form.reset();
-        editIdInput.value = '';
-        form.action = "<?= url('shop/customers/store') ?>";
-        modalTitle.innerHTML = '<i class="bi bi-person-plus-fill text-primary me-2"></i>Add New Customer';
-        document.getElementById('modalCustState').value = 'Tamil Nadu';
-        document.getElementById('modalCustStatus').checked = true;
-    };
+        window.openCreateCustomerModal = function() {
+            form.reset();
+            editIdInput.value = '';
+            form.action = "<?= url('shop/customers/store') ?>";
+            modalTitle.innerHTML = '<i class="bi bi-person-plus-fill text-primary me-2"></i>Add New Customer';
+            document.getElementById('modalCustState').value = 'Tamil Nadu';
+            document.getElementById('modalCustStatus').checked = true;
+        };
 
-    document.querySelectorAll('.btn-edit-customer').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const id = this.getAttribute('data-id');
-            editIdInput.value = id;
-            form.action = "<?= url('shop/customers/update') ?>/" + id;
-            modalTitle.innerHTML = '<i class="bi bi-pencil-square text-primary me-2"></i>Edit Customer Profile';
+        document.querySelectorAll('.btn-edit-customer').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const id = this.getAttribute('data-id');
+                editIdInput.value = id;
+                form.action = "<?= url('shop/customers/update') ?>/" + id;
+                modalTitle.innerHTML = '<i class="bi bi-pencil-square text-primary me-2"></i>Edit Customer Profile';
 
-            document.getElementById('modalCustName').value = this.getAttribute('data-name') || '';
-            document.getElementById('modalCustPhone').value = this.getAttribute('data-phone') || '';
-            document.getElementById('modalCustEmail').value = this.getAttribute('data-email') || '';
-            document.getElementById('modalCustAddress').value = this.getAttribute('data-address') || '';
-            document.getElementById('modalCustCity').value = this.getAttribute('data-city') || '';
-            document.getElementById('modalCustState').value = this.getAttribute('data-state') || 'Tamil Nadu';
-            document.getElementById('modalCustGst').value = this.getAttribute('data-gst') || '';
-            document.getElementById('modalCustStatus').checked = this.getAttribute('data-status') == '1';
+                document.getElementById('modalCustName').value = this.getAttribute('data-name') || '';
+                document.getElementById('modalCustPhone').value = this.getAttribute('data-phone') || '';
+                document.getElementById('modalCustEmail').value = this.getAttribute('data-email') || '';
+                document.getElementById('modalCustAddress').value = this.getAttribute('data-address') || '';
+                document.getElementById('modalCustCity').value = this.getAttribute('data-city') || '';
+                document.getElementById('modalCustState').value = this.getAttribute('data-state') || 'Tamil Nadu';
+                document.getElementById('modalCustGst').value = this.getAttribute('data-gst') || '';
+                document.getElementById('modalCustStatus').checked = this.getAttribute('data-status') === '1';
 
-            customerModal.show();
+                customerModal.show();
+            });
         });
-    });
+    }
 
     // Instant Client-Side Letter-by-Letter Search & Filter Engine
     const searchInput = document.getElementById('customerSearchInput');

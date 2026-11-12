@@ -769,14 +769,273 @@ class CashService {
         $limit = isset($filters['limit']) ? (int)$filters['limit'] : 100;
 
         return Database::fetchAll(
-            "SELECT ct.*, u.full_name as staff_name, cr.register_number
+            "SELECT ct.*, u.full_name as staff_name, cr.register_number, cr.status as register_status,
+                    ce.expense_category as source_expense_category, ce.paid_to as source_paid_to,
+                    ce.payment_mode as source_payment_mode, ce.bill_number as source_bill_number,
+                    ce.notes as source_notes,
+                    bd.bank_name as source_bank_name, bd.account_number as source_account_number,
+                    bd.slip_number as source_slip_number, bd.deposit_date as source_deposit_date,
+                    bd.notes as source_deposit_notes, bd.status as source_deposit_status
              FROM cash_transactions ct
              LEFT JOIN users u ON ct.handled_by = u.id
              LEFT JOIN cash_registers cr ON ct.register_id = cr.id
+             LEFT JOIN cash_expenses ce ON ct.source_table = 'cash_expenses' AND ct.source_id = ce.id
+             LEFT JOIN bank_deposits bd ON ct.source_table = 'bank_deposits' AND ct.source_id = bd.id
              WHERE {$whereClause}
              ORDER BY ct.id DESC LIMIT {$limit}",
             $params
         );
+    }
+
+    public static function updateManualLedgerTransaction(int $transactionId, int $shopId, array $payload, int $userId): void {
+        $amount = filter_var($payload['amount'] ?? null, FILTER_VALIDATE_FLOAT);
+        if ($amount === false || !is_finite((float)$amount) || (float)$amount <= 0) {
+            throw new InvalidArgumentException('Enter a valid amount greater than zero.');
+        }
+
+        Database::beginTransaction();
+        try {
+            $locked = self::lockManualLedgerTransaction($transactionId, $shopId);
+            $transaction = $locked['transaction'];
+            $source = $locked['source'];
+            $type = $transaction['transaction_type'];
+
+            if ($type === 'CASH_IN') {
+                $category = trim((string)($payload['category'] ?? ''));
+                $description = trim((string)($payload['description'] ?? ''));
+                if ($category === '' || strlen($category) > 100 || $description === '') {
+                    throw new InvalidArgumentException('Cash top-up category and description are required.');
+                }
+                Database::execute(
+                    "UPDATE cash_transactions SET amount = ?, category = ?, description = ? WHERE id = ? AND shop_id = ?",
+                    [(float)$amount, $category, $description, $transactionId, $shopId]
+                );
+            } elseif ($type === 'EXPENSE') {
+                $category = trim((string)($payload['expense_category'] ?? ''));
+                $paidTo = trim((string)($payload['paid_to'] ?? ''));
+                $paymentMode = strtoupper(trim((string)($payload['payment_mode'] ?? 'CASH')));
+                $billNumber = trim((string)($payload['bill_number'] ?? ''));
+                $notes = trim((string)($payload['notes'] ?? ''));
+                if ($category === '' || strlen($category) > 100 || $paidTo === '' || strlen($paidTo) > 150) {
+                    throw new InvalidArgumentException('Expense category and recipient are required.');
+                }
+                if (!in_array($paymentMode, ['CASH', 'UPI', 'CARD', 'ONLINE'], true) || strlen($billNumber) > 100) {
+                    throw new InvalidArgumentException('Select a valid expense payment mode and bill reference.');
+                }
+
+                Database::execute(
+                    "UPDATE cash_expenses
+                     SET amount = ?, expense_category = ?, paid_to = ?, payment_mode = ?, bill_number = ?, notes = ?
+                     WHERE id = ? AND shop_id = ?",
+                    [(float)$amount, $category, $paidTo, $paymentMode, $billNumber ?: null, $notes ?: null, (int)$source['id'], $shopId]
+                );
+                Database::execute(
+                    "UPDATE cash_transactions
+                     SET amount = ?, payment_mode = ?, category = ?, description = ?
+                     WHERE id = ? AND shop_id = ?",
+                    [
+                        (float)$amount,
+                        $paymentMode === 'ONLINE' ? 'OTHER' : $paymentMode,
+                        $category,
+                        "Petty Cash Expense: {$category} to {$paidTo}" . ($notes !== '' ? " ({$notes})" : ''),
+                        $transactionId,
+                        $shopId,
+                    ]
+                );
+            } else {
+                $bankName = trim((string)($payload['bank_name'] ?? ''));
+                $accountNumber = trim((string)($payload['account_number'] ?? ''));
+                $slipNumber = trim((string)($payload['slip_number'] ?? ''));
+                $depositDate = trim((string)($payload['deposit_date'] ?? ''));
+                $notes = trim((string)($payload['notes'] ?? ''));
+                $parsedDate = DateTime::createFromFormat('!Y-m-d', $depositDate);
+                if ($bankName === '' || strlen($bankName) > 100 || strlen($accountNumber) > 50 || strlen($slipNumber) > 100
+                    || !$parsedDate || $parsedDate->format('Y-m-d') !== $depositDate) {
+                    throw new InvalidArgumentException('Enter valid bank, account, slip, and deposit date details.');
+                }
+
+                Database::execute(
+                    "UPDATE bank_deposits
+                     SET amount = ?, bank_name = ?, account_number = ?, slip_number = ?, deposit_date = ?, notes = ?
+                     WHERE id = ? AND shop_id = ?",
+                    [
+                        (float)$amount,
+                        $bankName,
+                        $accountNumber ?: null,
+                        $slipNumber ?: null,
+                        $depositDate,
+                        $notes ?: null,
+                        (int)$source['id'],
+                        $shopId,
+                    ]
+                );
+                Database::execute(
+                    "UPDATE cash_transactions
+                     SET amount = ?, category = 'BANK_DEPOSIT', description = ?
+                     WHERE id = ? AND shop_id = ?",
+                    [
+                        (float)$amount,
+                        "Bank Cash Drop to {$bankName}" . ($slipNumber !== '' ? " (Slip: {$slipNumber})" : ''),
+                        $transactionId,
+                        $shopId,
+                    ]
+                );
+            }
+
+            $updatedTransaction = Database::fetchOne("SELECT * FROM cash_transactions WHERE id = ?", [$transactionId]);
+            $updatedSource = self::getManualLedgerSource($updatedTransaction);
+            AuditService::log(
+                'shop_cash',
+                'EDIT_LEDGER_TRANSACTION',
+                'cash_transactions',
+                $transactionId,
+                ['transaction' => $transaction, 'source' => $source],
+                ['transaction' => $updatedTransaction, 'source' => $updatedSource],
+                $userId
+            );
+            self::getActiveRegister($shopId);
+            Database::commit();
+        } catch (Exception $e) {
+            Database::rollback();
+            throw $e;
+        }
+    }
+
+    public static function voidManualLedgerTransaction(int $transactionId, int $shopId, int $userId): void {
+        Database::beginTransaction();
+        try {
+            $locked = self::lockManualLedgerTransaction($transactionId, $shopId);
+            $transaction = $locked['transaction'];
+            $source = $locked['source'];
+            $description = self::withVoidMarker((string)($transaction['description'] ?? ''), $userId);
+
+            if ($transaction['transaction_type'] === 'CASH_IN') {
+                Database::execute(
+                    "UPDATE cash_transactions SET amount = 0, category = 'VOIDED', description = ? WHERE id = ? AND shop_id = ?",
+                    [$description, $transactionId, $shopId]
+                );
+            } elseif ($transaction['transaction_type'] === 'EXPENSE') {
+                $notes = self::withVoidMarker((string)($source['notes'] ?? ''), $userId);
+                Database::execute(
+                    "UPDATE cash_expenses SET amount = 0, notes = ? WHERE id = ? AND shop_id = ?",
+                    [$notes, (int)$source['id'], $shopId]
+                );
+                Database::execute(
+                    "UPDATE cash_transactions SET amount = 0, category = 'VOIDED', description = ? WHERE id = ? AND shop_id = ?",
+                    [$description, $transactionId, $shopId]
+                );
+            } else {
+                $notes = self::withVoidMarker((string)($source['notes'] ?? ''), $userId);
+                Database::execute(
+                    "UPDATE bank_deposits SET amount = 0, status = 'REJECTED', notes = ? WHERE id = ? AND shop_id = ?",
+                    [$notes, (int)$source['id'], $shopId]
+                );
+                Database::execute(
+                    "UPDATE cash_transactions SET amount = 0, category = 'VOIDED', description = ? WHERE id = ? AND shop_id = ?",
+                    [$description, $transactionId, $shopId]
+                );
+            }
+
+            $updatedTransaction = Database::fetchOne("SELECT * FROM cash_transactions WHERE id = ?", [$transactionId]);
+            $updatedSource = self::getManualLedgerSource($updatedTransaction);
+            AuditService::log(
+                'shop_cash',
+                'VOID_LEDGER_TRANSACTION',
+                'cash_transactions',
+                $transactionId,
+                ['transaction' => $transaction, 'source' => $source],
+                ['transaction' => $updatedTransaction, 'source' => $updatedSource],
+                $userId
+            );
+            self::getActiveRegister($shopId);
+            Database::commit();
+        } catch (Exception $e) {
+            Database::rollback();
+            throw $e;
+        }
+    }
+
+    private static function lockManualLedgerTransaction(int $transactionId, int $shopId): array {
+        $transaction = Database::fetchOne(
+            "SELECT * FROM cash_transactions WHERE id = ? AND shop_id = ? FOR UPDATE",
+            [$transactionId, $shopId]
+        );
+        $sourceTables = [
+            'CASH_IN' => 'cash_registers',
+            'EXPENSE' => 'cash_expenses',
+            'BANK_DEPOSIT' => 'bank_deposits',
+        ];
+        $flowDirections = [
+            'CASH_IN' => 'IN',
+            'EXPENSE' => 'OUT',
+            'BANK_DEPOSIT' => 'OUT',
+        ];
+        if (!$transaction || !isset($sourceTables[$transaction['transaction_type']])
+            || $transaction['source_table'] !== $sourceTables[$transaction['transaction_type']]
+            || $transaction['flow_direction'] !== $flowDirections[$transaction['transaction_type']]) {
+            throw new RuntimeException('Only manual cash top-ups, expenses, and bank deposits can be edited or voided.');
+        }
+        if (self::startsWithVoidMarker((string)($transaction['description'] ?? ''))) {
+            throw new RuntimeException('This cash transaction has already been voided.');
+        }
+
+        if (!empty($transaction['register_id'])) {
+            $register = Database::fetchOne(
+                "SELECT id, status FROM cash_registers WHERE id = ? AND shop_id = ? FOR UPDATE",
+                [(int)$transaction['register_id'], $shopId]
+            );
+            if (!$register || $register['status'] !== 'OPEN') {
+                throw new RuntimeException('Transactions belonging to a closed shift cannot be edited or voided.');
+            }
+        }
+
+        $source = null;
+        if ($transaction['transaction_type'] === 'EXPENSE') {
+            $source = Database::fetchOne(
+                "SELECT * FROM cash_expenses WHERE id = ? AND shop_id = ? FOR UPDATE",
+                [(int)$transaction['source_id'], $shopId]
+            );
+            if (!$source || self::startsWithVoidMarker((string)($source['notes'] ?? ''))) {
+                throw new RuntimeException('The linked expense is missing or has already been voided.');
+            }
+        } elseif ($transaction['transaction_type'] === 'BANK_DEPOSIT') {
+            $source = Database::fetchOne(
+                "SELECT * FROM bank_deposits WHERE id = ? AND shop_id = ? FOR UPDATE",
+                [(int)$transaction['source_id'], $shopId]
+            );
+            if (!$source || $source['status'] === 'REJECTED' || self::startsWithVoidMarker((string)($source['notes'] ?? ''))) {
+                throw new RuntimeException('The linked bank deposit is missing or has already been voided.');
+            }
+        } elseif ((int)($transaction['source_id'] ?? 0) !== (int)($transaction['register_id'] ?? 0)) {
+            throw new RuntimeException('The cash top-up is not linked to its expected register.');
+        }
+
+        return ['transaction' => $transaction, 'source' => $source];
+    }
+
+    private static function getManualLedgerSource(?array $transaction): ?array {
+        if (!$transaction || empty($transaction['source_id'])) {
+            return null;
+        }
+        if ($transaction['source_table'] === 'cash_expenses') {
+            return Database::fetchOne("SELECT * FROM cash_expenses WHERE id = ?", [(int)$transaction['source_id']]);
+        }
+        if ($transaction['source_table'] === 'bank_deposits') {
+            return Database::fetchOne("SELECT * FROM bank_deposits WHERE id = ?", [(int)$transaction['source_id']]);
+        }
+        return null;
+    }
+
+    private static function startsWithVoidMarker(string $value): bool {
+        return strncmp(ltrim($value), '[VOIDED]', 8) === 0;
+    }
+
+    private static function withVoidMarker(string $value, int $userId): string {
+        if (self::startsWithVoidMarker($value)) {
+            return $value;
+        }
+        $auditNote = 'Voided by user #' . $userId . ' at ' . date('Y-m-d H:i:s');
+        return '[VOIDED] ' . trim($value) . ($value !== '' ? ' | ' : '') . $auditNote;
     }
 
     /**

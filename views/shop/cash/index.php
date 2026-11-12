@@ -296,6 +296,9 @@ $currTab = $tab ?? 'overview';
         <div class="card-body p-0">
             <!-- TAB 1: CASH FLOW LEDGER -->
             <?php if ($currTab === 'overview' || $currTab === 'ledger'): ?>
+                <div class="px-4 pt-3 small text-muted">
+                    Sales and shift-generated entries are read-only. Manual top-ups, expenses, and bank deposits can be edited or voided while their shift is open.
+                </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0" id="cashLedgerTable">
                         <thead class="table-light">
@@ -309,12 +312,13 @@ $currTab = $tab ?? 'overview';
                                 <th>Shift #</th>
                                 <th>Description / Ref</th>
                                 <th class="pe-4">Handled By</th>
+                                <th class="text-end pe-4">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="cash-table-body">
                             <?php if (empty($ledger)): ?>
                                 <tr id="emptyLedgerRow">
-                                    <td colspan="9" class="text-center py-5 text-muted">
+                                    <td colspan="10" class="text-center py-5 text-muted">
                                         <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary opacity-50"></i>
                                         No cash transactions recorded for the selected period.
                                     </td>
@@ -324,6 +328,14 @@ $currTab = $tab ?? 'overview';
                                     <?php 
                                     $isIncome = ($tx['flow_direction'] === 'IN');
                                     $searchData = strtolower($tx['transaction_number'] . ' ' . $tx['transaction_type'] . ' ' . $tx['category'] . ' ' . ($tx['reference_id'] ?? '') . ' ' . ($tx['description'] ?? '') . ' ' . ($tx['staff_name'] ?? '') . ' ' . ($tx['register_number'] ?? ''));
+                                    $isVoided = strncmp(ltrim((string)($tx['description'] ?? '')), '[VOIDED]', 8) === 0;
+                                    $manualSourceMatches = (
+                                        ($tx['transaction_type'] === 'CASH_IN' && $tx['source_table'] === 'cash_registers') ||
+                                        ($tx['transaction_type'] === 'EXPENSE' && $tx['source_table'] === 'cash_expenses') ||
+                                        ($tx['transaction_type'] === 'BANK_DEPOSIT' && $tx['source_table'] === 'bank_deposits')
+                                    );
+                                    $shiftIsEditable = empty($tx['register_id']) || ($tx['register_status'] ?? '') === 'OPEN';
+                                    $canManageTransaction = $manualSourceMatches && !$isVoided && $shiftIsEditable;
                                     ?>
                                     <tr class="cash-row" data-search="<?= e($searchData) ?>">
                                         <td class="ps-4 fw-bold font-monospace text-dark small"><?= e($tx['transaction_number']) ?></td>
@@ -351,6 +363,38 @@ $currTab = $tab ?? 'overview';
                                             <?php endif; ?>
                                         </td>
                                         <td class="pe-4"><small class="text-dark fw-semibold"><?= e($tx['staff_name'] ?? 'Admin') ?></small></td>
+                                        <td class="text-end pe-4 text-nowrap">
+                                            <?php if ($canManageTransaction && hasPermission('shop_cash', 'edit')): ?>
+                                                <button type="button" class="btn btn-sm btn-outline-primary btn-edit-cash-transaction"
+                                                        data-id="<?= (int)$tx['id'] ?>"
+                                                        data-type="<?= e($tx['transaction_type']) ?>"
+                                                        data-amount="<?= number_format((float)$tx['amount'], 2, '.', '') ?>"
+                                                        data-category="<?= e($tx['category'] ?? '') ?>"
+                                                        data-description="<?= e($tx['description'] ?? '') ?>"
+                                                        data-expense-category="<?= e($tx['source_expense_category'] ?? '') ?>"
+                                                        data-paid-to="<?= e($tx['source_paid_to'] ?? '') ?>"
+                                                        data-source-payment-mode="<?= e($tx['source_payment_mode'] ?? 'CASH') ?>"
+                                                        data-bill-number="<?= e($tx['source_bill_number'] ?? '') ?>"
+                                                        data-source-notes="<?= e($tx['source_notes'] ?? '') ?>"
+                                                        data-bank-name="<?= e($tx['source_bank_name'] ?? '') ?>"
+                                                        data-account-number="<?= e($tx['source_account_number'] ?? '') ?>"
+                                                        data-slip-number="<?= e($tx['source_slip_number'] ?? '') ?>"
+                                                        data-deposit-date="<?= e($tx['source_deposit_date'] ?? '') ?>"
+                                                        data-deposit-notes="<?= e($tx['source_deposit_notes'] ?? '') ?>"
+                                                        title="Edit manual transaction">
+                                                    <i class="bi bi-pencil-square"></i>
+                                                </button>
+                                            <?php endif; ?>
+                                            <?php if ($canManageTransaction && hasPermission('shop_cash', 'delete')): ?>
+                                                <form method="POST" action="<?= url('shop/cash/transactions/void/' . (int)$tx['id']) ?>" class="d-inline"
+                                                      onsubmit="return confirm('Void this manual cash entry? It will be removed from totals but kept in audit history.');">
+                                                    <?= CSRF::field() ?>
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Void manual transaction">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </form>
+                                            <?php endif; ?>
+                                        </td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php endif; ?>
@@ -384,11 +428,17 @@ $currTab = $tab ?? 'overview';
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($expenses as $exp): ?>
-                                    <?php $searchData = strtolower($exp['voucher_number'] . ' ' . $exp['expense_category'] . ' ' . $exp['paid_to'] . ' ' . ($exp['bill_number'] ?? '') . ' ' . ($exp['notes'] ?? '') . ' ' . ($exp['staff_name'] ?? '')); ?>
+                                    <?php
+                                    $expenseVoided = strncmp(ltrim((string)($exp['notes'] ?? '')), '[VOIDED]', 8) === 0;
+                                    $searchData = strtolower($exp['voucher_number'] . ' ' . $exp['expense_category'] . ' ' . $exp['paid_to'] . ' ' . ($exp['bill_number'] ?? '') . ' ' . ($exp['notes'] ?? '') . ' ' . ($exp['staff_name'] ?? ''));
+                                    ?>
                                     <tr class="cash-row" data-search="<?= e($searchData) ?>">
                                         <td class="ps-4 fw-bold font-monospace text-danger"><?= e($exp['voucher_number']) ?></td>
                                         <td><small class="text-muted"><?= formatDateTime($exp['created_at']) ?></small></td>
-                                        <td><span class="badge bg-warning-subtle text-warning-emphasis px-2 py-1 rounded-pill"><?= e($exp['expense_category']) ?></span></td>
+                                        <td>
+                                            <span class="badge <?= $expenseVoided ? 'bg-secondary-subtle text-secondary' : 'bg-warning-subtle text-warning-emphasis' ?> px-2 py-1 rounded-pill"><?= e($exp['expense_category']) ?></span>
+                                            <?php if ($expenseVoided): ?><small class="d-block text-danger fw-semibold">VOIDED</small><?php endif; ?>
+                                        </td>
                                         <td class="fw-semibold text-dark"><?= e($exp['paid_to']) ?></td>
                                         <td><span class="badge bg-light text-dark border"><?= e($exp['payment_mode']) ?></span></td>
                                         <td><small class="font-monospace text-muted"><?= e($exp['bill_number'] ?: '-') ?></small></td>
@@ -437,7 +487,13 @@ $currTab = $tab ?? 'overview';
                                         <td><span class="badge bg-light text-dark border font-monospace"><?= e($dep['slip_number'] ?: '-') ?></span></td>
                                         <td class="fw-bold text-primary">₹<?= number_format((float)$dep['amount'], 2) ?></td>
                                         <td><small class="text-dark"><?= e($dep['staff_name'] ?? 'Admin') ?></small></td>
-                                        <td><span class="badge bg-success-subtle text-success rounded-pill px-2 py-1"><i class="bi bi-check-circle me-1"></i>VERIFIED</span></td>
+                                        <td>
+                                            <?php if (($dep['status'] ?? '') === 'REJECTED'): ?>
+                                                <span class="badge bg-secondary-subtle text-secondary rounded-pill px-2 py-1"><i class="bi bi-x-circle me-1"></i>VOIDED</span>
+                                            <?php else: ?>
+                                                <span class="badge bg-success-subtle text-success rounded-pill px-2 py-1"><i class="bi bi-check-circle me-1"></i><?= e($dep['status'] ?? 'VERIFIED') ?></span>
+                                            <?php endif; ?>
+                                        </td>
                                         <td class="pe-4 small text-muted"><?= e($dep['notes'] ?: '-') ?></td>
                                     </tr>
                                 <?php endforeach; ?>
@@ -540,6 +596,100 @@ $currTab = $tab ?? 'overview';
 <!-- ============================================================== -->
 <!-- MODALS SECTION                                                 -->
 <!-- ============================================================== -->
+
+<?php if (hasPermission('shop_cash', 'edit')): ?>
+<div class="modal fade" id="editCashTransactionModal" tabindex="-1" aria-labelledby="editCashTransactionTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <form method="POST" action="<?= url('shop/cash/transactions/update/0') ?>" id="editCashTransactionForm">
+                <?= CSRF::field() ?>
+                <div class="modal-header bg-light border-0 py-3 px-4">
+                    <h5 class="modal-title fw-bold" id="editCashTransactionTitle">Edit Manual Cash Transaction</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Amount</label>
+                        <input type="number" min="0.01" step="0.01" name="amount" id="editCashTransactionAmount" class="form-control" required>
+                    </div>
+
+                    <div data-ledger-edit-fields="CASH_IN" class="d-none">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Category</label>
+                            <input type="text" name="category" id="editCashInCategory" class="form-control" maxlength="100" data-ledger-edit-required="true">
+                        </div>
+                        <div class="mb-0">
+                            <label class="form-label fw-semibold">Description</label>
+                            <textarea name="description" id="editCashInDescription" class="form-control" rows="2" data-ledger-edit-required="true"></textarea>
+                        </div>
+                    </div>
+
+                    <div data-ledger-edit-fields="EXPENSE" class="d-none">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Expense category</label>
+                                <input type="text" name="expense_category" id="editExpenseCategory" class="form-control" maxlength="100" data-ledger-edit-required="true">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Paid to</label>
+                                <input type="text" name="paid_to" id="editExpensePaidTo" class="form-control" maxlength="150" data-ledger-edit-required="true">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Payment mode</label>
+                                <select name="payment_mode" id="editExpensePaymentMode" class="form-select">
+                                    <option value="CASH">Cash</option>
+                                    <option value="UPI">UPI</option>
+                                    <option value="CARD">Card</option>
+                                    <option value="ONLINE">Online</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Bill / reference number</label>
+                                <input type="text" name="bill_number" id="editExpenseBillNumber" class="form-control" maxlength="100">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">Notes</label>
+                                <textarea name="notes" id="editExpenseNotes" class="form-control" rows="2"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div data-ledger-edit-fields="BANK_DEPOSIT" class="d-none">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Bank name</label>
+                                <input type="text" name="bank_name" id="editDepositBankName" class="form-control" maxlength="100" data-ledger-edit-required="true">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Account number</label>
+                                <input type="text" name="account_number" id="editDepositAccountNumber" class="form-control" maxlength="50">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Slip number</label>
+                                <input type="text" name="slip_number" id="editDepositSlipNumber" class="form-control" maxlength="100">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Deposit date</label>
+                                <input type="date" name="deposit_date" id="editDepositDate" class="form-control" data-ledger-edit-required="true">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">Notes</label>
+                                <textarea name="notes" id="editDepositNotes" class="form-control" rows="2"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light border-0 py-3 px-4">
+                    <button type="button" class="btn btn-light border rounded-pill px-3" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary rounded-pill px-4 fw-bold">
+                        <i class="bi bi-check-circle me-1"></i> Save changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- 1. OPEN SHIFT MODAL -->
 <?php if (hasPermission('shop_cash', 'create')): ?>
@@ -1172,6 +1322,49 @@ function onCashSearchChange(query) {
         emptyRow.remove();
     }
 }
+
+document.querySelectorAll('.btn-edit-cash-transaction').forEach(button => {
+    button.addEventListener('click', function () {
+        const form = document.getElementById('editCashTransactionForm');
+        const modalElement = document.getElementById('editCashTransactionModal');
+        const transactionId = this.dataset.id;
+        const transactionType = this.dataset.type;
+        if (!form || !modalElement || !transactionId) return;
+
+        const updateUrl = <?= json_encode(url('shop/cash/transactions/update/')) ?>;
+        form.action = updateUrl + encodeURIComponent(transactionId);
+        document.getElementById('editCashTransactionAmount').value = this.dataset.amount || '';
+
+        document.querySelectorAll('[data-ledger-edit-fields]').forEach(section => {
+            const isVisible = section.dataset.ledgerEditFields === transactionType;
+            section.classList.toggle('d-none', !isVisible);
+            section.querySelectorAll('[data-ledger-edit-required]').forEach(field => {
+                field.required = isVisible;
+            });
+        });
+
+        if (transactionType === 'CASH_IN') {
+            document.getElementById('editCashInCategory').value = this.dataset.category || '';
+            document.getElementById('editCashInDescription').value = this.dataset.description || '';
+        } else if (transactionType === 'EXPENSE') {
+            document.getElementById('editExpenseCategory').value = this.dataset.expenseCategory || '';
+            document.getElementById('editExpensePaidTo').value = this.dataset.paidTo || '';
+            document.getElementById('editExpensePaymentMode').value = this.dataset.sourcePaymentMode || 'CASH';
+            document.getElementById('editExpenseBillNumber').value = this.dataset.billNumber || '';
+            document.getElementById('editExpenseNotes').value = this.dataset.sourceNotes || '';
+        } else if (transactionType === 'BANK_DEPOSIT') {
+            document.getElementById('editDepositBankName').value = this.dataset.bankName || '';
+            document.getElementById('editDepositAccountNumber').value = this.dataset.accountNumber || '';
+            document.getElementById('editDepositSlipNumber').value = this.dataset.slipNumber || '';
+            document.getElementById('editDepositDate').value = this.dataset.depositDate || '';
+            document.getElementById('editDepositNotes').value = this.dataset.depositNotes || '';
+        } else {
+            return;
+        }
+
+        bootstrap.Modal.getOrCreateInstance(modalElement).show();
+    });
+});
 </script>
 
 <style>

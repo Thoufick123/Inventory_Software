@@ -978,6 +978,8 @@ class ShopService {
         self::ensureSaleItemHsnColumn();
         self::ensureSalesGstTypeColumn();
         $shopId = (int)($payload['shop_id'] ?? 1);
+        $editingSaleId = (int)($payload['sale_id'] ?? 0);
+        $existingSale = null;
         $items = $payload['items'] ?? [];
         $gstType = strtoupper(trim((string)($payload['gst_type'] ?? 'CGST_SGST')));
         if (!in_array($gstType, ['CGST_SGST', 'IGST', 'EXEMPT'], true)) {
@@ -1021,8 +1023,52 @@ class ShopService {
 
         Database::beginTransaction();
         try {
+            $originalScannedTags = [];
+            if ($editingSaleId > 0) {
+                $existingSale = Database::fetchOne(
+                    "SELECT * FROM sales WHERE id = ? AND shop_id = ? AND sale_type = 'SHOP' FOR UPDATE",
+                    [$editingSaleId, $shopId]
+                );
+                if (!$existingSale || $existingSale['status'] === 'CANCELLED' || $existingSale['payment_status'] === 'REFUNDED') {
+                    throw new RuntimeException('This invoice is no longer available for editing.');
+                }
+                self::assertSaleHasNoReturns($editingSaleId);
+
+                $oldItems = Database::fetchAll("SELECT * FROM sale_items WHERE sale_id = ?", [$editingSaleId]);
+                $existingSale['items'] = $oldItems;
+                foreach ($oldItems as $oldItem) {
+                    $storedTags = (string)($oldItem['scanned_qr_codes'] ?? '');
+                    $decodedTags = json_decode($storedTags, true);
+                    $tags = is_array($decodedTags) ? $decodedTags : (preg_split('/[,|]/', $storedTags) ?: []);
+                    foreach ($tags as $tag) {
+                        if (is_array($tag)) {
+                            $tag = $tag['tag_code'] ?? $tag['qr_code'] ?? '';
+                        }
+                        $tag = strtoupper(trim((string)$tag));
+                        if ($tag !== '') {
+                            $originalScannedTags[(int)$oldItem['variant_id']][$tag] = true;
+                        }
+                    }
+                    StockService::increase(
+                        (int)$oldItem['variant_id'],
+                        'SHOP',
+                        $shopId,
+                        'AVAILABLE',
+                        (float)$oldItem['quantity'],
+                        'SALE_EDIT_RESTORE',
+                        'sales',
+                        $editingSaleId,
+                        $userId,
+                        "Restore stock before editing invoice {$existingSale['invoice_number']}"
+                    );
+                }
+
+                self::reversePOSSalePayments($existingSale, $shopId, $userId, 'Invoice edit');
+                Database::execute("UPDATE sales SET status = 'CANCELLED' WHERE id = ?", [$editingSaleId]);
+            }
+
             // 1. Resolve or Create Customer if phone or name is given
-            $customerId = null;
+            $customerId = !empty($existingSale['customer_id']) ? (int)$existingSale['customer_id'] : null;
             $customerAddress = trim($payload['customer_address'] ?? '');
             $customerGst = trim($payload['customer_gst'] ?? '');
             $customerEmail = trim($payload['customer_email'] ?? '');
@@ -1036,11 +1082,22 @@ class ShopService {
                     $customerId = $cust['id'];
                     $updateFields = [];
                     $updateVals = [];
-                    if (!empty($customerName)) { $updateFields[] = "name = ?"; $updateVals[] = $customerName; }
-                    if (!empty($customerAddress)) { $updateFields[] = "address = ?"; $updateVals[] = $customerAddress; }
-                    if (!empty($customerGst)) { $updateFields[] = "gst_number = ?"; $updateVals[] = $customerGst; }
-                    if (!empty($customerEmail)) { $updateFields[] = "email = ?"; $updateVals[] = $customerEmail; }
-                    if (!empty($customerCity)) { $updateFields[] = "city = ?"; $updateVals[] = $customerCity; }
+                    if ($existingSale) {
+                        $updateFields = ['name = ?', 'address = ?', 'gst_number = ?', 'email = ?', 'city = ?'];
+                        $updateVals = [
+                            $customerName ?: 'Retail Customer',
+                            $customerAddress ?: null,
+                            $customerGst ?: null,
+                            $customerEmail ?: null,
+                            $customerCity ?: null,
+                        ];
+                    } else {
+                        if (!empty($customerName)) { $updateFields[] = "name = ?"; $updateVals[] = $customerName; }
+                        if (!empty($customerAddress)) { $updateFields[] = "address = ?"; $updateVals[] = $customerAddress; }
+                        if (!empty($customerGst)) { $updateFields[] = "gst_number = ?"; $updateVals[] = $customerGst; }
+                        if (!empty($customerEmail)) { $updateFields[] = "email = ?"; $updateVals[] = $customerEmail; }
+                        if (!empty($customerCity)) { $updateFields[] = "city = ?"; $updateVals[] = $customerCity; }
+                    }
                     if (!empty($updateFields)) {
                         $updateVals[] = $customerId;
                         Database::execute("UPDATE customers SET " . implode(', ', $updateFields) . " WHERE id = ?", $updateVals);
@@ -1059,6 +1116,19 @@ class ShopService {
                     );
                     $customerId = (int)Database::lastInsertId();
                 }
+            } elseif ($existingSale && $customerId) {
+                Database::execute(
+                    "UPDATE customers SET name = ?, phone = ?, address = ?, city = ?, gst_number = ?, email = ? WHERE id = ?",
+                    [
+                        $customerName ?: 'Retail Customer',
+                        $customerPhone ?: null,
+                        $customerAddress ?: null,
+                        $customerCity ?: null,
+                        $customerGst ?: null,
+                        $customerEmail ?: null,
+                        $customerId,
+                    ]
+                );
             } elseif (!empty($customerName) && strcasecmp($customerName, 'Walk-in Customer') !== 0) {
                 // If customer name is provided without phone
                 Database::execute(
@@ -1074,19 +1144,23 @@ class ShopService {
                 $customerId = (int)Database::lastInsertId();
             }
 
-            // 2. Generate unique Invoice Number (e.g. INV-20260912-0001)
-            $today = date('Ymd');
-            $prefix = 'INV-' . $today . '-';
-            $lastInv = Database::fetchOne(
-                "SELECT invoice_number FROM sales WHERE invoice_number LIKE ? ORDER BY id DESC LIMIT 1",
-                [$prefix . '%']
-            );
-            $seq = 1;
-            if ($lastInv && !empty($lastInv['invoice_number'])) {
-                $parts = explode('-', $lastInv['invoice_number']);
-                $seq = (int)end($parts) + 1;
+            // 2. Keep the existing invoice number during edits; otherwise create a new number.
+            if ($existingSale) {
+                $invoiceNumber = $existingSale['invoice_number'];
+            } else {
+                $today = date('Ymd');
+                $prefix = 'INV-' . $today . '-';
+                $lastInv = Database::fetchOne(
+                    "SELECT invoice_number FROM sales WHERE invoice_number LIKE ? ORDER BY id DESC LIMIT 1",
+                    [$prefix . '%']
+                );
+                $seq = 1;
+                if ($lastInv && !empty($lastInv['invoice_number'])) {
+                    $parts = explode('-', $lastInv['invoice_number']);
+                    $seq = (int)end($parts) + 1;
+                }
+                $invoiceNumber = sprintf('%s%04d', $prefix, $seq);
             }
-            $invoiceNumber = sprintf('%s%04d', $prefix, $seq);
 
             // 3. Calculate Totals & Validate Stocks
             $subtotal = 0.0;
@@ -1098,6 +1172,7 @@ class ShopService {
             $allowNegative = SettingsService::get('allow_negative_stock', false);
 
             $processedItems = [];
+            $scannedTagsInInvoice = [];
             foreach ($items as $item) {
                 $variantId = (int)$item['variant_id'];
                 $qty = (int)($item['quantity'] ?? 1);
@@ -1108,7 +1183,10 @@ class ShopService {
                             COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), '') as resolved_hsn_code
                      FROM product_variants pv
                      JOIN products p ON pv.product_id = p.id
-                     LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+                     LEFT JOIN warehouse_sub_subcategories wssc ON p.warehouse_sub_subcategory_id = wssc.id
+                     LEFT JOIN warehouse_subcategories wssc_parent ON wssc.subcategory_id = wssc_parent.id
+                     LEFT JOIN warehouse_subcategories wsc ON COALESCE(p.warehouse_subcategory_id, wssc.subcategory_id) = wsc.id
+                     LEFT JOIN warehouse_categories wc ON COALESCE(p.warehouse_category_id, wsc.category_id, wssc_parent.category_id) = wc.id
                      WHERE pv.id = ?",
                     [$variantId]
                 );
@@ -1155,6 +1233,11 @@ class ShopService {
                     foreach ($tagsArray as $t) {
                         $t = trim($t);
                         if (empty($t)) continue;
+                        $tagKey = strtoupper($t);
+                        if (isset($scannedTagsInInvoice[$tagKey])) {
+                            throw new RuntimeException("Piece QR '{$t}' was scanned more than once in this invoice.");
+                        }
+                        $scannedTagsInInvoice[$tagKey] = true;
 
                         $damageRecord = (!$isSeries && !$isComp)
                             ? self::findDamageForPieceTag($variantId, $t)
@@ -1164,6 +1247,22 @@ class ShopService {
                         }
                         
                         if (!$isSeries && !$isComp) {
+                            if (empty($originalScannedTags[$variantId][$tagKey])) {
+                                $scannedVariant = self::findVariantByQR($t, $shopId);
+                                if (!$scannedVariant || (int)($scannedVariant['id'] ?? 0) !== $variantId) {
+                                    throw new RuntimeException("Piece QR '{$t}' is not an available tag for the selected product.");
+                                }
+                                if (!empty($scannedVariant['is_damaged'])) {
+                                    throw new RuntimeException("Piece QR '{$t}' is recorded as damaged and cannot be billed.");
+                                }
+                                if ((float)($scannedVariant['available_stock'] ?? 0) <= 0) {
+                                    throw new RuntimeException("Piece QR '{$t}' is not in good stock at this shop.");
+                                }
+                                if (!empty($scannedVariant['already_sold_invoice'])) {
+                                    throw new RuntimeException("Piece QR '{$t}' was already sold in Invoice #{$scannedVariant['already_sold_invoice']}.");
+                                }
+                            }
+
                             // Check if already sold in any past non-cancelled sale
                             $alreadySold = Database::fetchOne(
                                 "SELECT s.invoice_number FROM sale_items si 
@@ -1186,7 +1285,13 @@ class ShopService {
 
                 // Check available shop stock
                 $currentStock = StockService::getBalance($variantId, 'SHOP', $shopId, 'AVAILABLE');
-                if (!$allowNegative && $currentStock < $qty) {
+                $requiresAvailableStock = $isComp || $isSeries || $scannedTagsStr !== null;
+                if ($requiresAvailableStock && $currentStock <= 0) {
+                    $variantInfo = Database::fetchOne("SELECT sku FROM product_variants WHERE id = ?", [$variantId]);
+                    $sku = $variantInfo['sku'] ?? "#$variantId";
+                    throw new RuntimeException("Product '$sku' must have good shop stock before it can be scanned or billed.");
+                }
+                if ((!$allowNegative || $requiresAvailableStock) && $currentStock < $qty) {
                     $variantInfo = Database::fetchOne("SELECT sku FROM product_variants WHERE id = ?", [$variantId]);
                     $sku = $variantInfo['sku'] ?? "#$variantId";
                     throw new RuntimeException("Insufficient stock in shop for item '$sku'. Available: $currentStock, Required: $qty");
@@ -1229,37 +1334,78 @@ class ShopService {
             $roundOff = round($totalAmount - $unroundedTotal, 2);
             $gstAmountTotal = $cgstTotal + $sgstTotal + $igstTotal;
             $gstPercentage = $subtotal > 0 ? round(($gstAmountTotal / $subtotal) * 100, 2) : 0.0;
+            if (empty($processedItems)) {
+                throw new InvalidArgumentException('An invoice must contain at least one item with a positive quantity.');
+            }
+            if ($editingSaleId > 0 && $paymentMode === 'CASH_UPI' && abs(($splitCash + $splitUpi) - $totalAmount) > 0.50) {
+                throw new InvalidArgumentException('Cash and UPI split amounts must match the updated invoice total.');
+            }
 
-            // 4. Insert into `sales`
-            Database::execute(
-                "INSERT INTO sales (invoice_number, sale_type, shop_id, customer_id, customer_name, customer_phone, customer_address, subtotal, discount_amount, 
-                                    gst_percentage, gst_amount, cgst_amount, sgst_amount, igst_amount, gst_type, total_amount, payment_mode, 
-                                    payment_status, status, billing_staff_id, employee_name, notes, created_at)
-                 VALUES (?, 'SHOP', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PAID', 'PAID', ?, ?, ?, ?)",
-                [
-                    $invoiceNumber,
-                    $shopId,
-                    $customerId,
-                    $customerName ?: 'Retail Customer',
-                    $customerPhone,
-                    $customerAddress,
-                    $subtotal,
-                    $totalDiscountAmount,
-                    $gstPercentage,
-                    $gstAmountTotal,
-                    $cgstTotal,
-                    $sgstTotal,
-                    $igstTotal,
-                    $gstType,
-                    $totalAmount,
-                    $paymentMode,
-                    $billingStaffId,
-                    $employeeInput,
-                    $notes,
-                    gmdate('Y-m-d H:i:s'),
-                ]
-            );
-            $saleId = (int)Database::lastInsertId();
+            // 4. Insert or update the sales header.
+            if ($existingSale) {
+                $saleId = $editingSaleId;
+                Database::execute(
+                    "UPDATE sales
+                     SET customer_id = ?, customer_name = ?, customer_phone = ?, customer_address = ?,
+                         subtotal = ?, discount_amount = ?, gst_percentage = ?, gst_amount = ?, cgst_amount = ?,
+                         sgst_amount = ?, igst_amount = ?, gst_type = ?, total_amount = ?, paid_amount = ?,
+                         payment_mode = ?, payment_status = 'PAID', status = 'PAID', billing_staff_id = ?,
+                         employee_name = ?, notes = ?, updated_at = NOW()
+                     WHERE id = ?",
+                    [
+                        $customerId,
+                        $customerName ?: 'Retail Customer',
+                        $customerPhone,
+                        $customerAddress,
+                        $subtotal,
+                        $totalDiscountAmount,
+                        $gstPercentage,
+                        $gstAmountTotal,
+                        $cgstTotal,
+                        $sgstTotal,
+                        $igstTotal,
+                        $gstType,
+                        $totalAmount,
+                        $totalAmount,
+                        $paymentMode,
+                        $billingStaffId,
+                        $employeeInput,
+                        $notes,
+                        $saleId,
+                    ]
+                );
+                Database::execute("DELETE FROM sale_items WHERE sale_id = ?", [$saleId]);
+            } else {
+                Database::execute(
+                    "INSERT INTO sales (invoice_number, sale_type, shop_id, customer_id, customer_name, customer_phone, customer_address, subtotal, discount_amount, 
+                                        gst_percentage, gst_amount, cgst_amount, sgst_amount, igst_amount, gst_type, total_amount, payment_mode, 
+                                        payment_status, status, billing_staff_id, employee_name, notes, created_at)
+                     VALUES (?, 'SHOP', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PAID', 'PAID', ?, ?, ?, ?)",
+                    [
+                        $invoiceNumber,
+                        $shopId,
+                        $customerId,
+                        $customerName ?: 'Retail Customer',
+                        $customerPhone,
+                        $customerAddress,
+                        $subtotal,
+                        $totalDiscountAmount,
+                        $gstPercentage,
+                        $gstAmountTotal,
+                        $cgstTotal,
+                        $sgstTotal,
+                        $igstTotal,
+                        $gstType,
+                        $totalAmount,
+                        $paymentMode,
+                        $billingStaffId,
+                        $employeeInput,
+                        $notes,
+                        gmdate('Y-m-d H:i:s'),
+                    ]
+                );
+                $saleId = (int)Database::lastInsertId();
+            }
 
             // 5. Insert `sale_items` & Deduct Central Stock via StockService
             foreach ($processedItems as $pItem) {
@@ -1411,12 +1557,13 @@ class ShopService {
             }
 
             // 8. Audit Log
-            AuditService::log('pos_sale', 'CREATE', 'sales', $saleId, null, [
+            AuditService::log('pos_sale', $existingSale ? 'UPDATE' : 'CREATE', 'sales', $saleId, $existingSale, [
                 'invoice_number' => $invoiceNumber,
                 'total_amount'   => $totalAmount,
                 'payment_mode'   => $paymentMode,
                 'items_count'    => count($processedItems),
-            ]);
+                'items'          => $processedItems,
+            ], $userId);
 
             Database::commit();
 
@@ -1433,6 +1580,133 @@ class ShopService {
     }
 
     /**
+     * Void a Shop POS invoice while preserving payment and stock history.
+     */
+    public static function voidPOSSale(int $saleId, int $shopId, int $userId): string {
+        Database::beginTransaction();
+        try {
+            $sale = Database::fetchOne(
+                "SELECT * FROM sales WHERE id = ? AND shop_id = ? AND sale_type = 'SHOP' FOR UPDATE",
+                [$saleId, $shopId]
+            );
+            if (!$sale || $sale['status'] === 'CANCELLED' || $sale['payment_status'] === 'REFUNDED') {
+                throw new RuntimeException('This invoice is no longer available to void.');
+            }
+            self::assertSaleHasNoReturns($saleId);
+
+            $items = Database::fetchAll("SELECT variant_id, quantity FROM sale_items WHERE sale_id = ?", [$saleId]);
+            if (empty($items)) {
+                throw new RuntimeException('This invoice has no sale items to restore.');
+            }
+            foreach ($items as $item) {
+                StockService::increase(
+                    (int)$item['variant_id'],
+                    'SHOP',
+                    $shopId,
+                    'AVAILABLE',
+                    (float)$item['quantity'],
+                    'SALE_VOID_RESTORE',
+                    'sales',
+                    $saleId,
+                    $userId,
+                    "Restore stock for voided invoice {$sale['invoice_number']}"
+                );
+            }
+
+            self::reversePOSSalePayments($sale, $shopId, $userId, 'Invoice void');
+            Database::execute(
+                "UPDATE sales SET status = 'CANCELLED', payment_status = 'REFUNDED', updated_at = NOW() WHERE id = ?",
+                [$saleId]
+            );
+            AuditService::log('pos_sale', 'VOID', 'sales', $saleId, [
+                'status' => $sale['status'],
+                'payment_status' => $sale['payment_status'],
+                'total_amount' => $sale['total_amount'],
+            ], [
+                'status' => 'CANCELLED',
+                'payment_status' => 'REFUNDED',
+                'total_amount' => $sale['total_amount'],
+            ], $userId);
+
+            Database::commit();
+            return (string)$sale['invoice_number'];
+        } catch (Exception $e) {
+            Database::rollback();
+            throw $e;
+        }
+    }
+
+    private static function assertSaleHasNoReturns(int $saleId): void {
+        $return = Database::fetchOne(
+            "SELECT id FROM returns
+             WHERE sale_id = ? AND COALESCE(source_type, 'SHOP') = 'SHOP'
+               AND COALESCE(status, 'PENDING') <> 'REJECTED'
+             LIMIT 1",
+            [$saleId]
+        );
+        if ($return) {
+            throw new RuntimeException('This invoice cannot be edited or voided because it has a return or exchange record.');
+        }
+
+        $exchange = Database::fetchOne("SELECT id FROM exchanges WHERE sale_id = ? LIMIT 1", [$saleId]);
+        if ($exchange) {
+            throw new RuntimeException('This invoice cannot be edited or voided because it has an exchange record.');
+        }
+    }
+
+    private static function reversePOSSalePayments(array $sale, int $shopId, int $userId, string $reason): void {
+        $saleId = (int)$sale['id'];
+        $payments = Database::fetchAll(
+            "SELECT payment_mode, amount FROM payments WHERE sale_id = ? AND status = 'COMPLETED'",
+            [$saleId]
+        );
+        if (empty($payments)) {
+            $payments = Database::fetchAll(
+                "SELECT payment_mode, amount FROM cash_transactions
+                 WHERE source_table = 'sales' AND source_id = ? AND flow_direction = 'IN'
+                   AND transaction_type IN ('SALE_CASH', 'SALE_UPI', 'SALE_CARD')",
+                [$saleId]
+            );
+        }
+
+        $register = CashService::getActiveRegister($shopId);
+        foreach ($payments as $payment) {
+            $paymentMode = strtoupper((string)($payment['payment_mode'] ?? 'CASH'));
+            if (!in_array($paymentMode, ['CASH', 'UPI', 'CARD', 'BANK_TRANSFER', 'OTHER'], true)) {
+                $paymentMode = 'OTHER';
+            }
+            $amount = (float)($payment['amount'] ?? 0);
+            if ($amount <= 0) {
+                continue;
+            }
+
+            CashService::logTransaction([
+                'shop_id' => $shopId,
+                'register_id' => $register ? (int)$register['id'] : null,
+                'transaction_type' => $paymentMode === 'CASH' ? 'REFUND_CASH' : 'CASH_OUT',
+                'flow_direction' => 'OUT',
+                'amount' => $amount,
+                'payment_mode' => $paymentMode,
+                'category' => 'SALES_ADJUSTMENT',
+                'reference_id' => $sale['invoice_number'],
+                'source_table' => 'sales',
+                'source_id' => $saleId,
+                'handled_by' => $userId,
+                'description' => "{$reason}: {$sale['invoice_number']}",
+            ]);
+        }
+
+        Database::execute(
+            "UPDATE payments SET status = 'REFUNDED', payment_type = 'OUTGOING', updated_at = NOW()
+             WHERE sale_id = ? AND status = 'COMPLETED'",
+            [$saleId]
+        );
+        if (!empty($payments)) {
+            CashService::getActiveRegister($shopId);
+        }
+    }
+
+    /**
      * Get Complete Invoice Details for Printing.
      */
     public static function getInvoiceDetails(int $saleId): ?array {
@@ -1440,9 +1714,12 @@ class ShopService {
         SalesChannel::ensureSchema();
         self::ensureSaleItemHsnColumn();
         $sale = Database::fetchOne(
-            "SELECT s.*, c.name as customer_name, c.phone as customer_phone, 
-                    COALESCE(s.customer_address, c.address) as customer_address, 
+            "SELECT s.*,
+                    COALESCE(NULLIF(s.customer_name, ''), c.name) as customer_name,
+                    COALESCE(NULLIF(s.customer_phone, ''), c.phone) as customer_phone,
+                    COALESCE(NULLIF(s.customer_address, ''), c.address) as customer_address,
                     c.gst_number as customer_gst,
+                    c.email as customer_email, c.city as customer_city,
                     u.full_name as staff_name, sh.name as shop_name, sh.address as shop_address, 
                     sh.phone as shop_phone, sh.gst_number as shop_gstin, sh.logo_url as shop_logo_url,
                     sc.logo_url as channel_logo_url
@@ -1461,11 +1738,11 @@ class ShopService {
         $sale['created_at_time_display'] = formatUtcDateTime($sale['created_at'] ?? null, 'h:i A');
 
         $items = Database::fetchAll(
-            "SELECT si.*, pv.sku, pv.qr_code, pv.mrp, pv.selling_price, p.name as product_name, 
+            "SELECT si.*, pv.sku, pv.qr_code, pv.mrp as current_mrp, pv.selling_price, p.name as product_name,
                     p.code as product_code,
                     CASE WHEN si.hsn_code IS NOT NULL THEN si.hsn_code
                          ELSE COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), '') END as resolved_hsn_code,
-                    p.gst_percentage,
+                    p.gst_percentage as product_gst_percentage,
                     sz.name as size_name, cl.name as color_name
              FROM sale_items si
              JOIN product_variants pv ON si.variant_id = pv.id
@@ -3667,157 +3944,130 @@ class ShopService {
      */
 
     /**
-     * Get itemized list of all sold products in the shop with rich metadata and filters.
+     * Get one row per shop invoice with filters that can match invoice items.
      */
-    public static function getSoldProducts(int $shopId, array $filters = []): array {
-        $sql = "SELECT si.*, 
-                       s.invoice_number, s.payment_mode, s.payment_status, s.created_at as sale_date,
-                       s.notes as sale_notes, s.subtotal as invoice_subtotal, s.total_amount as invoice_total_amount,
-                       COALESCE(payment_totals.cash_paid, 0) as cash_paid,
-                       COALESCE(payment_totals.online_paid, 0) as online_paid,
-                       c.id as customer_id, c.name as customer_name, c.phone as customer_phone, c.address as customer_address,
-                       u.full_name as cashier_name,
-                       pv.sku, pv.mrp, pv.selling_price, pv.image_url as variant_image,
-                       p.id as product_id, p.name as product_name, p.code as product_code, p.image_url as product_image,
-                       p.category_id as category_id, p.category_code, p.subcategory_code, p.hsn_code,
-                       sz.name as size_name, cl.name as color_name, cat.name as category_name
-                FROM sale_items si
-                JOIN sales s ON si.sale_id = s.id
-                JOIN product_variants pv ON si.variant_id = pv.id
-                JOIN products p ON pv.product_id = p.id
-                LEFT JOIN sizes sz ON pv.size_id = sz.id
-                LEFT JOIN colors cl ON pv.color_id = cl.id
-                LEFT JOIN categories cat ON p.category_id = cat.id
-                LEFT JOIN customers c ON s.customer_id = c.id
-                LEFT JOIN users u ON s.billing_staff_id = u.id
-                LEFT JOIN (
-                    SELECT sale_id,
-                           SUM(CASE WHEN payment_mode = 'CASH' THEN amount ELSE 0 END) as cash_paid,
-                           SUM(CASE WHEN payment_mode <> 'CASH' THEN amount ELSE 0 END) as online_paid
-                    FROM payments
-                    WHERE status = 'COMPLETED'
-                    GROUP BY sale_id
-                ) payment_totals ON payment_totals.sale_id = s.id
-                WHERE s.shop_id = ? AND s.sale_type = 'SHOP' AND s.status <> 'CANCELLED'";
-        
-        $params = [$shopId];
+    public static function getSoldInvoices(int $shopId, array $filters = []): array {
         $whereSql = "s.shop_id = ? AND s.sale_type = 'SHOP' AND s.status <> 'CANCELLED'";
+        $params = [$shopId];
 
-        // Filter by Search Query (Product, SKU, Invoice, Customer, Piece Tag)
         if (!empty($filters['search'])) {
             $search = '%' . trim($filters['search']) . '%';
-            $searchCondition = " AND (p.name LIKE ? OR pv.sku LIKE ? OR s.invoice_number LIKE ? OR c.name LIKE ? OR c.phone LIKE ? OR si.scanned_qr_codes LIKE ?)";
-            $sql .= $searchCondition;
-            $whereSql .= $searchCondition;
-            $searchParams = [$search, $search, $search, $search, $search, $search];
-            $params = array_merge($params, $searchParams);
+            $whereSql .= " AND (
+                s.invoice_number LIKE ?
+                OR COALESCE(c.name, s.customer_name, '') LIKE ?
+                OR COALESCE(c.phone, s.customer_phone, '') LIKE ?
+                OR EXISTS (
+                    SELECT 1
+                    FROM sale_items si
+                    JOIN product_variants pv ON pv.id = si.variant_id
+                    JOIN products p ON p.id = pv.product_id
+                    WHERE si.sale_id = s.id
+                      AND (p.name LIKE ? OR pv.sku LIKE ? OR si.scanned_qr_codes LIKE ?)
+                )
+            )";
+            array_push($params, $search, $search, $search, $search, $search, $search);
         }
 
-        // Filter by Date Range
         if (!empty($filters['start_date'])) {
-            $sql .= " AND DATE(s.created_at) >= ?";
             $whereSql .= " AND DATE(s.created_at) >= ?";
             $params[] = $filters['start_date'];
         }
         if (!empty($filters['end_date'])) {
-            $sql .= " AND DATE(s.created_at) <= ?";
             $whereSql .= " AND DATE(s.created_at) <= ?";
             $params[] = $filters['end_date'];
         }
-
-        // Filter by Category
         if (!empty($filters['category_id']) && $filters['category_id'] !== 'ALL') {
-            $sql .= " AND p.category_id = ?";
-            $whereSql .= " AND p.category_id = ?";
+            $whereSql .= " AND EXISTS (
+                SELECT 1
+                FROM sale_items si
+                JOIN product_variants pv ON pv.id = si.variant_id
+                JOIN products p ON p.id = pv.product_id
+                WHERE si.sale_id = s.id AND p.category_id = ?
+            )";
             $params[] = (int)$filters['category_id'];
         }
 
-        $sql .= " ORDER BY s.created_at DESC, si.id DESC";
+        $invoiceSql = "SELECT s.id, s.invoice_number, s.status, s.payment_status, s.payment_mode,
+                              s.subtotal, s.discount_amount, s.gst_amount, s.cgst_amount, s.sgst_amount,
+                              s.igst_amount, s.gst_type, s.total_amount, s.notes, s.created_at,
+                              COALESCE(c.name, s.customer_name, 'Retail Customer') as customer_name,
+                              COALESCE(c.phone, s.customer_phone, '') as customer_phone,
+                              u.full_name as cashier_name,
+                              (SELECT COUNT(*) FROM sale_items si WHERE si.sale_id = s.id) as items_count,
+                              (SELECT COALESCE(SUM(si.quantity), 0) FROM sale_items si WHERE si.sale_id = s.id) as total_qty,
+                              (SELECT GROUP_CONCAT(DISTINCT p.name ORDER BY p.name SEPARATOR ', ')
+                               FROM sale_items si
+                               JOIN product_variants pv ON pv.id = si.variant_id
+                               JOIN products p ON p.id = pv.product_id
+                               WHERE si.sale_id = s.id) as product_summary,
+                              (SELECT GROUP_CONCAT(DISTINCT p.category_id)
+                               FROM sale_items si
+                               JOIN product_variants pv ON pv.id = si.variant_id
+                               JOIN products p ON p.id = pv.product_id
+                               WHERE si.sale_id = s.id) as category_ids,
+                              (SELECT GROUP_CONCAT(DISTINCT si.scanned_qr_codes SEPARATOR ' ')
+                               FROM sale_items si WHERE si.sale_id = s.id) as tags_summary,
+                              COALESCE(payment_totals.cash_paid, 0) as cash_paid,
+                              COALESCE(payment_totals.online_paid, 0) as online_paid
+                       FROM sales s
+                       LEFT JOIN customers c ON c.id = s.customer_id
+                       LEFT JOIN users u ON u.id = s.billing_staff_id
+                       LEFT JOIN (
+                           SELECT sale_id,
+                                  SUM(CASE WHEN payment_mode = 'CASH' THEN amount ELSE 0 END) as cash_paid,
+                                  SUM(CASE WHEN payment_mode <> 'CASH' THEN amount ELSE 0 END) as online_paid
+                           FROM payments
+                           WHERE status = 'COMPLETED'
+                           GROUP BY sale_id
+                       ) payment_totals ON payment_totals.sale_id = s.id
+                       WHERE {$whereSql}
+                       ORDER BY s.created_at DESC, s.id DESC";
 
-        if (!empty($filters['limit'])) {
-            $sql .= " LIMIT " . (int)$filters['limit'];
-            if (!empty($filters['offset'])) {
-                $sql .= " OFFSET " . (int)$filters['offset'];
-            }
-        }
+        $invoices = Database::fetchAll($invoiceSql, $params);
 
-        $items = Database::fetchAll($sql, $params);
-
-        // Calculate KPI summaries across the shop
-        $kpiSql = "SELECT COUNT(DISTINCT s.id) as total_invoices,
-                          COALESCE(SUM(si.quantity), 0) as total_units_sold,
-                          COALESCE(SUM(si.total_amount), 0) as total_revenue,
-                          COALESCE(SUM(si.cgst_amount + si.sgst_amount + si.igst_amount), 0) as total_tax,
-                          COALESCE(SUM(si.discount_amount), 0) as total_discount
-                   FROM sale_items si
-                   JOIN sales s ON si.sale_id = s.id
-                   JOIN product_variants pv ON si.variant_id = pv.id
-                   JOIN products p ON pv.product_id = p.id
-                   LEFT JOIN customers c ON s.customer_id = c.id
+        $kpiSql = "SELECT COUNT(*) as total_invoices,
+                          COALESCE(SUM(s.total_amount), 0) as total_revenue,
+                          COALESCE(SUM(s.cgst_amount + s.sgst_amount + s.igst_amount), 0) as total_tax,
+                          COALESCE(SUM(s.discount_amount), 0) as total_discount,
+                          COALESCE(SUM((SELECT SUM(si.quantity) FROM sale_items si WHERE si.sale_id = s.id)), 0) as total_units_sold
+                   FROM sales s
+                   LEFT JOIN customers c ON c.id = s.customer_id
                    WHERE {$whereSql}";
-
         $kpis = Database::fetchOne($kpiSql, $params) ?: [
-            'total_invoices'   => 0,
+            'total_invoices' => 0,
             'total_units_sold' => 0,
-            'total_revenue'    => 0,
-            'total_tax'        => 0,
-            'total_discount'   => 0,
+            'total_revenue' => 0,
+            'total_tax' => 0,
+            'total_discount' => 0,
         ];
 
-        foreach ($items as &$it) {
-            $it['image'] = !empty($it['variant_image']) ? $it['variant_image'] : ($it['product_image'] ?? null);
-            $it['sale_date_display'] = formatUtcDateTime($it['sale_date'] ?? null);
-            $it['tax_total'] = (float)$it['cgst_amount'] + (float)$it['sgst_amount'] + (float)$it['igst_amount'];
-
-            $qty = max(1, (int)($it['quantity'] ?? 1));
-            $originalUnitPrice = (float)($it['unit_price'] > 0 ? $it['unit_price'] : ($it['mrp'] > 0 ? $it['mrp'] : ($it['selling_price'] ?? 0)));
-            $totalPaid = (float)($it['total_amount'] ?? 0);
-            $billedUnitPrice = round($totalPaid / $qty, 2);
-            $grossTotal = round($originalUnitPrice * $qty, 2);
-
-            $discAmt = (float)($it['discount_amount'] ?? 0);
-            if ($discAmt <= 0 && $grossTotal > $totalPaid) {
-                $discAmt = round($grossTotal - $totalPaid, 2);
-            }
-
-            $discPercent = (float)($it['discount_percent'] ?? 0);
-            if ($discPercent <= 0 && $grossTotal > 0 && $discAmt > 0) {
-                $discPercent = round(($discAmt / $grossTotal) * 100, 2);
-            }
-
-            $cashPaid = (float)$it['cash_paid'];
-            $onlinePaid = (float)$it['online_paid'];
+        foreach ($invoices as &$invoice) {
+            $invoice['sale_date_display'] = formatUtcDateTime($invoice['created_at'] ?? null);
+            $cashPaid = (float)$invoice['cash_paid'];
+            $onlinePaid = (float)$invoice['online_paid'];
             if ($cashPaid + $onlinePaid <= 0) {
-                if (($it['payment_mode'] ?? '') === 'CASH_UPI'
-                    && preg_match('/\[Split Payment:\s*Cash\s*₹([\d,.]+)\s*\+\s*UPI\s*₹([\d,.]+)/i', (string)($it['sale_notes'] ?? ''), $splitPayment)) {
+                if (($invoice['payment_mode'] ?? '') === 'CASH_UPI'
+                    && preg_match('/\[Split Payment:\s*Cash\s*₹([\d,.]+)\s*\+\s*UPI\s*₹([\d,.]+)/i', (string)($invoice['notes'] ?? ''), $splitPayment)) {
                     $cashPaid = (float)str_replace(',', '', $splitPayment[1]);
                     $onlinePaid = (float)str_replace(',', '', $splitPayment[2]);
-                } elseif (($it['payment_mode'] ?? '') === 'CASH') {
-                    $cashPaid = (float)($it['invoice_total_amount'] ?? 0);
+                } elseif (($invoice['payment_mode'] ?? '') === 'CASH') {
+                    $cashPaid = (float)$invoice['total_amount'];
                 } else {
-                    $onlinePaid = (float)($it['invoice_total_amount'] ?? 0);
+                    $onlinePaid = (float)$invoice['total_amount'];
                 }
             }
-            $paymentTotal = $cashPaid + $onlinePaid;
-            $cashRevenue = $paymentTotal > 0
-                ? round($totalPaid * $cashPaid / $paymentTotal, 2)
-                : 0.0;
-            $it['cash_revenue'] = $cashRevenue;
-            $it['online_revenue'] = round($totalPaid - $cashRevenue, 2);
 
-            $it['original_unit_price'] = $originalUnitPrice;
-            $it['billed_unit_price']   = $billedUnitPrice;
-            $it['gross_total']         = $grossTotal;
-            $it['discount_amount']     = $discAmt;
-            $it['discount_percent']    = $discPercent;
-            $it['unit_discount']       = round($discAmt / $qty, 2);
-            $it['has_discount']        = ($discAmt > 0 || $billedUnitPrice < $originalUnitPrice);
-            $it['taxable_base']        = max(0, round($totalPaid - $it['tax_total'], 2));
+            $paymentTotal = $cashPaid + $onlinePaid;
+            $invoice['cash_revenue'] = $paymentTotal > 0
+                ? round((float)$invoice['total_amount'] * $cashPaid / $paymentTotal, 2)
+                : 0.0;
+            $invoice['online_revenue'] = round((float)$invoice['total_amount'] - $invoice['cash_revenue'], 2);
         }
+        unset($invoice);
 
         return [
-            'items' => $items,
-            'kpis'  => $kpis,
+            'invoices' => $invoices,
+            'kpis' => $kpis,
         ];
     }
 
@@ -4166,6 +4416,39 @@ class ShopService {
                 );
 
                 $processedCount++;
+            }
+
+            $returnedDamageItems = Database::fetchAll(
+                "SELECT variant_id, damaged_qty, scanned_qr_codes
+                 FROM warehouse_return_items
+                 WHERE warehouse_return_id = ? AND damaged_qty > 0",
+                [$returnId]
+            );
+            $returnedDamageByVariant = [];
+            foreach ($returnedDamageItems as $returnedDamageItem) {
+                $variantId = (int)$returnedDamageItem['variant_id'];
+                if (!isset($returnedDamageByVariant[$variantId])) {
+                    $returnedDamageByVariant[$variantId] = ['quantity' => 0, 'tags' => []];
+                }
+                $returnedDamageByVariant[$variantId]['quantity'] += (int)$returnedDamageItem['damaged_qty'];
+                $scannedTags = json_decode((string)($returnedDamageItem['scanned_qr_codes'] ?? ''), true);
+                if (is_array($scannedTags)) {
+                    $returnedDamageByVariant[$variantId]['tags'] = array_merge(
+                        $returnedDamageByVariant[$variantId]['tags'],
+                        $scannedTags
+                    );
+                }
+            }
+            foreach ($returnedDamageByVariant as $variantId => $returnedDamage) {
+                ShopDamage::markReturnedToWarehouse(
+                    $shopId,
+                    (int)$variantId,
+                    (int)$returnedDamage['quantity'],
+                    $returnedDamage['tags'],
+                    $returnId,
+                    $returnNumber,
+                    $userId
+                );
             }
 
             if ($processedCount === 0) {

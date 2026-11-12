@@ -2,11 +2,10 @@
 // views/shop/pos/invoice.php — Exact Thermal POS Receipt Layout matching GRM Shop sample bill
 $totalGst = (float)$sale['cgst_amount'] + (float)$sale['sgst_amount'] + (float)$sale['igst_amount'];
 $subtotal = (float)$sale['subtotal'];
-$totalAmountBeforeDisc = $subtotal + $totalGst;
 $discountAmount = (float)($sale['discount_amount'] ?? 0);
 $netAmount = (float)$sale['total_amount'];
 $gstType = $sale['gst_type'] ?? 'CGST_SGST';
-$unroundedNet = max(0, $totalAmountBeforeDisc - $discountAmount);
+$unroundedNet = array_sum(array_column($items, 'total_amount'));
 $roundOff = round($netAmount - $unroundedNet, 2);
 $totalQuantity = $totalQty ?? array_sum(array_column($items, 'quantity'));
 
@@ -90,16 +89,23 @@ $purchasedAt = formatUtcDateTime($sale['created_at'] ?? null);
         }
 
         /* Header Logo & Store */
-        .logo-container {
-            text-align: center;
+        .store-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
             margin-bottom: 6px;
+        }
+        .logo-container {
+            flex: 0 0 74px;
+            text-align: center;
         }
         .logo-box {
             display: inline-block;
             border: 1.5px solid #000;
-            padding: 4px 10px;
+            padding: 3px;
             background: #fff;
             position: relative;
+            max-width: 100%;
         }
         .logo-text {
             font-family: 'Times New Roman', Times, Georgia, serif;
@@ -111,34 +117,40 @@ $purchasedAt = formatUtcDateTime($sale['created_at'] ?? null);
             display: inline-block;
             text-transform: uppercase;
         }
+        .store-details {
+            flex: 1;
+            min-width: 0;
+        }
         .store-title {
-            text-align: center;
-            font-size: 13px;
+            text-align: left;
+            font-size: 11px;
             font-weight: 800;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-top: 4px;
+            letter-spacing: 0.2px;
         }
         .store-address {
-            text-align: center;
-            font-size: 10.5px;
+            text-align: left;
+            font-size: 9px;
             font-weight: 600;
             text-transform: uppercase;
             line-height: 1.3;
             margin-top: 2px;
+            overflow-wrap: anywhere;
         }
         .store-contact {
-            text-align: center;
-            font-size: 10.5px;
+            text-align: left;
+            font-size: 9px;
             font-weight: 600;
             margin-top: 2px;
+            overflow-wrap: anywhere;
         }
         .store-gst {
-            text-align: center;
-            font-size: 11px;
+            text-align: left;
+            font-size: 9px;
             font-weight: 800;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.2px;
             margin-top: 2px;
+            overflow-wrap: anywhere;
         }
 
         /* Dividers */
@@ -180,6 +192,11 @@ $purchasedAt = formatUtcDateTime($sale['created_at'] ?? null);
             padding: 2px 0;
             vertical-align: top;
         }
+        .items-table tfoot td {
+            text-align: right;
+            padding-top: 3px;
+            border-top: 1px dashed #000;
+        }
         .item-name-cell {
             font-weight: 700;
             word-break: break-word;
@@ -198,6 +215,10 @@ $purchasedAt = formatUtcDateTime($sale['created_at'] ?? null);
             font-size: 11px;
             font-weight: 600;
             margin: 2px 0;
+        }
+        .totals-row-left {
+            justify-content: flex-start;
+            gap: 4px;
         }
         .net-amount-row {
             display: flex;
@@ -259,48 +280,45 @@ $purchasedAt = formatUtcDateTime($sale['created_at'] ?? null);
 
 <!-- Thermal Bill Sheet -->
 <div class="thermal-receipt">
-    <!-- 1. GRM LOGO -->
-    <div class="logo-container">
-        <div class="logo-box">
-            <?php if (!empty($sale['shop_logo_url'])): ?>
-                <img src="<?= e($sale['shop_logo_url']) ?>" alt="<?= e($sale['shop_name'] ?? 'Shop') ?> logo" style="max-width:130px;max-height:65px;object-fit:contain;">
-            <?php else: ?>
-            <svg viewBox="0 0 150 75" width="130" height="65" xmlns="http://www.w3.org/2000/svg">
-                <!-- Stipple shaded background -->
-                <defs>
-                    <pattern id="stipple" width="3" height="3" patternUnits="userSpaceOnUse">
-                        <circle cx="1.5" cy="1.5" r="0.6" fill="#000" />
-                    </pattern>
-                </defs>
-                <rect width="150" height="75" fill="url(#stipple)" opacity="0.35" />
-                <rect width="150" height="75" fill="none" stroke="#000" stroke-width="1.5" />
-                <!-- Stylized GRM Monogram -->
-                <text x="75" y="54" font-family="'Times New Roman', Georgia, serif" font-size="52" font-weight="900" text-anchor="middle" fill="#000" letter-spacing="-2">GRM</text>
-            </svg>
+    <div class="store-header">
+        <div class="logo-container">
+            <div class="logo-box">
+                <?php if (!empty($sale['shop_logo_url'])): ?>
+                    <img src="<?= e($sale['shop_logo_url']) ?>" alt="<?= e($sale['shop_name'] ?? 'Shop') ?> logo" style="width:66px;height:42px;object-fit:contain;">
+                <?php else: ?>
+                    <svg viewBox="0 0 150 75" width="66" height="42" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                            <pattern id="stipple" width="3" height="3" patternUnits="userSpaceOnUse">
+                                <circle cx="1.5" cy="1.5" r="0.6" fill="#000" />
+                            </pattern>
+                        </defs>
+                        <rect width="150" height="75" fill="url(#stipple)" opacity="0.35" />
+                        <rect width="150" height="75" fill="none" stroke="#000" stroke-width="1.5" />
+                        <text x="75" y="54" font-family="'Times New Roman', Georgia, serif" font-size="52" font-weight="900" text-anchor="middle" fill="#000" letter-spacing="-2">GRM</text>
+                    </svg>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <div class="store-details">
+            <div class="store-title"><?= e(!empty($sale['shop_name']) && $sale['shop_name'] !== 'GRM Retail Store' ? $sale['shop_name'] : 'GRM SHOP') ?></div>
+            <?php if (!empty($sale['shop_address'])): ?>
+                <div class="store-address"><?= nl2br(e($sale['shop_address'])) ?></div>
+            <?php endif; ?>
+
+            <div class="store-contact">
+                <?php if (!empty($sale['shop_phone'])): ?>
+                    Phone: <?= e($sale['shop_phone']) ?><br>
+                <?php endif; ?>
+                <?php if (!empty($sale['shop_email'])): ?>
+                    Email: <?= e($sale['shop_email']) ?>
+                <?php endif; ?>
+            </div>
+
+            <?php if (!empty($sale['shop_gstin'])): ?>
+                <div class="store-gst">GST NO: <?= e($sale['shop_gstin']) ?></div>
             <?php endif; ?>
         </div>
-    </div>
-
-    <!-- 2. STORE HEADER -->
-    <div class="store-title"><?= e(!empty($sale['shop_name']) && $sale['shop_name'] !== 'GRM Retail Store' ? $sale['shop_name'] : 'GRM SHOP') ?></div>
-    
-    <div class="store-address">
-        <?php if (!empty($sale['shop_address']) && strlen($sale['shop_address']) > 15): ?>
-            <?= nl2br(e($sale['shop_address'])) ?>
-        <?php else: ?>
-            SULUR KMCH HOSPITAL<br>
-            OPPOSITE, TRICHY<br>
-            ROAD, SULUR, COIMBATORE
-        <?php endif; ?>
-    </div>
-
-    <div class="store-contact">
-        Phone No: <?= e(!empty($sale['shop_phone']) ? $sale['shop_phone'] : '8807144175, 8610612625') ?><br>
-        EMail Id: <?= e($sale['shop_email'] ?? '') ?>
-    </div>
-
-    <div class="store-gst">
-        GST NO: <?= e(!empty($sale['shop_gstin']) ? $sale['shop_gstin'] : '33BFQPQ7507C1ZX') ?>
     </div>
 
     <div class="divider-dashed"></div>
@@ -308,7 +326,7 @@ $purchasedAt = formatUtcDateTime($sale['created_at'] ?? null);
     <!-- 3. BILL METADATA -->
     <div class="meta-row">
         <span>Bill No: <?= e($billNo) ?></span>
-        <span>BID: <?= e($billId) ?></span>
+        <span>Bill ID: <?= e($billId) ?></span>
     </div>
     <div class="meta-row">
         <span>Purchased At: <?= e($purchasedAt) ?></span>
@@ -386,27 +404,30 @@ $purchasedAt = formatUtcDateTime($sale['created_at'] ?? null);
                 </tr>
             <?php endforeach; ?>
         </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="6">Total Qty: <?= $totalQuantity ?></td>
+            </tr>
+        </tfoot>
     </table>
 
     <div class="divider-dashed"></div>
 
     <!-- 6. SUMMARY TOTALS -->
-    <div class="totals-row">
-        <span>Total Qty: <?= $totalQuantity ?></span>
-        <span>Taxable Base: <?= number_format($subtotal, 2) ?></span>
-    </div>
-    <?php if ($discountAmount > 0): ?>
     <div class="totals-row" style="color: #b91c1c;">
         <span>Total Discount:</span>
-        <span>-<?= number_format($discountAmount, 2) ?></span>
+        <span><?= $discountAmount > 0 ? '-' : '' ?><?= number_format($discountAmount, 2) ?></span>
     </div>
-    <?php endif; ?>
     <div class="totals-row">
-        <span>GST Amount (Incl.): <?= number_format($totalGst, 2) ?></span>
-        <span>Round Off: <?= number_format($roundOff, 2) ?></span>
+        <span>Taxable Base:</span>
+        <span><?= number_format($subtotal, 2) ?></span>
+    </div>
+    <div class="totals-row">
+        <span>GST Amount (Incl.):</span>
+        <span><?= number_format($totalGst, 2) ?></span>
     </div>
     <?php if ($gstType === 'IGST'): ?>
-    <div class="totals-row">
+    <div class="totals-row totals-row-left">
         <span>IGST:</span>
         <span><?= number_format((float)$sale['igst_amount'], 2) ?></span>
     </div>
@@ -418,9 +439,15 @@ $purchasedAt = formatUtcDateTime($sale['created_at'] ?? null);
     <?php else: ?>
     <div class="totals-row">
         <span>CGST: <?= number_format((float)$sale['cgst_amount'], 2) ?></span>
+    </div>
+    <div class="totals-row">
         <span>SGST: <?= number_format((float)$sale['sgst_amount'], 2) ?></span>
     </div>
     <?php endif; ?>
+    <div class="totals-row">
+        <span>Round Off:</span>
+        <span><?= number_format($roundOff, 2) ?></span>
+    </div>
 
     <div class="divider-double"></div>
 
