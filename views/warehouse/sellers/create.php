@@ -295,6 +295,7 @@ $isEditMode = (!empty($_GET['mode']) && $_GET['mode'] === 'edit');
                             <label class="form-label small fw-semibold">Payment Method</label>
                             <select name="payment_method" class="form-select form-select-sm">
                                 <option value="CASH" selected>CASH</option>
+                                <option value="CASH_UPI">Cash + UPI</option>
                                 <option value="BANK_TRANSFER">Bank Transfer / NEFT / RTGS</option>
                                 <option value="UPI">UPI / GPay / PhonePe</option>
                                 <option value="CHEQUE">Cheque</option>

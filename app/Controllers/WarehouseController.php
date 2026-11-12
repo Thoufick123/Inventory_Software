@@ -11981,6 +11981,8 @@ class WarehouseController {
             "SELECT st.variant_id, SUM(st.quantity) as inwarded_qty, MAX(st.notes) as latest_notes, MAX(st.created_at) as latest_date
              FROM stock_transactions st
              WHERE st.reference_type = 'THIRD_PARTY_STICKERED'
+               AND st.transaction_type = 'PURCHASE_INWARD'
+               AND COALESCE(st.notes, '') NOT LIKE 'QR pack % extended by % pcs (pack quantity %'
              GROUP BY st.variant_id"
         );
         $inwardMap = [];
@@ -12016,8 +12018,7 @@ class WarehouseController {
                 $isSeries = strtoupper($tpv['qr_type'] ?? '') === 'SERIES_BATCH'
                     || strtoupper($tpv['qr_type'] ?? '') === 'SERIES'
                     || strtoupper($tpv['warehouse_category_type'] ?? '') === 'SERIES';
-                $packQuantity = (int)($tpv['pack_quantity'] ?? 0);
-                $totalQty = max($poQty, (int)($tpv['quantity'] ?? 0), $packQuantity, $inwardedQty);
+                $totalQty = max($poQty, (int)($tpv['quantity'] ?? 0), $inwardedQty);
                 if ($totalQty <= 0) $totalQty = max(1, $inwardedQty);
                 $remainingQty = max(0, $totalQty - $inwardedQty);
 
@@ -12852,7 +12853,7 @@ class WarehouseController {
                         $userId = null;
                     }
                     $sourceId = (int)($_POST['source_id'] ?? 0);
-                    $transactionType = $isReturnInward ? 'RETURN_INWARD' : 'PURCHASE_INWARD';
+                    $transactionType = $isReturnInward ? 'RETURN_INWARD' : 'PURCHASE_INWARD_ADJUSTMENT';
                     $referenceType = $isReturnInward ? 'warehouse_returns' : 'THIRD_PARTY_STICKERED';
                     $stockNote = "QR pack {$startCode} extended by {$count} pcs (pack quantity {$newPackQty}).";
 
