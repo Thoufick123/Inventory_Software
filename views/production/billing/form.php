@@ -110,14 +110,20 @@ $existingItems = array_map(static function (array $item): array {
             <div class="card border-0 shadow-sm mb-3">
                 <div class="card-header bg-white fw-semibold"><i class="bi bi-upc-scan me-2 text-primary"></i>Scan Production Inventory QR</div>
                 <div class="card-body">
-                    <label class="form-label">Scan QR code or search product, SKU, size, or color</label>
-                    <div class="input-group">
-                        <span class="input-group-text"><i class="bi bi-search"></i></span>
-                        <input id="inventorySearch" class="form-control" autocomplete="off" placeholder="Scan QR label or type to search">
-                        <button class="btn btn-outline-primary" type="button" id="openCameraScanner" aria-label="Scan QR with camera" title="Scan QR with camera"><i class="bi bi-camera"></i><span class="ms-1">Camera</span></button>
+                    <div class="p-3 border rounded bg-light">
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                            <label class="form-label fw-semibold mb-0" for="inventorySearch"><i class="bi bi-qr-code-scan text-success me-1"></i>Scan Inventory Barcode / QR Tag</label>
+                            <span class="small text-muted"><i class="bi bi-upc me-1"></i>Hardware barcode scanner</span>
+                        </div>
+                        <div class="input-group">
+                            <span class="input-group-text bg-white"><i class="bi bi-qr-code text-success"></i></span>
+                            <input id="inventorySearch" class="form-control" autocomplete="off" placeholder="Scan a finished-goods QR or enter product / SKU">
+                            <button class="btn btn-success fw-semibold" type="button" id="scanAddButton"><i class="bi bi-plus-circle me-1"></i>Scan / Add</button>
+                            <button class="btn btn-outline-primary" type="button" id="openCameraScanner" aria-label="Scan QR with camera" title="Scan QR with camera"><i class="bi bi-camera"></i></button>
+                        </div>
                     </div>
                     <div id="searchResults" class="list-group mt-2"></div>
-                    <div id="cartMessage" class="small text-muted mt-2">Scan an unbilled finished-goods QR label after QC approval. Purchased fabric-roll labels are not billable here.</div>
+                    <div id="cartMessage" class="small text-muted mt-2">Only unbilled, available finished-goods QR labels that passed QC can be added.</div>
                 </div>
             </div>
 
@@ -607,18 +613,28 @@ $existingItems = array_map(static function (array $item): array {
         }
     }
 
+    async function scanAndAdd() {
+        clearTimeout(searchTimer);
+        await lookup();
+        const availableButtons = [...resultBox.querySelectorAll('button')];
+        if (!availableButtons.length) return;
+        const scannedCode = search.value.trim().toUpperCase();
+        const exactMatch = availableButtons.find(button => {
+            const badge = button.querySelector('.badge');
+            return badge && badge.textContent.trim().toUpperCase() === scannedCode;
+        });
+        (exactMatch || availableButtons[0]).click();
+    }
+
     search.addEventListener('input', () => {
         clearTimeout(searchTimer);
         searchTimer = setTimeout(lookup, 250);
     });
+    document.getElementById('scanAddButton').addEventListener('click', scanAndAdd);
     search.addEventListener('keydown', event => {
         if (event.key === 'Enter') {
             event.preventDefault();
-            clearTimeout(searchTimer);
-            lookup().then(() => {
-                const first = resultBox.querySelector('button');
-                if (first) first.click();
-            });
+            scanAndAdd();
         }
     });
     const cameraModalElement = document.getElementById('cameraScanModal');

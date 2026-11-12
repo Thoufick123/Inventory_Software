@@ -159,6 +159,23 @@ class ProductionBillingController
             return;
         }
 
+        $items = $this->getAvailableInventory($billId);
+        $exactAvailableItems = [];
+        foreach ($items as $item) {
+            $exactTag = array_values(array_filter(
+                $item['available_tags'],
+                static fn(string $tag): bool => strtoupper(trim($tag)) === $needle
+            ));
+            if ($exactTag) {
+                $item['available_tags'] = $exactTag;
+                $exactAvailableItems[] = $item;
+            }
+        }
+        if ($exactAvailableItems) {
+            Response::jsonSuccess('Available finished-goods QR found.', ['items' => $exactAvailableItems]);
+            return;
+        }
+
         // Check if scanned QR / roll has already been outwarded to warehouse
         $outwardedRoll = null;
         if (preg_match('/^([A-Z]{2}\d{4})(\d+)$/', $needle, $m)) {
@@ -231,7 +248,6 @@ class ProductionBillingController
             return;
         }
 
-        $items = $this->getAvailableInventory($billId);
         $matches = [];
 
         foreach ($items as $item) {
