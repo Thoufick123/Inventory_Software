@@ -1,22 +1,59 @@
+<?php
+$activeAdjustmentType = strtoupper((string)($type ?? ''));
+if (!in_array($activeAdjustmentType, ['INCREASE', 'DECREASE'], true)) {
+    $activeAdjustmentType = '';
+}
+
+$adjustmentTabFilters = [];
+if (!empty($warehouseId)) {
+    $adjustmentTabFilters['warehouse_id'] = $warehouseId;
+}
+if (!empty($status)) {
+    $adjustmentTabFilters['status'] = $status;
+}
+$adjustmentTabQuery = http_build_query($adjustmentTabFilters);
+$allAdjustmentsUrl = url('warehouse/adjustments' . ($adjustmentTabQuery !== '' ? '?' . $adjustmentTabQuery : ''));
+$increaseTabFilters = $adjustmentTabFilters;
+$increaseTabFilters['adjustment_type'] = 'INCREASE';
+$increaseAdjustmentsUrl = url('warehouse/adjustments?' . http_build_query($increaseTabFilters));
+$decreaseTabFilters = $adjustmentTabFilters;
+$decreaseTabFilters['adjustment_type'] = 'DECREASE';
+$decreaseAdjustmentsUrl = url('warehouse/adjustments?' . http_build_query($decreaseTabFilters));
+?>
 <div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
     <div>
-        <h2 class="mb-1"><i class="bi bi-sliders me-2 text-primary"></i>Stock Adjustments & Audits</h2>
+        <h2 class="mb-1"><i class="bi bi-sliders me-2 text-primary"></i><?= $activeAdjustmentType === '' ? 'Stock Adjustments & Audits' : 'Stock ' . e(ucfirst(strtolower($activeAdjustmentType))) ?></h2>
         <span class="text-muted">Reconcile physical inventory counts, record write-offs, and submit audit discrepancy requests</span>
     </div>
     <div class="d-flex gap-2">
         <?php if (hasPermission('stock', 'adjust')): ?>
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newAdjustmentModal">
-            <i class="bi bi-plus-circle me-1"></i> Request Adjustment
+            <i class="bi bi-plus-circle me-1"></i> Request <?= $activeAdjustmentType === '' ? 'Adjustment' : 'Stock ' . e(ucfirst(strtolower($activeAdjustmentType))) ?>
         </button>
         <?php endif; ?>
     </div>
 </div>
 
+<ul class="nav nav-tabs mb-4">
+    <li class="nav-item">
+        <a class="nav-link <?= $activeAdjustmentType === '' ? 'active' : '' ?>" href="<?= $allAdjustmentsUrl ?>">All Adjustments</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link <?= $activeAdjustmentType === 'INCREASE' ? 'active' : '' ?>" href="<?= $increaseAdjustmentsUrl ?>">Stock Increase</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link <?= $activeAdjustmentType === 'DECREASE' ? 'active' : '' ?>" href="<?= $decreaseAdjustmentsUrl ?>">Stock Decrease</a>
+    </li>
+</ul>
+
 <!-- Filters Card -->
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body">
         <form method="GET" action="<?= url('warehouse/adjustments') ?>" class="row g-3">
-            <div class="col-md-4">
+            <?php if ($activeAdjustmentType !== ''): ?>
+                <input type="hidden" name="adjustment_type" value="<?= e($activeAdjustmentType) ?>">
+            <?php endif; ?>
+            <div class="<?= $activeAdjustmentType === '' ? 'col-md-4' : 'col-md-5' ?>">
                 <label class="form-label small fw-semibold">Warehouse</label>
                 <select name="warehouse_id" class="form-select" <?= ((function_exists('currentWarehouseId') && currentWarehouseId() !== null) || count($warehouses) <= 1) ? 'disabled' : '' ?>>
                     <?php if (!function_exists('currentWarehouseId') || currentWarehouseId() === null && count($warehouses) > 1): ?>
@@ -32,7 +69,7 @@
                     <input type="hidden" name="warehouse_id" value="<?= e($warehouseId ?? ($warehouses[0]['id'] ?? '')) ?>">
                 <?php endif; ?>
             </div>
-            <div class="col-md-3">
+            <div class="<?= $activeAdjustmentType === '' ? 'col-md-3' : 'col-md-5' ?>">
                 <label class="form-label small fw-semibold">Status</label>
                 <select name="status" class="form-select">
                     <option value="">All Statuses</option>
@@ -41,6 +78,7 @@
                     <option value="REJECTED" <?= ($status ?? '') === 'REJECTED' ? 'selected' : '' ?>>REJECTED</option>
                 </select>
             </div>
+            <?php if ($activeAdjustmentType === ''): ?>
             <div class="col-md-3">
                 <label class="form-label small fw-semibold">Adjustment Type</label>
                 <select name="adjustment_type" class="form-select">
@@ -49,6 +87,7 @@
                     <option value="DECREASE" <?= ($type ?? '') === 'DECREASE' ? 'selected' : '' ?>>DECREASE (- Discrepancy / Damage)</option>
                 </select>
             </div>
+            <?php endif; ?>
             <div class="col-md-2 d-flex align-items-end gap-2">
                 <button type="submit" class="btn btn-primary w-100"><i class="bi bi-funnel me-1"></i> Filter</button>
                 <a href="<?= url('warehouse/adjustments') ?>" class="btn btn-outline-secondary"><i class="bi bi-arrow-clockwise"></i></a>
@@ -136,6 +175,7 @@
                                             <form method="POST" action="<?= url('warehouse/adjustments/approve/' . $adj['id']) ?>" class="d-inline">
                                                 <?= CSRF::input() ?>
                                                 <input type="hidden" name="action" value="APPROVE">
+                                                <input type="hidden" name="return_adjustment_type" value="<?= e($activeAdjustmentType) ?>">
                                                 <button type="submit" class="btn btn-sm btn-success" onclick="return confirm('Approve this stock adjustment and update inventory balance?');">
                                                     <i class="bi bi-check-lg"></i> Approve
                                                 </button>
@@ -143,6 +183,7 @@
                                             <form method="POST" action="<?= url('warehouse/adjustments/approve/' . $adj['id']) ?>" class="d-inline">
                                                 <?= CSRF::input() ?>
                                                 <input type="hidden" name="action" value="REJECT">
+                                                <input type="hidden" name="return_adjustment_type" value="<?= e($activeAdjustmentType) ?>">
                                                 <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Reject this adjustment request?');">
                                                     <i class="bi bi-x-lg"></i>
                                                 </button>
@@ -170,9 +211,10 @@
         <form method="POST" action="<?= url('warehouse/adjustments/store') ?>" id="stockAdjustmentForm">
             <?= CSRF::input() ?>
             <input type="hidden" name="qr_codes" id="adjustmentQrCodes" value="[]">
+            <input type="hidden" name="return_adjustment_type" value="<?= e($activeAdjustmentType) ?>">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title fw-bold" id="newAdjustmentModalLabel"><i class="bi bi-sliders me-2 text-primary"></i>Request Stock Adjustment</h5>
+                    <h5 class="modal-title fw-bold" id="newAdjustmentModalLabel"><i class="bi bi-sliders me-2 text-primary"></i>Request <?= $activeAdjustmentType === '' ? 'Stock Adjustment' : 'Stock ' . e(ucfirst(strtolower($activeAdjustmentType))) ?></h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
@@ -204,10 +246,13 @@
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Adjustment Type <span class="text-danger">*</span></label>
-                            <select name="adjustment_type" id="adjustmentTypeSelect" class="form-select" required>
-                                <option value="INCREASE">INCREASE (+ Found Stock)</option>
-                                <option value="DECREASE">DECREASE (- Discrepancy / Damage)</option>
+                            <select <?= $activeAdjustmentType === '' ? 'name="adjustment_type"' : '' ?> id="adjustmentTypeSelect" class="form-select" required <?= $activeAdjustmentType !== '' ? 'disabled' : '' ?>>
+                                <option value="INCREASE" <?= $activeAdjustmentType === 'INCREASE' || $activeAdjustmentType === '' ? 'selected' : '' ?>>INCREASE (+ Found Stock)</option>
+                                <option value="DECREASE" <?= $activeAdjustmentType === 'DECREASE' ? 'selected' : '' ?>>DECREASE (- Discrepancy / Damage)</option>
                             </select>
+                            <?php if ($activeAdjustmentType !== ''): ?>
+                                <input type="hidden" name="adjustment_type" value="<?= e($activeAdjustmentType) ?>">
+                            <?php endif; ?>
                         </div>
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Quantity (Pcs) <span class="text-danger">*</span></label>
@@ -295,6 +340,7 @@
                             scanInput.focus();
                         }
                     });
+                    typeSelect.dispatchEvent(new Event('change'));
 
                     async function addScannedQr() {
                         const code = scanInput.value.trim();
@@ -369,7 +415,8 @@
                     document.getElementById('newAdjustmentModal').addEventListener('hidden.bs.modal', () => {
                         scannedTags.splice(0, scannedTags.length);
                         variantSelect.value = '';
-                        typeSelect.value = 'INCREASE';
+                        typeSelect.value = <?= json_encode($activeAdjustmentType !== '' ? $activeAdjustmentType : 'INCREASE') ?>;
+                        typeSelect.dispatchEvent(new Event('change'));
                         quantityInput.value = '1';
                         quantityInput.readOnly = false;
                         quantityInput.title = '';

@@ -7039,6 +7039,9 @@ class WarehouseController {
             Response::redirect(url('warehouse/adjustments'));
             return;
         }
+        $returnType = $_POST['return_adjustment_type'] ?? '';
+        $returnType = is_string($returnType) ? strtoupper(trim($returnType)) : '';
+        $returnUrl = url('warehouse/adjustments' . (in_array($returnType, ['INCREASE', 'DECREASE'], true) ? '?adjustment_type=' . $returnType : ''));
         try {
             $userId = Session::userId() ?? 1;
             $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
@@ -7061,9 +7064,9 @@ class WarehouseController {
             ];
 
             WarehouseService::createAdjustment($data, $userId);
-            Response::redirect(url('warehouse/adjustments'), 'success', 'Stock adjustment request submitted for approval.');
+            Response::redirect($returnUrl, 'success', 'Stock adjustment request submitted for approval.');
         } catch (Exception $e) {
-            Response::redirect(url('warehouse/adjustments'), 'error', 'Error creating adjustment: ' . $e->getMessage());
+            Response::redirect($returnUrl, 'error', 'Error creating adjustment: ' . $e->getMessage());
         }
     }
 
@@ -7073,15 +7076,18 @@ class WarehouseController {
             Response::redirect(url('warehouse/adjustments'));
             return;
         }
+        $returnType = $_POST['return_adjustment_type'] ?? '';
+        $returnType = is_string($returnType) ? strtoupper(trim($returnType)) : '';
+        $returnUrl = url('warehouse/adjustments' . (in_array($returnType, ['INCREASE', 'DECREASE'], true) ? '?adjustment_type=' . $returnType : ''));
         $adjId = (int)$id;
         $action = $_POST['action'] ?? 'APPROVE';
         try {
             $userId = Session::userId() ?? 1;
             WarehouseService::approveAdjustment($adjId, $action, $userId);
             $msg = $action === 'APPROVE' ? 'Stock adjustment approved and stock balance updated!' : 'Stock adjustment request rejected.';
-            Response::redirect(url('warehouse/adjustments'), 'success', $msg);
+            Response::redirect($returnUrl, 'success', $msg);
         } catch (Exception $e) {
-            Response::redirect(url('warehouse/adjustments'), 'error', 'Approval failed: ' . $e->getMessage());
+            Response::redirect($returnUrl, 'error', 'Approval failed: ' . $e->getMessage());
         }
     }
 
