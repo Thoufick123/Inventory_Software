@@ -373,6 +373,8 @@ class Router {
 
         // Production Billing
         $this->get('production/billing', 'ProductionBillingController', 'billList', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'view']]);
+        $this->get('production/billing/move-to-batch/{id}', 'ProductionBillingController', 'moveBillToBatchForm', ['AuthMiddleware']);
+        $this->post('production/billing/move-to-batch/{id}', 'ProductionBillingController', 'createBillDispatchBatch', ['AuthMiddleware']);
         $this->get('production/billing/create', 'ProductionBillingController', 'createBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'create']]);
         $this->post('production/billing/store', 'ProductionBillingController', 'storeBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'create']]);
         $this->get('production/billing/view/{id}', 'ProductionBillingController', 'viewBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'view']]);

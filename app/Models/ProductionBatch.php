@@ -407,10 +407,11 @@ class ProductionBatch {
 
         Database::execute(
             "INSERT INTO production_batches 
-             (batch_number, program_id, qc_batch_id, additional_qc_batch_ids, is_multi_qc, total_qty, box_count, destination_warehouse_id, status, prepared_by, notes)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                 (batch_number, production_bill_id, program_id, qc_batch_id, additional_qc_batch_ids, is_multi_qc, total_qty, box_count, destination_warehouse_id, status, prepared_by, notes)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 $data['batch_number'],
+                 $data['production_bill_id'] ?? null,
                 $data['program_id'],
                 $data['qc_batch_id'] ?? null,
                 $additionalQc,
