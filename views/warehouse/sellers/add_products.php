@@ -16,6 +16,15 @@
     </div>
 </div>
 
+<?php if (empty($warehouses)): ?>
+    <div class="alert alert-warning shadow-sm" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        No active warehouse is available for this purchase. Create or activate one in
+        <a href="<?= url('admin/dashboard?tab=warehouses') ?>" class="alert-link">Admin &gt; Warehouses</a>
+        before saving these products.
+    </div>
+<?php endif; ?>
+
 <!-- ========================================================================= -->
 <!-- 2-PHASE WIZARD STEPPER -->
 <!-- ========================================================================= -->
@@ -86,8 +95,8 @@
                 <span class="badge bg-light text-dark border">
                     <i class="bi bi-building me-1 text-primary"></i>Inward to: 
                     <?php 
-                        $destWhName = 'Central Warehouse';
-                        $destWhId = $billSetup['warehouse_id'] ?? 1;
+                        $destWhName = 'Unavailable';
+                        $destWhId = (int)($billSetup['warehouse_id'] ?? 0);
                         if (!empty($warehouses)) {
                             foreach ($warehouses as $w) {
                                 if ($w['id'] == $destWhId) { $destWhName = $w['name']; break; }
@@ -523,7 +532,7 @@
 <form id="finalSubmitForm" method="POST" action="<?= url('warehouse/sellers/' . $seller['id'] . '/store-products') ?>">
     <?= CSRF::field() ?>
     <input type="hidden" name="items" id="jsonProductsInput" value="[]">
-    <input type="hidden" name="warehouse_id" value="<?= e($billSetup['warehouse_id'] ?? 1) ?>">
+    <input type="hidden" name="warehouse_id" value="<?= e($billSetup['warehouse_id'] ?? ($warehouses[0]['id'] ?? '')) ?>">
     <input type="hidden" name="order_date" value="<?= e($billSetup['order_date'] ?? date('Y-m-d')) ?>">
     <input type="hidden" name="expected_date" value="<?= e($billSetup['expected_date'] ?? date('Y-m-d')) ?>">
     <input type="hidden" name="payment_method" value="<?= e($billSetup['payment_method'] ?? 'CASH') ?>">
@@ -543,7 +552,7 @@
                 <div id="saveProductsValidationNotice" class="text-danger small fw-bold d-none me-2">
                     <i class="bi bi-exclamation-triangle-fill me-1"></i>Please fix highlighted field errors or duplicate lines before saving.
                 </div>
-                <button type="button" class="btn btn-primary px-5 py-2.5 fw-bold shadow" id="btnSaveAllProducts" onclick="submitFinalProducts()" disabled>
+                <button type="button" class="btn btn-primary px-5 py-2.5 fw-bold shadow" id="btnSaveAllProducts" onclick="submitFinalProducts()" disabled <?= empty($warehouses) ? 'aria-disabled="true" title="Create or activate a warehouse before saving"' : '' ?>>
                     <i class="bi bi-qr-code me-1"></i> Save Products &amp; Generate QR Labels &rarr;
                 </button>
             </div>

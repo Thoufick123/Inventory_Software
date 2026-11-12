@@ -720,6 +720,8 @@ class Router {
         $this->get('warehouse/whatsapp-orders/expenses', 'WhatsappController', 'expensesIndex', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_expenses', 'view']]);
         $this->get('warehouse/whatsapp-orders/expenses/create', 'WhatsappController', 'createExpense', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_expenses', 'create']]);
         $this->post('warehouse/whatsapp-orders/expenses/store', 'WhatsappController', 'storeExpense', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_expenses', 'create']]);
+        $this->get('warehouse/whatsapp-orders/expenses/edit/{id}', 'WhatsappController', 'editExpense', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_expenses', 'create']]);
+        $this->post('warehouse/whatsapp-orders/expenses/update/{id}', 'WhatsappController', 'updateExpense', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_expenses', 'create']]);
         $this->get('warehouse/whatsapp-orders/expenses/voucher/{id}', 'WhatsappController', 'printExpenseVoucher', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_expenses', 'voucher']]);
         $this->get('warehouse/whatsapp-orders/expenses/delete/{id}', 'WhatsappController', 'confirmDeleteExpense', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_expenses', 'delete']]);
         $this->post('warehouse/whatsapp-orders/expenses/delete/{id}', 'WhatsappController', 'deleteExpense', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_expenses', 'delete']]);

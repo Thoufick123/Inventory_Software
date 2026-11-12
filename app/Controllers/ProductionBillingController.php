@@ -78,6 +78,7 @@ class ProductionBillingController
             'activeMenu' => 'prod-billing',
             'bill' => $bill,
             'billItems' => $this->loadBillItems((int)$bill['id']),
+            'prodUnit' => ProductionUnit::getActiveFacility($bill['production_unit_id'] ?? null),
         ]);
     }
 
@@ -292,6 +293,7 @@ class ProductionBillingController
             'activeMenu' => 'prod-billing',
             'bill' => $bill,
             'billItems' => $billItems,
+            'prodUnit' => ProductionUnit::getActiveFacility($bill['production_unit_id'] ?? null),
         ]);
     }
 

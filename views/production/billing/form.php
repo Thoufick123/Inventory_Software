@@ -22,6 +22,9 @@ $existingItems = array_map(static function (array $item): array {
 ?>
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
     <div>
+        <?php if (!empty($prodUnit['logo_url'])): ?>
+            <img src="<?= $escape($prodUnit['logo_url']) ?>" alt="<?= $escape($prodUnit['name'] ?? 'Production unit') ?> logo" class="mb-2" style="max-width:180px;max-height:64px;object-fit:contain;">
+        <?php endif; ?>
         <h4 class="mb-1 fw-bold"><?= $isEdit ? 'Edit Production Bill' : 'Create Production Bill' ?></h4>
         <div class="text-muted small">Scan QR labels from available QC-passed Production Inventory.</div>
     </div>

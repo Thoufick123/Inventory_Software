@@ -108,11 +108,17 @@ class ProductionController {
         self::ensureDatabaseSchema();
         $scopedUnitId = function_exists('currentProductionUnitId') ? currentProductionUnitId() : null;
         $stats = ProductionService::getDashboardStats($scopedUnitId);
+        $productionUnits = function_exists('getScopedProductionUnits') ? getScopedProductionUnits() : ProductionUnit::getAll(['is_active' => 1]);
+        $productionUnitProfile = $scopedUnitId
+            ? ProductionUnit::find((int)$scopedUnitId)
+            : ($productionUnits[0] ?? null);
         Response::view('production.dashboard', array_merge($stats, [
             'pageTitle'    => 'Production Dashboard',
             'activeModule' => 'production',
             'activeMenu'   => 'prod-dashboard',
             'scopedUnitId' => $scopedUnitId,
+            'productionUnits' => $productionUnits,
+            'productionUnitProfile' => $productionUnitProfile,
             'breadcrumb'   => [
                 ['label' => 'Production', 'url' => url('production/dashboard')],
                 ['label' => 'Dashboard'],

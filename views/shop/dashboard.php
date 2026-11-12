@@ -36,6 +36,31 @@ $filterLowStock = $currFilter['low_stock_count'] ?? $low_stock_count;
         </div>
     </div>
 
+    <div class="card border-0 shadow-sm rounded-3 mb-4">
+        <div class="card-body d-flex flex-wrap align-items-center gap-3">
+            <?php if (!empty($shop['logo_url'])): ?>
+                <img src="<?= e($shop['logo_url']) ?>" alt="<?= e($shop['name'] ?? 'Shop') ?> logo" style="max-width:140px;max-height:64px;object-fit:contain;">
+            <?php else: ?>
+                <div class="rounded-circle bg-primary-subtle text-primary p-3"><i class="bi bi-shop fs-4"></i></div>
+            <?php endif; ?>
+            <div class="flex-grow-1">
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <h5 class="mb-0 fw-bold"><?= e($shop['name'] ?? 'Shop') ?></h5>
+                    <?php if (!empty($shop['code'])): ?><span class="badge bg-light text-dark border"><?= e($shop['code']) ?></span><?php endif; ?>
+                </div>
+                <div class="small text-muted mt-1">
+                    <?php if (!empty($shop['manager_name'])): ?>Manager: <?= e($shop['manager_name']) ?> · <?php endif; ?>
+                    <?php if (!empty($shop['address'])): ?><?= e($shop['address']) ?><?php endif; ?>
+                    <?php if (!empty($shop['phone'])): ?><?= !empty($shop['address']) ? ' · ' : '' ?><?= e($shop['phone']) ?><?php endif; ?>
+                    <?php if (!empty($shop['gst_number'])): ?><?= (!empty($shop['address']) || !empty($shop['phone'])) ? ' · ' : '' ?>GSTIN: <?= e($shop['gst_number']) ?><?php endif; ?>
+                </div>
+            </div>
+            <?php if (!empty($shop['id']) && hasPermission('dashboard', 'view') && (hasPermission('dashboard', 'edit') || hasPermission('shop', 'edit'))): ?>
+                <a class="btn btn-sm btn-outline-primary" href="<?= url('admin/dashboard?edit_type=shop&edit_id=' . (int)$shop['id']) ?>"><i class="bi bi-pencil me-1"></i>Edit details</a>
+            <?php endif; ?>
+        </div>
+    </div>
+
     <!-- ============================================================ -->
     <!-- DYNAMIC FILTER TOOLBAR (TODAY / WEEK / MONTH / CUSTOM RANGE) -->
     <!-- ============================================================ -->
