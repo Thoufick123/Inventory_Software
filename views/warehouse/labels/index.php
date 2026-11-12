@@ -28,6 +28,16 @@ $inwardedVariantIds= $inwardedVariantIds ?? [];
 $viewParam         = $_GET['view'] ?? '';
 $isViewingExisting = $viewParam === 'existing';
 $isGeneratingView  = in_array($viewParam, ['generate', 'existing'], true) || (!empty($selectedCatalogCode) && $viewParam !== 'batches') || (!empty($selectedVariantId) && $viewParam !== 'batches');
+$canEditWarehouseQr = hasPermission('wh_labels', 'create');
+$canInwardQrUnits = hasPermission('inward', 'verify')
+    || hasPermission('inward', 'create')
+    || hasPermission('purchases', 'receive')
+    || hasPermission('returns', 'classify')
+    || hasPermission('returns', 'receive')
+    || hasPermission('returns', 'view')
+    || hasPermission('stock', 'view')
+    || hasPermission('warehouse', 'view')
+    || (function_exists('isAdmin') && isAdmin());
 $canDeleteWarehouseQr = hasPermission('wh_labels', 'create')
     || hasPermission('wh_labels', 'edit')
     || isAdmin();
@@ -2060,6 +2070,9 @@ foreach ($qrBatches as $batch) {
                                                 $typeLabel = $isComp ? 'Complementary Product' : ($isSeries ? 'Series Product' : 'Individual Product');
                                                 $prodSearch = strtolower($sName . ' ' . $cCode . ' ' . ($batch['product_name'] ?? '') . ' ' . ($batch['sku'] ?? '') . ' ' . $typeLabel);
                                                 $loadUrl = url('warehouse/labels?source_type=po&brand_name=' . urlencode($sName) . '&catalog_code=' . urlencode($cCode) . '&variant_id=' . (int)$batch['variant_id'] . '&view=generate' . ($historyTab !== 'warehouse' ? '&history_tab=' . urlencode($historyTab) : ''));
+                                                $existingLabelsUrl = str_replace('view=generate', 'view=existing', $loadUrl);
+                                                $editQrPackUrl = $existingLabelsUrl . '&edit_qr_pack=1';
+                                                $canEditBatchQrPack = $canEditWarehouseQr && (!$isInwarded || $canInwardQrUnits);
                                             ?>
                                                 <tr class="supplier-prod-row" data-search="<?= e($prodSearch) ?>">
                                                     <td class="ps-3">
@@ -2138,19 +2151,20 @@ foreach ($qrBatches as $batch) {
                                                     </td>
                                                     <td class="text-end pe-3">
                                                         <div class="d-flex align-items-center justify-content-end gap-1.5 flex-wrap">
-                                                            <?php if ($isPartial): ?>
-                                                                <?php if (hasPermission('wh_labels', 'create') && (hasPermission('inward', 'create') || hasPermission('inward', 'verify') || hasPermission('purchases', 'receive'))): ?>
+                                                            <?php if ($isPartial && hasPermission('wh_labels', 'create') && (hasPermission('inward', 'create') || hasPermission('inward', 'verify') || hasPermission('purchases', 'receive'))): ?>
                                                                 <a href="<?= $loadUrl ?>" class="btn btn-sm btn-success fw-bold px-2.5 py-1 shadow-2xs" title="Generate remaining QR labels and inward remaining pieces">
                                                                     <i class="bi bi-box-arrow-in-down me-1"></i>Inward Remaining (+<?= (int)$batch['remaining_qty'] ?>)
                                                                 </a>
+                                                            <?php endif; ?>
+                                                            <?php if ($isPartial || $isInwarded): ?>
+                                                                <a href="<?= e($existingLabelsUrl) ?>" class="btn btn-sm btn-outline-primary fw-semibold px-2 py-1" title="View previously generated QR stickers from this batch">
+                                                                    <i class="bi bi-eye me-1"></i>View
+                                                                </a>
+                                                                <?php if (($isSeries || $isComp) && $canEditBatchQrPack): ?>
+                                                                    <a href="<?= e($editQrPackUrl) ?>" class="btn btn-sm btn-outline-success fw-semibold px-2 py-1" title="Edit the existing master QR pack quantity">
+                                                                        <i class="bi bi-pencil-square me-1"></i>Edit Pack
+                                                                    </a>
                                                                 <?php endif; ?>
-                                                                <a href="<?= e(str_replace('view=generate', 'view=existing', $loadUrl)) ?>" class="btn btn-sm btn-outline-primary fw-semibold px-2 py-1" title="View previously generated QR stickers from this batch">
-                                                                    <i class="bi bi-eye me-1"></i>View
-                                                                </a>
-                                                            <?php elseif ($isInwarded): ?>
-                                                                <a href="<?= e(str_replace('view=generate', 'view=existing', $loadUrl)) ?>" class="btn btn-sm btn-outline-primary fw-semibold px-2.5 py-1" title="View previously generated QR stickers from this batch">
-                                                                    <i class="bi bi-eye me-1"></i>View
-                                                                </a>
                                                             <?php else: ?>
                                                                 <?php if (hasPermission('wh_labels', 'create') && (hasPermission('inward', 'create') || hasPermission('inward', 'verify') || hasPermission('purchases', 'receive'))): ?>
                                                                 <a href="<?= $loadUrl ?>" class="btn btn-sm btn-success fw-bold px-2.5 py-1 shadow-2xs" title="Generate QR stickers and inward this product to inventory">
@@ -2188,14 +2202,14 @@ foreach ($qrBatches as $batch) {
             <i class="bi bi-arrow-left me-1"></i> Back to QR Batches History
         </a>
         <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-1.5 font-monospace">
-            <i class="bi bi-qr-code-scan me-1 text-primary"></i><?= $isViewingExisting ? 'Saved QR Labels — View Only' : 'QR Generation Mode Active' ?>
+            <i class="bi bi-qr-code-scan me-1 text-primary"></i><?= $isViewingExisting ? 'Saved QR Labels' : 'QR Generation Mode Active' ?>
         </span>
     </div>
 
 <?php if ($isViewingExisting): ?>
     <div class="alert alert-info py-2 mb-3 no-print">
         <i class="bi bi-info-circle me-1"></i>
-        <?php if (hasPermission('wh_labels', 'create')): ?>
+        <?php if ($canEditWarehouseQr): ?>
             Saved QR labels are shown below. Use <strong>Edit Pack</strong> on a master QR to add units. Delete non-inwarded labels with a required audit reason; inwarded labels are protected.
         <?php else: ?>
             Viewing previously generated QR labels. This page is read-only for your account.
@@ -2782,17 +2796,6 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                                         onclick="printSinglePieceSticker(<?= $index ?>)" title="Print Thermal Sticker">
                                     <i class="bi bi-printer"></i> Print
                                 </button>
-                                <?php
-                                $canInwardQrUnits = hasPermission('inward', 'verify')
-                                    || hasPermission('inward', 'create')
-                                    || hasPermission('purchases', 'receive')
-                                    || hasPermission('returns', 'classify')
-                                    || hasPermission('returns', 'receive')
-                                    || hasPermission('returns', 'view')
-                                    || hasPermission('stock', 'view')
-                                    || hasPermission('warehouse', 'view')
-                                    || (function_exists('isAdmin') && isAdmin());
-                                ?>
                                 <?php if (!empty($item['is_series']) && hasPermission('wh_labels', 'create') && (empty($item['is_inwarded']) || $canInwardQrUnits)): ?>
                                     <button type="button"
                                             class="btn btn-xs btn-outline-success flex-fill fw-semibold py-1.5"
@@ -3456,6 +3459,8 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
 
 <script>
 const GENERATED_ITEMS = <?= json_encode($generatedItems ?? []) ?>;
+const CAN_EDIT_WAREHOUSE_QR = <?= $canEditWarehouseQr ? 'true' : 'false' ?>;
+const CAN_EDIT_INWARDED_WAREHOUSE_QR = <?= $canInwardQrUnits ? 'true' : 'false' ?>;
 const CAN_DELETE_WAREHOUSE_QR = <?= $canDeleteWarehouseQr ? 'true' : 'false' ?>;
 let currentPreviewIndex = 0;
 
@@ -5959,6 +5964,25 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
         });
+    }
+
+    const pageUrl = new URL(window.location.href);
+    if (pageUrl.searchParams.get('edit_qr_pack') === '1') {
+        pageUrl.searchParams.delete('edit_qr_pack');
+        window.history.replaceState(null, '', pageUrl.toString());
+
+        const editIndices = GENERATED_ITEMS
+            .map((item, index) => item && !item.is_deleted && (item.is_series || item.is_complementary) ? index : -1)
+            .filter(index => index >= 0);
+        const editItem = editIndices.length === 1 ? GENERATED_ITEMS[editIndices[0]] : null;
+        if (!CAN_EDIT_WAREHOUSE_QR || editIndices.length === 0 || (editItem && editItem.is_inwarded && !CAN_EDIT_INWARDED_WAREHOUSE_QR)) {
+            showPrintToast('This master QR pack is not available for editing with your current permissions.', 'warning');
+        } else if (editIndices.length > 1) {
+            document.getElementById('stickersCardGrid')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            showPrintToast('Choose the master QR pack you want to edit below.', 'info');
+        } else {
+            setTimeout(() => produceNewAdjustmentQR(editIndices[0]), 150);
+        }
     }
 });
 </script>
