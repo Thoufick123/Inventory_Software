@@ -1680,7 +1680,8 @@ class WarehouseService {
         $basePrefix = $productPrefix . date('my');
         $sequencePattern = '/^' . preg_quote($basePrefix, '/') . '(\d+)$/i';
 
-        $maxSequence = 0;
+        $variantMaxSequence = 0;
+        $otherMaxSequence = 0;
         $otherRanges = [];
         $usedCodes = [];
         $qrRows = Database::fetchAll(
@@ -1703,10 +1704,11 @@ class WarehouseService {
                 $usedCodes[strtoupper($endCode)] = true;
             }
             $endNumber = max($startNumber, $endNumber);
-            $maxSequence = max($maxSequence, $startNumber, $endNumber);
             if ((int)$row['variant_id'] === $variantId) {
+                $variantMaxSequence = max($variantMaxSequence, $startNumber, $endNumber);
                 continue;
             }
+            $otherMaxSequence = max($otherMaxSequence, $startNumber, $endNumber);
             if ($startNumber > 0) {
                 $otherRanges[] = ['start' => $startNumber, 'end' => max($startNumber, $endNumber)];
             }
@@ -1731,16 +1733,17 @@ class WarehouseService {
             }
             $startNumber = $numbers['series_start_code'] ?? $numbers['qr_code'] ?? 0;
             $endNumber = $numbers['series_end_code'] ?? $startNumber;
-            $maxSequence = max($maxSequence, $startNumber, $endNumber);
             if ((int)$row['id'] === $variantId) {
+                $variantMaxSequence = max($variantMaxSequence, $startNumber, $endNumber);
                 continue;
             }
+            $otherMaxSequence = max($otherMaxSequence, $startNumber, $endNumber);
             if ($startNumber > 0) {
                 $otherRanges[] = ['start' => min($startNumber, $endNumber), 'end' => max($startNumber, $endNumber)];
             }
         }
 
-        $nextSequence = $maxSequence + 1;
+        $nextSequence = $variantMaxSequence > 0 ? $variantMaxSequence + 1 : $otherMaxSequence + 1;
         $tags = [];
         for ($index = 0; $index < $labelCount; $index++) {
             while (true) {
