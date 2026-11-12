@@ -2,6 +2,9 @@
 -- GRM Inventory Management System Canonical Database Schema
 -- Updated: 2026-11-11
 -- Total Tables: 112
+-- Full rebuild only: DROP TABLE statements make this unsafe for live databases.
+-- Includes the 2026-11-11 migrations for product_price_logs and
+-- sellers.production_deleted_at; use additive migrations for existing databases.
 -- =================================================
 
 SET FOREIGN_KEY_CHECKS = 0;

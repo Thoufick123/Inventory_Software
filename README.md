@@ -58,9 +58,10 @@ An enterprise-grade, end-to-end apparel manufacturing, central warehousing, mult
      ```bash
      php database/seed_permissions.php
      ```
-   - For an existing database, apply the additive price-history schema update:
+   - For an existing database, apply the additive updates before using the affected features. These migrations do not drop tables; the supplier archive migration is safe to rerun:
      ```bash
      mysql -h 127.0.0.1 -P 3307 -u root -p grm_inventory < database/migrations/2026_11_11_add_product_price_logs.sql
+     mysql -h 127.0.0.1 -P 3307 -u root -p grm_inventory < database/migrations/2026_11_11_add_production_supplier_archive.sql
      ```
    - Database changes are not applied by deploying application files. Run the corresponding additive SQL migration against the production database before using the affected feature.
 
