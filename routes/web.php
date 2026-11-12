@@ -493,6 +493,7 @@ class Router {
         $this->get('production/qc/view/{id}', 'ProductionController', 'viewQCBatch', ['AuthMiddleware', ['PermissionMiddleware', 'qc', 'view']]);
         $this->get('production/qc/create', 'ProductionController', 'createQC', ['AuthMiddleware', ['PermissionMiddleware', 'qc', 'create']]);
         $this->post('production/qc/store', 'ProductionController', 'storeQC', ['AuthMiddleware', ['PermissionMiddleware', 'qc', 'create']]);
+        $this->post('production/qc/ajax-add-inspector', 'ProductionController', 'ajaxAddQcInspector', ['AuthMiddleware', ['PermissionMiddleware', 'qc', 'create']]);
         $this->get('production/qc/inspect/{id}', 'ProductionController', 'inspectQC', ['AuthMiddleware', ['PermissionMiddleware', 'qc', 'edit']]);
         $this->post('production/qc/update/{id}', 'ProductionController', 'updateQC', ['AuthMiddleware', ['PermissionMiddleware', 'qc', 'edit']]);
         $this->post('production/qc/save-ajax/{id}', 'ProductionController', 'saveQCAjax', ['AuthMiddleware', ['PermissionMiddleware', 'qc', 'edit']]);
