@@ -5939,9 +5939,20 @@ class WarehouseController {
         $po = PurchaseOrder::find($poId);
         if (!$po) {
             Response::redirect(url('warehouse/purchases'), 'error', 'Purchase record not found.');
+            return;
         }
 
         $items = PurchaseItem::getByPurchaseOrder($poId);
+
+        if (empty($po['seller_id']) && empty($po['warehouse_supplier_id'])) {
+            Response::viewOnly('warehouse.purchases.customer_receipt', [
+                'pageTitle'       => 'Customer Bill #' . $po['po_number'],
+                'po'              => $po,
+                'items'           => $items,
+                'companySettings' => class_exists('SettingsService') ? \SettingsService::getGroup('company') : [],
+            ]);
+            return;
+        }
 
         Response::view('warehouse.purchases.receive', [
             'pageTitle'    => 'Tax Invoice & Receipt #' . $po['po_number'],
