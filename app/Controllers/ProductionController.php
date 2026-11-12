@@ -12740,8 +12740,21 @@ class ProductionController {
             return;
         }
 
-        $cuttingBatchId = !empty($_POST['cutting_batch_id']) ? (int)$_POST['cutting_batch_id'] : null;
-        if (!$cuttingBatchId || $cuttingBatchId <= 0) {
+        $cuttingBatchIds = [];
+        if (!empty($_POST['cutting_batch_ids']) && is_array($_POST['cutting_batch_ids'])) {
+            foreach ($_POST['cutting_batch_ids'] as $cid) {
+                $cid = (int)$cid;
+                if ($cid > 0 && !in_array($cid, $cuttingBatchIds, true)) {
+                    $cuttingBatchIds[] = $cid;
+                }
+            }
+        }
+        if (empty($cuttingBatchIds) && !empty($_POST['cutting_batch_id'])) {
+            $cid = (int)$_POST['cutting_batch_id'];
+            if ($cid > 0) $cuttingBatchIds[] = $cid;
+        }
+
+        if (empty($cuttingBatchIds)) {
             Session::flash('error', 'Select Cutting Module Wastage / Scrap Batch is required.');
             Response::back();
             return;
@@ -12790,33 +12803,43 @@ class ProductionController {
             return;
         }
 
-        // Validate cutting batch available wastage balance
-        $cb = Database::fetchOne("SELECT id, batch_number, name, program_id, wastage_weight FROM cutting_batches WHERE id = ?", [$cuttingBatchId]);
-        if (!$cb) {
-            Session::flash('error', 'Selected cutting batch not found.');
+        // Validate selected cutting batches & available balances
+        $batches = [];
+        $totalAvailableWastage = 0.0;
+        foreach ($cuttingBatchIds as $cid) {
+            $cb = Database::fetchOne("SELECT id, batch_number, name, program_id, wastage_weight FROM cutting_batches WHERE id = ?", [$cid]);
+            if (!$cb) continue;
+
+            $soldRow = Database::fetchOne(
+                "SELECT COALESCE(SUM(weight), 0.0) as sold_weight FROM wastage_sales WHERE cutting_batch_id = ?",
+                [$cid]
+            );
+            $alreadySold = (float)($soldRow['sold_weight'] ?? 0.0);
+            $totalWastage = (float)($cb['wastage_weight'] ?? 0.0);
+            $availableWastage = max(0.0, $totalWastage - $alreadySold);
+
+            if ($availableWastage > 0.001) {
+                $cb['available_wastage'] = $availableWastage;
+                $cb['total_wastage'] = $totalWastage;
+                $cb['already_sold'] = $alreadySold;
+                $batches[] = $cb;
+                $totalAvailableWastage += $availableWastage;
+            }
+        }
+
+        if (empty($batches) || $totalAvailableWastage <= 0.001) {
+            Session::flash('error', "Selected cutting batch(es) wastage is ALREADY FULLY SOLD. Please choose an available batch.");
             Response::back();
             return;
         }
 
-        $soldRow = Database::fetchOne(
-            "SELECT COALESCE(SUM(weight), 0.0) as sold_weight FROM wastage_sales WHERE cutting_batch_id = ?",
-            [$cuttingBatchId]
-        );
-        $alreadySold = (float)($soldRow['sold_weight'] ?? 0.0);
-        $totalWastage = (float)($cb['wastage_weight'] ?? 0.0);
-        $availableWastage = max(0.0, $totalWastage - $alreadySold);
-
-        if ($availableWastage <= 0.001) {
-            Session::flash('error', "Cutting Batch [{$cb['batch_number']}] wastage is ALREADY FULLY SOLD ({$alreadySold} kg sold of {$totalWastage} kg total). Cannot record another sale.");
+        if ($weight > $totalAvailableWastage + 0.001) {
+            Session::flash('error', "Entered weight ({$weight} kg) exceeds available wastage balance (" . number_format($totalAvailableWastage, 2) . " kg) for selected batch(es).");
             Response::back();
             return;
         }
 
-        if ($weight > $availableWastage + 0.001) {
-            Session::flash('error', "Entered weight ({$weight} kg) exceeds available wastage balance ({$availableWastage} kg) for Batch [{$cb['batch_number']}].");
-            Response::back();
-            return;
-        }
+        $cuttingBatchId = $batches[0]['id'];
 
         if ($ratePerKg <= 0 && $totalAmountInput <= 0) {
             Session::flash('error', 'Selling Price & Quantity (Manual Entry) is required. Please enter a valid Selling Rate (₹/kg) or Total Sale Price.');
@@ -12886,52 +12909,91 @@ class ProductionController {
             $photoUrl = CloudinaryService::upload($_FILES['photo'], 'grm_inventory/wastage', 'image');
         }
 
-        // Generate sequential sale number e.g. WST-2026-0001
-        $count = Database::fetchOne("SELECT COUNT(*) as cnt FROM wastage_sales");
-        $nextSeq = (int)($count['cnt'] ?? 0) + 1;
-        $saleNumber = 'WST-' . date('Y') . '-' . sprintf("%04d", $nextSeq);
-
         $userId = (int)(Session::get('user_id') ?? 1);
 
         try {
-            Database::execute(
-                "INSERT INTO wastage_sales 
-                    (sale_number, buyer_name, buyer_phone, buyer_company, cutting_batch_id, program_id, wastage_type, weight, rate_per_kg, total_amount, paid_amount, payment_status, payment_method, payment_reference, invoice_number, sale_date, photo_url, notes, created_by, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
-                [
-                    $saleNumber,
-                    $buyerName,
-                    $buyerPhone,
-                    $buyerCompany,
-                    $cuttingBatchId,
-                    $programId,
-                    $wastageType,
-                    $weight,
-                    $ratePerKg,
-                    $totalAmount,
-                    $paidAmount,
-                    $paymentStatus,
-                    $paymentMethod,
-                    $paymentReference ?: null,
-                    $invoiceNumber ?: null,
-                    $saleDate,
-                    $photoUrl,
-                    $notes ?: null,
-                    $userId
-                ]
-            );
-            $saleId = (int)Database::lastInsertId();
+            Database::beginTransaction();
 
-            AuditService::log('production', 'create', 'wastage_sales', $saleId, null, [
-                'sale_number'  => $saleNumber,
-                'buyer_name'   => $buyerName,
-                'weight'       => $weight,
-                'total_amount' => $totalAmount
-            ]);
+            $remainingWeight = $weight;
+            $remainingAmount = $totalAmount;
+            $remainingPaid = $paidAmount;
+            $createdSales = [];
 
-            Session::flash('success', "Wastage sale {$saleNumber} recorded successfully for ₹" . number_format($totalAmount, 2));
+            foreach ($batches as $idx => $b) {
+                $isLast = ($idx === count($batches) - 1);
+                
+                if ($isLast) {
+                    $bWeight = round($remainingWeight, 2);
+                    $bAmount = round($remainingAmount, 2);
+                    $bPaid = round($remainingPaid, 2);
+                } else {
+                    $prop = $b['available_wastage'] / $totalAvailableWastage;
+                    $bWeight = min($b['available_wastage'], round($weight * $prop, 2));
+                    $bAmount = round($totalAmount * ($bWeight / $weight), 2);
+                    $bPaid = round($paidAmount * ($bWeight / $weight), 2);
+                    
+                    $remainingWeight -= $bWeight;
+                    $remainingAmount -= $bAmount;
+                    $remainingPaid -= $bPaid;
+                }
+
+                if ($bWeight <= 0) continue;
+
+                $count = Database::fetchOne("SELECT COUNT(*) as cnt FROM wastage_sales");
+                $nextSeq = (int)($count['cnt'] ?? 0) + 1;
+                $saleNumber = 'WST-' . date('Y') . '-' . sprintf("%04d", $nextSeq);
+
+                $bStatus = ($bPaid >= $bAmount && $bAmount > 0) ? 'PAID' : (($bPaid > 0) ? 'PARTIAL' : 'PENDING');
+                $bProgId = !empty($b['program_id']) ? (int)$b['program_id'] : $programId;
+
+                Database::execute(
+                    "INSERT INTO wastage_sales 
+                        (sale_number, buyer_name, buyer_phone, buyer_company, cutting_batch_id, program_id, wastage_type, weight, rate_per_kg, total_amount, paid_amount, payment_status, payment_method, payment_reference, invoice_number, sale_date, photo_url, notes, created_by, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
+                    [
+                        $saleNumber,
+                        $buyerName,
+                        $buyerPhone,
+                        $buyerCompany,
+                        (int)$b['id'],
+                        $bProgId,
+                        $wastageType,
+                        $bWeight,
+                        $ratePerKg,
+                        $bAmount,
+                        $bPaid,
+                        $bStatus,
+                        $paymentMethod,
+                        $paymentReference ?: null,
+                        $invoiceNumber ?: null,
+                        $saleDate,
+                        $photoUrl,
+                        $notes ? ($notes . (count($batches) > 1 ? " [Batch {$b['batch_number']}]" : "")) : null,
+                        $userId
+                    ]
+                );
+                $saleId = (int)Database::lastInsertId();
+
+                AuditService::log('production', 'create', 'wastage_sales', $saleId, null, [
+                    'sale_number'  => $saleNumber,
+                    'batch_number' => $b['batch_number'],
+                    'buyer_name'   => $buyerName,
+                    'weight'       => $bWeight,
+                    'total_amount' => $bAmount
+                ]);
+                $createdSales[] = $saleNumber;
+            }
+
+            Database::commit();
+
+            if (count($createdSales) > 1) {
+                Session::flash('success', "Wastage sale for " . count($createdSales) . " cutting batches recorded successfully (" . implode(', ', $createdSales) . ") for ₹" . number_format($totalAmount, 2));
+            } else {
+                Session::flash('success', "Wastage sale {$createdSales[0]} recorded successfully for ₹" . number_format($totalAmount, 2));
+            }
             Response::redirect(url('production/wastage'));
         } catch (Exception $e) {
+            Database::rollback();
             Session::flash('error', 'Error recording wastage sale: ' . $e->getMessage());
             Response::back();
         }
@@ -13358,7 +13420,26 @@ class ProductionController {
             return;
         }
 
-        $stitchingBatchId = !empty($_POST['stitching_batch_id']) ? (int)$_POST['stitching_batch_id'] : null;
+        $stitchingBatchIds = [];
+        if (!empty($_POST['stitching_batch_ids']) && is_array($_POST['stitching_batch_ids'])) {
+            foreach ($_POST['stitching_batch_ids'] as $sid) {
+                $sid = (int)$sid;
+                if ($sid > 0 && !in_array($sid, $stitchingBatchIds, true)) {
+                    $stitchingBatchIds[] = $sid;
+                }
+            }
+        }
+        if (empty($stitchingBatchIds) && !empty($_POST['stitching_batch_id'])) {
+            $sid = (int)$_POST['stitching_batch_id'];
+            if ($sid > 0) $stitchingBatchIds[] = $sid;
+        }
+
+        if (empty($stitchingBatchIds)) {
+            Session::flash('error', 'Select Stitching Module Batch / Program is required. Please choose a Stitching Batch.');
+            Response::back();
+            return;
+        }
+
         $buyerName = trim($_POST['buyer_name'] ?? '');
         $buyerPhone = trim($_POST['buyer_phone'] ?? '');
         $buyerCompany = trim($_POST['buyer_company'] ?? '');
@@ -13374,27 +13455,40 @@ class ProductionController {
         $notes = trim($_POST['notes'] ?? '');
         $programId = !empty($_POST['program_id']) ? (int)$_POST['program_id'] : null;
 
-        // 1. Select Stitching Module Batch / Program is required
-        if (empty($stitchingBatchId)) {
+        // Validation: Verify batches and prevent duplicate selling of already sold stitching batches
+        $batches = [];
+        $totalBatchWeight = 0.0;
+        $totalStitchedQty = 0;
+        foreach ($stitchingBatchIds as $sid) {
+            $alreadySold = Database::fetchOne(
+                "SELECT id, sale_number, quantity, unit_type, sale_date 
+                 FROM stitching_wastage_sales 
+                 WHERE stitching_batch_id = ?",
+                [$sid]
+            );
+            $sb = Database::fetchOne("SELECT id, batch_number, name, program_id, total_weight, stitched_qty FROM stitching_batches WHERE id = ?", [$sid]);
+            if (!$sb) continue;
+
+            if ($alreadySold) {
+                $sbNum = $sb['batch_number'] ?? ('#' . $sid);
+                Session::flash('error', "Validation Error: Stitching Batch [{$sbNum}] wastage has already been sold under Sale #{$alreadySold['sale_number']} ({$alreadySold['quantity']} {$alreadySold['unit_type']} on {$alreadySold['sale_date']}). Duplicate sale of the same stitching batch wastage is not allowed.");
+                Response::back();
+                return;
+            }
+            $sb['total_weight'] = (float)($sb['total_weight'] ?? 0.0);
+            $sb['stitched_qty'] = (int)($sb['stitched_qty'] ?? 0);
+            $totalBatchWeight += $sb['total_weight'];
+            $totalStitchedQty += $sb['stitched_qty'];
+            $batches[] = $sb;
+        }
+
+        if (empty($batches)) {
             Session::flash('error', 'Select Stitching Module Batch / Program is required. Please choose a Stitching Batch.');
             Response::back();
             return;
         }
 
-        // Validation: Prevent duplicate selling of already sold stitching batch scrap
-        $alreadySold = Database::fetchOne(
-            "SELECT id, sale_number, quantity, unit_type, sale_date 
-             FROM stitching_wastage_sales 
-             WHERE stitching_batch_id = ?",
-            [$stitchingBatchId]
-        );
-        if ($alreadySold) {
-            $sb = Database::fetchOne("SELECT batch_number, name FROM stitching_batches WHERE id = ?", [$stitchingBatchId]);
-            $sbNum = $sb['batch_number'] ?? ('#' . $stitchingBatchId);
-            Session::flash('error', "Validation Error: Stitching Batch [{$sbNum}] wastage has already been sold under Sale #{$alreadySold['sale_number']} ({$alreadySold['quantity']} {$alreadySold['unit_type']} on {$alreadySold['sale_date']}). Duplicate sale of the same stitching batch wastage is not allowed.");
-            Response::back();
-            return;
-        }
+        $stitchingBatchId = $batches[0]['id'];
 
         // 2. Scrap Buyer / Vendor Name is required
         if (empty($buyerName)) {
@@ -13477,53 +13571,99 @@ class ProductionController {
             $photoUrl = CloudinaryService::upload($_FILES['photo'], 'grm_inventory/stitching_wastage', 'image');
         }
 
-        // Generate sequential sale number e.g. STW-2026-0001
-        $count = Database::fetchOne("SELECT COUNT(*) as cnt FROM stitching_wastage_sales");
-        $nextSeq = (int)($count['cnt'] ?? 0) + 1;
-        $saleNumber = 'STW-' . date('Y') . '-' . sprintf("%04d", $nextSeq);
-
         $userId = (int)(Session::get('user_id') ?? 1);
 
         try {
-            Database::execute(
-                "INSERT INTO stitching_wastage_sales 
-                    (sale_number, buyer_name, buyer_phone, buyer_company, stitching_batch_id, program_id, waste_type, unit_type, quantity, rate_per_unit, total_amount, paid_amount, payment_status, payment_method, payment_reference, invoice_number, sale_date, photo_url, notes, created_by, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
-                [
-                    $saleNumber,
-                    $buyerName,
-                    $buyerPhone ?: null,
-                    $buyerCompany ?: null,
-                    $stitchingBatchId,
-                    $programId,
-                    $wasteType,
-                    $unitType,
-                    $quantity,
-                    $ratePerUnit,
-                    $totalAmount,
-                    $paidAmount,
-                    $paymentStatus,
-                    $paymentMethod,
-                    $paymentReference ?: null,
-                    $invoiceNumber ?: null,
-                    $saleDate,
-                    $photoUrl,
-                    $notes ?: null,
-                    $userId
-                ]
-            );
-            $saleId = (int)Database::lastInsertId();
+            Database::beginTransaction();
 
-            AuditService::log('production', 'create', 'stitching_wastage_sales', $saleId, null, [
-                'sale_number'  => $saleNumber,
-                'buyer_name'   => $buyerName,
-                'quantity'     => $quantity,
-                'total_amount' => $totalAmount
-            ]);
+            $remainingQty = $quantity;
+            $remainingAmount = $totalAmount;
+            $remainingPaid = $paidAmount;
+            $createdSales = [];
 
-            Session::flash('success', "Stitching wastage sale {$saleNumber} recorded successfully for ₹" . number_format($totalAmount, 2));
+            foreach ($batches as $idx => $b) {
+                $isLast = ($idx === count($batches) - 1);
+                
+                if ($isLast) {
+                    $bQty = round($remainingQty, 2);
+                    $bAmount = round($remainingAmount, 2);
+                    $bPaid = round($remainingPaid, 2);
+                } else {
+                    // Proportion based on weight (if KG) or stitched qty (if PCS/BUNDLES) or equal split
+                    if ($unitType === 'KG' && $totalBatchWeight > 0) {
+                        $prop = $b['total_weight'] / $totalBatchWeight;
+                    } elseif ($totalStitchedQty > 0) {
+                        $prop = $b['stitched_qty'] / $totalStitchedQty;
+                    } else {
+                        $prop = 1.0 / count($batches);
+                    }
+                    $bQty = max(0.01, round($quantity * $prop, 2));
+                    $bAmount = round($totalAmount * ($bQty / $quantity), 2);
+                    $bPaid = round($paidAmount * ($bQty / $quantity), 2);
+                    
+                    $remainingQty -= $bQty;
+                    $remainingAmount -= $bAmount;
+                    $remainingPaid -= $bPaid;
+                }
+
+                if ($bQty <= 0) continue;
+
+                $count = Database::fetchOne("SELECT COUNT(*) as cnt FROM stitching_wastage_sales");
+                $nextSeq = (int)($count['cnt'] ?? 0) + 1;
+                $saleNumber = 'STW-' . date('Y') . '-' . sprintf("%04d", $nextSeq);
+
+                $bStatus = ($bPaid >= $bAmount && $bAmount > 0) ? 'PAID' : (($bPaid > 0) ? 'PARTIAL' : 'PENDING');
+                $bProgId = !empty($b['program_id']) ? (int)$b['program_id'] : $programId;
+
+                Database::execute(
+                    "INSERT INTO stitching_wastage_sales 
+                        (sale_number, buyer_name, buyer_phone, buyer_company, stitching_batch_id, program_id, waste_type, unit_type, quantity, rate_per_unit, total_amount, paid_amount, payment_status, payment_method, payment_reference, invoice_number, sale_date, photo_url, notes, created_by, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
+                    [
+                        $saleNumber,
+                        $buyerName,
+                        $buyerPhone ?: null,
+                        $buyerCompany ?: null,
+                        (int)$b['id'],
+                        $bProgId,
+                        $wasteType,
+                        $unitType,
+                        $bQty,
+                        $ratePerUnit,
+                        $bAmount,
+                        $bPaid,
+                        $bStatus,
+                        $paymentMethod,
+                        $paymentReference ?: null,
+                        $invoiceNumber ?: null,
+                        $saleDate,
+                        $photoUrl,
+                        $notes ? ($notes . (count($batches) > 1 ? " [Batch {$b['batch_number']}]" : "")) : null,
+                        $userId
+                    ]
+                );
+                $saleId = (int)Database::lastInsertId();
+
+                AuditService::log('production', 'create', 'stitching_wastage_sales', $saleId, null, [
+                    'sale_number'  => $saleNumber,
+                    'batch_number' => $b['batch_number'],
+                    'buyer_name'   => $buyerName,
+                    'quantity'     => $bQty,
+                    'total_amount' => $bAmount
+                ]);
+                $createdSales[] = $saleNumber;
+            }
+
+            Database::commit();
+
+            if (count($createdSales) > 1) {
+                Session::flash('success', "Stitching wastage sale for " . count($createdSales) . " batches recorded successfully (" . implode(', ', $createdSales) . ") for ₹" . number_format($totalAmount, 2));
+            } else {
+                Session::flash('success', "Stitching wastage sale {$createdSales[0]} recorded successfully for ₹" . number_format($totalAmount, 2));
+            }
             Response::redirect(url('production/stitching-wastage'));
         } catch (Exception $e) {
+            Database::rollback();
             Session::flash('error', 'Error recording stitching wastage sale: ' . $e->getMessage());
             Response::back();
         }
