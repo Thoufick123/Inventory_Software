@@ -1204,7 +1204,31 @@ class WarehouseController {
             $currentWarehouse = $warehouses[0];
         }
 
-        $sql = "SELECT sb.*, 
+        // Production Inventory also writes to WAREHOUSE balances; use only non-production ledger movements for affected variants.
+        $warehouseQuantityExpression = "(CASE
+                    WHEN EXISTS (
+                        SELECT 1
+                        FROM stock_transactions st_prod_any
+                        WHERE st_prod_any.variant_id = sb.variant_id
+                          AND st_prod_any.location_type = 'WAREHOUSE'
+                          AND st_prod_any.reference_type IN ('production_purchases', 'qc_batches')
+                    )
+                    THEN COALESCE((
+                        SELECT SUM(st_warehouse.quantity)
+                        FROM stock_transactions st_warehouse
+                        WHERE st_warehouse.variant_id = sb.variant_id
+                          AND st_warehouse.location_type = 'WAREHOUSE'
+                          AND st_warehouse.location_id = sb.location_id
+                          AND st_warehouse.stock_state = sb.stock_state
+                          AND (
+                              st_warehouse.reference_type IS NULL
+                              OR st_warehouse.reference_type NOT IN ('production_purchases', 'qc_batches')
+                          )
+                    ), 0)
+                    ELSE sb.quantity
+                END)";
+        $sql = "SELECT sb.*,
+                       $warehouseQuantityExpression AS warehouse_quantity,
                        pv.sku, pv.qr_code, pv.selling_price, pv.mrp, pv.production_cost, pv.purchase_price, pv.is_complementary as variant_is_complementary,
                        pv.qr_type, pv.pack_quantity, pv.series_start_code, pv.series_end_code,
                        p.id as product_id, p.name as product_name, p.code as product_code, p.source_type, p.min_stock, p.material, p.image_url, p.is_complementary,
@@ -1236,6 +1260,8 @@ class WarehouseController {
                 JOIN warehouses w ON sb.location_id = w.id
                 WHERE sb.location_type = 'WAREHOUSE'";
         $inwardedProductionStockPredicate = "(
+                    $warehouseQuantityExpression > 0
+                    AND (
                     COALESCE(p.source_type, '') <> 'OWN_PRODUCTION'
                     OR EXISTS (
                         SELECT 1
@@ -1246,6 +1272,7 @@ class WarehouseController {
                           AND pb_inward.destination_warehouse_id = sb.location_id
                           AND pb_inward.status = 'RECEIVED'
                           AND (COALESCE(pbi_inward.received_qty, 0) + COALESCE(pbi_inward.damaged_qty, 0)) > 0
+                    )
                     )
                 )";
         $params = [];
@@ -1274,6 +1301,10 @@ class WarehouseController {
 
         $sql .= " ORDER BY p.name ASC, pv.sku ASC";
         $stockItems = Database::fetchAll($sql, $params);
+        foreach ($stockItems as &$stockItem) {
+            $stockItem['quantity'] = (float)($stockItem['warehouse_quantity'] ?? $stockItem['quantity'] ?? 0);
+        }
+        unset($stockItem);
 
         // Cross-warehouse search detection: if search is set, find if matching items exist in other warehouses (unscoped admins only)
         $otherWarehouseMatches = [];
@@ -1281,7 +1312,7 @@ class WarehouseController {
             $s = '%' . $search . '%';
             $otherSql = "SELECT sb.location_id as warehouse_id, w.name as warehouse_name, w.code as warehouse_code,
                                 p.id as product_id, p.name as product_name, p.code as product_code, pv.sku, p.source_type,
-                                SUM(sb.quantity) as total_qty, sb.stock_state
+                                SUM($warehouseQuantityExpression) as total_qty, sb.stock_state
                          FROM stock_balances sb
                          JOIN product_variants pv ON sb.variant_id = pv.id
                          JOIN products p ON pv.product_id = p.id
@@ -1458,10 +1489,10 @@ class WarehouseController {
         $compSoldRevenue = (float)($compSales['total_sold_revenue'] ?? 0.0);
 
         $warehouseSummary = Database::fetchOne(
-            "SELECT 
-                COALESCE(SUM(CASE WHEN sb.stock_state = 'AVAILABLE' THEN sb.quantity ELSE 0 END), 0) as available_qty,
-                COALESCE(SUM(CASE WHEN sb.stock_state = 'RESERVED' THEN sb.quantity ELSE 0 END), 0) as reserved_qty,
-                COALESCE(SUM(CASE WHEN sb.stock_state = 'DAMAGED' THEN sb.quantity ELSE 0 END), 0) as damaged_qty,
+            "SELECT
+                COALESCE(SUM(CASE WHEN sb.stock_state = 'AVAILABLE' THEN $warehouseQuantityExpression ELSE 0 END), 0) as available_qty,
+                COALESCE(SUM(CASE WHEN sb.stock_state = 'RESERVED' THEN $warehouseQuantityExpression ELSE 0 END), 0) as reserved_qty,
+                COALESCE(SUM(CASE WHEN sb.stock_state = 'DAMAGED' THEN $warehouseQuantityExpression ELSE 0 END), 0) as damaged_qty,
                 COUNT(DISTINCT sb.variant_id) as unique_variants
              FROM stock_balances sb
              JOIN product_variants pv ON pv.id = sb.variant_id
