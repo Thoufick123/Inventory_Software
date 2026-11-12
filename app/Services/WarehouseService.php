@@ -1600,10 +1600,9 @@ class WarehouseService {
                     }
                 }
             } else {
-                if (empty($normalizedQrCodes)) {
-                    throw new InvalidArgumentException('Scan the existing QR codes to remove before decreasing stock.');
+                if (!empty($normalizedQrCodes)) {
+                    self::validateAdjustmentQrCodes($variantId, $warehouseId, $normalizedQrCodes, $quantity);
                 }
-                self::validateAdjustmentQrCodes($variantId, $warehouseId, $normalizedQrCodes, $quantity);
             }
 
             $data['adjustment_type'] = $adjustmentType;
@@ -1816,7 +1815,7 @@ class WarehouseService {
      * Create Stock Adjustment Request.
      */
     public static function createAdjustment(array $data, int $userId): int {
-        if (($data['adjustment_type'] ?? '') === 'DECREASE') {
+        if (($data['adjustment_type'] ?? '') === 'DECREASE' && !empty($data['qr_codes'])) {
             self::validateAdjustmentQrCodes(
                 (int)$data['variant_id'],
                 (int)$data['warehouse_id'],
@@ -2077,22 +2076,24 @@ class WarehouseService {
             }
 
             if ($action === 'APPROVE') {
-                if ($adj['adjustment_type'] === 'DECREASE') {
-                    $tagCodes = json_decode((string)($adj['qr_codes'] ?? '[]'), true);
+                $tagCodes = json_decode((string)($adj['qr_codes'] ?? '[]'), true);
+                $tagCodes = is_array($tagCodes) ? $tagCodes : [];
+                if ($adj['adjustment_type'] === 'DECREASE' && !empty($tagCodes)) {
                     self::validateAdjustmentQrCodes(
                         (int)$adj['variant_id'],
                         (int)$adj['warehouse_id'],
-                        is_array($tagCodes) ? $tagCodes : [],
+                        $tagCodes,
                         (int)$adj['quantity'],
                         $id
                     );
                 }
 
                 // Execute stock adjustment through StockService
-                $qrNote = !empty($adj['qr_codes'])
+                $qrCodes = $tagCodes;
+                $qrNote = !empty($qrCodes)
                     ? ($adj['adjustment_type'] === 'DECREASE' ? ' Removed QR codes: ' : ' Added QR codes: ')
-                        . implode(', ', json_decode((string)$adj['qr_codes'], true) ?: [])
-                    : '';
+                        . implode(', ', $qrCodes)
+                    : ($adj['adjustment_type'] === 'DECREASE' ? ' Count-only decrease.' : '');
                 StockService::adjust(
                     variantId: (int)$adj['variant_id'],
                     locationType: 'WAREHOUSE',

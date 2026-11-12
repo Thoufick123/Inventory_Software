@@ -223,10 +223,11 @@ foreach ($variants as $variantOption) {
                         </div>
                         <div id="adjustmentProductScanMessage" class="small mt-2" role="status"></div>
                     </div>
-                    <div class="card bg-light border-0 mb-3 d-none" id="adjustmentProductDetails">
+                    <div class="card bg-light border-start border-4 border-primary shadow-sm mb-3 d-none" id="adjustmentProductDetails">
                         <div class="card-body py-3">
                             <div class="d-flex justify-content-between align-items-start gap-2">
                                 <div>
+                                    <div class="small text-primary text-uppercase fw-semibold mb-1">Scanned product</div>
                                     <div class="fw-bold" id="adjustmentProductName"></div>
                                     <div class="small text-muted"><span id="adjustmentProductSku"></span> · <span id="adjustmentProductVariant"></span></div>
                                 </div>
@@ -255,6 +256,7 @@ foreach ($variants as $variantOption) {
                             <input type="number" name="quantity" id="adjustmentQuantityInput" class="form-control" min="1" step="1" value="" placeholder="0" required>
                         </div>
                     </div>
+                    <div id="adjustmentQuantityMessage" class="small mb-3" role="status"></div>
                     <div class="alert alert-info py-2 small" id="adjustmentImmediateNotice">
                         <i class="bi bi-info-circle me-1"></i>Saving this form updates the selected warehouse stock immediately.
                     </div>
@@ -274,15 +276,8 @@ foreach ($variants as $variantOption) {
                             <i class="bi bi-info-circle me-1"></i>Enter the additional piece count. Stock will increase without generating a new series/complementary QR label.
                         </div>
                     </div>
-                    <div class="mb-3 d-none" id="adjustmentDecreaseControls">
-                        <label class="form-label small fw-semibold">Scan existing product QR codes to remove <span class="text-danger">*</span></label>
-                        <div class="input-group">
-                            <input type="text" id="adjustmentDecreaseScanInput" class="form-control" placeholder="Scan an existing product QR code..." autocomplete="off">
-                            <button type="button" class="btn btn-outline-danger" id="adjustmentDecreaseScanButton"><i class="bi bi-upc-scan me-1"></i>Scan QR</button>
-                        </div>
-                        <small class="form-text text-muted">Only available tags from the selected warehouse can be removed. Pack/series tags remove their full pack quantity.</small>
-                        <div id="adjustmentDecreaseMessage" class="small mt-2" role="status"></div>
-                        <div id="adjustmentDecreaseList" class="d-flex flex-wrap gap-1 mt-2"></div>
+                    <div class="alert alert-warning py-2 small d-none" id="adjustmentDecreaseCountNotice">
+                        <i class="bi bi-info-circle me-1"></i>Enter the pieces to remove; no second QR scan is needed. The count is limited to available stock, but individual QR tags are not checked.
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Primary Reason <span class="text-danger">*</span></label>
