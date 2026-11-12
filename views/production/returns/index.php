@@ -198,11 +198,11 @@
                                     <td class="text-end fw-bold text-danger">₹<?= number_format((float)$r['net_amount'], 2) ?></td>
                                     <td class="small text-muted"><?= date('d M Y', strtotime($r['created_at'])) ?></td>
                                     <td class="text-end">
-                                        <div class="d-flex justify-content-end gap-1">
-                                            <a href="<?= url('production/returns/view/' . $r['id']) ?>" class="btn btn-sm btn-outline-secondary" title="View Details">
+                                        <div class="action-btns-group justify-content-end">
+                                            <a href="<?= url('production/returns/view/' . $r['id']) ?>" class="btn btn-outline-info btn-action-icon" title="View Details">
                                                 <i class="bi bi-eye"></i>
                                             </a>
-                                            <a href="<?= url('production/returns/print/' . $r['id']) ?>" target="_blank" class="btn btn-sm btn-outline-primary" title="Print Credit Note">
+                                            <a href="<?= url('production/returns/print/' . $r['id']) ?>" target="_blank" class="btn btn-outline-success btn-action-icon" title="Print Credit Note">
                                                 <i class="bi bi-printer"></i>
                                             </a>
                                         </div>

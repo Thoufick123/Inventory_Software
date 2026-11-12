@@ -267,13 +267,13 @@
 
                                     <!-- Actions -->
                                     <td class="text-center">
-                                        <div class="btn-group btn-group-sm">
-                                            <button type="button" class="btn btn-outline-info" title="View Wastage Sale Details" aria-label="View Wastage Sale Details" onclick="openWastageDetails(<?= (int)$s['id'] ?>)">
+                                        <div class="action-btns-group justify-content-center">
+                                            <button type="button" class="btn btn-outline-info btn-action-icon" title="View Wastage Sale Details" aria-label="View Wastage Sale Details" onclick="openWastageDetails(<?= (int)$s['id'] ?>)">
                                                 <i class="bi bi-eye"></i>
                                             </button>
                                             <?php if (hasPermission('wastage', 'edit')): ?>
                                             <!-- Edit Button -->
-                                            <button type="button" class="btn btn-outline-primary" title="Edit Sale Details" onclick='openEditWastageModal(<?= json_encode($s) ?>)'>
+                                            <button type="button" class="btn btn-outline-primary btn-action-icon" title="Edit Sale Details" onclick='openEditWastageModal(<?= json_encode($s) ?>)'>
                                                 <i class="bi bi-pencil"></i>
                                             </button>
                                             <?php endif; ?>
@@ -282,7 +282,7 @@
                                             <!-- Delete Button -->
                                             <form method="POST" action="<?= url('production/wastage/delete/' . $s['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to delete Wastage Sale #<?= e(addslashes($s['sale_number'])) ?>?');">
                                                 <?= CSRF::field() ?>
-                                                <button type="submit" class="btn btn-outline-danger" title="Delete Sale Record">
+                                                <button type="submit" class="btn btn-outline-danger btn-action-icon" title="Delete Sale Record">
                                                     <i class="bi bi-trash"></i>
                                                 </button>
                                             </form>

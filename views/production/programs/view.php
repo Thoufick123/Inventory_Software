@@ -287,12 +287,14 @@
                                         <td class="text-warning"><?= number_format($c['wastage_qty']) ?> pcs</td>
                                         <td><span class="badge bg-info text-dark"><?= e($c['status']) ?></span></td>
                                         <td class="text-end">
-                                            <a href="<?= url('production/cutting/edit/' . $c['id']) ?>" class="btn btn-sm btn-outline-primary">
-                                                <i class="bi bi-pencil"></i>
-                                            </a>
-                                            <a href="<?= url('production/stitching/create?cutting_batch_id=' . $c['id']) ?>" class="btn btn-sm btn-outline-warning" title="Send to Stitching">
-                                                <i class="bi bi-threads"></i>
-                                            </a>
+                                            <div class="action-btns-group justify-content-end">
+                                                <a href="<?= url('production/cutting/edit/' . $c['id']) ?>" class="btn btn-outline-primary btn-action-icon" title="Edit Cutting Batch">
+                                                    <i class="bi bi-pencil"></i>
+                                                </a>
+                                                <a href="<?= url('production/stitching/create?cutting_batch_id=' . $c['id']) ?>" class="btn btn-outline-warning btn-action-icon" title="Send to Stitching">
+                                                    <i class="bi bi-threads"></i>
+                                                </a>
+                                            </div>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
@@ -334,14 +336,16 @@
                                         <td class="text-warning"><?= number_format($st['rework_qty']) ?> pcs</td>
                                         <td><span class="badge bg-warning text-dark"><?= e($st['status']) ?></span></td>
                                         <td class="text-end">
-                                            <a href="<?= url('production/stitching/edit/' . $st['id']) ?>" class="btn btn-sm btn-outline-primary">
-                                                <i class="bi bi-pencil"></i>
-                                            </a>
-                                            <?php if ($st['status'] === 'COMPLETED'): ?>
-                                                <a href="<?= url('production/qc/create?stitching_batch_id=' . $st['id']) ?>" class="btn btn-sm btn-outline-danger" title="Send to QC">
-                                                    <i class="bi bi-patch-check"></i>
+                                            <div class="action-btns-group justify-content-end">
+                                                <a href="<?= url('production/stitching/edit/' . $st['id']) ?>" class="btn btn-outline-primary btn-action-icon" title="Edit Stitching Batch">
+                                                    <i class="bi bi-pencil"></i>
                                                 </a>
-                                            <?php endif; ?>
+                                                <?php if ($st['status'] === 'COMPLETED'): ?>
+                                                    <a href="<?= url('production/qc/create?stitching_batch_id=' . $st['id']) ?>" class="btn btn-outline-success btn-action-icon" title="Send to QC">
+                                                        <i class="bi bi-patch-check"></i>
+                                                    </a>
+                                                <?php endif; ?>
+                                            </div>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
@@ -383,14 +387,14 @@
                                         <td class="text-danger"><?= number_format($lb['damaged_qty']) ?></td>
                                         <td><span class="badge bg-secondary"><?= e($lb['status']) ?></span></td>
                                         <td class="text-end">
-                                            <div class="btn-group btn-group-sm">
-                                                <a href="<?= url('production/labels/edit/' . $lb['id']) ?>" class="btn btn-outline-primary" title="Edit">
+                                            <div class="action-btns-group justify-content-end">
+                                                <a href="<?= url('production/labels/edit/' . $lb['id']) ?>" class="btn btn-outline-primary btn-action-icon" title="Edit Label Batch">
                                                     <i class="bi bi-pencil"></i>
                                                 </a>
                                                 <?php if (hasPermission('labels', 'delete')): ?>
                                                 <form method="POST" action="<?= url('production/labels/delete/' . $lb['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to delete Label Batch <?= e(addslashes($lb['batch_number'] ?: ('#' . $lb['id']))) ?>? This cannot be undone.');">
                                                     <?= CSRF::field() ?>
-                                                    <button type="submit" class="btn btn-outline-danger" title="Delete Label Batch">
+                                                    <button type="submit" class="btn btn-outline-danger btn-action-icon" title="Delete Label Batch">
                                                         <i class="bi bi-trash"></i>
                                                     </button>
                                                 </form>
@@ -446,14 +450,16 @@
                                         <td class="text-warning"><?= number_format($q['rework_qty']) ?> pcs</td>
                                         <td><span class="badge <?= $qcClass ?>"><?= e($q['status']) ?></span></td>
                                         <td class="text-end">
-                                            <a href="<?= url('production/qc/inspect/' . $q['id']) ?>" class="btn btn-sm btn-outline-danger">
-                                                <i class="bi bi-clipboard-check"></i> Inspect
-                                            </a>
-                                            <?php if ($q['passed_qty'] > 0): ?>
-                                                <a href="<?= url('production/batches/create?qc_batch_id=' . $q['id']) ?>" class="btn btn-sm btn-outline-success" title="Pack Passed Items">
-                                                    <i class="bi bi-box-seam"></i> Pack
+                                            <div class="action-btns-group justify-content-end">
+                                                <a href="<?= url('production/qc/inspect/' . $q['id']) ?>" class="btn btn-outline-primary btn-action-icon" title="Inspect QC Batch">
+                                                    <i class="bi bi-clipboard-check"></i>
                                                 </a>
-                                            <?php endif; ?>
+                                                <?php if ($q['passed_qty'] > 0): ?>
+                                                    <a href="<?= url('production/batches/create?qc_batch_id=' . $q['id']) ?>" class="btn btn-outline-success btn-action-icon" title="Pack Passed Items">
+                                                        <i class="bi bi-box-seam"></i>
+                                                    </a>
+                                                <?php endif; ?>
+                                            </div>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
@@ -493,14 +499,16 @@
                                         <td>Warehouse #<?= $bt['destination_warehouse_id'] ?></td>
                                         <td><span class="badge bg-primary"><?= e($bt['status']) ?></span></td>
                                         <td class="text-end">
-                                            <?php if ($bt['status'] === 'PREPARING'): ?>
-                                                <form method="POST" action="<?= url('production/batches/approve/' . $bt['id']) ?>" class="d-inline">
-                                                    <?= CSRF::field() ?>
-                                                    <button type="submit" class="btn btn-sm btn-outline-success">
-                                                        <i class="bi bi-check2"></i> Approve
-                                                    </button>
-                                                </form>
-                                            <?php endif; ?>
+                                            <div class="action-btns-group justify-content-end">
+                                                <?php if ($bt['status'] === 'PREPARING'): ?>
+                                                    <form method="POST" action="<?= url('production/batches/approve/' . $bt['id']) ?>" class="d-inline">
+                                                        <?= CSRF::field() ?>
+                                                        <button type="submit" class="btn btn-outline-success btn-action-icon" title="Approve Batch">
+                                                            <i class="bi bi-patch-check"></i>
+                                                        </button>
+                                                    </form>
+                                                <?php endif; ?>
+                                            </div>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>

@@ -511,18 +511,18 @@
                                         <small class="text-muted"><?= e($chan['phone'] ?: '-') ?></small>
                                     </td>
                                     <td class="text-end pe-3">
-                                        <div class="btn-group btn-group-sm">
-                                            <button type="button" class="btn btn-outline-secondary" title="View Channel Details"
+                                        <div class="action-btns-group justify-content-end">
+                                            <button type="button" class="btn btn-action-icon btn-outline-info" title="View Channel Details"
                                                     onclick="viewFacilityDetails('whatsapp', <?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-eye"></i>
                                             </button>
                                             <?php if ($canEditChannel): ?>
-                                            <button type="button" class="btn btn-outline-primary" title="Edit Channel" onclick="editChannel(<?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
+                                            <button type="button" class="btn btn-action-icon btn-outline-primary" title="Edit Channel" onclick="editChannel(<?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
                                             <?php endif; ?>
                                             <?php if ($canDeleteChannel): ?>
-                                            <button type="button" class="btn btn-outline-danger" title="Delete Channel"
+                                            <button type="button" class="btn btn-action-icon btn-outline-danger" title="Delete Channel"
                                                     onclick="confirmDeleteFacility('whatsapp', <?= (int)$chan['id'] ?>, '<?= addslashes(e($chan['name'])) ?>', '<?= url('admin/channels/delete/' . $chan['id']) ?>')">
                                                 <i class="bi bi-trash"></i>
                                             </button>
@@ -577,18 +577,18 @@
                                         <small class="text-muted"><?= e($chan['phone'] ?: '-') ?></small>
                                     </td>
                                     <td class="text-end pe-3">
-                                        <div class="btn-group btn-group-sm">
-                                            <button type="button" class="btn btn-outline-secondary" title="View Channel Details"
+                                        <div class="action-btns-group justify-content-end">
+                                            <button type="button" class="btn btn-action-icon btn-outline-info" title="View Channel Details"
                                                     onclick="viewFacilityDetails('website', <?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-eye"></i>
                                             </button>
                                             <?php if ($canEditChannel): ?>
-                                            <button type="button" class="btn btn-outline-primary" title="Edit Channel" onclick="editChannel(<?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
+                                            <button type="button" class="btn btn-action-icon btn-outline-primary" title="Edit Channel" onclick="editChannel(<?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
                                             <?php endif; ?>
                                             <?php if ($canDeleteChannel): ?>
-                                            <button type="button" class="btn btn-outline-danger" title="Delete Channel"
+                                            <button type="button" class="btn btn-action-icon btn-outline-danger" title="Delete Channel"
                                                     onclick="confirmDeleteFacility('website', <?= (int)$chan['id'] ?>, '<?= addslashes(e($chan['name'])) ?>', '<?= url('admin/channels/delete/' . $chan['id']) ?>')">
                                                 <i class="bi bi-trash"></i>
                                             </button>

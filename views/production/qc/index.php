@@ -119,37 +119,37 @@
                                 <td class="text-warning fw-semibold"><?= number_format($b['rework_qty']) ?> pcs</td>
                                 <td><span class="badge <?= $statusClass ?>"><?= e($b['status']) ?></span></td>
                                 <td class="text-center">
-                                    <div class="qc-action-group" role="group" aria-label="QC batch actions">
-                                        <a href="<?= url('production/qc/view/' . $b['id']) ?>" class="btn btn-outline-info qc-action-btn" title="View QC Details">
-                                            <i class="bi bi-eye"></i><span>View</span>
+                                    <div class="action-btns-group justify-content-center" role="group" aria-label="QC batch actions">
+                                        <a href="<?= url('production/qc/view/' . $b['id']) ?>" class="btn btn-outline-info btn-action-icon" title="View QC Details">
+                                            <i class="bi bi-eye"></i>
                                         </a>
                                         <?php if (hasPermission('qc', 'edit')): ?>
                                             <?php if ($b['rework_qty'] > 0 || $b['rejected_qty'] > 0): ?>
-                                                <a href="<?= url('production/qc/inspect/' . $b['id']) ?>" class="btn btn-warning text-dark fw-semibold qc-action-btn" title="Re-check Rework &amp; Rejected Products">
-                                                    <i class="bi bi-arrow-repeat"></i><span>Re-check <small>(<?= ($b['rework_qty'] + $b['rejected_qty']) ?>)</small></span>
+                                                <a href="<?= url('production/qc/inspect/' . $b['id']) ?>" class="btn btn-outline-warning btn-action-icon" title="Re-check Rework &amp; Rejected Products (<?= ($b['rework_qty'] + $b['rejected_qty']) ?>)">
+                                                    <i class="bi bi-arrow-repeat"></i>
                                                 </a>
                                             <?php else: ?>
-                                                <a href="<?= url('production/qc/inspect/' . $b['id']) ?>" class="btn btn-outline-primary qc-action-btn" title="Inspect &amp; Record Defects">
-                                                    <i class="bi bi-clipboard-check"></i><span>Inspect</span>
+                                                <a href="<?= url('production/qc/inspect/' . $b['id']) ?>" class="btn btn-outline-primary btn-action-icon" title="Inspect &amp; Record Defects">
+                                                    <i class="bi bi-clipboard-check"></i>
                                                 </a>
                                             <?php endif; ?>
                                         <?php endif; ?>
                                         <?php if (hasPermission('batches', 'create')): ?>
                                             <?php if (($b['remaining_qty'] ?? $b['passed_qty']) > 0): ?>
-                                                <a href="<?= url('production/batches/create?qc_batch_id=' . $b['id']) ?>" class="btn btn-outline-success qc-action-btn" title="Pack Passed Items into Box Batch (<?= $b['remaining_qty'] ?? $b['passed_qty'] ?> pcs remaining)">
-                                                    <i class="bi bi-box-seam"></i><span>Pack</span>
+                                                <a href="<?= url('production/batches/create?qc_batch_id=' . $b['id']) ?>" class="btn btn-outline-success btn-action-icon" title="Pack Passed Items into Box Batch (<?= $b['remaining_qty'] ?? $b['passed_qty'] ?> pcs remaining)">
+                                                    <i class="bi bi-box-seam"></i>
                                                 </a>
                                             <?php elseif (!empty($b['already_packed_qty']) && (int)$b['already_packed_qty'] > 0): ?>
-                                                <a href="<?= url('production/batches?search=' . urlencode($b['packed_batch_number'] ?? $b['program_number'] ?? '')) ?>" class="btn btn-outline-secondary qc-action-btn" title="Already Packed into Batch #<?= e($b['packed_batch_number'] ?? '') ?> (<?= $b['already_packed_qty'] ?> pcs)">
-                                                    <i class="bi bi-check2-all"></i><span>Packed</span>
+                                                <a href="<?= url('production/batches?search=' . urlencode($b['packed_batch_number'] ?? $b['program_number'] ?? '')) ?>" class="btn btn-outline-secondary btn-action-icon" title="Already Packed into Batch #<?= e($b['packed_batch_number'] ?? '') ?> (<?= $b['already_packed_qty'] ?> pcs)">
+                                                    <i class="bi bi-check2-all"></i>
                                                 </a>
                                             <?php endif; ?>
                                         <?php endif; ?>
                                         <?php if (hasPermission('qc', 'delete')): ?>
-                                        <form method="POST" action="<?= url('production/qc/delete/' . $b['id']) ?>" class="qc-action-form" onsubmit="return confirm('Are you sure you want to delete QC Inspection Batch #<?= $b['id'] ?>? This cannot be undone.');">
+                                        <form method="POST" action="<?= url('production/qc/delete/' . $b['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to delete QC Inspection Batch #<?= $b['id'] ?>? This cannot be undone.');">
                                             <?= CSRF::field() ?>
-                                            <button type="submit" class="btn btn-outline-danger qc-action-btn" title="Delete QC Batch">
-                                                <i class="bi bi-trash"></i><span>Delete</span>
+                                            <button type="submit" class="btn btn-outline-danger btn-action-icon" title="Delete QC Batch">
+                                                <i class="bi bi-trash"></i>
                                             </button>
                                         </form>
                                         <?php endif; ?>
@@ -275,43 +275,6 @@ if (document.readyState === 'loading') {
 </script>
 <style>
 .qc-actions-column {
-    min-width: 290px;
-}
-
-.qc-action-group {
-    display: inline-flex;
-    align-items: stretch;
-    justify-content: center;
-    gap: .35rem;
-    white-space: nowrap;
-}
-
-.qc-action-form {
-    display: flex;
-}
-
-.qc-action-btn {
-    width: 68px;
-    min-height: 60px;
-    padding: .35rem .2rem;
-    display: inline-flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: .25rem;
-    line-height: 1.1;
-    white-space: normal;
-}
-
-.qc-action-btn > i {
-    font-size: 1rem;
-}
-
-.qc-action-btn > span {
-    font-size: .72rem;
-}
-
-.qc-action-btn small {
-    font-size: .68rem;
+    width: 160px;
 }
 </style>

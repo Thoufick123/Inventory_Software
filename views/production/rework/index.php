@@ -259,27 +259,27 @@
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-end">
-                                    <div class="btn-group btn-group-sm">
-                                        <button type="button" class="btn btn-outline-primary" onclick="viewReworkDetails(<?= $rw['id'] ?>)" title="View Details">
+                                    <div class="action-btns-group justify-content-end">
+                                        <button type="button" class="btn btn-outline-info btn-action-icon" onclick="viewReworkDetails(<?= $rw['id'] ?>)" title="View Details">
                                             <i class="bi bi-eye"></i>
                                         </button>
                                         <?php if (hasPermission('warehouse_rework', 'edit') && $rw['status'] === 'RECEIVED'): ?>
-                                            <button type="button" class="btn btn-outline-warning text-dark" onclick="openStartReworkModal(<?= htmlspecialchars(json_encode($rw), ENT_QUOTES, 'UTF-8') ?>)" title="Assign &amp; Start Rework">
-                                                <i class="bi bi-play-circle me-1"></i> Start
+                                            <button type="button" class="btn btn-outline-warning btn-action-icon" onclick="openStartReworkModal(<?= htmlspecialchars(json_encode($rw), ENT_QUOTES, 'UTF-8') ?>)" title="Assign &amp; Start Rework">
+                                                <i class="bi bi-play-circle"></i>
                                             </button>
                                         <?php elseif (hasPermission('warehouse_rework', 'edit') && $rw['status'] === 'IN_REWORK'): ?>
-                                            <button type="button" class="btn btn-outline-success" onclick="openCompleteReworkModal(<?= htmlspecialchars(json_encode($rw), ENT_QUOTES, 'UTF-8') ?>)" title="Complete Rework &amp; Record Outcome">
-                                                <i class="bi bi-check2-circle me-1"></i> Complete
+                                            <button type="button" class="btn btn-outline-success btn-action-icon" onclick="openCompleteReworkModal(<?= htmlspecialchars(json_encode($rw), ENT_QUOTES, 'UTF-8') ?>)" title="Complete Rework &amp; Record Outcome">
+                                                <i class="bi bi-check2-circle"></i>
                                             </button>
                                         <?php elseif (hasPermission('warehouse_rework', 'dispatch') && $rw['status'] === 'REPAIRED'): ?>
-                                            <button type="button" class="btn btn-outline-info text-dark" onclick="openRedispatchModal(<?= htmlspecialchars(json_encode($rw), ENT_QUOTES, 'UTF-8') ?>)" title="Re-dispatch Repaired Goods to Warehouse">
-                                                <i class="bi bi-truck me-1"></i> Dispatch
+                                            <button type="button" class="btn btn-outline-primary btn-action-icon" onclick="openRedispatchModal(<?= htmlspecialchars(json_encode($rw), ENT_QUOTES, 'UTF-8') ?>)" title="Re-dispatch Repaired Goods to Warehouse">
+                                                <i class="bi bi-truck"></i>
                                             </button>
                                         <?php endif; ?>
                                         <?php if (hasPermission('warehouse_rework', 'delete')): ?>
                                             <form method="POST" action="<?= url('production/warehouse-rework/delete/' . $rw['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to delete rework record <?= e(addslashes($rw['rework_number'])) ?>?');">
                                                 <?= CSRF::field() ?>
-                                                <button type="submit" class="btn btn-outline-danger" title="Delete Record">
+                                                <button type="submit" class="btn btn-outline-danger btn-action-icon" title="Delete Record">
                                                     <i class="bi bi-trash"></i>
                                                 </button>
                                             </form>

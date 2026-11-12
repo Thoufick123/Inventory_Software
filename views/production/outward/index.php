@@ -184,12 +184,12 @@
                                 <td><?= formatDateTime($o['dispatch_date']) ?></td>
                                 <td><span class="badge bg-success px-2 py-1"><i class="bi bi-check-all me-1"></i>DISPATCHED</span></td>
                                 <td class="text-end">
-                                    <div class="d-inline-flex gap-1">
-                                        <button type="button" class="btn btn-sm btn-outline-primary fw-semibold" onclick="viewOutwardDispatchDetails(<?= $o['id'] ?>)" title="View Outward & Product Breakdown">
-                                            <i class="bi bi-eye me-1"></i> View
+                                    <div class="action-btns-group justify-content-end">
+                                        <button type="button" class="btn btn-outline-info btn-action-icon" onclick="viewOutwardDispatchDetails(<?= $o['id'] ?>)" title="View Outward & Product Breakdown">
+                                            <i class="bi bi-eye"></i>
                                         </button>
-                                        <button type="button" class="btn btn-sm btn-outline-secondary fw-semibold" onclick='openEditOutwardModal(<?= json_encode($o, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)' title="Edit Outward Dispatch">
-                                            <i class="bi bi-pencil me-1"></i> Edit
+                                        <button type="button" class="btn btn-outline-primary btn-action-icon" onclick='openEditOutwardModal(<?= json_encode($o, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)' title="Edit Outward Dispatch">
+                                            <i class="bi bi-pencil"></i>
                                         </button>
                                     </div>
                                 </td>

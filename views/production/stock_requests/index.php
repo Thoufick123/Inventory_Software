@@ -228,9 +228,11 @@
                                         <?php endif; ?>
                                     </td>
                                     <td class="text-end">
-                                        <a href="<?= url('production/stock-requests/view/' . $r['id']) ?>" class="btn btn-sm btn-outline-primary fw-semibold" title="View & Fulfill">
-                                            <i class="bi bi-eye me-1"></i> View &amp; Action
-                                        </a>
+                                        <div class="action-btns-group justify-content-end">
+                                            <a href="<?= url('production/stock-requests/view/' . $r['id']) ?>" class="btn btn-outline-info btn-action-icon" title="View & Fulfill">
+                                                <i class="bi bi-eye"></i>
+                                            </a>
+                                        </div>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>

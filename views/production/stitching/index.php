@@ -110,24 +110,24 @@
                                 </td>
                                 <td><span class="badge <?= $statusClass ?>"><?= e($b['status']) ?></span></td>
                                 <td class="text-end">
-                                    <div class="d-inline-flex gap-1 align-items-center">
-                                        <a href="<?= url('production/stitching/view/' . $b['id']) ?>" class="btn btn-sm btn-outline-info" title="View Stitching Batch">
+                                    <div class="action-btns-group justify-content-end">
+                                        <a href="<?= url('production/stitching/view/' . $b['id']) ?>" class="btn btn-outline-info btn-action-icon" title="View Stitching Batch">
                                             <i class="bi bi-eye"></i>
                                         </a>
                                         <?php if (hasPermission('stitching', 'edit')): ?>
-                                        <a href="<?= url('production/stitching/edit/' . $b['id']) ?>" class="btn btn-sm btn-outline-primary" title="Edit Stitching Batch">
+                                        <a href="<?= url('production/stitching/edit/' . $b['id']) ?>" class="btn btn-outline-primary btn-action-icon" title="Edit Stitching Batch">
                                             <i class="bi bi-pencil"></i>
                                         </a>
                                         <?php endif; ?>
                                         <?php if ($b['status'] === 'COMPLETED' && hasPermission('qc', 'create')): ?>
-                                            <a href="<?= url('production/qc/create?stitching_batch_id=' . $b['id']) ?>" class="btn btn-sm btn-outline-success" title="Send to QC Check">
+                                            <a href="<?= url('production/qc/create?stitching_batch_id=' . $b['id']) ?>" class="btn btn-outline-success btn-action-icon" title="Send to QC Check">
                                                 <i class="bi bi-patch-check"></i>
                                             </a>
                                         <?php endif; ?>
                                         <?php if (hasPermission('stitching', 'delete')): ?>
                                         <form method="POST" action="<?= url('production/stitching/delete/' . $b['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this stitching batch?');">
                                             <?= CSRF::field() ?>
-                                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                                            <button type="submit" class="btn btn-outline-danger btn-action-icon" title="Delete">
                                                 <i class="bi bi-trash"></i>
                                             </button>
                                         </form>

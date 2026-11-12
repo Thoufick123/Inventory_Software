@@ -261,24 +261,24 @@
                                     <span class="badge <?= $statusClass ?>"><?= e($b['status']) ?></span>
                                 </td>
                                 <td class="text-end">
-                                    <div class="btn-group btn-group-sm">
-                                        <a href="<?= url('production/cutting/view/' . $b['id']) ?>" class="btn btn-outline-info" title="View Cutting Batch">
+                                    <div class="action-btns-group justify-content-end">
+                                        <a href="<?= url('production/cutting/view/' . $b['id']) ?>" class="btn btn-action-icon btn-outline-info" title="View Cutting Batch">
                                             <i class="bi bi-eye"></i>
                                         </a>
                                         <?php if (hasPermission('cutting', 'edit')): ?>
-                                        <a href="<?= url('production/cutting/edit/' . $b['id']) ?>" class="btn btn-outline-primary" title="Edit Batch">
+                                        <a href="<?= url('production/cutting/edit/' . $b['id']) ?>" class="btn btn-action-icon btn-outline-primary" title="Edit Batch">
                                             <i class="bi bi-pencil"></i>
                                         </a>
                                         <?php endif; ?>
                                         <?php if (hasPermission('stitching', 'create')): ?>
-                                        <a href="<?= url('production/stitching/create?cutting_batch_id=' . $b['id']) ?>" class="btn btn-outline-warning" title="Create Stitching Job">
+                                        <a href="<?= url('production/stitching/create?cutting_batch_id=' . $b['id']) ?>" class="btn btn-action-icon btn-outline-warning" title="Create Stitching Job">
                                             <i class="bi bi-threads"></i>
                                         </a>
                                         <?php endif; ?>
                                         <?php if (hasPermission('cutting', 'delete')): ?>
                                         <form method="POST" action="<?= url('production/cutting/delete/' . $b['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to delete Cutting Batch \'<?= e(addslashes($b['name'] ?: $b['batch_number'])) ?>\'?');">
                                             <?= CSRF::field() ?>
-                                            <button type="submit" class="btn btn-outline-danger" title="Delete Cutting Batch">
+                                            <button type="submit" class="btn btn-action-icon btn-outline-danger" title="Delete Cutting Batch">
                                                 <i class="bi bi-trash"></i>
                                             </button>
                                         </form>
