@@ -2403,10 +2403,61 @@ class WarehouseService {
         $poId = (int)($payload['purchase_order_id'] ?? $payload['po_id'] ?? 0);
         $warehouseId = (int)($payload['warehouse_id'] ?? 1);
         $items = $payload['items'] ?? [];
+        $newItemsPayload = $payload['new_items'] ?? [];
         $actionType = $payload['action_type'] ?? 'RETURN'; // 'RETURN', 'EXCHANGE_SAME', 'EXCHANGE_DIFFERENT', 'CREDIT_NOTE'
         $reason = $payload['reason'] ?? 'Customer Return / Exchange';
         $refundMode = $payload['refund_mode'] ?? $payload['settlement_mode'] ?? 'CASH';
         $settlementMode = $payload['settlement_mode'] ?? $refundMode ?? 'CASH';
+
+        if ($actionType !== 'EXCHANGE_DIFFERENT') {
+            $newItemsPayload = [];
+        } elseif (!is_array($newItemsPayload)) {
+            throw new InvalidArgumentException("Invalid replacement product list.");
+        }
+
+        $newItemsByVariant = [];
+        foreach ($newItemsPayload as $newItem) {
+            if (!is_array($newItem)) {
+                throw new InvalidArgumentException("Invalid replacement product.");
+            }
+
+            $newVariantId = (int)($newItem['variant_id'] ?? 0);
+            $rawNewQuantity = $newItem['quantity'] ?? null;
+            if ($newVariantId <= 0 || !is_numeric($rawNewQuantity) || (float)$rawNewQuantity <= 0 || (float)$rawNewQuantity !== (float)(int)$rawNewQuantity) {
+                throw new InvalidArgumentException("Replacement products must have a valid product and whole-number quantity.");
+            }
+
+            $newQuantity = (int)$rawNewQuantity;
+            $rawScannedTags = $newItem['scanned_tags'] ?? [];
+            if (is_string($rawScannedTags)) {
+                $rawScannedTags = explode(',', $rawScannedTags);
+            }
+            if (!is_array($rawScannedTags)) {
+                $rawScannedTags = [];
+            }
+            $scannedTags = array_values(array_unique(array_filter(array_map(
+                static fn($tag) => trim((string)$tag),
+                $rawScannedTags
+            ))));
+
+            if (!isset($newItemsByVariant[$newVariantId])) {
+                $newItemsByVariant[$newVariantId] = [
+                    'variant_id' => $newVariantId,
+                    'quantity' => 0,
+                    'scanned_tags' => [],
+                ];
+            }
+            $newItemsByVariant[$newVariantId]['quantity'] += $newQuantity;
+            $newItemsByVariant[$newVariantId]['scanned_tags'] = array_values(array_unique(array_merge(
+                $newItemsByVariant[$newVariantId]['scanned_tags'],
+                $scannedTags
+            )));
+        }
+        $newItems = array_values($newItemsByVariant);
+
+        if ($actionType === 'EXCHANGE_DIFFERENT' && empty($newItems)) {
+            throw new InvalidArgumentException("Please scan at least one replacement product from warehouse stock.");
+        }
 
         if ($actionType === 'CREDIT_NOTE') {
             $refundMode = 'CREDIT_NOTE';
@@ -2646,7 +2697,6 @@ class WarehouseService {
             }
 
             // If Different Product Exchange with in-place selected new items:
-            $newItems = $payload['new_items'] ?? [];
             $hasDifferentProductExchange = false;
 
             if ($actionType === 'EXCHANGE_DIFFERENT' && !empty($newItems)) {
@@ -2655,11 +2705,15 @@ class WarehouseService {
                     $nQty = (int)($nItem['quantity'] ?? 0);
                     if ($nVarId <= 0 || $nQty <= 0) continue;
 
-                    $nVar = Database::fetchOne("SELECT pv.*, p.name as product_name, sz.name as size_name, cl.name as color_name 
+                    $nVar = Database::fetchOne("SELECT pv.*, p.name as product_name, sz.name as size_name, cl.name as color_name,
+                                                       COALESCE(pv.is_complementary, p.is_complementary, 0) as is_complementary,
+                                                       COALESCE(p.is_complementary, 0) as prod_is_comp,
+                                                       COALESCE(wc.category_type, 'NORMAL') as category_type
                                                FROM product_variants pv 
                                                JOIN products p ON pv.product_id = p.id 
                                                LEFT JOIN sizes sz ON pv.size_id = sz.id 
                                                LEFT JOIN colors cl ON pv.color_id = cl.id 
+                                               LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
                                                WHERE pv.id = ?", [$nVarId]);
                     $availStock = (int)(Database::fetchOne("SELECT COALESCE(SUM(quantity), 0) as stock FROM stock_balances WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND location_id = ? AND stock_state = 'AVAILABLE'", [$nVarId, $targetWarehouseId])['stock'] ?? 0);
                     if ($availStock < $nQty) {
@@ -2668,7 +2722,15 @@ class WarehouseService {
                     }
 
                     $hasDifferentProductExchange = true;
-                    $nPrice = (float)($nVar['selling_price'] ?? 0);
+                    $isComplementary = !empty($nVar['is_complementary'])
+                        || !empty($nVar['prod_is_comp'])
+                        || ($nVar['category_type'] ?? '') === 'COMPLEMENTARY';
+                    $stockPrice = (float)($nVar['purchase_price'] ?? 0);
+                    if ($stockPrice <= 0) $stockPrice = (float)($nVar['production_cost'] ?? 0);
+                    if ($stockPrice <= 0) $stockPrice = (float)(($nVar['selling_price'] ?? 0) > 0 ? $nVar['selling_price'] : ($nVar['mrp'] ?? 0));
+                    $nPrice = $isComplementary
+                        ? $stockPrice
+                        : (float)(($nVar['selling_price'] ?? 0) > 0 ? $nVar['selling_price'] : ($nVar['mrp'] ?? 0));
                     $nLineTotal = $nPrice * $nQty;
                     $totalNewExchangeAmount += $nLineTotal;
 
@@ -2747,8 +2809,23 @@ class WarehouseService {
                         $nVarId = (int)($nItem['variant_id'] ?? 0);
                         $nQty = (int)($nItem['quantity'] ?? 0);
                         if ($nVarId <= 0 || $nQty <= 0) continue;
-                        $nVar = Database::fetchOne("SELECT selling_price, sku FROM product_variants WHERE id = ?", [$nVarId]);
-                        $nPrice = (float)($nVar['selling_price'] ?? 0);
+                        $nVar = Database::fetchOne("SELECT pv.*,
+                                                           COALESCE(pv.is_complementary, p.is_complementary, 0) as is_complementary,
+                                                           COALESCE(p.is_complementary, 0) as prod_is_comp,
+                                                           COALESCE(wc.category_type, 'NORMAL') as category_type
+                                                    FROM product_variants pv
+                                                    JOIN products p ON pv.product_id = p.id
+                                                    LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+                                                    WHERE pv.id = ?", [$nVarId]);
+                        $isComplementary = !empty($nVar['is_complementary'])
+                            || !empty($nVar['prod_is_comp'])
+                            || ($nVar['category_type'] ?? '') === 'COMPLEMENTARY';
+                        $stockPrice = (float)($nVar['purchase_price'] ?? 0);
+                        if ($stockPrice <= 0) $stockPrice = (float)($nVar['production_cost'] ?? 0);
+                        if ($stockPrice <= 0) $stockPrice = (float)(($nVar['selling_price'] ?? 0) > 0 ? $nVar['selling_price'] : ($nVar['mrp'] ?? 0));
+                        $nPrice = $isComplementary
+                            ? $stockPrice
+                            : (float)(($nVar['selling_price'] ?? 0) > 0 ? $nVar['selling_price'] : ($nVar['mrp'] ?? 0));
                         $rawPieceTags = is_array($nItem['scanned_tags'] ?? null)
                             ? $nItem['scanned_tags']
                             : (is_string($nItem['piece_tag'] ?? null) ? [$nItem['piece_tag']] : (is_string($nItem['qr_code'] ?? null) ? explode(',', $nItem['qr_code']) : []));

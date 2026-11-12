@@ -208,11 +208,11 @@ if (empty($currentDept)) $currentDept = 'all';
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th class="ps-4">Staff Member</th>
-                            <th>Department &amp; Scope</th>
-                            <th>Role &amp; Facility</th>
-                            <th>Status</th>
-                            <th class="text-end pe-4">Actions</th>
+                            <th class="ps-4" style="min-width: 220px;">Staff Member</th>
+                            <th style="min-width: 150px;">Department &amp; Scope</th>
+                            <th style="min-width: 180px;">Role &amp; Facility</th>
+                            <th style="min-width: 100px;">Status</th>
+                            <th class="text-end pe-4" style="min-width: 420px;">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -297,31 +297,30 @@ if (empty($currentDept)) $currentDept = 'all';
                                             </span>
                                         <?php endif; ?>
                                     </td>
-                                    <td class="text-end pe-4">
-                                        <div class="btn-group">
+                                    <td class="text-end pe-4" style="white-space: nowrap;">
+                                        <div class="d-flex align-items-center justify-content-end gap-1 flex-nowrap">
                                             <a href="<?= url('admin/staff/view/' . $s['id']) ?>" class="btn btn-sm btn-outline-primary" title="View Staff Details">
-                                                <i class="bi bi-eye"></i> View
+                                                <i class="bi bi-eye me-1"></i>View
                                             </a>
                                             <a href="<?= url('system/audit?user_id=' . $s['id']) ?>" class="btn btn-sm btn-outline-info" title="View Activity & Audit Logs for <?= e($s['full_name']) ?>">
-                                                <i class="bi bi-clock-history"></i> Logs
+                                                <i class="bi bi-clock-history me-1"></i>Logs
                                             </a>
                                             <?php if (hasPermission('staff', 'edit')): ?>
-                                            <a href="<?= url('admin/staff/edit/' . $s['id']) ?>" class="btn btn-sm btn-outline-primary" title="Edit Staff Member">
-                                                <i class="bi bi-pencil"></i> Edit
+                                            <a href="<?= url('admin/staff/edit/' . $s['id']) ?>" class="btn btn-sm btn-outline-secondary" title="Edit Staff Member">
+                                                <i class="bi bi-pencil me-1"></i>Edit
                                             </a>
-                                            <form method="POST" action="<?= url('admin/staff/toggle/' . $s['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to <?= $s['is_active'] ? 'deactivate' : 'activate' ?> this staff member?');">
+                                            <form method="POST" action="<?= url('admin/staff/toggle/' . $s['id']) ?>" class="d-inline m-0" onsubmit="return confirm('Are you sure you want to <?= $s['is_active'] ? 'deactivate' : 'activate' ?> this staff member?');">
                                                 <?= CSRF::field() ?>
-                                                <button type="submit" class="btn btn-sm <?= $s['is_active'] ? 'btn-outline-warning' : 'btn-outline-success' ?>" title="<?= $s['is_active'] ? 'Deactivate' : 'Activate' ?>">
-                                                    <i class="bi <?= $s['is_active'] ? 'bi-person-x' : 'bi-person-check' ?>"></i>
-                                                    <?= $s['is_active'] ? 'Deactivate' : 'Activate' ?>
+                                                <button type="submit" class="btn btn-sm <?= $s['is_active'] ? 'btn-outline-warning' : 'btn-outline-success' ?>" title="<?= $s['is_active'] ? 'Deactivate Staff Member' : 'Activate Staff Member' ?>">
+                                                    <i class="bi <?= $s['is_active'] ? 'bi-person-x' : 'bi-person-check' ?> me-1"></i><?= $s['is_active'] ? 'Deactivate' : 'Activate' ?>
                                                 </button>
                                             </form>
                                             <?php endif; ?>
                                             <?php if (hasPermission('staff', 'delete')): ?>
-                                            <form method="POST" action="<?= url('admin/staff/delete/' . $s['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to permanently delete staff member \'<?= e($s['full_name']) ?>\'?');">
+                                            <form method="POST" action="<?= url('admin/staff/delete/' . $s['id']) ?>" class="d-inline m-0" onsubmit="return confirm('Are you sure you want to permanently delete staff member \'<?= e($s['full_name']) ?>\'?');">
                                                 <?= CSRF::field() ?>
                                                 <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete Staff Member">
-                                                    <i class="bi bi-trash"></i> Delete
+                                                    <i class="bi bi-trash me-1"></i>Delete
                                                 </button>
                                             </form>
                                             <?php endif; ?>

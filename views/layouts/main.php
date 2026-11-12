@@ -161,9 +161,7 @@ if (!empty($authUser['shop_name'])) {
         }
 
         /* Modern Rounded Square Action Buttons (Global Standard) */
-        .action-btns-group,
-        td .btn-group.btn-group-sm,
-        td .btn-group {
+        .action-btns-group {
             display: inline-flex !important;
             align-items: center !important;
             gap: 6px !important;
@@ -172,10 +170,6 @@ if (!empty($authUser['shop_name'])) {
         .action-btns-group > .btn,
         .action-btns-group > form,
         .action-btns-group > form > .btn,
-        td .btn-group.btn-group-sm > .btn,
-        td .btn-group.btn-group-sm > form > .btn,
-        td .btn-group > .btn,
-        td .btn-group > form > .btn,
         .btn-action-icon {
             width: 34px !important;
             height: 34px !important;
@@ -198,7 +192,6 @@ if (!empty($authUser['shop_name'])) {
         }
 
         .action-btns-group > .btn:hover,
-        td .btn-group.btn-group-sm > .btn:hover,
         .btn-action-icon:hover {
             transform: translateY(-1px);
         }
@@ -206,18 +199,14 @@ if (!empty($authUser['shop_name'])) {
         /* 1. VIEW / INFO BUTTON (Cyan / Light Blue) */
         .btn-action-icon.btn-outline-info,
         .btn-action-icon.btn-action-view,
-        .action-btns-group > .btn-outline-info,
-        td .btn-group.btn-group-sm > .btn-outline-info,
-        td .btn-outline-secondary:has(.bi-eye) {
+        .action-btns-group > .btn-outline-info {
             border-color: #00c0ef !important;
             color: #00c0ef !important;
             background-color: #ffffff !important;
         }
         .btn-action-icon.btn-outline-info:hover,
         .btn-action-icon.btn-action-view:hover,
-        .action-btns-group > .btn-outline-info:hover,
-        td .btn-group.btn-group-sm > .btn-outline-info:hover,
-        td .btn-outline-secondary:has(.bi-eye):hover {
+        .action-btns-group > .btn-outline-info:hover {
             background-color: #00c0ef !important;
             border-color: #00c0ef !important;
             color: #ffffff !important;
@@ -227,16 +216,14 @@ if (!empty($authUser['shop_name'])) {
         /* 2. EDIT / PRIMARY BUTTON (Blue) */
         .btn-action-icon.btn-outline-primary,
         .btn-action-icon.btn-action-edit,
-        .action-btns-group > .btn-outline-primary,
-        td .btn-group.btn-group-sm > .btn-outline-primary {
+        .action-btns-group > .btn-outline-primary {
             border-color: #2563eb !important;
             color: #2563eb !important;
             background-color: #ffffff !important;
         }
         .btn-action-icon.btn-outline-primary:hover,
         .btn-action-icon.btn-action-edit:hover,
-        .action-btns-group > .btn-outline-primary:hover,
-        td .btn-group.btn-group-sm > .btn-outline-primary:hover {
+        .action-btns-group > .btn-outline-primary:hover {
             background-color: #2563eb !important;
             border-color: #2563eb !important;
             color: #ffffff !important;
@@ -246,16 +233,14 @@ if (!empty($authUser['shop_name'])) {
         /* 3. VERIFY / SUCCESS BUTTON (Green) */
         .btn-action-icon.btn-outline-success,
         .btn-action-icon.btn-action-check,
-        .action-btns-group > .btn-outline-success,
-        td .btn-group.btn-group-sm > .btn-outline-success {
+        .action-btns-group > .btn-outline-success {
             border-color: #10b981 !important;
             color: #10b981 !important;
             background-color: #ffffff !important;
         }
         .btn-action-icon.btn-outline-success:hover,
         .btn-action-icon.btn-action-check:hover,
-        .action-btns-group > .btn-outline-success:hover,
-        td .btn-group.btn-group-sm > .btn-outline-success:hover {
+        .action-btns-group > .btn-outline-success:hover {
             background-color: #10b981 !important;
             border-color: #10b981 !important;
             color: #ffffff !important;
@@ -266,8 +251,6 @@ if (!empty($authUser['shop_name'])) {
         .btn-action-icon.btn-outline-danger,
         .btn-action-icon.btn-action-delete,
         .action-btns-group > .btn-outline-danger,
-        td .btn-group.btn-group-sm > .btn-outline-danger,
-        td .btn-group.btn-group-sm > form > .btn-outline-danger,
         .action-btns-group > form > .btn-outline-danger {
             border-color: #ef4444 !important;
             color: #ef4444 !important;
@@ -276,8 +259,6 @@ if (!empty($authUser['shop_name'])) {
         .btn-action-icon.btn-outline-danger:hover,
         .btn-action-icon.btn-action-delete:hover,
         .action-btns-group > .btn-outline-danger:hover,
-        td .btn-group.btn-group-sm > .btn-outline-danger:hover,
-        td .btn-group.btn-group-sm > form > .btn-outline-danger:hover,
         .action-btns-group > form > .btn-outline-danger:hover {
             background-color: #ef4444 !important;
             border-color: #ef4444 !important;
@@ -288,16 +269,14 @@ if (!empty($authUser['shop_name'])) {
         /* 5. WARNING / SPECIAL ACTIONS (Amber) */
         .btn-action-icon.btn-outline-warning,
         .btn-action-icon.btn-action-warning,
-        .action-btns-group > .btn-outline-warning,
-        td .btn-group.btn-group-sm > .btn-outline-warning {
+        .action-btns-group > .btn-outline-warning {
             border-color: #f59e0b !important;
             color: #f59e0b !important;
             background-color: #ffffff !important;
         }
         .btn-action-icon.btn-outline-warning:hover,
         .btn-action-icon.btn-action-warning:hover,
-        .action-btns-group > .btn-outline-warning:hover,
-        td .btn-group.btn-group-sm > .btn-outline-warning:hover {
+        .action-btns-group > .btn-outline-warning:hover {
             background-color: #f59e0b !important;
             border-color: #f59e0b !important;
             color: #ffffff !important;
@@ -306,15 +285,13 @@ if (!empty($authUser['shop_name'])) {
 
         /* 6. DARK BUTTONS (e.g. Roll QR print) */
         .btn-action-icon.btn-dark,
-        .action-btns-group > .btn-dark,
-        td .btn-group.btn-group-sm > .btn-dark {
+        .action-btns-group > .btn-dark {
             border-color: #1e293b !important;
             color: #f8fafc !important;
             background-color: #1e293b !important;
         }
         .btn-action-icon.btn-dark:hover,
-        .action-btns-group > .btn-dark:hover,
-        td .btn-group.btn-group-sm > .btn-dark:hover {
+        .action-btns-group > .btn-dark:hover {
             background-color: #0f172a !important;
             border-color: #0f172a !important;
             color: #ffffff !important;
