@@ -3079,6 +3079,26 @@ class ProductionController {
             }
             $pieceWeight = count($activeSequences) > 0 ? round($weight / count($activeSequences), 2) : 0.0;
 
+            $poNumber = null;
+            if (!empty($r['id'])) {
+                try {
+                    $pRow = Database::fetchOne(
+                        "SELECT pp.purchase_number
+                         FROM production_purchase_items ppi
+                         JOIN production_purchases pp ON pp.id = ppi.purchase_id
+                         WHERE ppi.seller_roll_id = ?
+                         LIMIT 1",
+                        [(int)$r['id']]
+                    );
+                    if (!empty($pRow['purchase_number'])) {
+                        $poNumber = $pRow['purchase_number'];
+                    }
+                } catch (\Throwable $e) {}
+            }
+            if (!$poNumber) {
+                $poNumber = $rollNum;
+            }
+
             foreach ($activeSequences as $i => $seq) {
                 $code = sprintf('%s%02d', $prefix, $seq);
                 $payload = $code;
@@ -3090,6 +3110,7 @@ class ProductionController {
                     'total_qty'     => count($activeSequences),
                     'roll_id'       => $r['id'] ?? 0,
                     'roll_number'   => $rollNum,
+                    'po_number'     => $poNumber,
                     'color'         => $color,
                     'design_name'   => $design,
                     'weight'        => $pieceWeight,
