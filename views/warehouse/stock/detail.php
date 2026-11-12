@@ -440,7 +440,7 @@
                                     <!-- Left: QR Code + Tag Code Badge -->
                                     <div class="text-center flex-shrink-0" style="width: 80px;">
                                         <div class="piece-qr-box bg-white p-1 rounded border shadow-xs d-flex align-items-center justify-content-center mx-auto" id="qr-box-<?= $index ?>" data-json="<?= htmlspecialchars($qrPayload, ENT_QUOTES, 'UTF-8') ?>" style="width: 72px; height: 72px;"></div>
-                                        <div class="badge bg-dark text-white font-monospace mt-1 px-1 py-0.5 w-100 text-truncate shadow-xs" style="font-size: 0.62rem; letter-spacing: 0.2px;" title="<?= e($pq['tag_code']) ?>">
+                                        <div class="badge bg-white text-dark border font-monospace mt-1 px-1 py-0.5 w-100 text-truncate shadow-xs" style="font-size: 0.62rem; letter-spacing: 0.2px; background-color: #ffffff !important; color: #0f172a !important;" title="<?= e($pq['tag_code']) ?>">
                                             <?= e($pq['tag_code']) ?>
                                         </div>
                                     </div>
@@ -1329,7 +1329,7 @@
                     <div class="d-flex align-items-start gap-2.5">
                         <div class="text-center flex-shrink-0">
                             <div id="singleQRCanvas" class="bg-white p-1 rounded border shadow-xs d-flex align-items-center justify-content-center" style="width: 78px; height: 78px;"></div>
-                            <div class="badge bg-dark text-white font-monospace mt-1 px-2 py-1 w-100" id="previewDamageCode" style="font-size: 0.75rem; letter-spacing: 0.5px;">TTS092601</div>
+                            <div class="badge bg-white text-dark border font-monospace mt-1 px-2 py-1 w-100" id="previewDamageCode" style="font-size: 0.75rem; letter-spacing: 0.5px; background-color: #ffffff !important; color: #0f172a !important;">TTS092601</div>
                         </div>
                         <div class="overflow-hidden ms-1 flex-grow-1" style="margin-top: 2px;">
                             <div class="fw-bold text-uppercase text-dark text-truncate" id="previewBrandName" style="font-size: 0.82rem; letter-spacing: 0.3px;">GRM WAREHOUSE</div>
@@ -1909,7 +1909,9 @@ function previewSingleTag(index) {
 
     const codeBadgeEl = document.getElementById('previewDamageCode');
     codeBadgeEl.textContent = item.tag_code;
-    codeBadgeEl.className = 'badge bg-dark text-white font-monospace mt-1 px-2 py-1 w-100';
+    codeBadgeEl.className = 'badge bg-white text-dark border font-monospace mt-1 px-2 py-1 w-100';
+    codeBadgeEl.style.setProperty('background-color', '#ffffff', 'important');
+    codeBadgeEl.style.setProperty('color', '#0f172a', 'important');
 
     document.getElementById('previewBrandName').textContent = item.brand_name || 'GRM WAREHOUSE';
 

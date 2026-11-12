@@ -1544,6 +1544,9 @@ ksort($distinctCatalogCodes);
     overflow-wrap: anywhere;
     word-break: break-word;
     line-height: 1.05;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    border: 1px solid #cbd5e1 !important;
 }
 .stock-stickers-sheet {
     display: flex;
@@ -2748,7 +2751,7 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                                 <!-- Left: QR Code + Tag Code Badge -->
                                 <div class="text-center flex-shrink-0" style="width: 80px;">
                                     <div class="piece-qr-box bg-white p-1 rounded border shadow-xs d-flex align-items-center justify-content-center" id="qr-box-<?= $index ?>" data-json="<?= htmlspecialchars($qrPayload, ENT_QUOTES, 'UTF-8') ?>" style="width: 72px; height: 72px;"></div>
-                                    <div class="label-tag-code badge bg-dark text-white font-monospace mt-1 px-1 py-0.5 w-100" style="font-size: 0.56rem; letter-spacing: 0.1px;" title="<?= e($item['tag_code']) ?>">
+                                    <div class="label-tag-code badge bg-white text-dark border font-monospace mt-1 px-1 py-0.5 w-100" style="font-size: 0.56rem; letter-spacing: 0.1px;" title="<?= e($item['tag_code']) ?>">
                                         <?= e($item['tag_code']) ?>
                                     </div>
                                     <?php 
@@ -3183,7 +3186,7 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                     <div class="d-flex align-items-start gap-2.5">
                         <div class="text-center flex-shrink-0">
                             <div id="singleQRCanvas" class="bg-white p-1 rounded border shadow-xs d-flex align-items-center justify-content-center" style="width: 78px; height: 78px;"></div>
-                            <div class="badge bg-dark text-white font-monospace mt-1 px-1.5 py-1 w-100 text-truncate" id="previewDamageCode" style="font-size: 0.72rem; letter-spacing: 0.3px;">TTS092601</div>
+                            <div class="badge bg-white text-dark border font-monospace mt-1 px-1.5 py-1 w-100 text-truncate" id="previewDamageCode" style="font-size: 0.72rem; letter-spacing: 0.3px;">TTS092601</div>
                         </div>
                         <div class="overflow-hidden ms-1 flex-grow-1" style="margin-top: 2px;">
                             <div class="fw-bold text-uppercase text-dark text-truncate" id="previewBrandName" style="font-size: 0.82rem; letter-spacing: 0.3px;">GRM WAREHOUSE</div>
@@ -3386,8 +3389,8 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                                     <!-- Sticker 1 Preview Box -->
                                     <div class="border border-2 border-dark rounded-2 bg-white shadow-sm position-relative overflow-hidden" id="liveStickerCard1" style="width: 240px; height: 150px;">
                                         <div class="badge bg-light text-dark position-absolute top-0 start-0 m-1 border" style="font-size: 0.60rem;">Left Sticker #1</div>
-                                        <div id="prevQRBox1" class="position-absolute bg-dark d-flex align-items-center justify-content-center text-white font-monospace" style="left: 12px; top: 35px; width: 45px; height: 45px; font-size: 0.65rem;">QR</div>
-                                        <div id="prevCodeTxt1" class="position-absolute badge bg-dark text-white font-monospace" style="left: 12px; top: 85px; font-size: 0.60rem;">TTS092601</div>
+                                        <div id="prevQRBox1" class="position-absolute bg-white border d-flex align-items-center justify-content-center text-dark font-monospace" style="left: 12px; top: 35px; width: 45px; height: 45px; font-size: 0.65rem;">QR</div>
+                                        <div id="prevCodeTxt1" class="position-absolute badge bg-white text-dark border font-monospace" style="left: 12px; top: 85px; font-size: 0.60rem;">TTS092601</div>
                                         <div id="prevTitleTxt1" class="position-absolute fw-bold text-uppercase text-dark font-monospace" style="left: 68px; top: 35px; font-size: 0.70rem;">GRM WAREHOUSE</div>
                                         <div id="prevSkuTxt1" class="position-absolute fw-bold text-secondary font-monospace" style="left: 68px; top: 52px; font-size: 0.68rem;">4XL-BLUE</div>
                                         <div id="prevMrpTxt1" class="position-absolute text-muted font-monospace" style="left: 68px; top: 70px; font-size: 0.62rem;">MRP: 1000</div>
@@ -3397,8 +3400,8 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                                     <!-- Sticker 2 Preview Box -->
                                     <div class="border border-2 border-dark rounded-2 bg-white shadow-sm position-relative overflow-hidden" id="liveStickerCard2" style="width: 240px; height: 150px;">
                                         <div class="badge bg-light text-dark position-absolute top-0 start-0 m-1 border" id="badgeSticker2" style="font-size: 0.60rem;">Right Sticker #2</div>
-                                        <div id="prevQRBox2" class="position-absolute bg-dark d-flex align-items-center justify-content-center text-white font-monospace" style="left: 12px; top: 35px; width: 45px; height: 45px; font-size: 0.65rem;">QR</div>
-                                        <div id="prevCodeTxt2" class="position-absolute badge bg-dark text-white font-monospace" style="left: 12px; top: 85px; font-size: 0.60rem;">TTS092602</div>
+                                        <div id="prevQRBox2" class="position-absolute bg-white border d-flex align-items-center justify-content-center text-dark font-monospace" style="left: 12px; top: 35px; width: 45px; height: 45px; font-size: 0.65rem;">QR</div>
+                                        <div id="prevCodeTxt2" class="position-absolute badge bg-white text-dark border font-monospace" style="left: 12px; top: 85px; font-size: 0.60rem;">TTS092602</div>
                                         <div id="prevTitleTxt2" class="position-absolute fw-bold text-uppercase text-dark font-monospace" style="left: 68px; top: 35px; font-size: 0.70rem;">GRM WAREHOUSE</div>
                                         <div id="prevSkuTxt2" class="position-absolute fw-bold text-secondary font-monospace" style="left: 68px; top: 52px; font-size: 0.68rem;">4XL-BLUE</div>
                                         <div id="prevMrpTxt2" class="position-absolute text-muted font-monospace" style="left: 68px; top: 70px; font-size: 0.62rem;">MRP: 1000</div>
@@ -5296,7 +5299,7 @@ function renderNewStickerCard(newItem, newIndex) {
                 <div class="p-2 border rounded-3 bg-white shadow-xs d-flex align-items-start gap-2 mb-2" style="background: #fafafa;">
                     <div class="text-center flex-shrink-0" style="width: 80px;">
                         <div class="piece-qr-box bg-white p-1 rounded border shadow-xs d-flex align-items-center justify-content-center" id="qr-box-${newIndex}" style="width: 72px; height: 72px;"></div>
-                        <div class="label-tag-code badge bg-dark text-white font-monospace mt-1 px-1 py-0.5 w-100" style="font-size: 0.56rem; letter-spacing: 0.1px;" title="${newItem.tag_code}">
+                        <div class="label-tag-code badge bg-white text-dark border font-monospace mt-1 px-1 py-0.5 w-100" style="font-size: 0.56rem; letter-spacing: 0.1px;" title="${newItem.tag_code}">
                             ${newItem.tag_code}
                         </div>
                         ${rangeBadge ? `<div class="badge bg-light text-primary border font-monospace mt-1 px-1 py-0.5 w-100 series-range-badge" style="font-size: 0.54rem;" title="Piece Sequence Range">Range: ${rangeBadge}</div>` : ''}
@@ -5346,7 +5349,7 @@ function renderNewStickerCard(newItem, newIndex) {
                 <div class="p-2 border rounded-3 bg-white shadow-xs d-flex align-items-start gap-2 mb-2" style="background: #fafafa;">
                     <div class="text-center flex-shrink-0" style="width: 74px;">
                         <div class="piece-qr-box bg-white p-1 rounded border shadow-xs d-flex align-items-center justify-content-center" id="qr-box-${newIndex}" style="width: 72px; height: 72px;"></div>
-                        <div class="label-tag-code badge bg-dark text-white font-monospace mt-1 px-1 py-0.5 w-100" style="font-size: 0.56rem; letter-spacing: 0.1px;" title="${newItem.tag_code}">
+                        <div class="label-tag-code badge bg-white text-dark border font-monospace mt-1 px-1 py-0.5 w-100" style="font-size: 0.56rem; letter-spacing: 0.1px;" title="${newItem.tag_code}">
                             ${newItem.tag_code}
                         </div>
                     </div>
@@ -5532,7 +5535,7 @@ function openBrowserPrintSheet(labels) {
             <div class="d-flex align-items-start gap-2.5">
                 <div class="text-center flex-shrink-0" style="width: 76px;">
                     <div id="modal-qr-${i}" class="bg-white p-1 rounded border shadow-xs d-flex align-items-center justify-content-center" style="width: 74px; height: 74px;"></div>
-                    <div class="label-tag-code badge bg-dark text-white font-monospace mt-1 px-1.5 py-0.5 w-100" style="font-size: 0.56rem; letter-spacing: 0.1px;">
+                    <div class="label-tag-code badge bg-white text-dark border font-monospace mt-1 px-1.5 py-0.5 w-100" style="font-size: 0.56rem; letter-spacing: 0.1px;">
                         ${lbl.damageCode}
                     </div>
                 </div>
