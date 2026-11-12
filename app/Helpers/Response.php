@@ -362,29 +362,29 @@ function hasPermission(string $module, ?string $action = null): bool {
         return true;
     }
     if ($module === 'allocation_outward') {
-        if (in_array('allocation_outward.' . $action, $userPermissions, true) || in_array('outward.' . $action, $userPermissions, true) || in_array('allocation.' . $action, $userPermissions, true)) {
+        if (in_array('allocation_outward.' . $action, $userPermissions, true)) {
             return true;
         }
     }
 
-    // Backward-compatibility alias fallbacks for renamed or granular submodules
+    // Module alias fallbacks for legacy/alternative naming strictly within the same module
     if ($module === 'production_purchases') {
-        if (in_array('sellers.' . $action, $userPermissions, true) || in_array('purchases.' . $action, $userPermissions, true) || in_array('production.' . $action, $userPermissions, true)) {
+        if (in_array('production_purchases.' . $action, $userPermissions, true)) {
             return true;
         }
     }
     if ($module === 'production_billing') {
-        if (in_array('billing.' . $action, $userPermissions, true) || in_array('production.' . $action, $userPermissions, true)) {
+        if (in_array('production_billing.' . $action, $userPermissions, true) || in_array('billing.' . $action, $userPermissions, true)) {
             return true;
         }
     }
     if ($module === 'production_returns') {
-        if (in_array('returns.' . $action, $userPermissions, true) || in_array('production_billing.' . $action, $userPermissions, true) || in_array('production.' . $action, $userPermissions, true)) {
+        if (in_array('production_returns.' . $action, $userPermissions, true)) {
             return true;
         }
     }
     if ($module === 'production_stock_requests') {
-        if (in_array('shop_requests.' . $action, $userPermissions, true) || in_array('stock_requests.' . $action, $userPermissions, true) || in_array('production.' . $action, $userPermissions, true)) {
+        if (in_array('production_stock_requests.' . $action, $userPermissions, true) || in_array('stock_requests.' . $action, $userPermissions, true)) {
             return true;
         }
     }
@@ -440,16 +440,13 @@ function hasPermission(string $module, ?string $action = null): bool {
 
     // Purchases Returns & Exchanges aliases (maps standard create/view permissions to process/print)
     if ($module === 'purchases_returns') {
-        if ($action === 'process' && (in_array('purchases_returns.create', $userPermissions, true) || in_array('purchases_returns.edit', $userPermissions, true) || in_array('returns.create', $userPermissions, true))) {
+        if ($action === 'process' && (in_array('purchases_returns.create', $userPermissions, true) || in_array('purchases_returns.edit', $userPermissions, true))) {
             return true;
         }
-        if ($action === 'print' && (in_array('purchases_returns.view', $userPermissions, true) || in_array('purchases_returns.create', $userPermissions, true) || in_array('returns.view', $userPermissions, true))) {
+        if ($action === 'print' && (in_array('purchases_returns.view', $userPermissions, true) || in_array('purchases_returns.create', $userPermissions, true))) {
             return true;
         }
         if ($action === 'create' && in_array('purchases_returns.process', $userPermissions, true)) {
-            return true;
-        }
-        if (in_array('returns.' . $action, $userPermissions, true)) {
             return true;
         }
     }
@@ -460,18 +457,11 @@ function hasPermission(string $module, ?string $action = null): bool {
             in_array('shop_inward.create', $userPermissions, true) || 
             in_array('shop_inward.receive', $userPermissions, true) ||
             in_array('shop_inward.verify', $userPermissions, true) ||
-            in_array('shop_inward.edit', $userPermissions, true) ||
-            in_array('inward.create', $userPermissions, true) ||
-            in_array('inward.verify', $userPermissions, true) ||
-            in_array('shop.create', $userPermissions, true)
+            in_array('shop_inward.edit', $userPermissions, true)
         )) {
             return true;
         }
-        if ($action === 'view' && (
-            in_array('shop_inward.view', $userPermissions, true) ||
-            in_array('inward.view', $userPermissions, true) ||
-            in_array('shop.view', $userPermissions, true)
-        )) {
+        if ($action === 'view' && in_array('shop_inward.view', $userPermissions, true)) {
             return true;
         }
     }
