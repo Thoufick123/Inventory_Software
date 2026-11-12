@@ -1,50 +1,89 @@
 <div class="container-fluid py-3">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-            <a href="<?= url('shop/sales') ?>" class="btn btn-sm btn-light border mb-2">
-                <i class="bi bi-arrow-left me-1"></i> Back to invoices
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div class="d-flex align-items-center">
+            <a href="<?= url('shop/sales') ?>" class="btn btn-sm btn-light border rounded-circle me-3" title="Back to sold products">
+                <i class="bi bi-arrow-left"></i>
             </a>
-            <h4 class="fw-bold mb-0">Edit Invoice <span class="font-monospace text-primary"><?= e($sale['invoice_number']) ?></span></h4>
-            <small class="text-muted"><?= e($shop['name'] ?? 'Shop') ?> · Editing updates the complete invoice, stock, and payment history.</small>
+            <div>
+                <h4 class="fw-bold mb-0 text-dark"><i class="bi bi-qr-code-scan text-primary me-2"></i>POS Billing Terminal</h4>
+                <small class="text-muted"><i class="bi bi-shop me-1"></i><?= e($shop['name'] ?? 'Shop') ?> · Editing invoice <span class="font-monospace fw-bold text-primary"><?= e($sale['invoice_number']) ?></span></small>
+            </div>
         </div>
+        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-3 py-2 rounded-pill">
+            <i class="bi bi-pencil-square me-1"></i>Editing Existing Invoice
+        </span>
     </div>
 
     <form method="POST" action="<?= url('shop/sales/update/' . (int)$sale['id']) ?>" id="editInvoiceForm">
         <?= CSRF::field() ?>
         <div class="row g-3">
-            <div class="col-xl-4">
+            <div class="col-lg-5">
+                <div class="card border-0 shadow-sm rounded-4 h-100 bg-white border-top border-4 border-primary">
+                    <div class="card-body p-4">
+                        <label class="form-label fw-bold text-dark fs-5 mb-2" for="variantSearch">
+                            <i class="bi bi-upc-scan text-primary me-2"></i>Scan Product QR Code
+                        </label>
+                        <div class="position-relative">
+                            <div class="input-group input-group-lg shadow-sm rounded-3 overflow-hidden">
+                                <span class="input-group-text bg-primary text-white border-0"><i class="bi bi-qr-code fs-4"></i></span>
+                                <input id="variantSearch" class="form-control border-0 bg-light font-monospace fw-bold" autocomplete="off" placeholder="Scan QR or type product code">
+                            </div>
+                            <div id="variantSearchResults" class="list-group position-absolute top-100 start-0 end-0 shadow z-3 d-none" style="max-height: 280px; overflow-y: auto;"></div>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mt-2">
+                            <small class="text-muted"><i class="bi bi-info-circle me-1"></i>Only good stock can be added.</small>
+                            <small class="text-primary fw-semibold">Ready to scan</small>
+                        </div>
+                        <div class="alert alert-info py-2 px-3 mt-3 mb-0 small">
+                            <i class="bi bi-info-circle me-1"></i>Series and complementary products need available quantity. Scanned piece QR tags are validated before saving.
+                        </div>
+                        <div class="mt-4 p-3 bg-light rounded-3 border">
+                            <div class="text-muted small text-uppercase fw-semibold">Invoice being edited</div>
+                            <div class="fw-bold font-monospace text-primary mt-1"><?= e($sale['invoice_number']) ?></div>
+                            <small class="text-muted">Changes update this invoice and its stock/payment history.</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-7">
+                <div class="row g-3">
+            <div class="col-12">
                 <div class="card border-0 shadow-sm rounded-4">
                     <div class="card-header bg-white border-0 pt-3">
-                        <h5 class="fw-bold mb-0">Customer details</h5>
+                        <h5 class="fw-bold mb-0"><i class="bi bi-person-bounding-box text-primary me-2"></i>Customer &amp; Billed By</h5>
                     </div>
                     <div class="card-body">
-                        <div class="mb-3">
+                        <div class="row g-2">
+                        <div class="col-md-6 mb-3">
                             <label class="form-label">Customer name <span class="text-danger">*</span></label>
                             <input class="form-control" name="customer_name" value="<?= e($sale['customer_name'] ?? '') ?>">
                         </div>
-                        <div class="mb-3">
+                        <div class="col-md-6 mb-3">
                             <label class="form-label">Phone <span class="text-danger">*</span></label>
                             <input class="form-control" name="customer_phone" value="<?= e($sale['customer_phone'] ?? '') ?>">
                         </div>
-                        <div class="mb-3">
+                        <div class="col-md-6 mb-3">
                             <label class="form-label">Address <span class="text-danger">*</span></label>
                             <textarea class="form-control" name="customer_address" rows="2"><?= e($sale['customer_address'] ?? '') ?></textarea>
                         </div>
-                        <div class="row g-2">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Email</label>
-                                <input class="form-control" type="email" name="customer_email" value="<?= e($sale['customer_email'] ?? '') ?>">
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">City</label>
-                                <input class="form-control" name="customer_city" value="<?= e($sale['customer_city'] ?? '') ?>">
+                        <div class="col-md-6 mb-3">
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <label class="form-label">Email</label>
+                                    <input class="form-control" type="email" name="customer_email" value="<?= e($sale['customer_email'] ?? '') ?>">
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label">City</label>
+                                    <input class="form-control" name="customer_city" value="<?= e($sale['customer_city'] ?? '') ?>">
+                                </div>
                             </div>
                         </div>
-                        <div class="mb-3">
+                        <div class="col-md-6 mb-3">
                             <label class="form-label">GSTIN</label>
                             <input class="form-control text-uppercase" name="customer_gst" value="<?= e($sale['customer_gst'] ?? '') ?>">
                         </div>
-                        <div class="mb-3">
+                        <div class="col-md-6 mb-3">
                             <label class="form-label">GST treatment</label>
                             <select class="form-select" name="gst_type">
                                 <option value="CGST_SGST" <?= ($sale['gst_type'] ?? 'CGST_SGST') === 'CGST_SGST' ? 'selected' : '' ?>>CGST + SGST</option>
@@ -52,39 +91,28 @@
                                 <option value="EXEMPT" <?= ($sale['gst_type'] ?? '') === 'EXEMPT' ? 'selected' : '' ?>>Exempt</option>
                             </select>
                         </div>
-                        <div class="mb-3">
+                        <div class="col-md-6 mb-3">
                             <label class="form-label">Billing staff</label>
                             <input class="form-control" name="employee_name" value="<?= e($sale['employee_name'] ?? $sale['staff_name'] ?? '') ?>">
                         </div>
-                        <div class="mb-0">
+                        <div class="col-md-6 mb-3">
                             <label class="form-label">Notes</label>
-                            <textarea class="form-control" name="notes" rows="2"><?= e($notes ?? '') ?></textarea>
+                            <textarea class="form-control" name="notes" rows="1"><?= e($notes ?? '') ?></textarea>
+                        </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="col-xl-8">
+            <div class="col-12">
                 <div class="card border-0 shadow-sm rounded-4 mb-3">
                     <div class="card-header bg-white border-0 pt-3 d-flex justify-content-between align-items-center">
                         <div>
-                            <h5 class="fw-bold mb-0">Invoice items</h5>
-                            <small class="text-muted">Change quantities, prices, GST, remove lines, or add in-stock products.</small>
+                            <h5 class="fw-bold mb-0"><i class="bi bi-cart3 text-primary me-2"></i>Invoice items</h5>
+                            <small class="text-muted">Change quantities, prices, GST, remove lines, or scan additional in-stock products.</small>
                         </div>
                     </div>
                     <div class="card-body">
-                        <div class="row g-2 mb-3">
-                            <div class="col-md-8 position-relative">
-                                <label class="form-label">Scan a good-stock QR / SKU, or search for a product</label>
-                                <input id="variantSearch" class="form-control" autocomplete="off" placeholder="Scan and press Enter, or type at least 2 characters">
-                                <div id="variantSearchResults" class="list-group position-absolute top-100 start-0 end-0 shadow z-3 d-none" style="max-height: 280px; overflow-y: auto;"></div>
-                            </div>
-                            <div class="col-md-4 d-flex align-items-end">
-                                <div class="alert alert-info py-2 px-3 mb-0 w-100 small">
-                                    <i class="bi bi-info-circle me-1"></i>Only good stock can be scanned. Series and complementary products need quantity greater than zero.
-                                </div>
-                            </div>
-                        </div>
                         <div class="table-responsive">
                             <table class="table table-sm align-middle">
                                 <thead class="table-light">
@@ -136,6 +164,9 @@
                 </div>
 
                 <div class="card border-0 shadow-sm rounded-4">
+                    <div class="card-header bg-white border-0 pt-3">
+                        <h5 class="fw-bold mb-0"><i class="bi bi-wallet2 text-primary me-2"></i>Payment &amp; Save</h5>
+                    </div>
                     <div class="card-body">
                         <div class="row g-3 align-items-end">
                             <div class="col-md-4">
@@ -170,6 +201,8 @@
                             </button>
                         </div>
                     </div>
+                </div>
+            </div>
                 </div>
             </div>
         </div>

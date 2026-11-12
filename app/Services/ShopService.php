@@ -2214,6 +2214,68 @@ class ShopService {
                 }
             }
 
+            $damageStockMovements = Database::fetchAll(
+                "SELECT reference_id, stock_state, transaction_type, quantity, notes
+                 FROM stock_transactions
+                 WHERE location_type = 'SHOP' AND location_id = ? AND variant_id = ?
+                   AND reference_type = 'shop_damages'
+                   AND (
+                       (stock_state = 'AVAILABLE' AND transaction_type = 'DAMAGE_DELETE_RESTORE')
+                       OR (stock_state = 'DAMAGED' AND transaction_type IN ('DAMAGE_IN', 'DAMAGE_EDIT_QUARANTINE'))
+                   )
+                 ORDER BY id ASC",
+                [$shopId, $variantId]
+            );
+            $damageSourcesByReference = [];
+            $damageRestoresByReference = [];
+            $damageRestoredTags = [];
+            $extractMovementTags = static function (string $notes, string $marker): array {
+                $pattern = $marker === 'RESTORED_TAGS'
+                    ? '/Restored QR tag\(s\):\s*([^;\r\n]+)/i'
+                    : '/\[' . preg_quote($marker, '/') . ':\s*([^\]]+)\]/i';
+                if (!preg_match($pattern, $notes, $matches)) {
+                    return [];
+                }
+
+                return array_map(
+                    static fn(string $tag): string => strtoupper($tag),
+                    ShopDamage::resolvePieceTags(['tag_code' => $matches[1]])
+                );
+            };
+            foreach ($damageStockMovements as $movement) {
+                $referenceId = (int)($movement['reference_id'] ?? 0);
+                if ($referenceId <= 0) {
+                    continue;
+                }
+                if ($movement['transaction_type'] === 'DAMAGE_DELETE_RESTORE'
+                    && $movement['stock_state'] === 'AVAILABLE') {
+                    $damageRestoresByReference[$referenceId] = abs((float)$movement['quantity']);
+                    foreach ($extractMovementTags((string)($movement['notes'] ?? ''), 'RESTORED_TAGS') as $tag) {
+                        $damageRestoredTags[$tag] = true;
+                    }
+                    continue;
+                }
+
+                $damageSourcesByReference[$referenceId][] = $movement;
+            }
+            foreach ($damageRestoresByReference as $referenceId => $restoreQuantity) {
+                $sourceMovements = $damageSourcesByReference[$referenceId] ?? [];
+                if (count($sourceMovements) !== 1 || $sourceMovements[0]['transaction_type'] !== 'DAMAGE_IN') {
+                    continue;
+                }
+                $sourceMovement = $sourceMovements[0];
+                if (abs((float)$sourceMovement['quantity'] - $restoreQuantity) > 0.00001) {
+                    continue;
+                }
+                $sourceTags = $extractMovementTags((string)($sourceMovement['notes'] ?? ''), 'Tag');
+                if (abs(count($sourceTags) - $restoreQuantity) > 0.00001) {
+                    continue;
+                }
+                foreach ($sourceTags as $tag) {
+                    $damageRestoredTags[$tag] = true;
+                }
+            }
+
             $savedTags = [];
             $savedTagsByKey = [];
             $allocRef = '';
@@ -2605,6 +2667,7 @@ class ShopService {
                     'is_returned'          => $isReturned,
                     'is_exchanged'         => $isExchanged,
                     'is_restocked'         => $isRestocked,
+                    'is_damage_restored'  => isset($damageRestoredTags[strtoupper((string)$tag)]),
                     'invoice_number'       => $saleInfo['invoice_number'] ?? null,
                     'sale_id'              => $saleInfo['sale_id'] ?? null,
                     'sold_customer'        => $saleInfo['customer_name'] ?? null,
@@ -2639,7 +2702,9 @@ class ShopService {
                 }
 
                 usort($availableTagIndexes, static function (int $left, int $right) use ($pieces): int {
-                    return (int)!empty($pieces[$right]['is_restocked']) <=> (int)!empty($pieces[$left]['is_restocked'])
+                    $rightPriority = !empty($pieces[$right]['is_restocked']) || !empty($pieces[$right]['is_damage_restored']);
+                    $leftPriority = !empty($pieces[$left]['is_restocked']) || !empty($pieces[$left]['is_damage_restored']);
+                    return (int)$rightPriority <=> (int)$leftPriority
                         ?: $left <=> $right;
                 });
                 foreach (array_slice($availableTagIndexes, $availableTagLimit) as $pieceIndex) {

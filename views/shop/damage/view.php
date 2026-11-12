@@ -36,7 +36,7 @@ $damQty = max(1, (int)($damage['quantity'] ?? count($pieceTags)));
 
 <div class="row g-4 mb-4">
     <!-- Left Column: Details, Origin Allocation Card & Evidence Photo -->
-    <div class="col-lg-7">
+    <div class="col-lg-8">
         <!-- 1. Damage Case Specifications -->
         <div class="card border-0 shadow-sm rounded-4 mb-4">
             <div class="card-header bg-white py-3 border-bottom">
@@ -213,78 +213,7 @@ $damQty = max(1, (int)($damage['quantity'] ?? count($pieceTags)));
         <?php endif; ?>
     </div>
 
-    <!-- Right Column: Status Update & Disposition Form -->
-    <div class="col-lg-5">
-        <!-- Status & Disposition Action Card -->
-        <div class="card border-0 shadow-sm rounded-4 mb-4">
-            <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-                <h6 class="card-title mb-0 fw-bold text-dark"><i class="bi bi-sliders me-2 text-success"></i>Case Status &amp; Disposition</h6>
-                <?php if (!hasPermission('shop_damage', 'edit') && !hasPermission('shop_damage', 'process')): ?>
-                    <span class="badge bg-light text-muted border"><i class="bi bi-lock-fill me-1"></i>Read Only</span>
-                <?php endif; ?>
-            </div>
-            <div class="card-body p-4">
-                <?php if (hasPermission('shop_damage', 'edit') || hasPermission('shop_damage', 'process')): ?>
-                <form method="POST" action="<?= url('shop/damage/update-status/' . $damage['id']) ?>" enctype="multipart/form-data">
-                    <?= CSRF::input() ?>
-
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold text-uppercase text-muted">Lifecycle Status</label>
-                        <select name="status" class="form-select form-select-lg border-2 fw-semibold">
-                            <option value="LOGGED" <?= $damage['status'] === 'LOGGED' ? 'selected' : '' ?>>🔴 Quarantined / Logged</option>
-                            <option value="INSPECTED" <?= $damage['status'] === 'INSPECTED' ? 'selected' : '' ?>>🔍 Inspected / Verified</option>
-                            <option value="RETURN_TO_WH" <?= $damage['status'] === 'RETURN_TO_WH' ? 'selected' : '' ?>>📦 Mark for Return to Warehouse</option>
-                            <option value="REPAIRED" <?= $damage['status'] === 'REPAIRED' ? 'selected' : '' ?>>🪡 Repaired / Restocked to Shop</option>
-                            <option value="SALVAGED" <?= $damage['status'] === 'SALVAGED' ? 'selected' : '' ?>>♻️ Salvaged (Discount Clearance)</option>
-                            <option value="WRITTEN_OFF" <?= $damage['status'] === 'WRITTEN_OFF' ? 'selected' : '' ?>>❌ Written Off / Scrapped</option>
-                        </select>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold text-uppercase text-muted">Inspection / Disposition Notes</label>
-                        <textarea name="disposition_notes" class="form-control" rows="3" placeholder="Enter resolution details, repair notes, or write-off reason..."><?= e($damage['disposition_notes'] ?? '') ?></textarea>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold text-uppercase text-muted">Defect Notes</label>
-                        <textarea name="defect_notes" class="form-control" rows="2" placeholder="Update defect description..."><?= e($damage['defect_notes'] ?? '') ?></textarea>
-                    </div>
-
-                    <div class="mb-4">
-                        <label class="form-label small fw-bold text-uppercase text-muted">Upload / Replace Evidence Photo</label>
-                        <input type="file" name="photo" class="form-control" accept="image/*">
-                    </div>
-
-                    <button type="submit" class="btn btn-primary btn-lg w-100 rounded-pill fw-bold shadow-sm">
-                        <i class="bi bi-check2-circle me-1"></i> Save Status &amp; Disposition
-                    </button>
-                </form>
-                <?php else: ?>
-                <div class="p-3 bg-light rounded-3 mb-3 border">
-                    <div class="text-muted small text-uppercase fw-semibold mb-1">Current Status</div>
-                    <span class="badge <?= $damage['status'] === 'RETURN_TO_WH' ? 'bg-primary' : ($damage['status'] === 'LOGGED' ? 'bg-danger' : 'bg-secondary') ?> fs-6 px-3 py-1.5 shadow-2xs">
-                        <?= e($damage['status']) ?>
-                    </span>
-                </div>
-                <div class="mb-3">
-                    <div class="text-muted small text-uppercase fw-semibold mb-1">Disposition Notes</div>
-                    <div class="p-3 bg-white rounded-3 border text-dark">
-                        <?= !empty($damage['disposition_notes']) ? nl2br(e($damage['disposition_notes'])) : '<span class="text-muted fst-italic">No disposition notes recorded.</span>' ?>
-                    </div>
-                </div>
-                <div class="mb-3">
-                    <div class="text-muted small text-uppercase fw-semibold mb-1">Defect Notes</div>
-                    <div class="p-3 bg-white rounded-3 border text-dark">
-                        <?= !empty($damage['defect_notes']) ? nl2br(e($damage['defect_notes'])) : '<span class="text-muted fst-italic">No defect notes recorded.</span>' ?>
-                    </div>
-                </div>
-                <div class="alert alert-light border small text-muted mb-0">
-                    <i class="bi bi-info-circle me-1 text-primary"></i> You have view-only access to damage management. Status modifications require edit/process permissions.
-                </div>
-                <?php endif; ?>
-            </div>
-        </div>
-
+    <div class="col-lg-4">
         <!-- Audit Trail Card -->
         <div class="card border-0 shadow-sm rounded-4 mb-4">
             <div class="card-header bg-white py-3 border-bottom">

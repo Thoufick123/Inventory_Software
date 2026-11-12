@@ -4694,8 +4694,13 @@ class ShopController {
                         rtrim(rtrim(number_format($restoreQuantity, 2, '.', ''), '0'), '.')
                     ));
                 }
-                StockService::decrease((int)$damage['variant_id'], 'SHOP', $shopId, 'DAMAGED', $restoreQuantity, 'DAMAGE_DELETE_RESTORE', 'shop_damages', $damageId, $userId, 'Restore remaining quarantined stock after audited damage deletion.');
-                StockService::increase((int)$damage['variant_id'], 'SHOP', $shopId, 'AVAILABLE', $restoreQuantity, 'DAMAGE_DELETE_RESTORE', 'shop_damages', $damageId, $userId, 'Restore remaining quarantined stock after audited damage deletion.');
+                $restoredTags = ShopDamage::resolvePieceTags($damage);
+                $restoredTagNote = abs(count($restoredTags) - $restoreQuantity) < 0.00001
+                    ? ' Restored QR tag(s): ' . implode(', ', $restoredTags)
+                    : '';
+                $restoreNotes = 'Restore remaining quarantined stock after audited damage deletion.' . $restoredTagNote;
+                StockService::decrease((int)$damage['variant_id'], 'SHOP', $shopId, 'DAMAGED', $restoreQuantity, 'DAMAGE_DELETE_RESTORE', 'shop_damages', $damageId, $userId, $restoreNotes);
+                StockService::increase((int)$damage['variant_id'], 'SHOP', $shopId, 'AVAILABLE', $restoreQuantity, 'DAMAGE_DELETE_RESTORE', 'shop_damages', $damageId, $userId, $restoreNotes);
             }
             AuditService::logStrict(
                 'SHOP',

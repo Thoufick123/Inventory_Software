@@ -46,6 +46,14 @@
                         <div id="liveSearchResults" class="position-absolute start-0 end-0 bg-white text-dark rounded-3 shadow-lg border mt-1 overflow-auto d-none" style="max-height: 380px; z-index: 1050;">
                         </div>
                     </div>
+                    <div class="mt-3">
+                        <label for="scanDamageReason" class="form-label text-white fw-bold text-uppercase mb-1">
+                            <i class="bi bi-exclamation-circle-fill text-warning me-1"></i>Damage Reason
+                        </label>
+                        <input type="text" id="scanDamageReason" class="form-control bg-dark text-white border-secondary"
+                               value="Shop Floor Defect / Damage" placeholder="Enter the reason for damage">
+                        <small class="text-white-50">Applied to newly scanned products; you can edit the reason per item in the queue.</small>
+                    </div>
                     <div class="d-flex justify-content-between align-items-center mt-2 flex-wrap gap-2">
                         <small class="text-white-50">
                             <i class="bi bi-info-circle me-1 text-warning"></i> Normal products require an unbilled good-stock piece QR. Series/complementary products require available quantity. Returned products must use their printed R-prefixed QR.
@@ -309,7 +317,7 @@
                 product_type: productType,
                 quantity_editable: quantityEditable,
                 defect_type: 'OTHER',
-                damage_reason: 'Shop Floor Defect / Damage',
+                damage_reason: document.getElementById('scanDamageReason').value.trim() || 'Shop Floor Defect / Damage',
                 defect_notes: '',
                 quantity: 1,
                 cost_per_unit: prod.cost_price || 0.0,
