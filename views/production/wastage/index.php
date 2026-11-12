@@ -346,70 +346,92 @@
                                     <span>
                                         <i class="bi bi-scissors text-success me-1"></i>Select Cutting Module Wastage / Scrap Batch <span class="text-danger">*</span>
                                     </span>
-                                    <span class="badge bg-success-subtle text-success border">Cutting Wastage Dropdown</span>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="badge bg-success-subtle text-success border"><i class="bi bi-check2-square me-1"></i>Multi-Batch Checkbox</span>
+                                    </div>
                                 </label>
-                                <select name="cutting_batch_id" id="newCuttingBatchId" class="form-select form-select-md fw-semibold border-success" onchange="onNewCuttingBatchChange(this)" required>
-                                    <option value="" data-avail-wastage="0" data-cost-rate="0" data-total-wastage="0">-- Select Cutting Module Wastage / Scrap Batch * --</option>
-                                    <?php 
-                                    $availableBatches = array_filter($cuttingBatches, fn($b) => (float)$b['available_wastage_weight'] > 0);
-                                    $soldBatches = array_filter($cuttingBatches, fn($b) => (float)$b['available_wastage_weight'] <= 0);
-                                    ?>
-                                    <?php if (!empty($availableBatches)): ?>
-                                        <optgroup label="✓ Available Cutting Wastage (Ready to Sell)">
-                                            <?php foreach ($availableBatches as $cb): 
-                                                $costRate = ($cb['wastage_weight'] > 0 && $cb['wastage_cost'] > 0) 
-                                                    ? round($cb['wastage_cost'] / $cb['wastage_weight'], 2) 
-                                                    : ($cb['roll_weight'] > 0 ? round($cb['roll_price'] / $cb['roll_weight'], 2) : 0);
-                                            ?>
-                                                <option value="<?= $cb['id'] ?>" 
-                                                    data-batch-no="<?= e($cb['batch_number']) ?>" 
-                                                    data-batch-name="<?= e($cb['name']) ?>" 
-                                                    data-program-id="<?= (int)($cb['program_id'] ?? 0) ?>" 
-                                                    data-program-no="<?= e($cb['program_number'] ?? '') ?>" 
-                                                    data-program-name="<?= e($cb['program_name'] ?? '') ?>" 
-                                                    data-total-wastage="<?= (float)$cb['wastage_weight'] ?>" 
-                                                    data-sold-wastage="<?= (float)$cb['sold_weight'] ?>" 
-                                                    data-avail-wastage="<?= (float)$cb['available_wastage_weight'] ?>" 
-                                                    data-cost-rate="<?= $costRate ?>" 
-                                                    data-wastage-cost="<?= (float)$cb['wastage_cost'] ?>" 
-                                                    data-seller="<?= e($cb['seller_name'] ?? '') ?>" 
-                                                    data-color="<?= e($cb['color'] ?? '') ?>" 
-                                                    data-design="<?= e($cb['design_name'] ?? '') ?>">
-                                                    [<?= e($cb['batch_number']) ?>] <?= e($cb['name']) ?> • Available: <?= number_format($cb['available_wastage_weight'], 2) ?> kg (Total: <?= number_format($cb['wastage_weight'], 2) ?> kg) • Rate: ₹<?= number_format($costRate, 2) ?>/kg
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </optgroup>
-                                    <?php else: ?>
-                                        <option value="" disabled class="text-danger fw-bold">⚠ No cutting batches with unsold wastage currently available</option>
-                                    <?php endif; ?>
+                                <?php 
+                                $availableBatches = array_filter($cuttingBatches, fn($b) => (float)$b['available_wastage_weight'] > 0);
+                                ?>
 
-                                    <?php if (!empty($soldBatches)): ?>
-                                        <optgroup label="✗ Fully Sold Batches (Unavailable)">
-                                            <?php foreach ($soldBatches as $cb): 
-                                                $costRate = ($cb['wastage_weight'] > 0 && $cb['wastage_cost'] > 0) 
-                                                    ? round($cb['wastage_cost'] / $cb['wastage_weight'], 2) 
-                                                    : ($cb['roll_weight'] > 0 ? round($cb['roll_price'] / $cb['roll_weight'], 2) : 0);
-                                            ?>
-                                                <option value="<?= $cb['id'] ?>" disabled class="text-muted bg-light"
-                                                    data-batch-no="<?= e($cb['batch_number']) ?>" 
-                                                    data-batch-name="<?= e($cb['name']) ?>" 
-                                                    data-program-id="<?= (int)($cb['program_id'] ?? 0) ?>" 
-                                                    data-program-no="<?= e($cb['program_number'] ?? '') ?>" 
-                                                    data-program-name="<?= e($cb['program_name'] ?? '') ?>" 
-                                                    data-total-wastage="<?= (float)$cb['wastage_weight'] ?>" 
-                                                    data-sold-wastage="<?= (float)$cb['sold_weight'] ?>" 
-                                                    data-avail-wastage="0.00" 
-                                                    data-cost-rate="<?= $costRate ?>" 
-                                                    data-wastage-cost="<?= (float)$cb['wastage_cost'] ?>" 
-                                                    data-seller="<?= e($cb['seller_name'] ?? '') ?>" 
-                                                    data-color="<?= e($cb['color'] ?? '') ?>" 
-                                                    data-design="<?= e($cb['design_name'] ?? '') ?>">
-                                                    [<?= e($cb['batch_number']) ?>] <?= e($cb['name']) ?> • [ALREADY SOLD] • Total: <?= number_format($cb['wastage_weight'], 2) ?> kg (Sold: <?= number_format($cb['sold_weight'], 2) ?> kg, Avail: 0.00 kg)
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </optgroup>
-                                    <?php endif; ?>
-                                </select>
+                                <!-- Custom Multi-Select Checkbox Dropdown -->
+                                <div class="dropdown w-100" id="cuttingBatchDropdownGroup">
+                                    <button class="form-select form-select-md fw-semibold border-success text-start d-flex justify-content-between align-items-center bg-white shadow-xs" 
+                                            type="button" id="cuttingBatchDropdownBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" style="min-height: 42px;">
+                                        <span id="cuttingBatchDropdownBtnText" class="text-truncate">
+                                            -- Select Cutting Module Wastage / Scrap Batch * --
+                                        </span>
+                                        <span class="badge bg-success rounded-pill ms-2 d-none" id="cuttingBatchSelectedPill">0 selected</span>
+                                    </button>
+                                    <div class="dropdown-menu w-100 p-2 shadow-lg border-success" style="max-height: 320px; overflow-y: auto; z-index: 1060;" aria-labelledby="cuttingBatchDropdownBtn">
+                                        <div class="d-flex justify-content-between align-items-center px-2 py-1.5 mb-2 bg-light rounded border small">
+                                            <div class="form-check mb-0">
+                                                <input class="form-check-input cursor-pointer" type="checkbox" id="selectAllCuttingBatchesCheck" onchange="toggleSelectAllCuttingBatches(this.checked)">
+                                                <label class="form-check-label fw-bold text-dark cursor-pointer ms-1" for="selectAllCuttingBatchesCheck">Select All Batches</label>
+                                            </div>
+                                            <span class="badge bg-success-subtle text-success border"><?= count($availableBatches) ?> Ready to Sell</span>
+                                        </div>
+                                        
+                                        <div id="cuttingBatchOptionsList">
+                                            <?php if (!empty($availableBatches)): ?>
+                                                <?php foreach ($availableBatches as $cb): 
+                                                    $costRate = ($cb['wastage_weight'] > 0 && $cb['wastage_cost'] > 0) 
+                                                        ? round($cb['wastage_cost'] / $cb['wastage_weight'], 2) 
+                                                        : ($cb['roll_weight'] > 0 ? round($cb['roll_price'] / $cb['roll_weight'], 2) : 0);
+                                                ?>
+                                                    <div class="form-check p-2 rounded border-bottom d-flex align-items-start gap-2 cutting-batch-row" style="cursor: pointer;">
+                                                        <input type="checkbox" class="form-check-input mt-1 cutting-batch-checkbox cursor-pointer" 
+                                                               name="cutting_batch_ids[]"
+                                                               id="cb_check_<?= $cb['id'] ?>" 
+                                                               value="<?= $cb['id'] ?>"
+                                                               data-id="<?= $cb['id'] ?>"
+                                                               data-batch-no="<?= e($cb['batch_number']) ?>" 
+                                                               data-batch-name="<?= e($cb['name']) ?>" 
+                                                               data-program-id="<?= (int)($cb['program_id'] ?? 0) ?>" 
+                                                               data-program-no="<?= e($cb['program_number'] ?? '') ?>" 
+                                                               data-program-name="<?= e($cb['program_name'] ?? '') ?>" 
+                                                               data-total-wastage="<?= (float)$cb['wastage_weight'] ?>" 
+                                                               data-sold-wastage="<?= (float)$cb['sold_weight'] ?>" 
+                                                               data-avail-wastage="<?= (float)$cb['available_wastage_weight'] ?>" 
+                                                               data-cost-rate="<?= $costRate ?>" 
+                                                               data-wastage-cost="<?= (float)$cb['wastage_cost'] ?>" 
+                                                               data-seller="<?= e($cb['seller_name'] ?? '') ?>" 
+                                                               data-color="<?= e($cb['color'] ?? '') ?>" 
+                                                               data-design="<?= e($cb['design_name'] ?? '') ?>"
+                                                               onchange="onCuttingBatchCheckChange()">
+                                                        <label class="form-check-label w-100 cursor-pointer" for="cb_check_<?= $cb['id'] ?>">
+                                                            <div class="d-flex justify-content-between align-items-center flex-wrap gap-1">
+                                                                <span class="fw-bold text-dark">[<?= e($cb['batch_number']) ?>] <?= e($cb['name']) ?></span>
+                                                                <span class="badge bg-success-subtle text-success border">Avail: <?= number_format($cb['available_wastage_weight'], 2) ?> kg</span>
+                                                            </div>
+                                                            <div class="small text-muted mt-1 d-flex flex-wrap gap-2">
+                                                                <span>Total: <?= number_format($cb['wastage_weight'], 2) ?> kg</span>
+                                                                <span>•</span>
+                                                                <span>Rate: ₹<?= number_format($costRate, 2) ?>/kg</span>
+                                                                <?php if (!empty($cb['program_number'])): ?>
+                                                                    <span>•</span>
+                                                                    <span class="text-primary"><?= e($cb['program_number']) ?></span>
+                                                                <?php endif; ?>
+                                                            </div>
+                                                        </label>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            <?php else: ?>
+                                                <div class="p-3 text-center text-muted small">
+                                                    <i class="bi bi-info-circle me-1 text-danger"></i>No cutting batches with unsold wastage currently available
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Hidden primary input for backward compatibility & required validation -->
+                                <input type="hidden" name="cutting_batch_id" id="newCuttingBatchId" value="" required>
+
+                                <!-- Selected Batches Badges Bar -->
+                                <div id="newSelectedBatchesContainer" class="mt-2 d-none">
+                                    <div class="d-flex flex-wrap gap-1 align-items-center" id="newSelectedBatchesPills"></div>
+                                </div>
 
                                 <!-- Live Cutting Wastage Info Badge / Card -->
                                 <div id="newBatchInfoCard" class="mt-2 p-2 bg-white rounded border small d-none">
@@ -905,73 +927,168 @@
 </div>
 
 <script>
-function onNewCuttingBatchChange(selectEl) {
-    const selectedOption = selectEl.options[selectEl.selectedIndex];
-    const batchId = selectEl.value;
+let currentTotalAvailCuttingWst = 0;
+
+function toggleSelectAllCuttingBatches(checked) {
+    const checkboxes = document.querySelectorAll('.cutting-batch-checkbox');
+    checkboxes.forEach(cb => cb.checked = checked);
+    onCuttingBatchCheckChange();
+}
+
+function removeCuttingBatch(id) {
+    const cb = document.getElementById('cb_check_' + id);
+    if (cb) {
+        cb.checked = false;
+        onCuttingBatchCheckChange();
+    }
+}
+
+function onCuttingBatchCheckChange() {
+    const checkedBoxes = Array.from(document.querySelectorAll('.cutting-batch-checkbox:checked'));
+    const btnText = document.getElementById('cuttingBatchDropdownBtnText');
+    const pill = document.getElementById('cuttingBatchSelectedPill');
+    const hiddenIdInput = document.getElementById('newCuttingBatchId');
     const infoCard = document.getElementById('newBatchInfoCard');
     const soldAlert = document.getElementById('newBatchSoldAlert');
     const submitBtn = document.getElementById('btnRecordWastageSubmit');
     const weightInput = document.getElementById('newWeight');
     const weightAlert = document.getElementById('newWeightExceedAlert');
+    const pillsContainer = document.getElementById('newSelectedBatchesContainer');
+    const pillsList = document.getElementById('newSelectedBatchesPills');
+    const selectAllCheck = document.getElementById('selectAllCuttingBatchesCheck');
+    const allBoxes = document.querySelectorAll('.cutting-batch-checkbox');
 
-    if (!batchId) {
-        infoCard.classList.add('d-none');
+    if (selectAllCheck) {
+        selectAllCheck.checked = (allBoxes.length > 0 && checkedBoxes.length === allBoxes.length);
+    }
+
+    if (checkedBoxes.length === 0) {
+        btnText.textContent = '-- Select Cutting Module Wastage / Scrap Batch * --';
+        if (pill) pill.classList.add('d-none');
+        hiddenIdInput.value = '';
+        hiddenIdInput.setAttribute('data-avail-wastage', '0');
         document.getElementById('newProgramId').value = '';
+        infoCard.classList.add('d-none');
+        if (pillsContainer) pillsContainer.classList.add('d-none');
         if (soldAlert) soldAlert.classList.add('d-none');
         if (weightAlert) weightAlert.classList.add('d-none');
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.title = ""; }
+        weightInput.value = '0.00';
+        weightInput.setAttribute('max', '0');
+        currentTotalAvailCuttingWst = 0;
+        onNewWeightChange();
         return;
     }
 
-    const batchNo = selectedOption.getAttribute('data-batch-no') || '';
-    const batchName = selectedOption.getAttribute('data-batch-name') || '';
-    const progId = selectedOption.getAttribute('data-program-id') || '';
-    const progNo = selectedOption.getAttribute('data-program-no') || '';
-    const totalWst = parseFloat(selectedOption.getAttribute('data-total-wastage')) || 0;
-    const soldWst = parseFloat(selectedOption.getAttribute('data-sold-wastage')) || 0;
-    const availWst = parseFloat(selectedOption.getAttribute('data-avail-wastage')) || 0;
-    const costRate = parseFloat(selectedOption.getAttribute('data-cost-rate')) || 0;
-    const seller = selectedOption.getAttribute('data-seller') || 'In-House';
+    let totalAvail = 0;
+    let totalWst = 0;
+    let totalSold = 0;
+    let weightedCostSum = 0;
+    let programIds = [];
+    let programNos = [];
+    let batchNames = [];
+    let pillsHtml = '';
 
-    document.getElementById('newProgramId').value = progId;
-    document.getElementById('newInfoBatchName').textContent = `${batchNo} - ${batchName}`;
-    document.getElementById('newInfoProg').textContent = progNo ? `(${progNo})` : '';
-    document.getElementById('newInfoSeller').textContent = seller;
-    document.getElementById('newInfoTotalWst').textContent = `${totalWst.toFixed(2)} kg`;
-    document.getElementById('newInfoSoldWst').textContent = `${soldWst.toFixed(2)} kg`;
-    document.getElementById('newInfoAvailWst').textContent = `${availWst.toFixed(2)} kg`;
-    document.getElementById('newInfoRate').textContent = `₹${costRate.toFixed(2)}/kg`;
-    infoCard.classList.remove('d-none');
+    checkedBoxes.forEach(cb => {
+        const id = cb.value;
+        const bNo = cb.getAttribute('data-batch-no') || '';
+        const bName = cb.getAttribute('data-batch-name') || '';
+        const pId = cb.getAttribute('data-program-id') || '';
+        const pNo = cb.getAttribute('data-program-no') || '';
+        const avail = parseFloat(cb.getAttribute('data-avail-wastage')) || 0;
+        const tot = parseFloat(cb.getAttribute('data-total-wastage')) || 0;
+        const sld = parseFloat(cb.getAttribute('data-sold-wastage')) || 0;
+        const rate = parseFloat(cb.getAttribute('data-cost-rate')) || 0;
 
-    // Validation guard: If batch wastage is fully sold out
-    if (availWst <= 0) {
-        if (soldAlert) {
-            soldAlert.innerHTML = `<i class="bi bi-x-octagon-fill me-2"></i><strong>Cannot Sell:</strong> Cutting batch <strong>${batchNo}</strong> wastage (${totalWst.toFixed(2)} kg) is <strong>ALREADY FULLY SOLD</strong> (0.00 kg available). Please choose an available batch.`;
-            soldAlert.classList.remove('d-none');
-        }
-        weightInput.value = '0.00';
-        weightInput.setAttribute('max', '0');
-        if (submitBtn) {
-            submitBtn.disabled = true;
-            submitBtn.title = "Cannot save: selected batch wastage is already fully sold.";
+        totalAvail += avail;
+        totalWst += tot;
+        totalSold += sld;
+        weightedCostSum += (avail * rate);
+
+        if (pId && !programIds.includes(pId)) programIds.push(pId);
+        if (pNo && !programNos.includes(pNo)) programNos.push(pNo);
+        batchNames.push(`[${bNo}] ${bName}`);
+
+        pillsHtml += `<span class="badge bg-light text-dark border px-2 py-1 d-inline-flex align-items-center gap-1 shadow-xs">
+            <strong>${bNo}</strong> (${avail.toFixed(2)} kg)
+            <i class="bi bi-x-circle text-danger cursor-pointer ms-1" onclick="removeCuttingBatch(${id})" title="Remove batch"></i>
+        </span>`;
+    });
+
+    const avgRate = totalAvail > 0 ? (weightedCostSum / totalAvail) : 0;
+    currentTotalAvailCuttingWst = totalAvail;
+
+    // Set hidden inputs
+    hiddenIdInput.value = checkedBoxes[0].value;
+    hiddenIdInput.setAttribute('data-avail-wastage', totalAvail.toFixed(2));
+    document.getElementById('newProgramId').value = programIds[0] || '';
+
+    // Update dropdown button text & pill
+    if (checkedBoxes.length === 1) {
+        const first = checkedBoxes[0];
+        btnText.textContent = `[${first.getAttribute('data-batch-no')}] ${first.getAttribute('data-batch-name')} • Avail: ${totalAvail.toFixed(2)} kg`;
+        if (pill) {
+            pill.textContent = '1 batch';
+            pill.classList.remove('d-none');
         }
     } else {
-        if (soldAlert) soldAlert.classList.add('d-none');
-        weightInput.value = availWst.toFixed(2);
-        weightInput.setAttribute('max', availWst.toFixed(2));
-        if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.title = "";
+        btnText.textContent = `${checkedBoxes.length} Batches Selected • Total Avail: ${totalAvail.toFixed(2)} kg`;
+        if (pill) {
+            pill.textContent = `${checkedBoxes.length} batches`;
+            pill.classList.remove('d-none');
         }
+    }
+
+    // Pills bar
+    if (pillsContainer && pillsList) {
+        pillsList.innerHTML = `<span class="text-muted small fw-semibold me-1"><i class="bi bi-tags me-1 text-success"></i>Selected (${checkedBoxes.length}):</span> ` + pillsHtml;
+        pillsContainer.classList.remove('d-none');
+    }
+
+    // Update info card
+    if (checkedBoxes.length === 1) {
+        const first = checkedBoxes[0];
+        document.getElementById('newInfoBatchName').textContent = `${first.getAttribute('data-batch-no')} - ${first.getAttribute('data-batch-name')}`;
+        document.getElementById('newInfoProg').textContent = first.getAttribute('data-program-no') ? `(${first.getAttribute('data-program-no')})` : '';
+        document.getElementById('newInfoSeller').textContent = first.getAttribute('data-seller') || 'In-House';
+    } else {
+        document.getElementById('newInfoBatchName').textContent = `Multiple Batches (${checkedBoxes.length} Selected)`;
+        document.getElementById('newInfoProg').textContent = programNos.length ? `(Programs: ${programNos.join(', ')})` : '';
+        document.getElementById('newInfoSeller').textContent = 'Multiple Suppliers / In-House';
+    }
+
+    document.getElementById('newInfoTotalWst').textContent = `${totalWst.toFixed(2)} kg`;
+    document.getElementById('newInfoSoldWst').textContent = `${totalSold.toFixed(2)} kg`;
+    document.getElementById('newInfoAvailWst').textContent = `${totalAvail.toFixed(2)} kg`;
+    document.getElementById('newInfoRate').textContent = `₹${avgRate.toFixed(2)}/kg`;
+    infoCard.classList.remove('d-none');
+
+    // Auto set weight to total available weight
+    weightInput.value = totalAvail.toFixed(2);
+    weightInput.setAttribute('max', totalAvail.toFixed(2));
+
+    // If rate input is empty or 0, suggest average cost rate
+    const rateInput = document.getElementById('newRatePerKg');
+    if (rateInput && (parseFloat(rateInput.value) <= 0 || !rateInput.value)) {
+        if (avgRate > 0) rateInput.value = avgRate.toFixed(2);
     }
 
     // Auto select Cutting End-Bits
     const typeSelect = document.getElementById('newWastageType');
-    if (typeSelect) {
+    if (typeSelect && !typeSelect.value) {
         typeSelect.value = 'CUTTING_END_BITS';
     }
 
+    if (soldAlert) soldAlert.classList.add('d-none');
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.title = "";
+    }
+
     onNewWeightChange();
+}
+
+function onNewCuttingBatchChange(selectEl) {
+    onCuttingBatchCheckChange();
 }
 
 function onEditCuttingBatchChange(selectEl) {
@@ -986,8 +1103,7 @@ function onNewWeightChange() {
     const r = parseFloat(document.getElementById('newRatePerKg').value) || 0;
     const t = parseFloat(document.getElementById('newTotalAmount').value) || 0;
     const selectEl = document.getElementById('newCuttingBatchId');
-    const selectedOption = selectEl ? selectEl.options[selectEl.selectedIndex] : null;
-    const availWst = parseFloat(selectedOption?.getAttribute('data-avail-wastage')) || 0;
+    const availWst = parseFloat(selectEl?.getAttribute('data-avail-wastage')) || currentTotalAvailCuttingWst || 0;
     const weightAlert = document.getElementById('newWeightExceedAlert');
     const submitBtn = document.getElementById('btnRecordWastageSubmit');
 
@@ -1283,8 +1399,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (!batchId) {
                 e.preventDefault();
-                alert('Select Cutting Module Wastage / Scrap Batch is required.');
-                document.getElementById('newCuttingBatchId').focus();
+                alert('Select Cutting Module Wastage / Scrap Batch is required. Please check at least one batch from the dropdown.');
+                const btn = document.getElementById('cuttingBatchDropdownBtn');
+                if (btn) btn.focus();
                 return false;
             }
             if (!buyerName) {
