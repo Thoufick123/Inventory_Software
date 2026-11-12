@@ -271,6 +271,9 @@
                                             <button type="button" class="btn btn-outline-info btn-action-icon" title="View Wastage Sale Details" aria-label="View Wastage Sale Details" onclick="openWastageDetails(<?= (int)$s['id'] ?>)">
                                                 <i class="bi bi-eye"></i>
                                             </button>
+                                            <button type="button" class="btn btn-outline-success btn-action-icon" title="View & Print Sale Voucher" aria-label="View & Print Sale Voucher" onclick="openWastageReceipt(<?= (int)$s['id'] ?>)">
+                                                <i class="bi bi-printer"></i>
+                                            </button>
                                             <?php if (hasPermission('wastage', 'edit')): ?>
                                             <!-- Edit Button -->
                                             <button type="button" class="btn btn-outline-primary btn-action-icon" title="Edit Sale Details" onclick='openEditWastageModal(<?= json_encode($s) ?>)'>
@@ -365,9 +368,9 @@
                                     </button>
                                     <div class="dropdown-menu w-100 p-2 shadow-lg border-success" style="max-height: 320px; overflow-y: auto; z-index: 1060;" aria-labelledby="cuttingBatchDropdownBtn">
                                         <div class="d-flex justify-content-between align-items-center px-2 py-1.5 mb-2 bg-light rounded border small">
-                                            <div class="form-check mb-0">
-                                                <input class="form-check-input cursor-pointer" type="checkbox" id="selectAllCuttingBatchesCheck" onchange="toggleSelectAllCuttingBatches(this.checked)">
-                                                <label class="form-check-label fw-bold text-dark cursor-pointer ms-1" for="selectAllCuttingBatchesCheck">Select All Batches</label>
+                                            <div class="d-flex align-items-center gap-2 mb-0">
+                                                <input class="form-check-input cursor-pointer flex-shrink-0" type="checkbox" id="selectAllCuttingBatchesCheck" onchange="toggleSelectAllCuttingBatches(this.checked)" style="width: 1.2rem; height: 1.2rem; margin: 0; float: none;">
+                                                <label class="form-check-label fw-bold text-dark cursor-pointer ms-1 mb-0" for="selectAllCuttingBatchesCheck">Select All Batches</label>
                                             </div>
                                             <span class="badge bg-success-subtle text-success border"><?= count($availableBatches) ?> Ready to Sell</span>
                                         </div>
@@ -379,11 +382,14 @@
                                                         ? round($cb['wastage_cost'] / $cb['wastage_weight'], 2) 
                                                         : ($cb['roll_weight'] > 0 ? round($cb['roll_price'] / $cb['roll_weight'], 2) : 0);
                                                 ?>
-                                                    <div class="form-check p-2 rounded border-bottom d-flex align-items-start gap-2 cutting-batch-row" style="cursor: pointer;">
-                                                        <input type="checkbox" class="form-check-input mt-1 cutting-batch-checkbox cursor-pointer" 
+                                                    <div class="p-2.5 rounded border-bottom bg-white d-flex align-items-center gap-3 cutting-batch-row" 
+                                                         style="cursor: pointer; transition: background-color 0.15s ease;"
+                                                         onclick="toggleCuttingBatchRow(<?= $cb['id'] ?>, event)">
+                                                        <input type="checkbox" class="form-check-input cutting-batch-checkbox cursor-pointer flex-shrink-0" 
                                                                name="cutting_batch_ids[]"
                                                                id="cb_check_<?= $cb['id'] ?>" 
                                                                value="<?= $cb['id'] ?>"
+                                                               style="width: 1.25rem; height: 1.25rem; margin: 0; float: none; cursor: pointer;"
                                                                data-id="<?= $cb['id'] ?>"
                                                                data-batch-no="<?= e($cb['batch_number']) ?>" 
                                                                data-batch-name="<?= e($cb['name']) ?>" 
@@ -399,18 +405,18 @@
                                                                data-color="<?= e($cb['color'] ?? '') ?>" 
                                                                data-design="<?= e($cb['design_name'] ?? '') ?>"
                                                                onchange="onCuttingBatchCheckChange()">
-                                                        <label class="form-check-label w-100 cursor-pointer" for="cb_check_<?= $cb['id'] ?>">
+                                                        <label class="w-100 cursor-pointer mb-0" for="cb_check_<?= $cb['id'] ?>" onclick="event.stopPropagation();">
                                                             <div class="d-flex justify-content-between align-items-center flex-wrap gap-1">
-                                                                <span class="fw-bold text-dark">[<?= e($cb['batch_number']) ?>] <?= e($cb['name']) ?></span>
-                                                                <span class="badge bg-success-subtle text-success border">Avail: <?= number_format($cb['available_wastage_weight'], 2) ?> kg</span>
+                                                                <span class="fw-bold text-dark fs-7">[<?= e($cb['batch_number']) ?>] <?= e($cb['name']) ?></span>
+                                                                <span class="badge bg-success-subtle text-success border fw-bold">Avail: <?= number_format($cb['available_wastage_weight'], 2) ?> kg</span>
                                                             </div>
                                                             <div class="small text-muted mt-1 d-flex flex-wrap gap-2">
-                                                                <span>Total: <?= number_format($cb['wastage_weight'], 2) ?> kg</span>
+                                                                <span>Total: <strong><?= number_format($cb['wastage_weight'], 2) ?> kg</strong></span>
                                                                 <span>•</span>
-                                                                <span>Rate: ₹<?= number_format($costRate, 2) ?>/kg</span>
+                                                                <span>Rate: <strong>₹<?= number_format($costRate, 2) ?>/kg</strong></span>
                                                                 <?php if (!empty($cb['program_number'])): ?>
                                                                     <span>•</span>
-                                                                    <span class="text-primary"><?= e($cb['program_number']) ?></span>
+                                                                    <span class="text-primary fw-semibold"><?= e($cb['program_number']) ?></span>
                                                                 <?php endif; ?>
                                                             </div>
                                                         </label>
@@ -496,8 +502,8 @@
                                     <span class="badge bg-white text-secondary border small">Type Rate or Total Price directly</span>
                                 </div>
                                 <div class="row g-3">
-                                    <!-- Weight in KG -->
-                                    <div class="col-md-4">
+                                    <!-- Row 1: Weight in KG -->
+                                    <div class="col-12">
                                         <label class="form-label fw-bold text-dark">Wastage Weight (kg) <span class="text-danger">*</span></label>
                                         <div class="input-group">
                                             <input type="number" step="0.01" min="0.01" name="weight" id="newWeight" class="form-control fw-bold fs-6" placeholder="0.00" required oninput="onNewWeightChange()">
@@ -507,8 +513,8 @@
                                         <div id="newWeightExceedAlert" class="text-danger small mt-1 fw-bold d-none"></div>
                                     </div>
 
-                                    <!-- Rate per KG (Manual Entry) -->
-                                    <div class="col-md-4">
+                                    <!-- Row 2: Rate per KG & Total Sale Price (Next Row) -->
+                                    <div class="col-md-6">
                                         <label class="form-label fw-bold text-dark">Selling Rate (₹ / kg) <span class="text-danger">*</span></label>
                                         <div class="input-group">
                                             <span class="input-group-text bg-white fw-bold">₹</span>
@@ -518,8 +524,7 @@
                                         <small class="text-muted">Enter manual scrap rate per kg</small>
                                     </div>
 
-                                    <!-- Total Selling Amount (Editable Manual Entry) -->
-                                    <div class="col-md-4">
+                                    <div class="col-md-6">
                                         <label class="form-label fw-bold text-success">Total Sale Price (₹) <span class="text-danger">*</span> <span class="badge bg-success-subtle text-success border ms-1">Editable</span></label>
                                         <div class="input-group">
                                             <span class="input-group-text bg-success-subtle text-success fw-bold">₹</span>
@@ -647,14 +652,17 @@
                                     <span class="badge bg-white text-secondary border small">Type Rate or Total Price directly</span>
                                 </div>
                                 <div class="row g-3">
-                                    <div class="col-md-4">
+                                    <!-- Row 1: Wastage Weight in KG -->
+                                    <div class="col-12">
                                         <label class="form-label fw-bold text-dark">Wastage Weight (kg) <span class="text-danger">*</span></label>
                                         <div class="input-group">
                                             <input type="number" step="0.01" min="0.01" name="weight" id="editWeight" class="form-control fw-bold fs-6" required oninput="onEditWeightChange()">
                                             <span class="input-group-text bg-white">kg</span>
                                         </div>
                                     </div>
-                                    <div class="col-md-4">
+
+                                    <!-- Row 2: Rate per KG & Total Sale Price (Next Row) -->
+                                    <div class="col-md-6">
                                         <label class="form-label fw-bold text-dark">Selling Rate (₹ / kg) <span class="text-danger">*</span></label>
                                         <div class="input-group">
                                             <span class="input-group-text bg-white fw-bold">₹</span>
@@ -662,7 +670,8 @@
                                             <span class="input-group-text bg-white">/ kg</span>
                                         </div>
                                     </div>
-                                    <div class="col-md-4">
+
+                                    <div class="col-md-6">
                                         <label class="form-label fw-bold text-success">Total Sale Price (₹) <span class="text-danger">*</span> <span class="badge bg-success-subtle text-success border ms-1">Editable</span></label>
                                         <div class="input-group">
                                             <span class="input-group-text bg-success-subtle text-success fw-bold">₹</span>
@@ -837,13 +846,8 @@
                     </div>
                 </div>
             </div>
-            <div class="modal-footer bg-white border-top py-2.5 d-flex justify-content-between">
+            <div class="modal-footer bg-white border-top py-2.5">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
-                <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-outline-dark" id="btnWstPrintReceipt" onclick="openPrintFromWastageDetails()">
-                        <i class="bi bi-printer me-1"></i> Print Receipt Voucher
-                    </button>
-                </div>
             </div>
         </div>
     </div>
@@ -928,6 +932,17 @@
 
 <script>
 let currentTotalAvailCuttingWst = 0;
+
+function toggleCuttingBatchRow(id, event) {
+    if (event && event.target && event.target.tagName && event.target.tagName.toLowerCase() === 'input') {
+        return;
+    }
+    const cb = document.getElementById('cb_check_' + id);
+    if (cb) {
+        cb.checked = !cb.checked;
+        onCuttingBatchCheckChange();
+    }
+}
 
 function toggleSelectAllCuttingBatches(checked) {
     const checkboxes = document.querySelectorAll('.cutting-batch-checkbox');
@@ -1524,6 +1539,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 alert('Sale Date is required.');
                 document.getElementById('editSaleDate').focus();
                 return false;
+            }
+        });
+    }
+
+    // Auto-select first batch on Record Wastage Modal shown if none checked
+    const recordModal = document.getElementById('recordWastageModal');
+    if (recordModal) {
+        recordModal.addEventListener('shown.bs.modal', function() {
+            const checked = document.querySelectorAll('.cutting-batch-checkbox:checked');
+            const allBoxes = document.querySelectorAll('.cutting-batch-checkbox');
+            if (checked.length === 0 && allBoxes.length > 0) {
+                allBoxes[0].checked = true;
+                onCuttingBatchCheckChange();
             }
         });
     }

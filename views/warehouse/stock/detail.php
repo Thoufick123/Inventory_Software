@@ -969,7 +969,7 @@
                                 <div class="overflow-hidden flex-grow-1" style="font-size: 0.76rem;">
                                     <div class="fw-bold text-truncate text-dark"><?= e($sp['customer_name']) ?></div>
                                     <div class="text-muted font-monospace" style="font-size: 0.70rem;">
-                                        <a href="<?= url('warehouse/purchases/receive/' . $sp['purchase_id']) ?>" class="text-decoration-none text-primary">
+                                        <a href="<?= url('warehouse/purchases/receive/' . $sp['purchase_id']) ?>?document=invoice" class="text-decoration-none text-primary">
                                             <?= e($sp['po_number']) ?>
                                         </a>
                                         · <?= !empty($sp['sold_at']) ? date('d M y', strtotime($sp['sold_at'])) : '' ?>
@@ -1006,7 +1006,7 @@
                             <?php foreach ($variantPurchases as $vp): ?>
                                 <tr>
                                     <td class="ps-3 text-nowrap">
-                                        <a href="<?= url('warehouse/purchases/receive/' . $vp['purchase_order_id']) ?>" class="badge bg-primary-subtle text-primary border border-primary-subtle text-decoration-none fw-bold p-1.5">
+                                        <a href="<?= url('warehouse/purchases/receive/' . $vp['purchase_order_id']) ?>?document=invoice" class="badge bg-primary-subtle text-primary border border-primary-subtle text-decoration-none fw-bold p-1.5">
                                             <i class="bi bi-receipt me-1"></i><?= e($vp['po_number']) ?>
                                         </a>
                                     </td>
@@ -1046,7 +1046,7 @@
                                         </span>
                                     </td>
                                     <td class="pe-3 text-end text-nowrap">
-                                        <a href="<?= url('warehouse/purchases/receive/' . $vp['purchase_order_id']) ?>" class="btn btn-xs btn-outline-primary py-1 px-2">
+                                        <a href="<?= url('warehouse/purchases/receive/' . $vp['purchase_order_id']) ?>?document=invoice" class="btn btn-xs btn-outline-primary py-1 px-2">
                                             <i class="bi bi-file-earmark-text me-1"></i>Invoice
                                         </a>
                                     </td>

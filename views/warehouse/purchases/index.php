@@ -358,8 +358,11 @@ $oneTimeCount = count($oneTimeCustomers ?? []) + count($unregisteredPurchases ??
                                                         <i class="bi bi-person-lines-fill"></i>
                                                     </button>
                                                     <?php if ($canReceivePurchase): ?>
-                                                        <a href="<?= url('warehouse/purchases/receive/' . ($firstInv['id'] ?? 0)) ?>" target="_blank" class="btn btn-outline-primary" title="Print Tax Invoice">
-                                                            <i class="bi bi-printer me-1"></i> Invoice
+                                                        <a href="<?= url('warehouse/purchases/receive/' . ($firstInv['id'] ?? 0)) ?>" target="_blank" class="btn btn-outline-success" title="Open customer handover bill">
+                                                            <i class="bi bi-receipt me-1"></i> Bill
+                                                        </a>
+                                                        <a href="<?= url('warehouse/purchases/receive/' . ($firstInv['id'] ?? 0)) ?>?document=invoice" target="_blank" class="btn btn-outline-primary" title="Open office soft-copy tax invoice">
+                                                            <i class="bi bi-file-earmark-text me-1"></i> Invoice
                                                         </a>
                                                     <?php endif; ?>
                                                     <?php if (hasPermission('purchases', 'edit')): ?>
@@ -400,8 +403,11 @@ $oneTimeCount = count($oneTimeCustomers ?? []) + count($unregisteredPurchases ??
                                             <td class="text-end pe-3">
                                                 <div class="btn-group btn-group-sm">
                                                     <?php if ($canReceivePurchase): ?>
-                                                        <a href="<?= url('warehouse/purchases/receive/' . $po['id']) ?>" target="_blank" class="btn btn-outline-primary" title="Print Tax Invoice">
-                                                            <i class="bi bi-printer me-1"></i> Invoice
+                                                        <a href="<?= url('warehouse/purchases/receive/' . $po['id']) ?>" target="_blank" class="btn btn-outline-success" title="Open customer handover bill">
+                                                            <i class="bi bi-receipt me-1"></i> Bill
+                                                        </a>
+                                                        <a href="<?= url('warehouse/purchases/receive/' . $po['id']) ?>?document=invoice" target="_blank" class="btn btn-outline-primary" title="Open office soft-copy tax invoice">
+                                                            <i class="bi bi-file-earmark-text me-1"></i> Invoice
                                                         </a>
                                                     <?php endif; ?>
                                                     <?php if (hasPermission('purchases', 'edit')): ?>
@@ -513,8 +519,11 @@ $oneTimeCount = count($oneTimeCustomers ?? []) + count($unregisteredPurchases ??
                                                     </button>
                                                 <?php endif; ?>
                                                 <?php if ($canReceivePurchase): ?>
-                                                    <a href="<?= url('warehouse/purchases/receive/' . $po['id']) ?>" target="_blank" class="btn btn-outline-primary" title="View Tax Invoice &amp; Receipt">
-                                                        <i class="bi bi-printer me-1"></i> Invoice
+                                                    <a href="<?= url('warehouse/purchases/receive/' . $po['id']) ?>" target="_blank" class="btn btn-outline-success" title="Open customer handover bill">
+                                                        <i class="bi bi-receipt me-1"></i> Bill
+                                                    </a>
+                                                    <a href="<?= url('warehouse/purchases/receive/' . $po['id']) ?>?document=invoice" target="_blank" class="btn btn-outline-primary" title="Open office soft-copy tax invoice">
+                                                        <i class="bi bi-file-earmark-text me-1"></i> Invoice
                                                     </a>
                                                 <?php endif; ?>
                                                 <?php if (hasPermission('purchases', 'edit')): ?>
@@ -886,15 +895,17 @@ function openCustomerInvoicesModal(button) {
     } else {
         listEl.innerHTML = invoices.map(invoice => `
             <?php if ($canReceivePurchase): ?>
-            <a href="<?= url('warehouse/purchases/receive/') ?>${encodeURIComponent(invoice.id)}"
-               target="_blank" rel="noopener"
-               class="list-group-item list-group-item-action d-flex align-items-center justify-content-between gap-2 py-2">
+            <div class="list-group-item d-flex align-items-center justify-content-between gap-2 py-2">
                 <span class="min-w-0">
                     <span class="d-block fw-semibold font-monospace text-primary small">${escapeHtml(invoice.po_number || 'Invoice')}</span>
                     <span class="d-block text-muted" style="font-size: 0.72rem;">${escapeHtml(formatDate(invoice.order_date))}</span>
                 </span>
                 <span class="badge rounded-pill bg-success-subtle text-success flex-shrink-0">₹${Number(invoice.total_amount || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
-            </a>
+                <span class="btn-group btn-group-sm flex-shrink-0">
+                    <a href="<?= url('warehouse/purchases/receive/') ?>${encodeURIComponent(invoice.id)}" target="_blank" rel="noopener" class="btn btn-outline-success">Bill</a>
+                    <a href="<?= url('warehouse/purchases/receive/') ?>${encodeURIComponent(invoice.id)}?document=invoice" target="_blank" rel="noopener" class="btn btn-outline-primary">Invoice</a>
+                </span>
+            </div>
             <?php else: ?>
             <div class="list-group-item d-flex align-items-center justify-content-between gap-2 py-2">
                 <span class="fw-semibold font-monospace text-primary small">${escapeHtml(invoice.po_number || 'Invoice')}</span>
@@ -1082,9 +1093,9 @@ function renderPurchasedProductsTable(products) {
                 return `
                     <div class="d-flex align-items-center gap-1.5 flex-wrap py-0.5">
                         <?php if ($canReceivePurchase): ?>
-                        <a href="<?= url('warehouse/purchases/receive/') ?>${ord.po_id}" target="_blank" 
+                        <a href="<?= url('warehouse/purchases/receive/') ?>${ord.po_id}?document=invoice" target="_blank" 
                            class="badge bg-light text-primary border text-decoration-none font-monospace py-1 px-1.5" 
-                           title="View Separate Invoice for Order Date: ${formatDate(ord.order_date)}">
+                           title="View office soft-copy invoice for Order Date: ${formatDate(ord.order_date)}">
                             <i class="bi bi-file-earmark-text me-0.5"></i>${escapeHtml(ord.po_number)} <span class="text-secondary">(${ord.quantity} pcs)</span>
                         </a>
                         <?php else: ?>
@@ -1200,8 +1211,11 @@ function renderOrdersHistoryTable(orders) {
             <td class="text-end pe-3">
                 <div class="btn-group btn-group-sm">
                     <?php if ($canReceivePurchase): ?>
-                        <a href="<?= url('warehouse/purchases/receive/') ?>${ord.id}" target="_blank" class="btn btn-outline-primary" title="Print Separate Tax Invoice">
-                            <i class="bi bi-printer me-1"></i> Invoice
+                        <a href="<?= url('warehouse/purchases/receive/') ?>${ord.id}" target="_blank" class="btn btn-outline-success" title="Open customer handover bill">
+                            <i class="bi bi-receipt me-1"></i> Bill
+                        </a>
+                        <a href="<?= url('warehouse/purchases/receive/') ?>${ord.id}?document=invoice" target="_blank" class="btn btn-outline-primary" title="Open office soft-copy tax invoice">
+                            <i class="bi bi-file-earmark-text me-1"></i> Invoice
                         </a>
                     <?php endif; ?>
                     <?php if (hasPermission('purchases', 'edit')): ?>

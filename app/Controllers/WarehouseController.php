@@ -5634,7 +5634,7 @@ class WarehouseController {
                 );
             }
 
-            Response::redirect(url('warehouse/purchases/receive/' . $poId), 'success', 'Direct customer purchase recorded successfully! Invoice generated.');
+            Response::redirect(url('warehouse/purchases/receive/' . $poId), 'success', 'Direct customer purchase recorded successfully! Customer bill generated.');
         } catch (Exception $e) {
             Response::redirect(url('warehouse/purchases/create'), 'error', 'Failed to record purchase: ' . $e->getMessage());
         }
@@ -5939,9 +5939,21 @@ class WarehouseController {
         $po = PurchaseOrder::find($poId);
         if (!$po) {
             Response::redirect(url('warehouse/purchases'), 'error', 'Purchase record not found.');
+            return;
         }
 
         $items = PurchaseItem::getByPurchaseOrder($poId);
+
+        $isDirectCustomerPurchase = empty($po['seller_id']) && empty($po['warehouse_supplier_id']);
+        $requestedDocument = strtolower(trim((string)($_GET['document'] ?? 'bill')));
+        if ($isDirectCustomerPurchase && $requestedDocument !== 'invoice') {
+            Response::viewOnly('warehouse.purchases.customer_receipt', [
+                'po'              => $po,
+                'items'           => $items,
+                'companySettings' => class_exists('SettingsService') ? \SettingsService::getGroup('company') : [],
+            ]);
+            return;
+        }
 
         Response::view('warehouse.purchases.receive', [
             'pageTitle'    => 'Tax Invoice & Receipt #' . $po['po_number'],
@@ -5949,6 +5961,7 @@ class WarehouseController {
             'activeMenu'   => 'purchases',
             'po'           => $po,
             'items'        => $items,
+            'isOfficeCopy' => $isDirectCustomerPurchase && $requestedDocument === 'invoice',
             'breadcrumb'   => [
                 ['label' => 'Warehouse', 'url' => url('warehouse/dashboard')],
                 ['label' => 'Direct Purchases', 'url' => url('warehouse/purchases')],
@@ -5969,16 +5982,19 @@ class WarehouseController {
 
     public function ajaxScanPurchaseQr(): void {
         $isAdjustmentScan = ($_REQUEST['purpose'] ?? '') === 'stock_adjustment';
+        $isReturnEditScan = ($_REQUEST['purpose'] ?? '') === 'purchase_return_edit';
         $hasScanPermission = $isAdjustmentScan
             ? hasPermission('stock', 'adjust')
-            : (
+            : ($isReturnEditScan
+                ? hasPermission('purchases_returns', 'edit')
+                : (
                 hasPermission('purchases', 'receive')
                 || hasPermission('purchases', 'view')
                 || hasPermission('purchases', 'create')
                 || hasPermission('purchases', 'edit')
                 || hasPermission('purchases_returns', 'view')
                 || hasPermission('purchases_returns', 'process')
-            );
+                ));
         if (!$hasScanPermission) {
             Response::jsonError('Access denied.', [], 403);
             return;
@@ -7022,13 +7038,40 @@ class WarehouseController {
      * Process Customer Return or Exchange for Direct Purchase Order.
      */
     public function processPurchaseReturn(): void {
-        if (!hasPermission('purchases_returns', 'create') && !hasPermission('purchases_returns', 'process')) {
-            Response::json(['success' => false, 'message' => 'Access denied: You do not have permission to process purchase returns.'], 403);
-            return;
-        }
         $rawInput = file_get_contents('php://input');
         $jsonPayload = !empty($rawInput) ? (json_decode($rawInput, true) ?: []) : [];
         $payload = array_merge($_POST, $jsonPayload);
+        if (empty($payload['items']) && !empty($payload['json_payload'])) {
+            $decoded = json_decode($payload['json_payload'], true);
+            if (is_array($decoded)) {
+                $payload = array_merge($payload, $decoded);
+            }
+        }
+        $editReturnId = (int)($payload['return_id'] ?? 0);
+
+        if ($editReturnId > 0) {
+            if (!hasPermission('purchases_returns', 'edit')) {
+                Response::json(['success' => false, 'message' => 'Access denied: You do not have permission to edit purchase returns.'], 403);
+                return;
+            }
+            $editRecord = Database::fetchOne(
+                "SELECT warehouse_id FROM returns
+                 WHERE id = ? AND source_type = 'WAREHOUSE_PURCHASE'",
+                [$editReturnId]
+            );
+            if (!$editRecord) {
+                Response::json(['success' => false, 'message' => 'Return / Exchange transaction not found.'], 404);
+                return;
+            }
+            $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+            if ($scopedWarehouseId !== null && (int)$scopedWarehouseId !== (int)$editRecord['warehouse_id']) {
+                Response::json(['success' => false, 'message' => 'Access denied: This return belongs to another warehouse.'], 403);
+                return;
+            }
+        } elseif (!hasPermission('purchases_returns', 'create') && !hasPermission('purchases_returns', 'process')) {
+            Response::json(['success' => false, 'message' => 'Access denied: You do not have permission to process purchase returns.'], 403);
+            return;
+        }
 
         $csrfToken = $payload['_csrf_token'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
         if (!CSRF::validate($csrfToken)) {
@@ -7042,13 +7085,6 @@ class WarehouseController {
         }
 
         $userId = (int)(Session::userId() ?? 1);
-
-        if (empty($payload['items']) && !empty($payload['json_payload'])) {
-            $decoded = json_decode($payload['json_payload'], true);
-            if (is_array($decoded)) {
-                $payload = array_merge($payload, $decoded);
-            }
-        }
 
         if (!empty($payload['payment_screenshot_base64'])) {
             $base64Data = preg_replace('#^data:image/\w+;base64,#i', '', $payload['payment_screenshot_base64']);
@@ -7066,11 +7102,14 @@ class WarehouseController {
 
         try {
             $result = WarehouseService::processPurchaseReturn($payload, $userId);
+            $successMessage = $editReturnId > 0
+                ? "Return transaction #{$result['return_number']} updated successfully!"
+                : "Return transaction #{$result['return_number']} processed successfully!";
 
             if (str_contains($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json') || isset($payload['is_ajax'])) {
                 Response::json([
                     'success'       => true,
-                    'message'       => "Return transaction #{$result['return_number']} processed successfully!",
+                    'message'       => $successMessage,
                     'return_id'     => $result['return_id'],
                     'return_number' => $result['return_number'],
                     'invoice_url'   => url('warehouse/purchases/returns/invoice/' . $result['return_id']),
@@ -7079,7 +7118,7 @@ class WarehouseController {
                 return;
             }
 
-            Session::flash('success', "Return transaction #{$result['return_number']} processed successfully!");
+            Session::flash('success', $successMessage);
             Response::redirect(url('warehouse/purchases/returns/invoice/' . $result['return_id']));
         } catch (\Throwable $e) {
             if (str_contains($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json') || isset($payload['is_ajax'])) {
@@ -7092,8 +7131,95 @@ class WarehouseController {
     }
 
     /**
-     * View Audit Details of a Direct Purchase Return / Exchange.
+     * Load a Direct Purchase Return / Exchange into edit mode.
      */
+    public function purchaseReturnEdit(string $id): void {
+        if (!hasPermission('purchases_returns', 'edit')) {
+            Session::flash('error', 'Access denied: You do not have permission to edit purchase returns.');
+            Response::redirect(url('warehouse/purchases/returns'));
+            return;
+        }
+
+        $returnId = (int)$id;
+        $data = WarehouseService::getPurchaseReturnDetails($returnId);
+        if (!$data || empty($data['return'])) {
+            Session::flash('error', 'Return / Exchange transaction not found.');
+            Response::redirect(url('warehouse/purchases/returns'));
+            return;
+        }
+
+        $warehouseId = (int)($data['return']['warehouse_id'] ?? 0);
+        $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+        if ($scopedWarehouseId !== null && (int)$scopedWarehouseId !== $warehouseId) {
+            Session::flash('error', 'Access denied: This return belongs to another warehouse.');
+            Response::redirect(url('warehouse/purchases/returns'));
+            return;
+        }
+
+        try {
+            $purchaseData = WarehouseService::lookupPurchaseForReturn(
+                (string)$data['return']['po_number'],
+                $warehouseId,
+                $returnId
+            );
+        } catch (\Throwable $e) {
+            Session::flash('error', 'Unable to load this return for editing: ' . $e->getMessage());
+            Response::redirect(url('warehouse/purchases/returns'));
+            return;
+        }
+
+        if (!$purchaseData) {
+            Session::flash('error', 'Original purchase order was not found.');
+            Response::redirect(url('warehouse/purchases/returns'));
+            return;
+        }
+
+        foreach ($data['exchange_items'] as &$exchangeItem) {
+            if (($exchangeItem['item_type'] ?? '') !== 'NEW') {
+                continue;
+            }
+            $stock = Database::fetchOne(
+                "SELECT COALESCE(SUM(quantity), 0) AS available_stock
+                 FROM stock_balances
+                 WHERE variant_id = ? AND location_type = 'WAREHOUSE'
+                   AND location_id = ? AND stock_state = 'AVAILABLE'",
+                [(int)$exchangeItem['variant_id'], $warehouseId]
+            );
+            $exchangeItem['available_stock'] = (int)($stock['available_stock'] ?? 0) + (int)$exchangeItem['quantity'];
+        }
+        unset($exchangeItem);
+
+        $summary = WarehouseService::getPurchaseReturnsSummary($warehouseId);
+        $recentReturns = WarehouseService::getPurchaseReturnsList($_GET, $warehouseId);
+        $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAllActive();
+
+        Response::view('warehouse.purchases.returns', [
+            'pageTitle'       => 'Edit Return #' . $data['return']['return_number'],
+            'activeModule'    => 'warehouse',
+            'activeMenu'      => 'purchases-returns',
+            'breadcrumb'      => [
+                ['label' => 'Warehouse', 'url' => url('warehouse/dashboard')],
+                ['label' => 'Direct Purchases', 'url' => url('warehouse/purchases')],
+                ['label' => 'Returns & Exchanges', 'url' => url('warehouse/purchases/returns')],
+                ['label' => 'Edit ' . $data['return']['return_number']],
+            ],
+            'summary'         => $summary,
+            'recentReturns'   => $recentReturns,
+            'warehouses'      => $warehouses,
+            'hsnCodes'        => Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC"),
+            'warehouseId'     => $warehouseId,
+            'filters'         => $_GET,
+            'isEditingReturn' => true,
+            'editData'        => [
+                'purchase_data' => $purchaseData,
+                'transaction'   => $data['return'],
+                'return_items'  => $data['return_items'],
+                'exchange'      => $data['exchange'],
+                'exchange_items'=> $data['exchange_items'],
+            ],
+        ]);
+    }
+
     public function purchaseReturnView(string $id): void {
         if (!hasPermission('purchases_returns', 'view')) {
             Session::flash('error', 'Access denied.');

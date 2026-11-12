@@ -20,8 +20,11 @@ $displayNotes = trim(preg_replace('/\[Split Payment:.*?\]\r?\n?/', '', $po['note
         <div class="text-muted small mt-1">Modify customer purchase order details, scan to update line items, pricing, or payment method</div>
     </div>
     <div class="d-flex gap-2">
-        <a href="<?= url('warehouse/purchases/receive/' . $po['id']) ?>" class="btn btn-sm btn-outline-primary">
-            <i class="bi bi-printer me-1"></i> View Invoice
+        <a href="<?= url('warehouse/purchases/receive/' . $po['id']) ?>" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-receipt me-1"></i> Customer Bill
+        </a>
+        <a href="<?= url('warehouse/purchases/receive/' . $po['id']) ?>?document=invoice" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-file-earmark-text me-1"></i> Office Invoice
         </a>
         <a href="<?= url('warehouse/purchases') ?>" class="btn btn-sm btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i> Back to Purchases
@@ -2525,7 +2528,7 @@ function renderPurchasedProductsTable(products) {
 
                 return `
                     <div class="d-flex align-items-center gap-1.5 flex-wrap py-0.5">
-                        <a href="<?= url('warehouse/purchases/receive/') ?>${ord.po_id}" target="_blank" 
+                        <a href="<?= url('warehouse/purchases/receive/') ?>${ord.po_id}?document=invoice" target="_blank" 
                            class="badge bg-light text-primary border text-decoration-none font-monospace py-1 px-1.5" 
                            title="View Separate Invoice for Order Date: ${formatDate(ord.order_date)}">
                             <i class="bi bi-file-earmark-text me-0.5"></i>${escapeHtml(ord.po_number)} <span class="text-secondary">(${ord.quantity} pcs)</span>
@@ -2616,7 +2619,7 @@ function renderOrdersHistoryTable(orders) {
                 <small class="text-muted d-block font-monospace mt-0.5">${escapeHtml(ord.payment_method || 'CASH')}</small>
             </td>
             <td class="text-end pe-3">
-                <a href="<?= url('warehouse/purchases/receive/') ?>${ord.id}" target="_blank" class="btn btn-xs btn-outline-primary" title="Print Tax Invoice">
+                <a href="<?= url('warehouse/purchases/receive/') ?>${ord.id}?document=invoice" target="_blank" class="btn btn-xs btn-outline-primary" title="Print Office Copy Tax Invoice">
                     <i class="bi bi-printer me-1"></i> Invoice
                 </a>
             </td>

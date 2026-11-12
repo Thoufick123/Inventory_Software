@@ -501,9 +501,12 @@ class Router {
         // Production Inventory (Post-QC Passed Inventory)
         $this->get('production/inventory', 'ProductionController', 'productionInventory', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'view']]);
         $this->get('production/inventory/batch/{id}', 'ProductionController', 'productionInventoryBatch', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'view']]);
+        $this->get('production/inventory/supply/{id}', 'ProductionController', 'productionInventorySupplyBatch', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'view']]);
         $this->post('production/inventory/delete-piece', 'ProductionController', 'deleteProductionInventoryPiece', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'delete']]);
         $this->post('production/inventory/supply/update-stock', 'ProductionController', 'updateProductionInventorySupplyStock', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'edit']]);
         $this->post('production/inventory/supply/delete', 'ProductionController', 'deleteProductionInventorySupplyStock', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'delete']]);
+        $this->post('production/inventory/qc/update-stock', 'ProductionController', 'updateProductionInventoryQcStock', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'edit']]);
+        $this->post('production/inventory/qc/delete', 'ProductionController', 'deleteProductionInventoryQcStock', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'delete']]);
 
         // Batch & Outward
         $this->get('production/batches', 'ProductionController', 'batchList', ['AuthMiddleware', ['PermissionMiddleware', 'batches', 'view']]);
@@ -646,7 +649,8 @@ class Router {
         // Direct Purchases Customer Returns & Exchanges
         $this->get('warehouse/purchases/returns', 'WarehouseController', 'purchaseReturnsIndex', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'view']]);
         $this->get('warehouse/purchases/returns/lookup', 'WarehouseController', 'purchaseReturnsLookup', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'view']]);
-        $this->post('warehouse/purchases/returns/process', 'WarehouseController', 'processPurchaseReturn', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'create']]);
+        $this->post('warehouse/purchases/returns/process', 'WarehouseController', 'processPurchaseReturn', ['AuthMiddleware']);
+        $this->get('warehouse/purchases/returns/edit/{id}', 'WarehouseController', 'purchaseReturnEdit', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'edit']]);
         $this->get('warehouse/purchases/returns/view/{id}', 'WarehouseController', 'purchaseReturnView', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'view']]);
         $this->get('warehouse/purchases/returns/invoice/{id}', 'WarehouseController', 'purchaseReturnInvoice', ['AuthMiddleware', ['PermissionMiddleware', 'purchases_returns', 'view']]);
 

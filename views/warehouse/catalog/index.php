@@ -69,35 +69,24 @@ $canDeleteCatalog = hasPermission('wh_catalog', 'delete');
     </div>
 </div>
 
-<!-- SEARCH & FILTER TOOLBAR (Image 1 Style with View Toggle) -->
+<!-- SEARCH & FILTER TOOLBAR -->
 <div class="card border-0 shadow-sm mb-4 bg-white rounded-3">
     <div class="card-body p-3">
         <div class="row g-2 align-items-end">
-            <div class="col-lg-6 col-md-6 col-12">
+            <div class="col-lg-8 col-md-8 col-12">
                 <label class="form-label small fw-semibold text-muted mb-1">Search Category / Subcategory / Style / Attributes</label>
                 <div class="input-group input-group-sm">
                     <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
                     <input type="text" id="globalCatalogSearch" class="form-control" placeholder="Search by name, code, attribute..." oninput="handleGlobalSearch(this.value)">
                 </div>
             </div>
-            <div class="col-lg-2 col-md-2 col-6 d-flex align-items-end gap-1">
+            <div class="col-lg-4 col-md-4 col-6 d-flex align-items-end gap-1">
                 <button type="button" class="btn btn-sm btn-primary px-3 fw-semibold flex-grow-1" onclick="applyFilters()" style="background:#5551ff;border-color:#5551ff;">
                     <i class="bi bi-funnel-fill me-1"></i> Filter
                 </button>
                 <button type="button" class="btn btn-sm btn-outline-secondary px-2" onclick="resetFilters()" title="Reset Filters">
                     <i class="bi bi-arrow-clockwise"></i>
                 </button>
-            </div>
-            <div class="col-lg-4 col-md-4 col-12 d-flex justify-content-lg-end justify-content-start align-items-end mt-2 mt-lg-0">
-                <!-- VIEW MODE SWITCHER: Hierarchy List vs Cascading Columns -->
-                <div class="btn-group btn-group-sm p-1 bg-light rounded-pill border" role="group" aria-label="Catalog View Mode">
-                    <button type="button" class="btn btn-sm rounded-pill px-3 fw-semibold active btn-primary shadow-sm" id="btnToggleList" onclick="switchCatalogView('list')">
-                        <i class="bi bi-list-ul me-1"></i> List
-                    </button>
-                    <button type="button" class="btn btn-sm rounded-pill px-3 fw-semibold btn-light text-muted" id="btnToggleColumns" onclick="switchCatalogView('columns')">
-                        <i class="bi bi-columns-gap me-1"></i> Columns
-                    </button>
-                </div>
             </div>
         </div>
     </div>
@@ -158,7 +147,7 @@ $canDeleteCatalog = hasPermission('wh_catalog', 'delete');
 <!-- ========================================================================= -->
 <!-- VIEW 2: CASCADING COLUMNS VIEW (IMAGE 2 UI STYLE) -->
 <!-- ========================================================================= -->
-<div id="catalogColumnsViewContainer" style="display:none;">
+<div id="catalogColumnsViewContainer" style="display:none;" hidden>
     <div class="row g-3" id="catalogHierarchyRow">
 
         <!-- COL 1: CATEGORY -->
@@ -1023,7 +1012,7 @@ const canEditCatalog = <?= json_encode($canEditCatalog) ?>;
 const canDeleteCatalog = <?= json_encode($canDeleteCatalog) ?>;
 
 let categoryTreeData = [];
-let currentViewMode = localStorage.getItem('grm_catalog_view_mode') || 'list'; // 'list' or 'columns'
+localStorage.removeItem('grm_catalog_view_mode');
 let currentSearchTerm = '';
 let currentTypeFilter = 'all';
 
@@ -1047,33 +1036,8 @@ function formatCatTypeBadge(type) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    switchCatalogView(currentViewMode, false);
     reloadCategoryTree();
 });
-
-// View Switcher: List View (Image 1 Style) vs Cascading Columns View (Image 2 Style)
-function switchCatalogView(mode, persist = true) {
-    currentViewMode = mode;
-    if (persist) {
-        localStorage.setItem('grm_catalog_view_mode', mode);
-    }
-    const listCnt = document.getElementById('catalogListViewContainer');
-    const colsCnt = document.getElementById('catalogColumnsViewContainer');
-    const btnList = document.getElementById('btnToggleList');
-    const btnCols = document.getElementById('btnToggleColumns');
-
-    if (mode === 'columns') {
-        if (listCnt) listCnt.style.display = 'none';
-        if (colsCnt) colsCnt.style.display = '';
-        if (btnList) { btnList.className = 'btn btn-sm rounded-pill px-3 fw-semibold btn-light text-muted'; }
-        if (btnCols) { btnCols.className = 'btn btn-sm rounded-pill px-3 fw-semibold active btn-primary shadow-sm'; }
-    } else {
-        if (listCnt) listCnt.style.display = '';
-        if (colsCnt) colsCnt.style.display = 'none';
-        if (btnList) { btnList.className = 'btn btn-sm rounded-pill px-3 fw-semibold active btn-primary shadow-sm'; }
-        if (btnCols) { btnCols.className = 'btn btn-sm rounded-pill px-3 fw-semibold btn-light text-muted'; }
-    }
-}
 
 // Global Search & Filters
 function handleGlobalSearch(term) {
