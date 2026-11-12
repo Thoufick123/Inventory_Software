@@ -1,3 +1,4 @@
+                        <div class="col-md-6" id="damageWeightSummary">
 <div class="page-header mb-4">
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 w-100">
         <div>
@@ -412,8 +413,9 @@
 
                         <!-- Estimated Loss Valuation (Disabled with clear visibility - Auto-calculated) -->
                         <div class="col-md-6">
+                        <div class="col-md-6" id="damageLossSummary">
                             <label class="form-label fw-bold text-danger">
-                                <i class="bi bi-currency-rupee me-1"></i>Estimated Loss Valuation <span class="badge bg-danger-subtle text-danger border ms-1">Auto</span>
+                                <i class="bi bi-currency-rupee me-1"></i><span id="reportLossLabel">Estimated Loss Valuation</span> <span class="badge bg-danger-subtle text-danger border ms-1">Auto</span>
                             </label>
                             <div class="input-group">
                                 <span class="input-group-text bg-danger-subtle text-danger fw-bold">₹</span>
@@ -873,8 +875,8 @@ function renderDamageScannedLabels() {
 
     let totalWeight = 0;
     let totalLoss = 0;
+    let supplyCount = 0;
     damageScannedLabels.forEach((item, index) => {
-        totalWeight += item.weight;
         totalLoss += item.loss;
 
         const row = document.createElement('div');
@@ -890,6 +892,8 @@ function renderDamageScannedLabels() {
 
         const isProd = (item.itemType === 'PRODUCT');
         const isSupply = (item.damageKind === 'SUPPLY');
+        if (!isSupply) totalWeight += item.weight;
+        else supplyCount++;
         const typeBadge = document.createElement('span');
         typeBadge.className = `badge ${isSupply ? 'bg-info-subtle text-info' : (isProd ? 'bg-primary-subtle text-primary' : 'bg-secondary-subtle text-secondary')} border me-1`;
         typeBadge.textContent = isSupply ? 'Supply' : (isProd ? 'Product' : 'Roll');
@@ -988,13 +992,33 @@ function renderDamageScannedLabels() {
     });
 
     document.getElementById('inputDamagedWeight').value = totalWeight.toFixed(2);
+    const nonSupplyCount = damageScannedLabels.length - supplyCount;
+    const suppliesOnly = supplyCount > 0 && nonSupplyCount === 0;
+    const weightSummary = document.getElementById('damageWeightSummary');
+    const lossSummary = document.getElementById('damageLossSummary');
+    const lossLabel = document.getElementById('reportLossLabel');
+    if (weightSummary) weightSummary.classList.toggle('d-none', suppliesOnly);
+    if (lossSummary) {
+        lossSummary.classList.toggle('col-md-6', !suppliesOnly);
+        lossSummary.classList.toggle('col-12', suppliesOnly);
+    }
+    if (lossLabel) lossLabel.textContent = suppliesOnly ? 'Estimated Supply Loss Amount' : 'Estimated Loss Valuation';
+
     document.getElementById('inputEstimatedLoss').value = totalLoss.toFixed(2);
     const weightHelp = document.getElementById('reportWeightHelp');
-    if (weightHelp) weightHelp.textContent = `${damageScannedLabels.length} scanned item(s)`;
+    if (weightHelp) weightHelp.textContent = supplyCount > 0
+        ? `Weight excludes ${supplyCount} purchased supply label(s)`
+        : `${damageScannedLabels.length} scanned item(s)`;
     const rateBadge = document.getElementById('reportRateBadge');
-    if (rateBadge) rateBadge.textContent = totalWeight > 0 ? `₹${(totalLoss / totalWeight).toFixed(2)} / kg` : '₹0.00 / kg';
+    if (rateBadge) rateBadge.textContent = suppliesOnly
+        ? 'Purchase cost'
+        : (supplyCount > 0 ? 'Mixed items' : (totalWeight > 0 ? `₹${(totalLoss / totalWeight).toFixed(2)} / kg` : '₹0.00 / kg'));
     const lossHelp = document.getElementById('reportLossCalcHelp');
-    if (lossHelp) lossHelp.textContent = `Estimated loss for ${damageScannedLabels.length} scanned item(s): ₹${totalLoss.toFixed(2)}`;
+    if (lossHelp) lossHelp.textContent = suppliesOnly
+        ? `Purchase valuation for ${supplyCount} supply label(s): ₹${totalLoss.toFixed(2)}`
+        : (supplyCount > 0
+            ? `Includes purchase value for ${supplyCount} supply label(s): ₹${totalLoss.toFixed(2)}`
+            : `Estimated loss for ${damageScannedLabels.length} scanned item(s): ₹${totalLoss.toFixed(2)}`);
 }
 
 function scanDamageRollQr() {

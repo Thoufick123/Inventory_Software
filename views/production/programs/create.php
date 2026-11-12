@@ -1948,14 +1948,20 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
             let html = '';
             data.attributes.forEach(attr => {
                 const isReq = attr.is_required == 1;
-                const cleanAttrName = attr.attr_name.replace(/[^a-zA-Z0-9_]/g, '_');
-                const isSize = (attr.attr_name.toUpperCase() === 'SIZE');
+                const isSize = /^(SIZE|SIZES)$/i.test(attr.attr_name.trim());
+                const isColor = /^(COLOR|COLORS)$/i.test(attr.attr_name.trim());
+                const cleanAttrName = isSize ? 'SIZE' : (isColor ? 'COLOR' : attr.attr_name.replace(/[^a-zA-Z0-9_]/g, '_'));
                 const opts = attr.attr_options ? attr.attr_options.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+                // Skip empty select/multi_select attributes with no options
+                if (opts.length === 0 && (attr.attr_type === 'MULTI_SELECT' || attr.attr_type === 'SELECT')) {
+                    return;
+                }
 
                 // Retrieve saved value/values for this attribute
                 let curVal = '';
                 if (parsedSaved && typeof parsedSaved === 'object') {
-                    curVal = parsedSaved[attr.attr_name] || parsedSaved[attr.id] || '';
+                    curVal = parsedSaved[attr.attr_name] || parsedSaved[attr.id] || (isSize ? (parsedSaved['SIZE'] || parsedSaved['SIZES']) : '') || (isColor ? (parsedSaved['COLOR'] || parsedSaved['COLORS']) : '') || '';
                 }
                 let curArr = [];
                 if (Array.isArray(curVal)) {
@@ -1964,16 +1970,17 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
                     curArr = curVal.split(',').map(v => v.toUpperCase().trim());
                 }
 
-                // If attribute has options, or is SIZE, or is MULTI_SELECT:
-                // Render with multi-checkbox pills/chips UI like Image 2!
-                if (isSize || attr.attr_type === 'MULTI_SELECT' || (opts.length > 0 && attr.attr_type !== 'TEXT' && attr.attr_type !== 'NUMBER')) {
-                    const attrLabelTitle = isSize ? 'Size Attributes:' : `${escapeHtml(attr.attr_name)} Attributes:`;
+                // If attribute has options, or is SIZE/COLOR, or is MULTI_SELECT:
+                // Render with multi-checkbox pills/chips UI like Catalog Edit!
+                if (isSize || isColor || attr.attr_type === 'MULTI_SELECT' || (opts.length > 0 && attr.attr_type !== 'TEXT' && attr.attr_type !== 'NUMBER')) {
+                    const attrLabelTitle = isSize ? 'Size Attributes:' : (isColor ? 'Color Attributes:' : `${escapeHtml(attr.attr_name)} Attributes:`);
+                    const inputAttrName = isSize ? 'SIZE' : (isColor ? 'COLOR' : attr.attr_name);
 
                     html += `
                     <div class="p-3 bg-white rounded-3 border shadow-xs roll-attr-block mb-3" id="roll_attr_block_${idx}_${cleanAttrName}">
                         <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                             <label class="form-label fw-bold mb-0 text-dark small d-flex align-items-center gap-1.5" style="font-size: 12px;">
-                                <i class="bi bi-${isSize ? 'rulers' : 'tags'} text-primary"></i>
+                                <i class="bi bi-${isSize ? 'rulers' : (isColor ? 'palette' : 'tags')} text-primary"></i>
                                 <span>${attrLabelTitle}</span>
                                 ${isReq ? '<span class="text-danger">*</span>' : ''}
                             </label>
@@ -1992,7 +1999,7 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
                             const isChecked = curArr.includes(opt.toUpperCase().trim());
                             html += `
                             <label class="btn btn-outline-secondary size-check-btn d-inline-flex align-items-center gap-1.5 py-1.5 px-3 rounded-2 bg-white text-dark border-secondary-subtle fw-semibold shadow-2xs" style="cursor: pointer; font-size: 12px; transition: all 0.15s ease-in-out;" id="attr_chip_${idx}_${cleanAttrName}_${cleanOpt}">
-                                <input type="checkbox" name="rolls[${idx}][attributes][${escapeHtml(attr.attr_name)}][]" class="form-check-input m-0 size-checkbox attr-cb-${idx}-${cleanAttrName}" value="${escapeHtml(opt)}" ${isChecked ? 'checked' : ''}>
+                                <input type="checkbox" name="rolls[${idx}][attributes][${escapeHtml(inputAttrName)}][]" class="form-check-input m-0 size-checkbox attr-cb-${idx}-${cleanAttrName}" value="${escapeHtml(opt)}" ${isChecked ? 'checked' : ''}>
                                 <span class="fw-bold ms-1">${escapeHtml(opt)}</span>
                             </label>`;
                         });
