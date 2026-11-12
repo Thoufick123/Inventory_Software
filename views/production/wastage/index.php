@@ -271,6 +271,9 @@
                                             <button type="button" class="btn btn-outline-info btn-action-icon" title="View Wastage Sale Details" aria-label="View Wastage Sale Details" onclick="openWastageDetails(<?= (int)$s['id'] ?>)">
                                                 <i class="bi bi-eye"></i>
                                             </button>
+                                            <button type="button" class="btn btn-outline-success btn-action-icon" title="View & Print Sale Voucher" aria-label="View & Print Sale Voucher" onclick="openWastageReceipt(<?= (int)$s['id'] ?>)">
+                                                <i class="bi bi-printer"></i>
+                                            </button>
                                             <?php if (hasPermission('wastage', 'edit')): ?>
                                             <!-- Edit Button -->
                                             <button type="button" class="btn btn-outline-primary btn-action-icon" title="Edit Sale Details" onclick='openEditWastageModal(<?= json_encode($s) ?>)'>
@@ -499,8 +502,8 @@
                                     <span class="badge bg-white text-secondary border small">Type Rate or Total Price directly</span>
                                 </div>
                                 <div class="row g-3">
-                                    <!-- Weight in KG -->
-                                    <div class="col-md-4">
+                                    <!-- Row 1: Weight in KG -->
+                                    <div class="col-12">
                                         <label class="form-label fw-bold text-dark">Wastage Weight (kg) <span class="text-danger">*</span></label>
                                         <div class="input-group">
                                             <input type="number" step="0.01" min="0.01" name="weight" id="newWeight" class="form-control fw-bold fs-6" placeholder="0.00" required oninput="onNewWeightChange()">
@@ -510,8 +513,8 @@
                                         <div id="newWeightExceedAlert" class="text-danger small mt-1 fw-bold d-none"></div>
                                     </div>
 
-                                    <!-- Rate per KG (Manual Entry) -->
-                                    <div class="col-md-4">
+                                    <!-- Row 2: Rate per KG & Total Sale Price (Next Row) -->
+                                    <div class="col-md-6">
                                         <label class="form-label fw-bold text-dark">Selling Rate (₹ / kg) <span class="text-danger">*</span></label>
                                         <div class="input-group">
                                             <span class="input-group-text bg-white fw-bold">₹</span>
@@ -521,8 +524,7 @@
                                         <small class="text-muted">Enter manual scrap rate per kg</small>
                                     </div>
 
-                                    <!-- Total Selling Amount (Editable Manual Entry) -->
-                                    <div class="col-md-4">
+                                    <div class="col-md-6">
                                         <label class="form-label fw-bold text-success">Total Sale Price (₹) <span class="text-danger">*</span> <span class="badge bg-success-subtle text-success border ms-1">Editable</span></label>
                                         <div class="input-group">
                                             <span class="input-group-text bg-success-subtle text-success fw-bold">₹</span>
@@ -650,14 +652,17 @@
                                     <span class="badge bg-white text-secondary border small">Type Rate or Total Price directly</span>
                                 </div>
                                 <div class="row g-3">
-                                    <div class="col-md-4">
+                                    <!-- Row 1: Wastage Weight in KG -->
+                                    <div class="col-12">
                                         <label class="form-label fw-bold text-dark">Wastage Weight (kg) <span class="text-danger">*</span></label>
                                         <div class="input-group">
                                             <input type="number" step="0.01" min="0.01" name="weight" id="editWeight" class="form-control fw-bold fs-6" required oninput="onEditWeightChange()">
                                             <span class="input-group-text bg-white">kg</span>
                                         </div>
                                     </div>
-                                    <div class="col-md-4">
+
+                                    <!-- Row 2: Rate per KG & Total Sale Price (Next Row) -->
+                                    <div class="col-md-6">
                                         <label class="form-label fw-bold text-dark">Selling Rate (₹ / kg) <span class="text-danger">*</span></label>
                                         <div class="input-group">
                                             <span class="input-group-text bg-white fw-bold">₹</span>
@@ -665,7 +670,8 @@
                                             <span class="input-group-text bg-white">/ kg</span>
                                         </div>
                                     </div>
-                                    <div class="col-md-4">
+
+                                    <div class="col-md-6">
                                         <label class="form-label fw-bold text-success">Total Sale Price (₹) <span class="text-danger">*</span> <span class="badge bg-success-subtle text-success border ms-1">Editable</span></label>
                                         <div class="input-group">
                                             <span class="input-group-text bg-success-subtle text-success fw-bold">₹</span>
@@ -840,13 +846,8 @@
                     </div>
                 </div>
             </div>
-            <div class="modal-footer bg-white border-top py-2.5 d-flex justify-content-between">
+            <div class="modal-footer bg-white border-top py-2.5">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
-                <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-outline-dark" id="btnWstPrintReceipt" onclick="openPrintFromWastageDetails()">
-                        <i class="bi bi-printer me-1"></i> Print Receipt Voucher
-                    </button>
-                </div>
             </div>
         </div>
     </div>
