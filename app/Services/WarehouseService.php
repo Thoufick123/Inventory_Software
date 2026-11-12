@@ -1686,17 +1686,16 @@ class WarehouseService {
         $productPrefix = strtoupper((string)preg_replace('/[^A-Z0-9]/', '', $productPrefix));
         $productPrefix = substr($productPrefix, 0, 4);
         $basePrefix = $productPrefix . date('my');
-        $sequencePattern = '/^' . preg_quote($productPrefix, '/') . '\d{4}(\d+)$/i';
+        $sequencePattern = '/^' . preg_quote($basePrefix, '/') . '(\d+)$/i';
 
-        $variantMax = 0;
-        $otherMax = 0;
+        $maxSequence = 0;
         $otherRanges = [];
         $usedCodes = [];
         $qrRows = Database::fetchAll(
             "SELECT variant_id, qr_code, series_end_code
              FROM warehouse_qr_codes
-             WHERE qr_code LIKE ? OR series_end_code LIKE ?",
-            [$productPrefix . '%', $productPrefix . '%']
+             WHERE UPPER(qr_code) LIKE UPPER(?) OR UPPER(COALESCE(series_end_code, '')) LIKE UPPER(?)",
+            [$basePrefix . '%', $basePrefix . '%']
         );
         foreach ($qrRows as $row) {
             $startNumber = 0;
@@ -1712,21 +1711,22 @@ class WarehouseService {
                 $usedCodes[strtoupper($endCode)] = true;
             }
             $endNumber = max($startNumber, $endNumber);
+            $maxSequence = max($maxSequence, $startNumber, $endNumber);
             if ((int)$row['variant_id'] === $variantId) {
-                $variantMax = max($variantMax, $startNumber, $endNumber);
-            } else {
-                $otherMax = max($otherMax, $startNumber, $endNumber);
-                if ($startNumber > 0) {
-                    $otherRanges[] = ['start' => $startNumber, 'end' => max($startNumber, $endNumber)];
-                }
+                continue;
+            }
+            if ($startNumber > 0) {
+                $otherRanges[] = ['start' => $startNumber, 'end' => max($startNumber, $endNumber)];
             }
         }
 
         $variantRows = Database::fetchAll(
             "SELECT id, qr_code, series_start_code, series_end_code
              FROM product_variants
-             WHERE qr_code LIKE ? OR series_start_code LIKE ? OR series_end_code LIKE ?",
-            [$productPrefix . '%', $productPrefix . '%', $productPrefix . '%']
+             WHERE UPPER(COALESCE(qr_code, '')) LIKE UPPER(?)
+                OR UPPER(COALESCE(series_start_code, '')) LIKE UPPER(?)
+                OR UPPER(COALESCE(series_end_code, '')) LIKE UPPER(?)",
+            [$basePrefix . '%', $basePrefix . '%', $basePrefix . '%']
         );
         foreach ($variantRows as $row) {
             $numbers = [];
@@ -1739,17 +1739,16 @@ class WarehouseService {
             }
             $startNumber = $numbers['series_start_code'] ?? $numbers['qr_code'] ?? 0;
             $endNumber = $numbers['series_end_code'] ?? $startNumber;
+            $maxSequence = max($maxSequence, $startNumber, $endNumber);
             if ((int)$row['id'] === $variantId) {
-                $variantMax = max($variantMax, $startNumber, $endNumber);
-            } else {
-                $otherMax = max($otherMax, $startNumber, $endNumber);
-                if ($startNumber > 0) {
-                    $otherRanges[] = ['start' => min($startNumber, $endNumber), 'end' => max($startNumber, $endNumber)];
-                }
+                continue;
+            }
+            if ($startNumber > 0) {
+                $otherRanges[] = ['start' => min($startNumber, $endNumber), 'end' => max($startNumber, $endNumber)];
             }
         }
 
-        $nextSequence = ($variantMax > 0 ? $variantMax : $otherMax) + 1;
+        $nextSequence = $maxSequence + 1;
         $tags = [];
         for ($index = 0; $index < $labelCount; $index++) {
             while (true) {
@@ -1773,8 +1772,15 @@ class WarehouseService {
                     $nextSequence = $endSequence + 1;
                     continue;
                 }
-                if (Database::fetchOne("SELECT id FROM warehouse_qr_codes WHERE qr_code = ? LIMIT 1", [$tagCode])
-                    || Database::fetchOne("SELECT id FROM product_variants WHERE qr_code = ? LIMIT 1", [$tagCode])) {
+                if (Database::fetchOne("SELECT id FROM warehouse_qr_codes WHERE UPPER(TRIM(qr_code)) = ? LIMIT 1", [$tagCode])
+                    || Database::fetchOne(
+                        "SELECT id FROM product_variants
+                         WHERE UPPER(TRIM(COALESCE(qr_code, ''))) = ?
+                            OR UPPER(TRIM(COALESCE(series_start_code, ''))) = ?
+                            OR UPPER(TRIM(COALESCE(series_end_code, ''))) = ?
+                         LIMIT 1",
+                        [$tagCode, $tagCode, $tagCode]
+                    )) {
                     $nextSequence = $endSequence + 1;
                     continue;
                 }
