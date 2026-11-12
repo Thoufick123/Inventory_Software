@@ -14387,6 +14387,137 @@ class ProductionController {
     }
 
     /**
+     * Dedicated QR Barcode Generation & Thermal Printing for Other Garment Supplies in a Purchase.
+     */
+    public function productionPurchaseSupplyQr(string $id): void {
+        $purchaseId = (int)$id;
+        $purchase = Database::fetchOne(
+            "SELECT pp.*, s.name AS supplier_name, s.company AS supplier_company, s.phone AS supplier_phone,
+                    s.material_type AS seller_material_type
+             FROM production_purchases pp
+             LEFT JOIN sellers s ON s.id = pp.seller_id
+             WHERE pp.id = ?",
+            [$purchaseId]
+        );
+
+        if (!$purchase) {
+            Session::flash('error', 'Purchase record not found.');
+            Response::redirect(url('production/purchases'));
+            return;
+        }
+
+        $seller = [
+            'id'            => $purchase['seller_id'],
+            'name'          => $purchase['supplier_name'],
+            'company'       => $purchase['supplier_company'],
+            'phone'         => $purchase['supplier_phone'],
+            'material_type' => $purchase['seller_material_type'],
+        ];
+
+        $selectedItemId = !empty($_GET['item_id']) ? (int)$_GET['item_id'] : 0;
+        $sql = "SELECT ppi.*
+                FROM production_purchase_items ppi
+                WHERE ppi.purchase_id = ? AND ppi.item_type = 'GENERAL_SUPPLY'";
+        $params = [$purchaseId];
+        if ($selectedItemId > 0) {
+            $sql .= " AND ppi.id = ?";
+            $params[] = $selectedItemId;
+        }
+        $sql .= " ORDER BY ppi.id ASC";
+        $supplies = Database::fetchAll($sql, $params);
+
+        $mode = strtolower(trim((string)($_GET['mode'] ?? 'piece'))); // 'piece' or 'package'
+        $supplierTitle = mb_strtoupper(trim($purchase['supplier_company'] ?: ($purchase['supplier_name'] ?? 'SUPPLIER')));
+        $prefix = 'SP' . date('my', strtotime($purchase['purchase_date']));
+        $globalStickerIndex = 1;
+        $stickers = [];
+        $maxPerItem = 100;
+
+        foreach ($supplies as $idx => $it) {
+            $itemName = mb_strtoupper(trim($it['item_name'] ?? 'SUPPLY ITEM'));
+            $unit = mb_strtoupper(trim($it['unit'] ?? 'PCS'));
+            $rawQty = (float)($it['quantity'] ?? 1);
+            $isIntQty = (floor($rawQty) === $rawQty);
+            $qty = (int)$rawQty;
+            $unitPrice = (float)($it['unit_price'] ?? 0);
+            $totalPrice = (float)($it['total_price'] ?? ($rawQty * $unitPrice));
+            $hsnCode = !empty($it['hsn_code']) ? trim((string)$it['hsn_code']) : '—';
+
+            // In package mode, or for non-integer / bulk quantities, generate 1 master package label
+            if ($mode === 'package' || !$isIntQty || $qty <= 1 || $qty > $maxPerItem) {
+                $pieceCode = sprintf('%s%02d', $prefix, $globalStickerIndex++);
+                $stickers[] = [
+                    'index'          => count($stickers) + 1,
+                    'item_id'        => (int)$it['id'],
+                    'item_index'     => $idx + 1,
+                    'piece_index'    => 1,
+                    'total_qty'      => 1,
+                    'is_package'     => true,
+                    'item_name'      => $itemName,
+                    'display_title'  => $itemName,
+                    'unit'           => $unit,
+                    'quantity_label' => number_format($rawQty, $isIntQty ? 0 : 3) . ' ' . $unit,
+                    'quantity_raw'   => $rawQty,
+                    'unit_price'     => $unitPrice,
+                    'total_price'    => $totalPrice,
+                    'hsn_code'       => $hsnCode,
+                    'po_number'      => $purchase['purchase_number'],
+                    'invoice_number' => $purchase['invoice_number'] ?? '-',
+                    'supplier_name'  => $supplierTitle,
+                    'code'           => $pieceCode,
+                    'qr_payload'     => $pieceCode,
+                    'purchase_date'  => date('d M Y', strtotime($purchase['purchase_date'])),
+                ];
+            } else {
+                // In piece mode, generate individual unit labels (e.g. 1 of 10)
+                for ($p = 0; $p < $qty; $p++) {
+                    $pieceCode = sprintf('%s%02d', $prefix, $globalStickerIndex++);
+                    $pieceLabel = $itemName . ' (' . ($p + 1) . '/' . $qty . ')';
+                    $stickers[] = [
+                        'index'          => count($stickers) + 1,
+                        'item_id'        => (int)$it['id'],
+                        'item_index'     => $idx + 1,
+                        'piece_index'    => $p + 1,
+                        'total_qty'      => $qty,
+                        'is_package'     => false,
+                        'item_name'      => $itemName,
+                        'display_title'  => $pieceLabel,
+                        'unit'           => $unit,
+                        'quantity_label' => '1 ' . $unit . ' (of ' . $qty . ')',
+                        'quantity_raw'   => 1,
+                        'unit_price'     => $unitPrice,
+                        'total_price'    => $unitPrice,
+                        'hsn_code'       => $hsnCode,
+                        'po_number'      => $purchase['purchase_number'],
+                        'invoice_number' => $purchase['invoice_number'] ?? '-',
+                        'supplier_name'  => $supplierTitle,
+                        'code'           => $pieceCode,
+                        'qr_payload'     => $pieceCode,
+                        'purchase_date'  => date('d M Y', strtotime($purchase['purchase_date'])),
+                    ];
+                }
+            }
+        }
+
+        // Count rolls in this purchase for quick navigation
+        $rollCount = (int)(Database::fetchOne(
+            "SELECT COUNT(*) AS cnt FROM production_purchase_items WHERE purchase_id = ? AND item_type = 'FABRIC_ROLL'",
+            [$purchaseId]
+        )['cnt'] ?? 0);
+
+        Response::viewOnly('production.purchases.supply_qr', [
+            'pageTitle'      => 'Other Garment Supplies QR Labels — ' . $purchase['purchase_number'],
+            'purchase'       => $purchase,
+            'seller'         => $seller,
+            'supplies'       => $supplies,
+            'stickers'       => $stickers,
+            'mode'           => $mode,
+            'selectedItemId' => $selectedItemId,
+            'rollCount'      => $rollCount,
+        ]);
+    }
+
+    /**
      * Real-time duplicate & validation check for Material Supplier creation/editing.
      */
     public function ajaxCheckSupplierDuplicate(): void {

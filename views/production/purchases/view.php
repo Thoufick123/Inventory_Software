@@ -2,9 +2,30 @@
     <div>
         <h2 class="mb-1"><i class="bi bi-receipt me-2 text-primary"></i><?= e($purchase['purchase_number']) ?></h2>
     </div>
-    <div class="d-flex gap-2">
+    <?php
+    $hasRolls = false;
+    $hasSupplies = false;
+    foreach ($items as $it) {
+        if (($it['item_type'] ?? '') === 'FABRIC_ROLL') $hasRolls = true;
+        if (($it['item_type'] ?? '') === 'GENERAL_SUPPLY') $hasSupplies = true;
+    }
+    ?>
+    <div class="d-flex gap-2 flex-wrap">
         <a href="<?= url('production/purchases') ?>" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
-       </div>
+        <?php if ($hasRolls): ?>
+            <a href="<?= url('production/purchases/roll-qr/' . $purchase['id']) ?>" class="btn btn-outline-dark" target="_blank" rel="noopener" title="Print Roll QR Labels">
+                <i class="bi bi-qr-code text-warning me-1"></i> Roll QR Labels
+            </a>
+        <?php endif; ?>
+        <?php if ($hasSupplies): ?>
+            <a href="<?= url('production/purchases/supply-qr/' . $purchase['id']) ?>" class="btn btn-success" target="_blank" rel="noopener" title="Print Other Garment Supplies QR Labels">
+                <i class="bi bi-tags-fill me-1"></i> Supply QR Labels
+            </a>
+        <?php endif; ?>
+        <a href="<?= url('production/purchases/print/' . $purchase['id']) ?>" class="btn btn-outline-primary" target="_blank" rel="noopener" title="Print PO Invoice">
+            <i class="bi bi-printer me-1"></i> Print Invoice
+        </a>
+    </div>
 </div>
 
 <div class="row g-3 mb-4">
@@ -53,7 +74,7 @@
     </div>
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0" id="purchasedItemsTable">
-            <thead class="table-light"><tr><th>#</th><th>Item</th><th>HSN</th><th>Quantity</th><th class="text-end">Unit Price</th><th class="text-end">Subtotal</th><th>GST</th><th class="text-end">Tax</th><th class="text-end">Total</th></tr></thead>
+            <thead class="table-light"><tr><th>#</th><th>Item</th><th>HSN</th><th>Quantity</th><th class="text-end">Unit Price</th><th class="text-end">Subtotal</th><th>GST</th><th class="text-end">Tax</th><th class="text-end">Total</th><th class="text-center">Label</th></tr></thead>
             <tbody id="purchasedItemsBody">
             <?php
                 $subtotal = 0.0;
@@ -99,18 +120,31 @@
                     <td><?= e($taxType) ?></td>
                     <td class="text-end">₹<?= number_format($tax, 2) ?></td>
                     <td class="text-end fw-bold">₹<?= number_format((float)$item['total_price'], 2) ?></td>
+                    <td class="text-center">
+                        <?php if ($item['item_type'] === 'FABRIC_ROLL' && !empty($item['seller_roll_id'])): ?>
+                            <a class="btn btn-xs btn-outline-dark fw-semibold" href="<?= url('production/sellers/roll-labels/' . $item['seller_roll_id']) ?>" target="_blank" rel="noopener" title="Thermal Print Roll Label">
+                                <i class="bi bi-qr-code text-primary me-1"></i> Label
+                            </a>
+                        <?php elseif ($item['item_type'] === 'GENERAL_SUPPLY'): ?>
+                            <a class="btn btn-xs btn-outline-success fw-semibold" href="<?= url('production/purchases/supply-qr/' . $purchase['id'] . '?item_id=' . $item['id']) ?>" target="_blank" rel="noopener" title="Thermal Print Supply Label">
+                                <i class="bi bi-tags-fill me-1"></i> Label
+                            </a>
+                        <?php else: ?>
+                            <span class="text-muted small">—</span>
+                        <?php endif; ?>
+                    </td>
                 </tr>
             <?php endforeach; ?>
                 <tr id="noItemsMatchRow" class="d-none">
-                    <td colspan="9" class="text-center text-muted py-4">
+                    <td colspan="10" class="text-center text-muted py-4">
                         <i class="bi bi-search me-1"></i> No matching purchased items found.
                     </td>
                 </tr>
             </tbody>
             <tfoot class="table-light">
-                <tr><th colspan="5" class="text-end">Subtotal</th><th class="text-end">₹<?= number_format($subtotal, 2) ?></th><th colspan="2"></th><th></th></tr>
-                <tr><th colspan="8" class="text-end">Taxes</th><th class="text-end">₹<?= number_format($taxTotal, 2) ?></th></tr>
-                <tr><th colspan="8" class="text-end">Overall Total</th><th class="text-end text-success">₹<?= number_format((float)$purchase['total_amount'], 2) ?></th></tr>
+                <tr><th colspan="5" class="text-end">Subtotal</th><th class="text-end">₹<?= number_format($subtotal, 2) ?></th><th colspan="3"></th><th></th></tr>
+                <tr><th colspan="8" class="text-end">Taxes</th><th class="text-end">₹<?= number_format($taxTotal, 2) ?></th><th></th></tr>
+                <tr><th colspan="8" class="text-end">Overall Total</th><th class="text-end text-success">₹<?= number_format((float)$purchase['total_amount'], 2) ?></th><th></th></tr>
             </tfoot>
         </table>
     </div>

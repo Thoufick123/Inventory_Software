@@ -366,6 +366,7 @@ class Router {
         $this->post('production/purchases/delete/{id}', 'ProductionController', 'deleteProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'delete']]);
         $this->get('production/purchases/print/{id}', 'ProductionController', 'printProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'view']]);
         $this->get('production/purchases/roll-qr/{id}', 'ProductionController', 'productionPurchaseRollQr', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'view']]);
+        $this->get('production/purchases/supply-qr/{id}', 'ProductionController', 'productionPurchaseSupplyQr', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'view']]);
         $this->get('production/purchases/create', 'ProductionController', 'createProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'create']]);
         $this->post('production/purchases/store', 'ProductionController', 'storeProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'create']]);
 
