@@ -1503,11 +1503,14 @@ class WarehouseService {
         $adjustmentType = strtoupper(trim((string)($data['adjustment_type'] ?? '')));
         $qrCodes = $data['qr_codes'] ?? [];
 
-        if ($variantId <= 0 || $warehouseId <= 0 || $quantity <= 0) {
-            throw new InvalidArgumentException('Select a warehouse and product and enter a positive quantity.');
+        if ($variantId <= 0 || $warehouseId <= 0) {
+            throw new InvalidArgumentException('Select a warehouse and product.');
         }
         if (!in_array($adjustmentType, ['INCREASE', 'DECREASE'], true)) {
             throw new InvalidArgumentException('Select either Stock Increase or Stock Decrease.');
+        }
+        if ($adjustmentType === 'INCREASE' && $quantity <= 0) {
+            throw new InvalidArgumentException('Enter a positive quantity for the stock increase.');
         }
         if (!is_array($qrCodes)) {
             throw new InvalidArgumentException('The QR code list is invalid.');
@@ -1588,9 +1591,10 @@ class WarehouseService {
                     }
                 }
             } else {
-                if (!empty($normalizedQrCodes)) {
-                    self::validateAdjustmentQrCodes($variantId, $warehouseId, $normalizedQrCodes, $quantity);
+                if (empty($normalizedQrCodes)) {
+                    throw new InvalidArgumentException('Scan at least one product QR code before decreasing stock.');
                 }
+                $quantity = self::validateAdjustmentQrCodes($variantId, $warehouseId, $normalizedQrCodes, null);
             }
 
             $data['adjustment_type'] = $adjustmentType;
@@ -1822,12 +1826,12 @@ class WarehouseService {
      * Create Stock Adjustment Request.
      */
     public static function createAdjustment(array $data, int $userId): int {
-        if (($data['adjustment_type'] ?? '') === 'DECREASE' && !empty($data['qr_codes'])) {
-            self::validateAdjustmentQrCodes(
+        if (($data['adjustment_type'] ?? '') === 'DECREASE') {
+            $data['quantity'] = self::validateAdjustmentQrCodes(
                 (int)$data['variant_id'],
                 (int)$data['warehouse_id'],
                 $data['qr_codes'] ?? [],
-                (int)$data['quantity']
+                null
             );
         }
 
@@ -1846,15 +1850,18 @@ class WarehouseService {
         int $variantId,
         int $warehouseId,
         array $tagCodes,
-        int $quantity,
+        ?int $quantity,
         int $excludeAdjustmentId = 0
-    ): void {
-        $tagCodes = array_values(array_unique(array_map(
+    ): int {
+        $tagCodes = array_values(array_map(
             static fn($tag): string => strtoupper(trim((string)$tag)),
             $tagCodes
-        )));
+        ));
         if ($variantId <= 0 || $warehouseId <= 0 || empty($tagCodes)) {
             throw new InvalidArgumentException('Scan at least one product QR code before requesting a stock decrease.');
+        }
+        if (count($tagCodes) !== count(array_unique($tagCodes))) {
+            throw new InvalidArgumentException('The scanned QR code list contains a duplicate code.');
         }
 
         foreach ($tagCodes as $tag) {
@@ -1885,10 +1892,6 @@ class WarehouseService {
             || !empty($variant['is_complementary'])
             || !empty($variant['product_is_complementary']);
         $quantityPerTag = $isPack ? max(1, (int)$variant['pack_quantity']) : 1;
-        if ($quantity !== count($tagCodes) * $quantityPerTag) {
-            throw new InvalidArgumentException("The scanned QR codes represent " . (count($tagCodes) * $quantityPerTag) . " pcs; the adjustment quantity does not match.");
-        }
-
         $available = (float)(Database::fetchOne(
             "SELECT COALESCE(SUM(quantity), 0) as quantity
              FROM stock_balances
@@ -1896,10 +1899,8 @@ class WarehouseService {
                AND location_id = ? AND stock_state = 'AVAILABLE'",
             [$variantId, $warehouseId]
         )['quantity'] ?? 0);
-        if ($available < $quantity) {
-            throw new RuntimeException("Insufficient available stock. Available: {$available} pcs; requested: {$quantity} pcs.");
-        }
 
+        $scannedQuantity = 0;
         foreach ($tagCodes as $tag) {
             $used = StockAdjustment::findQrCodeUsage($tag, $excludeAdjustmentId);
             if ($used) {
@@ -1998,12 +1999,15 @@ class WarehouseService {
             }
 
             $warehouseTag = Database::fetchOne(
-                "SELECT id FROM warehouse_qr_codes
+                "SELECT id, pack_quantity FROM warehouse_qr_codes
                  WHERE variant_id = ? AND warehouse_id = ? AND inwarded_at IS NOT NULL
                    AND (UPPER(qr_code) = ? OR UPPER(COALESCE(series_end_code, '')) = ?)
                  LIMIT 1",
                 [$variantId, $warehouseId, $tag, $tag]
             );
+            $scannedQuantity += $warehouseTag
+                ? max(1, (int)$warehouseTag['pack_quantity'])
+                : $quantityPerTag;
             $tagRecorded = (bool)$warehouseTag;
             $directTag = Database::fetchOne(
                 "SELECT id FROM product_variants
@@ -2066,6 +2070,15 @@ class WarehouseService {
                 throw new RuntimeException("QR code '{$tag}' is not recorded for this variant in the selected warehouse.");
             }
         }
+
+        if ($quantity !== null && $quantity !== $scannedQuantity) {
+            throw new InvalidArgumentException("The scanned QR codes represent {$scannedQuantity} pcs; the adjustment quantity does not match.");
+        }
+        if ($available < $scannedQuantity) {
+            throw new RuntimeException("Insufficient available stock. Available: {$available} pcs; requested: {$scannedQuantity} pcs.");
+        }
+
+        return $scannedQuantity;
     }
 
     /**
@@ -2085,7 +2098,7 @@ class WarehouseService {
             if ($action === 'APPROVE') {
                 $tagCodes = json_decode((string)($adj['qr_codes'] ?? '[]'), true);
                 $tagCodes = is_array($tagCodes) ? $tagCodes : [];
-                if ($adj['adjustment_type'] === 'DECREASE' && !empty($tagCodes)) {
+                if ($adj['adjustment_type'] === 'DECREASE') {
                     self::validateAdjustmentQrCodes(
                         (int)$adj['variant_id'],
                         (int)$adj['warehouse_id'],

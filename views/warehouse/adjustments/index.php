@@ -353,6 +353,10 @@ foreach ($variants as $variantOption) {
                                 </div>
                                 <span class="badge" id="adjustmentProductSource"></span>
                             </div>
+                            <div class="small mt-2 d-none" id="adjustmentScannedQrRow">
+                                <span class="text-muted">Scanned QR / product code(s):</span>
+                                <div class="d-flex flex-wrap gap-1 mt-1" id="adjustmentScannedQrCodes"></div>
+                            </div>
                             <div class="row g-2 small mt-1">
                                 <div class="col-sm-6"><span class="text-muted">Available in warehouse:</span> <strong id="adjustmentAvailableStock">0 pcs</strong></div>
                                 <div class="col-sm-6"><span class="text-muted">QR format:</span> <strong id="adjustmentQrFormat"></strong></div>
@@ -372,7 +376,7 @@ foreach ($variants as $variantOption) {
                             </select>
                         </div>
                         <div class="col-6">
-                            <label class="form-label small fw-semibold">Quantity (Pcs) <span class="text-danger">*</span></label>
+                            <label class="form-label small fw-semibold" id="adjustmentQuantityLabel">Quantity (Pcs) <span class="text-danger">*</span></label>
                             <input type="number" name="quantity" id="adjustmentQuantityInput" class="form-control" min="1" step="1" value="" placeholder="0" required>
                         </div>
                     </div>
@@ -397,7 +401,7 @@ foreach ($variants as $variantOption) {
                         </div>
                     </div>
                     <div class="alert alert-warning py-2 small d-none" id="adjustmentDecreaseCountNotice">
-                        <i class="bi bi-info-circle me-1"></i>Enter the pieces to remove; no second QR scan is needed. The count is limited to available stock, but individual QR tags are not checked.
+                        <i class="bi bi-info-circle me-1"></i>Scan each QR code to remove its represented quantity. The quantity is calculated automatically; duplicate, unavailable, or already-used QR codes cannot be scanned again.
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Primary Reason <span class="text-danger">*</span></label>

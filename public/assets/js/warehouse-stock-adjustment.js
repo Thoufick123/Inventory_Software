@@ -12,7 +12,10 @@
     const productScanButton = document.getElementById('adjustmentProductScanButton');
     const productScanMessage = document.getElementById('adjustmentProductScanMessage');
     const productDetails = document.getElementById('adjustmentProductDetails');
+    const scannedQrRow = document.getElementById('adjustmentScannedQrRow');
+    const scannedQrCodesDisplay = document.getElementById('adjustmentScannedQrCodes');
     const quantityMessage = document.getElementById('adjustmentQuantityMessage');
+    const quantityLabel = document.getElementById('adjustmentQuantityLabel');
     const increaseControls = document.getElementById('adjustmentIncreaseControls');
     const generateQrControls = document.getElementById('adjustmentGenerateQrControls');
     const countOnlyNotice = document.getElementById('adjustmentCountOnlyNotice');
@@ -24,6 +27,8 @@
     const previewSummary = document.getElementById('adjustmentPreviewSummary');
     let currentProduct = null;
     let previewedCodes = [];
+    let scannedQrCodes = [];
+    let lastProductLookupCode = '';
 
     function showMessage(element, message, isError = false) {
         element.textContent = message;
@@ -34,12 +39,83 @@
         return warehouseSelect.value || form.querySelector('input[name="warehouse_id"]')?.value || '';
     }
 
+    function syncQrCodes() {
+        const codes = typeSelect.value === 'DECREASE'
+            ? scannedQrCodes.map(item => item.code)
+            : previewedCodes;
+        qrCodesInput.value = JSON.stringify(codes);
+    }
+
     function clearPreview() {
         previewedCodes = [];
         preview.classList.add('d-none');
         previewList.replaceChildren();
         previewSummary.textContent = '';
-        qrCodesInput.value = '[]';
+        syncQrCodes();
+    }
+
+    function renderScannedQrCodes() {
+        const isDecrease = typeSelect.value === 'DECREASE';
+        const codes = isDecrease
+            ? scannedQrCodes
+            : (lastProductLookupCode ? [{ code: lastProductLookupCode }] : []);
+        scannedQrCodesDisplay.replaceChildren();
+        scannedQrRow.classList.toggle('d-none', codes.length === 0);
+
+        codes.forEach((item, index) => {
+            const badge = document.createElement('span');
+            badge.className = 'badge bg-white text-dark border font-monospace text-break';
+            badge.textContent = item.code;
+            scannedQrCodesDisplay.appendChild(badge);
+
+            if (isDecrease) {
+                const removeButton = document.createElement('button');
+                removeButton.type = 'button';
+                removeButton.className = 'btn btn-sm btn-outline-danger py-0 px-1';
+                removeButton.setAttribute('aria-label', `Remove scanned QR ${item.code}`);
+                removeButton.textContent = '×';
+                removeButton.addEventListener('click', () => {
+                    scannedQrCodes.splice(index, 1);
+                    syncQrCodes();
+                    renderScannedQrCodes();
+                    updateDecreaseQuantity();
+                    productScanInput.focus();
+                });
+                scannedQrCodesDisplay.appendChild(removeButton);
+            }
+        });
+    }
+
+    function updateDecreaseQuantity() {
+        const quantity = scannedQrCodes.reduce((sum, item) => sum + item.quantity, 0);
+        quantityInput.value = quantity > 0 ? String(quantity) : '';
+        if (quantity > 0) {
+            showMessage(quantityMessage, `${scannedQrCodes.length} QR tag(s) scanned · ${quantity} pcs will be removed.`);
+        } else {
+            showMessage(quantityMessage, 'Scan one or more eligible QR tags to calculate the decrease quantity.');
+        }
+    }
+
+    function renderProductDetails(product) {
+        productDetails.classList.remove('d-none');
+        document.getElementById('adjustmentProductName').textContent = product.product_name;
+        document.getElementById('adjustmentProductSku').textContent = product.sku;
+        document.getElementById('adjustmentProductVariant').textContent = `${product.size_name || 'Free'} / ${product.color_name || 'Std'}`;
+        document.getElementById('adjustmentAvailableStock').textContent = `${Number(product.available_stock).toLocaleString()} pcs`;
+        document.getElementById('adjustmentQrFormat').textContent = product.is_series_or_complementary
+            ? `Series / pack of ${product.quantity_per_tag}`
+            : 'Individual label';
+        const formatPrice = value => new Intl.NumberFormat(undefined, { style: 'currency', currency: 'INR' }).format(Number(value) || 0);
+        document.getElementById('adjustmentMrp').textContent = formatPrice(product.mrp);
+        document.getElementById('adjustmentSellingPrice').textContent = formatPrice(product.selling_price);
+        document.getElementById('adjustmentCostPrice').textContent = formatPrice(product.cost_price);
+        const sourceBadge = document.getElementById('adjustmentProductSource');
+        sourceBadge.textContent = product.source_label;
+        sourceBadge.className = `badge ${product.source_type === 'EXTERNAL_PURCHASE' ? 'bg-info text-dark' : 'bg-primary'}`;
+        const supplierRow = document.getElementById('adjustmentSupplierRow');
+        supplierRow.classList.toggle('d-none', !product.supplier_name);
+        document.getElementById('adjustmentSupplier').textContent = product.supplier_name || '';
+        renderScannedQrCodes();
     }
 
     function updateIncreaseMode() {
@@ -55,11 +131,19 @@
         increaseControls.classList.toggle('d-none', isDecrease);
         decreaseCountNotice.classList.toggle('d-none', !isDecrease);
         updateIncreaseMode();
-        quantityInput.readOnly = false;
-        quantityInput.title = '';
-        quantityMessage.textContent = '';
+        quantityInput.readOnly = isDecrease;
+        quantityInput.required = !isDecrease;
+        quantityInput.title = isDecrease ? 'Calculated from the scanned QR tags.' : '';
+        quantityLabel.textContent = isDecrease ? 'Quantity (Pcs) - calculated from QR scans' : 'Quantity (Pcs) *';
+        quantityInput.placeholder = isDecrease ? 'Scan QR code(s)' : '0';
         clearPreview();
-        quantityInput.value = '';
+        if (isDecrease) {
+            updateDecreaseQuantity();
+        } else {
+            quantityInput.value = '';
+            quantityMessage.textContent = '';
+        }
+        renderScannedQrCodes();
     }
 
     async function lookupProduct(code, mode = 'product') {
@@ -74,34 +158,53 @@
         return result;
     }
 
+    async function addDecreaseQr(code) {
+        const result = await lookupProduct(code, 'decrease');
+        const product = result.variant;
+        if (scannedQrCodes.some(item => item.code.toUpperCase() === String(result.tag_code).toUpperCase())) {
+            throw new Error(`QR code ${result.tag_code} has already been scanned.`);
+        }
+        if (scannedQrCodes.length && Number(currentProduct.id) !== Number(product.id)) {
+            throw new Error('Scan QR codes for one product variant per stock adjustment.');
+        }
+        const quantity = Number(product.quantity_per_tag) || 1;
+        const alreadyScanned = scannedQrCodes.reduce((sum, item) => sum + item.quantity, 0);
+        if (alreadyScanned + quantity > Number(product.available_stock)) {
+            throw new Error(`The scanned QR codes represent ${alreadyScanned + quantity} pcs, but only ${Number(product.available_stock)} pcs are available.`);
+        }
+
+        currentProduct = product;
+        lastProductLookupCode = result.tag_code;
+        variantIdInput.value = product.id;
+        scannedQrCodes.push({ code: result.tag_code, quantity });
+        syncQrCodes();
+        updateIncreaseMode();
+        renderProductDetails(product);
+        updateDecreaseQuantity();
+        productScanInput.value = '';
+        showMessage(productScanMessage, `${result.tag_code} scanned. Scan another QR for this same product or save the decrease.`);
+        productScanInput.focus();
+    }
+
     async function findProduct() {
         const code = productScanInput.value.trim();
         if (!code) return;
         productScanButton.disabled = true;
-        showMessage(productScanMessage, 'Looking up product in the selected warehouse...');
+        showMessage(productScanMessage, typeSelect.value === 'DECREASE'
+            ? 'Validating scanned QR code and calculating its quantity...'
+            : 'Looking up product in the selected warehouse...');
         try {
+            if (typeSelect.value === 'DECREASE') {
+                await addDecreaseQr(code);
+                return;
+            }
+
             const result = await lookupProduct(code);
             currentProduct = result.variant;
+            lastProductLookupCode = result.tag_code || code;
             updateIncreaseMode();
             variantIdInput.value = currentProduct.id;
-            productDetails.classList.remove('d-none');
-            document.getElementById('adjustmentProductName').textContent = currentProduct.product_name;
-            document.getElementById('adjustmentProductSku').textContent = currentProduct.sku;
-            document.getElementById('adjustmentProductVariant').textContent = `${currentProduct.size_name || 'Free'} / ${currentProduct.color_name || 'Std'}`;
-            document.getElementById('adjustmentAvailableStock').textContent = `${Number(currentProduct.available_stock).toLocaleString()} pcs`;
-            document.getElementById('adjustmentQrFormat').textContent = currentProduct.is_series_or_complementary
-                ? `Series / pack of ${currentProduct.quantity_per_tag}`
-                : 'Individual label';
-            const formatPrice = value => new Intl.NumberFormat(undefined, { style: 'currency', currency: 'INR' }).format(Number(value) || 0);
-            document.getElementById('adjustmentMrp').textContent = formatPrice(currentProduct.mrp);
-            document.getElementById('adjustmentSellingPrice').textContent = formatPrice(currentProduct.selling_price);
-            document.getElementById('adjustmentCostPrice').textContent = formatPrice(currentProduct.cost_price);
-            const sourceBadge = document.getElementById('adjustmentProductSource');
-            sourceBadge.textContent = currentProduct.source_label;
-            sourceBadge.className = `badge ${currentProduct.source_type === 'EXTERNAL_PURCHASE' ? 'bg-info text-dark' : 'bg-primary'}`;
-            const supplierRow = document.getElementById('adjustmentSupplierRow');
-            supplierRow.classList.toggle('d-none', !currentProduct.supplier_name);
-            document.getElementById('adjustmentSupplier').textContent = currentProduct.supplier_name || '';
+            renderProductDetails(currentProduct);
             productScanInput.value = '';
             clearPreview();
             quantityInput.value = '';
@@ -109,13 +212,16 @@
             showMessage(productScanMessage, 'Product found. Confirm the type and quantity below.');
             quantityInput.focus();
         } catch (error) {
-            currentProduct = null;
-            updateIncreaseMode();
-            variantIdInput.value = '';
-            productDetails.classList.add('d-none');
-            clearPreview();
-            quantityInput.value = '';
-            quantityMessage.textContent = '';
+            if (typeSelect.value !== 'DECREASE') {
+                currentProduct = null;
+                lastProductLookupCode = '';
+                variantIdInput.value = '';
+                productDetails.classList.add('d-none');
+                clearPreview();
+                quantityInput.value = '';
+                quantityMessage.textContent = '';
+                renderScannedQrCodes();
+            }
             showMessage(productScanMessage, error.message || 'Product lookup failed.', true);
         } finally {
             productScanButton.disabled = false;
@@ -132,16 +238,30 @@
 
     warehouseSelect.addEventListener('change', () => {
         currentProduct = null;
+        lastProductLookupCode = '';
+        scannedQrCodes = [];
         updateIncreaseMode();
         variantIdInput.value = '';
         productDetails.classList.add('d-none');
         clearPreview();
+        renderScannedQrCodes();
         quantityInput.value = '';
         quantityMessage.textContent = '';
         showMessage(productScanMessage, 'Warehouse changed. Scan the product again.');
     });
 
-    typeSelect.addEventListener('change', setTypeState);
+    typeSelect.addEventListener('change', () => {
+        scannedQrCodes = [];
+        setTypeState();
+        if (typeSelect.value === 'DECREASE' && currentProduct && lastProductLookupCode) {
+            addDecreaseQr(lastProductLookupCode).catch(error => {
+                showMessage(productScanMessage, `${error.message} Scan an eligible QR tag to set the decrease quantity.`, true);
+                productScanInput.focus();
+            });
+        } else {
+            productScanInput.focus();
+        }
+    });
     quantityInput.addEventListener('input', () => {
         clearPreview();
         quantityMessage.textContent = '';
@@ -232,11 +352,24 @@
             productScanInput.focus();
             return;
         }
+        if (typeSelect.value === 'DECREASE' && scannedQrCodes.length === 0) {
+            event.preventDefault();
+            showMessage(productScanMessage, 'Scan at least one eligible product QR code before decreasing stock.', true);
+            productScanInput.focus();
+            return;
+        }
         const quantity = Number(quantityInput.value);
         if (!Number.isInteger(quantity) || quantity <= 0) {
             event.preventDefault();
             showMessage(quantityMessage, 'Enter a positive whole-number quantity.', true);
             quantityInput.focus();
+            return;
+        }
+        if (typeSelect.value === 'DECREASE'
+            && quantity !== scannedQrCodes.reduce((sum, item) => sum + item.quantity, 0)) {
+            event.preventDefault();
+            showMessage(quantityMessage, 'The quantity must match the scanned QR codes. Scan them again before saving.', true);
+            productScanInput.focus();
             return;
         }
         if (typeSelect.value === 'DECREASE' && quantity > Number(currentProduct.available_stock)) {
@@ -254,12 +387,15 @@
 
     document.getElementById('newAdjustmentModal').addEventListener('hidden.bs.modal', () => {
         currentProduct = null;
+        lastProductLookupCode = '';
+        scannedQrCodes = [];
         variantIdInput.value = '';
         productScanInput.value = '';
         productDetails.classList.add('d-none');
         typeSelect.value = form.querySelector('input[name="return_adjustment_type"]').value || 'INCREASE';
         setTypeState();
         qrCodesInput.value = '[]';
+        renderScannedQrCodes();
         previewList.replaceChildren();
         productScanMessage.textContent = '';
         quantityMessage.textContent = '';

@@ -6806,13 +6806,11 @@ class WarehouseController {
         $adjustmentScanError = null;
         if ($isAdjustmentScan) {
             try {
-                $isPack = $isComp || $isSeries;
-                $qrQuantity = $isPack ? max(1, (int)($variant['pack_quantity'] ?? 1)) : 1;
                 WarehouseService::validateAdjustmentQrCodes(
                     (int)$variant['id'],
                     $warehouseId,
                     [$extractedTag],
-                    $qrQuantity
+                    null
                 );
             } catch (Throwable $e) {
                 $adjustmentScanError = $e->getMessage();
@@ -7881,11 +7879,11 @@ class WarehouseController {
         $mode = $_GET['mode'] ?? 'product';
         if ($mode === 'decrease') {
             try {
-                WarehouseService::validateAdjustmentQrCodes(
+                $quantityPerTag = WarehouseService::validateAdjustmentQrCodes(
                     $variantId,
                     $warehouseId,
                     [$scanCode],
-                    $quantityPerTag
+                    null
                 );
             } catch (Throwable $e) {
                 Response::json(['success' => false, 'message' => $e->getMessage()], 409);
