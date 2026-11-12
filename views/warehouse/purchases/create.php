@@ -406,8 +406,10 @@
                                                             <?php 
                                                                 $isComp = ((isset($v['category_type']) && $v['category_type'] === 'COMPLEMENTARY') || !empty($v['is_complementary']) || !empty($v['p_is_comp']));
                                                                 $isSeries = ((isset($v['category_type']) && $v['category_type'] === 'SERIES') || ($v['qr_type'] ?? '') === 'SERIES_BATCH' || (int)($v['pack_quantity'] ?? 1) > 1);
-                                                                $retailPrice = $isComp ? 0.00 : (float)($v['selling_price'] > 0 ? $v['selling_price'] : $v['mrp']);
-                                                                $mrpPrice = $isComp ? 0.00 : (float)($v['mrp'] > 0 ? $v['mrp'] : $retailPrice);
+                                                                $retailPrice = $isComp
+                                                                    ? (float)($v['stock_price'] ?? ($v['selling_price'] > 0 ? $v['selling_price'] : $v['mrp']))
+                                                                    : (float)($v['selling_price'] > 0 ? $v['selling_price'] : $v['mrp']);
+                                                                $mrpPrice = (float)($v['mrp'] > 0 ? $v['mrp'] : $retailPrice);
                                                                 $availStock = (int)($v['available_stock'] ?? 0);
                                                                 $qrTag = !empty($v['qr_code']) ? $v['qr_code'] : $v['sku'];
                                                                 $catName = $v['category_name'] ?? 'General';
@@ -428,9 +430,9 @@
                                                                     data-hsn="<?= e($v['hsn_code'] ?? '') ?>"
                                                                     data-price="<?= $retailPrice ?>"
                                                                     data-mrp="<?= $mrpPrice ?>"
-                                                                    data-gst="<?= $isComp ? 0 : (float)($v['gst_rate'] ?? 5) ?>"
+                                                                    data-gst="<?= (float)($v['gst_rate'] ?? 5) ?>"
                                                                     data-stock="<?= $availStock ?>">
-                                                                <?= e($v['product_name']) ?> | <?= e($v['sku']) ?> (<?= e($sizeText) ?>)<?= $isComp ? ' [Complementary - ₹0.00]' : ($isSeries ? ' [Series]' : '') ?>
+                                                                <?= e($v['product_name']) ?> | <?= e($v['sku']) ?> (<?= e($sizeText) ?>)<?= $isComp ? ' [Complementary]' : ($isSeries ? ' [Series]' : '') ?>
                                                             </option>
                                                         <?php endforeach; ?>
                                                     </select>
@@ -1313,12 +1315,12 @@ function onVariantChange(selectEl, customTags = null) {
         const sku = opt.getAttribute('data-sku') || '';
         const isComp = opt.getAttribute('data-is-comp') === '1' || opt.getAttribute('data-cat-type') === 'COMPLEMENTARY';
         const isSeries = opt.getAttribute('data-is-series') === '1' || opt.getAttribute('data-cat-type') === 'SERIES' || opt.getAttribute('data-qr-type') === 'SERIES_BATCH';
-        const price = isComp ? 0 : (parseFloat(opt.getAttribute('data-price')) || 0);
-        const mrp = isComp ? 0 : (parseFloat(opt.getAttribute('data-mrp')) || price);
+        const price = parseFloat(opt.getAttribute('data-price')) || 0;
+        const mrp = parseFloat(opt.getAttribute('data-mrp')) || price;
         const stock = parseInt(opt.getAttribute('data-stock')) || 0;
         const category = opt.getAttribute('data-category') || 'General';
         const size = opt.getAttribute('data-size') || 'Free';
-        const gstRate = isComp ? 0 : (opt.hasAttribute('data-gst') ? parseFloat(opt.getAttribute('data-gst')) : 5.0);
+        const gstRate = opt.hasAttribute('data-gst') ? parseFloat(opt.getAttribute('data-gst')) : 5.0;
         const defaultQr = opt.getAttribute('data-qr') || sku;
 
         const resolvedHsn = (opt.getAttribute('data-hsn') || '').trim();
@@ -1335,20 +1337,16 @@ function onVariantChange(selectEl, customTags = null) {
         if (mrpInput) mrpInput.value = mrp.toFixed(2);
         if (priceInput) {
             priceInput.value = price.toFixed(2);
-            priceInput.readOnly = isComp;
-            if (isComp) {
-                priceInput.style.backgroundColor = '#f8fafc';
-                priceInput.style.color = '#16a34a';
-                priceInput.title = 'Complementary Item (Free - ₹0.00)';
-            } else {
-                priceInput.style.backgroundColor = '';
-                priceInput.style.color = '';
-                priceInput.title = 'Given Billing Price (Inclusive of GST)';
-            }
+            priceInput.readOnly = false;
+            priceInput.style.backgroundColor = '';
+            priceInput.style.color = '';
+            priceInput.title = isComp
+                ? 'Complementary item: enter a price greater than zero'
+                : 'Given Billing Price (Inclusive of GST)';
         }
         if (gstInput) {
             gstInput.value = gstRate;
-            gstInput.readOnly = isComp;
+            gstInput.readOnly = false;
         }
 
         if (nameText) nameText.textContent = name;
@@ -1371,7 +1369,7 @@ function onVariantChange(selectEl, customTags = null) {
         }
         if (badgeContainer) {
             if (isComp) {
-                badgeContainer.innerHTML = '<span class="badge bg-warning-subtle text-dark border border-warning" style="font-size:10px;"><i class="bi bi-gift-fill text-warning me-1"></i>Complementary (₹0.00)</span>';
+                badgeContainer.innerHTML = '<span class="badge bg-warning-subtle text-dark border border-warning" style="font-size:10px;"><i class="bi bi-gift-fill text-warning me-1"></i>Complementary</span>';
             } else if (isSeries) {
                 badgeContainer.innerHTML = '<span class="badge bg-info-subtle text-info border border-info" style="font-size:10px;"><i class="bi bi-collection-fill me-1"></i>Series Batch</span>';
             } else {
@@ -1434,9 +1432,6 @@ function onVariantChange(selectEl, customTags = null) {
 
 function onRowPriceChange(priceEl) {
     const row = priceEl.closest('tr');
-    const sel = row.querySelector('.variant-select');
-    const opt = sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex] : null;
-    const isComp = opt && (opt.getAttribute('data-is-comp') === '1' || opt.getAttribute('data-cat-type') === 'COMPLEMENTARY');
 
     const mrpEl = row.querySelector('.mrp-input');
     const discBadge = row.querySelector('.disc-badge-display');
@@ -1451,32 +1446,24 @@ function onRowPriceChange(priceEl) {
     let billed = parseFloat(priceEl.value) >= 0 ? parseFloat(priceEl.value) : 0;
     let mrp = parseFloat(mrpEl ? mrpEl.value : 0) || 0;
     
-    if (isComp) {
-        billed = 0.0;
-        mrp = 0.0;
-        if (priceEl) {
-            priceEl.value = '0.00';
-            priceEl.readOnly = true;
-        }
-        if (mrpEl) mrpEl.value = '0.00';
-    } else if (mrp <= 0) {
+    if (mrp <= 0) {
         mrp = billed;
         if (mrpEl) mrpEl.value = mrp.toFixed(2);
     }
     
     const qty = parseFloat(qtyInput ? qtyInput.value : 1) || 1;
     const gstValue = parseFloat(gstInput ? gstInput.value : 5.0);
-    const gstRate = isComp ? 0.0 : (Number.isFinite(gstValue) ? gstValue : 5.0);
+    const gstRate = Number.isFinite(gstValue) ? gstValue : 5.0;
     
     const lineBilledTotal = Math.max(0, billed * qty);
     const lineMrpGross = mrp * qty;
     
-    const lineTaxable = isComp ? 0.0 : Math.round((lineBilledTotal / (1 + (gstRate / 100))) * 100) / 100;
-    const lineGst = isComp ? 0.0 : Math.round((lineBilledTotal - lineTaxable) * 100) / 100;
+    const lineTaxable = Math.round((lineBilledTotal / (1 + (gstRate / 100))) * 100) / 100;
+    const lineGst = Math.round((lineBilledTotal - lineTaxable) * 100) / 100;
     
     let lineDisc = 0;
     let discPct = 0;
-    if (!isComp && lineMrpGross > lineBilledTotal) {
+    if (lineMrpGross > lineBilledTotal) {
         lineDisc = Math.round((lineMrpGross - lineBilledTotal) * 100) / 100;
         discPct = lineMrpGross > 0 ? Math.round(((lineDisc / lineMrpGross) * 100) * 10) / 10 : 0;
     }
@@ -1517,8 +1504,8 @@ function addItemRow(selectedVariantId = null, initialQr = null) {
     VARIANTS_LIST.forEach(v => {
         const isComp = (v.category_type === 'COMPLEMENTARY' || v.is_complementary == 1 || v.p_is_comp == 1);
         const isSeries = (v.category_type === 'SERIES' || v.qr_type === 'SERIES_BATCH' || v.is_series == 1 || parseInt(v.pack_quantity) > 1);
-        const sellPrice = isComp ? 0 : (parseFloat(v.selling_price > 0 ? v.selling_price : v.mrp) || 0);
-        const mrp = isComp ? 0 : (parseFloat(v.mrp > 0 ? v.mrp : sellPrice) || sellPrice);
+        const sellPrice = parseFloat(v.selling_price > 0 ? v.selling_price : (v.stock_price || v.mrp)) || 0;
+        const mrp = parseFloat(v.mrp > 0 ? v.mrp : sellPrice) || sellPrice;
         const stock = parseInt(v.available_stock) || 0;
         const isSelected = selectedVariantId && (String(v.id) === String(selectedVariantId));
         const qrTag = v.qr_code || v.sku;
@@ -1541,22 +1528,22 @@ function addItemRow(selectedVariantId = null, initialQr = null) {
             data-size="${escapeHtml(sizeText)}" 
             data-price="${sellPrice}" 
             data-mrp="${mrp}" 
-            data-gst="${isComp ? 0 : (v.gst_rate ?? 5)}" 
+            data-gst="${v.gst_rate ?? 5}"
             data-stock="${stock}" 
             ${isSelected ? 'selected' : ''}>
-            ${escapeHtml(v.product_name)} | ${escapeHtml(v.sku)} (${escapeHtml(sizeText)})${isComp ? ' [Complementary - ₹0.00]' : (isSeries ? ' [Series]' : '')}
+            ${escapeHtml(v.product_name)} | ${escapeHtml(v.sku)} (${escapeHtml(sizeText)})${isComp ? ' [Complementary]' : (isSeries ? ' [Series]' : '')}
         </option>`;
     });
 
     const isMatchedComp = matchedVariant && (matchedVariant.category_type === 'COMPLEMENTARY' || matchedVariant.is_complementary == 1 || matchedVariant.p_is_comp == 1);
     const isMatchedSeries = matchedVariant && (matchedVariant.category_type === 'SERIES' || matchedVariant.qr_type === 'SERIES_BATCH' || matchedVariant.is_series == 1 || parseInt(matchedVariant.pack_quantity) > 1);
 
-    const initPrice = isMatchedComp ? '0.00' : (matchedVariant ? parseFloat(matchedVariant.selling_price > 0 ? matchedVariant.selling_price : matchedVariant.mrp).toFixed(2) : '0.00');
-    const initMrp = isMatchedComp ? '0.00' : (matchedVariant ? parseFloat(matchedVariant.mrp > 0 ? matchedVariant.mrp : initPrice).toFixed(2) : initPrice);
+    const initPrice = matchedVariant ? parseFloat(matchedVariant.selling_price > 0 ? matchedVariant.selling_price : (matchedVariant.stock_price || matchedVariant.mrp)).toFixed(2) : '0.00';
+    const initMrp = matchedVariant ? parseFloat(matchedVariant.mrp > 0 ? matchedVariant.mrp : initPrice).toFixed(2) : initPrice;
     const initStock = matchedVariant ? parseInt(matchedVariant.available_stock || 0) : 0;
     const initCat = matchedVariant ? (matchedVariant.category_name || 'General') : '-';
     const initSize = matchedVariant ? ((matchedVariant.size_name || 'Free') + ' / ' + (matchedVariant.color_name || 'Std')).trim() : '-';
-    const initGst = isMatchedComp ? 0 : (matchedVariant ? (matchedVariant.gst_rate ?? 5) : 5);
+    const initGst = matchedVariant ? (matchedVariant.gst_rate ?? 5) : 5;
     const initHsn = matchedVariant ? (matchedVariant.hsn_code || matchedVariant.resolved_hsn_code || '') : '';
     const stockClass = initStock <= 0 ? 'badge bg-danger-subtle text-danger stock-badge' : 'badge bg-success-subtle text-success stock-badge';
     const scannedVal = initialQr ? initialQr.trim() : (matchedVariant ? (matchedVariant.qr_code || matchedVariant.sku || '') : '');
@@ -1567,14 +1554,14 @@ function addItemRow(selectedVariantId = null, initialQr = null) {
     // Calculate initial math for pre-selected variant
     const numPrice = parseFloat(initPrice) || 0;
     const numMrp = parseFloat(initMrp) || numPrice;
-    const initTaxable = isMatchedComp ? 0 : Math.round((numPrice / (1 + (initGst / 100))) * 100) / 100;
-    const initTax = isMatchedComp ? 0 : Math.round((numPrice - initTaxable) * 100) / 100;
-    const initDisc = (!isMatchedComp && numMrp > numPrice) ? Math.round((numMrp - numPrice) * 100) / 100 : 0;
+    const initTaxable = Math.round((numPrice / (1 + (initGst / 100))) * 100) / 100;
+    const initTax = Math.round((numPrice - initTaxable) * 100) / 100;
+    const initDisc = numMrp > numPrice ? Math.round((numMrp - numPrice) * 100) / 100 : 0;
     const initDiscPct = numMrp > 0 && initDisc > 0 ? Math.round(((initDisc / numMrp) * 100) * 10) / 10 : 0;
 
     let extraBadgeHtml = '';
     if (isMatchedComp) {
-        extraBadgeHtml = '<span class="badge bg-warning-subtle text-dark border border-warning" style="font-size:10px;"><i class="bi bi-gift-fill text-warning me-1"></i>Complementary (₹0.00)</span>';
+        extraBadgeHtml = '<span class="badge bg-warning-subtle text-dark border border-warning" style="font-size:10px;"><i class="bi bi-gift-fill text-warning me-1"></i>Complementary</span>';
     } else if (isMatchedSeries) {
         extraBadgeHtml = '<span class="badge bg-info-subtle text-info border border-info" style="font-size:10px;"><i class="bi bi-collection-fill me-1"></i>Series Batch</span>';
     }
@@ -1605,7 +1592,7 @@ function addItemRow(selectedVariantId = null, initialQr = null) {
                             <span class="badge bg-primary-subtle text-primary size-badge" style="font-size:10px;">${escapeHtml(initSize)}</span>
                             <span class="badge bg-secondary-subtle text-secondary cat-badge" style="font-size:10px;">${escapeHtml(initCat)}</span>
                             <span class="item-extra-badges d-inline-flex gap-1">${extraBadgeHtml}</span>
-                            <span class="badge bg-light text-secondary border font-monospace mrp-badge" style="font-size:10px;">${isMatchedComp ? 'Complementary' : 'MRP: ₹' + initMrp}</span>
+                            <span class="badge bg-light text-secondary border font-monospace mrp-badge" style="font-size:10px;">MRP: ₹${initMrp}</span>
                             <span class="${stockClass}" style="font-size:10px;">Stock: ${initStock} pcs</span>
                         </div>
                         <div class="mt-1 scanned-tag-box ${scannedVal ? '' : 'd-none'}">
@@ -1631,7 +1618,7 @@ function addItemRow(selectedVariantId = null, initialQr = null) {
         </td>
         <td class="text-end gst-cell">
             <div class="input-group input-group-sm gst-rate-control">
-                <input type="number" name="gst_percentage[]" class="form-control form-control-sm text-end fw-bold font-monospace gst-input" value="${initGst}" min="0" max="100" step="0.01" required oninput="calculateTotals()" aria-label="GST percentage" title="Enter GST percentage (0 to 100)" ${isMatchedComp ? 'readonly' : ''}>
+                <input type="number" name="gst_percentage[]" class="form-control form-control-sm text-end fw-bold font-monospace gst-input" value="${initGst}" min="0" max="100" step="0.01" required oninput="calculateTotals()" aria-label="GST percentage" title="Enter GST percentage (0 to 100)">
                 <span class="input-group-text px-1">%</span>
             </div>
             <div class="text-muted font-monospace mt-0.5 gst-val-display" style="font-size: 10px; white-space: nowrap;">+₹${initTax.toFixed(2)}</div>
@@ -1647,7 +1634,7 @@ function addItemRow(selectedVariantId = null, initialQr = null) {
         <td class="text-end billed-price-cell" style="width: 130px;">
             <div class="input-group input-group-sm justify-content-end">
                 <span class="input-group-text px-1.5 py-0.5 text-muted fw-bold" style="font-size: 11px;">₹</span>
-                <input type="number" step="any" min="0" name="unit_price[]" class="form-control form-control-sm text-end fw-bold font-monospace price-input text-primary" value="${initPrice}" style="max-width: 85px; font-size: 13px; ${isMatchedComp ? 'background-color: #f8fafc; color: #16a34a !important;' : ''}" required oninput="onRowPriceChange(this)" title="${isMatchedComp ? 'Complementary Item (Free - ₹0.00)' : 'Given Billing Price (Inclusive of GST)'}" ${isMatchedComp ? 'readonly' : ''}>
+                <input type="number" step="any" min="0" name="unit_price[]" class="form-control form-control-sm text-end fw-bold font-monospace price-input text-primary" value="${initPrice}" style="max-width: 85px; font-size: 13px;" required oninput="onRowPriceChange(this)" title="${isMatchedComp ? 'Complementary item: enter a price greater than zero' : 'Given Billing Price (Inclusive of GST)'}">
                 <input type="hidden" name="quantity[]" class="qty-input" value="1">
             </div>
         </td>
@@ -1842,7 +1829,7 @@ function doLiveSearch(q) {
                             VARIANTS_LIST.push(v);
                         }
                         const isComp = (v.category_type === 'COMPLEMENTARY' || v.is_complementary == 1);
-                        const price = isComp ? 0 : (parseFloat(v.selling_price > 0 ? v.selling_price : v.mrp) || 0);
+                        const price = parseFloat(v.selling_price > 0 ? v.selling_price : (v.stock_price || v.mrp)) || 0;
                         const stock = parseInt(v.available_stock) || 0;
                         const stockBadge = stock > 0 
                             ? `<span class="badge bg-success-subtle text-success border border-success-subtle px-1.5 py-0.5" style="font-size:0.72rem;">${stock} in stock</span>`
@@ -2280,6 +2267,13 @@ function validateBeforeSubmit(e) {
             return false;
         }
         const opt = sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex] : null;
+        const isComp = opt && (opt.getAttribute('data-is-comp') === '1' || opt.getAttribute('data-cat-type') === 'COMPLEMENTARY');
+        const priceInput = r.querySelector('.price-input');
+        if (isComp && (!priceInput || !Number.isFinite(parseFloat(priceInput.value)) || parseFloat(priceInput.value) <= 0)) {
+            alert('Complementary products must have a price greater than zero before billing.');
+            if (priceInput) priceInput.focus();
+            return false;
+        }
         const isSeries = opt && (opt.getAttribute('data-is-series') === '1' || opt.getAttribute('data-cat-type') === 'SERIES' || opt.getAttribute('data-qr-type') === 'SERIES_BATCH');
         const tag = (r.querySelector('.scanned-qrs-input')?.value || '').trim().toLowerCase();
         if (tag && !isSeries) {

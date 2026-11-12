@@ -3055,7 +3055,7 @@ class WarehouseController {
                 }
 
                 $dpoCheck = Database::fetchOne(
-                    "SELECT po.po_number, COALESCE(c.name, 'Customer') as customer_name
+                    "SELECT po.po_number, pi.variant_id, COALESCE(c.name, 'Customer') as customer_name
                      FROM purchase_items pi
                      JOIN purchase_orders po ON po.id = pi.purchase_order_id
                      LEFT JOIN customers c ON po.customer_id = c.id
@@ -3070,6 +3070,41 @@ class WarehouseController {
                     [trim($pieceTag), trim($pieceTag), '%' . trim($pieceTag) . '%', '%' . trim($pieceTag) . '%']
                 );
                 if ($dpoCheck) {
+                    $dpoVariantId = (int)($dpoCheck['variant_id'] ?? 0);
+                    $itemVariantId = (int)($item['variant_id'] ?? 0);
+                    if ($dpoVariantId > 0 && $itemVariantId === $dpoVariantId) {
+                        $dpoVariant = Database::fetchOne(
+                            "SELECT pv.id, pv.qr_type, pv.pack_quantity, pv.series_start_code,
+                                    GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_comp,
+                                    COALESCE(wc.category_type, 'NORMAL') as category_type
+                             FROM product_variants pv
+                             JOIN products p ON p.id = pv.product_id
+                             LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+                             WHERE pv.id = ?",
+                            [$dpoVariantId]
+                        );
+                        $productType = self::determineAllocationProductType($dpoVariant);
+                        if ($productType === 'SERIES' || $productType === 'COMPLEMENTARY') {
+                            $availableRow = Database::fetchOne(
+                                "SELECT COALESCE(SUM(quantity), 0) as qty
+                                 FROM stock_balances
+                                 WHERE variant_id = ? AND location_type = 'WAREHOUSE'
+                                   AND location_id = ? AND stock_state = 'AVAILABLE'",
+                                [$dpoVariantId, $warehouseId]
+                            );
+                            $availableQty = (float)($availableRow['qty'] ?? 0);
+                            $damageQty = max(1, (float)($item['quantity'] ?? 1));
+                            if ($availableQty >= $damageQty) {
+                                continue;
+                            }
+                            Session::flash(
+                                'error',
+                                "QR code '{$pieceTag}' was already purchased under Direct Purchase #{$dpoCheck['po_number']}. Only {$availableQty} available pack unit(s) remain, but {$damageQty} damage unit(s) were requested."
+                            );
+                            Response::back();
+                            return;
+                        }
+                    }
                     Session::flash('error', "QR code '{$pieceTag}' has ALREADY been purchased by customer '{$dpoCheck['customer_name']}' under Direct Purchase #{$dpoCheck['po_number']}! It cannot be logged as warehouse damage.");
                     Response::back();
                     return;
@@ -3506,8 +3541,8 @@ class WarehouseController {
                             GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
                             p.is_complementary as prod_is_comp,
                             pv.is_complementary as var_is_comp,
-                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as category_type,
-                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as cat_type,
+                            COALESCE(wc.category_type, 'NORMAL') as category_type,
+                            COALESCE(wc.category_type, 'NORMAL') as cat_type,
                             COALESCE(wc.name, cat.name, 'General') as category_name
                      FROM product_variants pv 
                      JOIN products p ON pv.product_id = p.id 
@@ -3597,8 +3632,8 @@ class WarehouseController {
                             GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
                             p.is_complementary as prod_is_comp,
                             pv.is_complementary as var_is_comp,
-                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as category_type,
-                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as cat_type,
+                            COALESCE(wc.category_type, 'NORMAL') as category_type,
+                            COALESCE(wc.category_type, 'NORMAL') as cat_type,
                             COALESCE(wc.name, cat.name, 'General') as category_name
                      FROM product_variants pv 
                      JOIN products p ON pv.product_id = p.id 
@@ -3672,8 +3707,8 @@ class WarehouseController {
                             GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
                             p.is_complementary as prod_is_comp,
                             pv.is_complementary as var_is_comp,
-                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as category_type,
-                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as cat_type,
+                            COALESCE(wc.category_type, 'NORMAL') as category_type,
+                            COALESCE(wc.category_type, 'NORMAL') as cat_type,
                             COALESCE(wc.name, cat.name, 'General') as category_name
                      FROM product_variants pv 
                      JOIN products p ON pv.product_id = p.id 
@@ -3746,8 +3781,8 @@ class WarehouseController {
                             GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
                             p.is_complementary as prod_is_comp,
                             pv.is_complementary as var_is_comp,
-                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as category_type,
-                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as cat_type,
+                            COALESCE(wc.category_type, 'NORMAL') as category_type,
+                            COALESCE(wc.category_type, 'NORMAL') as cat_type,
                             COALESCE(wc.name, cat.name, 'General') as category_name
                      FROM product_variants pv 
                      JOIN products p ON pv.product_id = p.id 
@@ -3850,8 +3885,8 @@ class WarehouseController {
                             GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
                             p.is_complementary as prod_is_comp,
                             pv.is_complementary as var_is_comp,
-                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as category_type,
-                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as cat_type,
+                            COALESCE(wc.category_type, 'NORMAL') as category_type,
+                            COALESCE(wc.category_type, 'NORMAL') as cat_type,
                             COALESCE(wc.name, cat.name, 'General') as category_name
                      FROM product_variants pv 
                      JOIN products p ON pv.product_id = p.id 
@@ -5309,7 +5344,7 @@ class WarehouseController {
         $variants = Database::fetchAll(
             "SELECT pv.id, pv.sku, pv.qr_code, pv.qr_type, pv.series_start_code, pv.series_end_code, pv.pack_quantity,
                     COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), NULLIF(cat.hsn_code, ''), NULLIF(c_old.hsn_code, ''), '') as hsn_code,
-                    pv.selling_price, pv.mrp, p.name as product_name, p.code as product_code, p.qr_code_prefix,
+                    pv.selling_price, pv.mrp, pv.purchase_price, pv.production_cost, p.name as product_name, p.code as product_code, p.qr_code_prefix,
                     p.category_code, p.subcategory_code, p.sub_subcategory_code,
                     s.name as size_name, s.code as size_code, c.name as color_name,
                     COALESCE(cat.name, c_old.name, 'General') as category_name,
@@ -5340,11 +5375,15 @@ class WarehouseController {
             $v['is_complementary'] = (!empty($v['is_complementary']) || !empty($v['prod_is_comp']) || !empty($v['var_is_comp']) || $v['category_type'] === 'COMPLEMENTARY') ? 1 : 0;
             $v['is_series'] = ($v['category_type'] === 'SERIES' || ($v['qr_type'] ?? '') === 'SERIES_BATCH' || (int)($v['pack_quantity'] ?? 0) > 1) ? 1 : 0;
 
-            $retailPrice = (float)($v['selling_price'] > 0 ? $v['selling_price'] : $v['mrp']);
-            if ($v['is_complementary']) {
-                $retailPrice = 0.00;
-            }
+            $stockPrice = (float)($v['purchase_price'] ?? 0);
+            if ($stockPrice <= 0) $stockPrice = (float)($v['production_cost'] ?? 0);
+            if ($stockPrice <= 0) $stockPrice = (float)($v['selling_price'] > 0 ? $v['selling_price'] : $v['mrp']);
+            $v['stock_price'] = $stockPrice;
+            $retailPrice = $v['is_complementary']
+                ? $stockPrice
+                : (float)($v['selling_price'] > 0 ? $v['selling_price'] : $v['mrp']);
             $v['selling_price'] = $retailPrice;
+            if ((float)$v['mrp'] <= 0) $v['mrp'] = $retailPrice;
 
             $c1 = !empty($v['category_code']) ? strtoupper($v['category_code'][0]) : (!empty($v['category_name']) ? strtoupper($v['category_name'][0]) : '');
             $c2 = !empty($v['subcategory_code']) ? strtoupper($v['subcategory_code'][0]) : '';
@@ -5393,7 +5432,13 @@ class WarehouseController {
             if (!empty($_POST['variant_id']) && is_array($_POST['variant_id'])) {
                 foreach ($_POST['variant_id'] as $idx => $vId) {
                     $qty = (int)($_POST['quantity'][$idx] ?? 1);
-                    $price = (float)($_POST['unit_price'][$idx] ?? 0.0);
+                    $postedPrice = $_POST['unit_price'][$idx] ?? null;
+                    if ($vId && $qty > 0 && $this->isComplementaryWarehouseVariant((int)$vId)
+                        && (!is_numeric($postedPrice) || (float)$postedPrice <= 0)) {
+                        Response::redirect(url('warehouse/purchases/create'), 'error', 'Complementary products must have a price greater than zero.');
+                        return;
+                    }
+                    $price = (float)($postedPrice ?? 0.0);
                     $mrp = (float)($_POST['mrp'][$idx] ?? $price);
                     if ($mrp <= 0) $mrp = $price;
                     if ($price <= 0 && $mrp > 0) $price = $mrp;
@@ -5610,7 +5655,7 @@ class WarehouseController {
         $variants = Database::fetchAll(
             "SELECT pv.id, pv.sku, pv.qr_code, pv.qr_type, pv.series_start_code, pv.series_end_code, pv.pack_quantity,
                     COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), NULLIF(cat.hsn_code, ''), NULLIF(c_old.hsn_code, ''), '') as hsn_code,
-                    pv.selling_price, pv.mrp, p.name as product_name, p.code as product_code, p.qr_code_prefix,
+                    pv.selling_price, pv.mrp, pv.purchase_price, pv.production_cost, p.name as product_name, p.code as product_code, p.qr_code_prefix,
                     p.category_code, p.subcategory_code, p.sub_subcategory_code,
                     s.name as size_name, s.code as size_code, c.name as color_name,
                     COALESCE(cat.name, c_old.name, 'General') as category_name,
@@ -5641,12 +5686,15 @@ class WarehouseController {
             $v['is_complementary'] = (!empty($v['is_complementary']) || !empty($v['prod_is_comp']) || !empty($v['var_is_comp']) || $v['category_type'] === 'COMPLEMENTARY') ? 1 : 0;
             $v['is_series'] = ($v['category_type'] === 'SERIES' || ($v['qr_type'] ?? '') === 'SERIES_BATCH' || (int)($v['pack_quantity'] ?? 0) > 1) ? 1 : 0;
 
-            $retailPrice = (float)($v['selling_price'] > 0 ? $v['selling_price'] : $v['mrp']);
-            if ($v['is_complementary']) {
-                $retailPrice = 0.00;
-            }
+            $stockPrice = (float)($v['purchase_price'] ?? 0);
+            if ($stockPrice <= 0) $stockPrice = (float)($v['production_cost'] ?? 0);
+            if ($stockPrice <= 0) $stockPrice = (float)($v['selling_price'] > 0 ? $v['selling_price'] : $v['mrp']);
+            $v['stock_price'] = $stockPrice;
+            $retailPrice = $v['is_complementary']
+                ? $stockPrice
+                : (float)($v['selling_price'] > 0 ? $v['selling_price'] : $v['mrp']);
             $v['selling_price'] = $retailPrice;
-            $v['mrp'] = $v['is_complementary'] ? 0.00 : (float)$v['mrp'];
+            if ((float)$v['mrp'] <= 0) $v['mrp'] = $retailPrice;
 
             $c1 = !empty($v['category_code']) ? strtoupper($v['category_code'][0]) : (!empty($v['category_name']) ? strtoupper($v['category_name'][0]) : '');
             $c2 = !empty($v['subcategory_code']) ? strtoupper($v['subcategory_code'][0]) : '';
@@ -5707,7 +5755,13 @@ class WarehouseController {
             if (!$productsLocked && !empty($_POST['variant_id']) && is_array($_POST['variant_id'])) {
                 foreach ($_POST['variant_id'] as $idx => $vId) {
                     $qty = (int)($_POST['quantity'][$idx] ?? 1);
-                    $price = (float)($_POST['unit_price'][$idx] ?? 0.0);
+                    $postedPrice = $_POST['unit_price'][$idx] ?? null;
+                    if ($vId && $qty > 0 && $this->isComplementaryWarehouseVariant((int)$vId)
+                        && (!is_numeric($postedPrice) || (float)$postedPrice <= 0)) {
+                        Response::redirect(url('warehouse/purchases/edit/' . $poId), 'error', 'Complementary products must have a price greater than zero.');
+                        return;
+                    }
+                    $price = (float)($postedPrice ?? 0.0);
                     $mrp = (float)($_POST['mrp'][$idx] ?? $price);
                     if ($mrp <= 0) $mrp = $price;
                     if ($price <= 0 && $mrp > 0) $price = $mrp;
@@ -6363,7 +6417,14 @@ class WarehouseController {
         $isComp = (!empty($variant['is_complementary']) || !empty($variant['prod_is_comp']) || ($variant['category_type'] ?? '') === 'COMPLEMENTARY') ? 1 : 0;
         $isSeries = (($variant['category_type'] ?? '') === 'SERIES' || ($variant['qr_type'] ?? '') === 'SERIES_BATCH' || (int)($variant['pack_quantity'] ?? 0) > 1) ? 1 : 0;
         $isPackOrSeries = ($isSeries || $isComp);
-        $retailPrice = $isComp ? 0.00 : (float)($variant['selling_price'] > 0 ? $variant['selling_price'] : $variant['mrp']);
+        $stockPrice = (float)($variant['purchase_price'] ?? 0);
+        if ($stockPrice <= 0) $stockPrice = (float)($variant['production_cost'] ?? 0);
+        if ($stockPrice <= 0) $stockPrice = (float)($variant['selling_price'] > 0 ? $variant['selling_price'] : $variant['mrp']);
+        $retailPrice = $isComp
+            ? $stockPrice
+            : (float)($variant['selling_price'] > 0 ? $variant['selling_price'] : $variant['mrp']);
+        $mrpPrice = (float)($variant['mrp'] ?? 0);
+        if ($mrpPrice <= 0) $mrpPrice = $retailPrice;
 
         if ($isAdjustmentScan === false) {
             // Check if the resolved variant is marked with active unresolved damage in this warehouse
@@ -6540,8 +6601,9 @@ class WarehouseController {
                 'hsn_code'          => $variant['resolved_hsn_code'] ?? $variant['hsn_code'] ?? '',
                 'resolved_hsn_code' => $variant['resolved_hsn_code'] ?? $variant['hsn_code'] ?? '',
                 'selling_price'    => $retailPrice,
-                'mrp'              => $isComp ? 0.0 : (float)($variant['mrp'] ?? $retailPrice),
-                'gst_rate'         => $isComp ? 0.0 : (float)($variant['gst_rate'] ?? 5.0),
+                'mrp'              => $mrpPrice,
+                'stock_price'      => $stockPrice,
+                'gst_rate'         => (float)($variant['gst_rate'] ?? 5.0),
                 'available_stock'  => $availableStock
             ]
         ]);
@@ -7835,6 +7897,21 @@ class WarehouseController {
         return 'NORMAL';
     }
 
+    private function isComplementaryWarehouseVariant(int $variantId): bool {
+        $variant = Database::fetchOne(
+            "SELECT GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_comp,
+                    COALESCE(wc.category_type, 'NORMAL') as category_type
+             FROM product_variants pv
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+             WHERE pv.id = ?",
+            [$variantId]
+        );
+
+        return !empty($variant['is_comp'])
+            || strtoupper((string)($variant['category_type'] ?? '')) === 'COMPLEMENTARY';
+    }
+
     private function isAllocationVariantIdentifier(array $variant, string $code): bool {
         $normalizedCode = strtoupper(trim($code));
         if ($normalizedCode === '') {
@@ -8475,8 +8552,8 @@ class WarehouseController {
                             GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
                             p.is_complementary as prod_is_comp,
                             pv.is_complementary as var_is_comp,
-                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as category_type,
-                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as cat_type,
+                            COALESCE(wc.category_type, 'NORMAL') as category_type,
+                            COALESCE(wc.category_type, 'NORMAL') as cat_type,
                             COALESCE(wc.name, cat.name, 'General') as category_name
                      FROM product_variants pv 
                      JOIN products p ON pv.product_id = p.id 
@@ -8550,8 +8627,8 @@ class WarehouseController {
                             GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
                             p.is_complementary as prod_is_comp,
                             pv.is_complementary as var_is_comp,
-                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as category_type,
-                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as cat_type,
+                            COALESCE(wc.category_type, 'NORMAL') as category_type,
+                            COALESCE(wc.category_type, 'NORMAL') as cat_type,
                             COALESCE(wc.name, cat.name, 'General') as category_name
                      FROM product_variants pv 
                      JOIN products p ON pv.product_id = p.id 
@@ -8624,8 +8701,8 @@ class WarehouseController {
                             GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
                             p.is_complementary as prod_is_comp,
                             pv.is_complementary as var_is_comp,
-                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as category_type,
-                            COALESCE(wc.category_type, cat.category_type, 'NORMAL') as cat_type,
+                            COALESCE(wc.category_type, 'NORMAL') as category_type,
+                            COALESCE(wc.category_type, 'NORMAL') as cat_type,
                             COALESCE(wc.name, cat.name, 'General') as category_name
                      FROM product_variants pv 
                      JOIN products p ON pv.product_id = p.id 
@@ -11661,19 +11738,15 @@ class WarehouseController {
         }
 
         $packTransactionStarted = false;
+        $packQuantityDefault = 1;
+        $aggregatePackQuantity = 0;
         try {
         if ($isSeriesOrComp && !$isReturnInward) {
             Database::beginTransaction();
             $packTransactionStarted = true;
             Database::fetchOne("SELECT id FROM product_variants WHERE id = ? FOR UPDATE", [$variantId]);
 
-            $packQuantity = (int)($variant['pack_quantity'] ?? 0);
-            if ($packQuantity <= 0) {
-                $packQuantity = 20;
-            }
-
-            // Each selected QR sticker represents a pack of $packQuantity units
-            $quantity = count($tagCodes) * $packQuantity;
+            $packQuantityDefault = max(1, (int)($variant['pack_quantity'] ?? 20));
         }
 
         $warehouse = Database::fetchOne("SELECT * FROM warehouses WHERE id = ?", [$warehouseId]);
@@ -11709,9 +11782,6 @@ class WarehouseController {
         } else {
             $tagSummary = 'QR Stickers Generated';
         }
-        $typeLabel = $isComp ? "Complementary Product" : ($isSeries ? "Master Series Pack" : "Third-Party Product");
-        $inwardNote = !empty($notes) ? $notes : "Third-Party Stickered QR Inward (+{$quantity} pcs) for {$typeLabel} SKU {$variant['sku']}. Tags: {$tagSummary}";
-
             if (!$packTransactionStarted) {
                 Database::beginTransaction();
                 $packTransactionStarted = true;
@@ -11739,13 +11809,25 @@ class WarehouseController {
                     if (Database::fetchOne("SELECT id FROM product_variants WHERE qr_code = ? LIMIT 1", [$tagCode])) {
                         throw new DomainException("QR code {$tagCode} is already assigned to a product variant.");
                     }
-                    $packQtyToStore = $isSeriesOrComp ? (int)($variant['pack_quantity'] ?? 20) : 1;
+                    $packQtyToStore = $isSeriesOrComp ? $packQuantityDefault : 1;
                     Database::execute(
                         "INSERT INTO warehouse_qr_codes (qr_code, variant_id, warehouse_id, pack_quantity, created_by, inwarded_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
                         [$tagCode, $variantId, $warehouseId, $packQtyToStore, $userId]
                     );
+                    if ($isSeriesOrComp && !$isReturnInward) {
+                        $aggregatePackQuantity += $packQtyToStore;
+                    }
+                }
+                if ($qrRecord && $isSeriesOrComp && !$isReturnInward) {
+                    $aggregatePackQuantity += max(1, (int)($qrRecord['pack_quantity'] ?? $packQuantityDefault));
                 }
             }
+
+            if ($isSeriesOrComp && !$isReturnInward) {
+                $quantity = $aggregatePackQuantity;
+            }
+            $typeLabel = $isComp ? "Complementary Product" : ($isSeries ? "Master Series Pack" : "Third-Party Product");
+            $inwardNote = !empty($notes) ? $notes : "Third-Party Stickered QR Inward (+{$quantity} pcs) for {$typeLabel} SKU {$variant['sku']}. Tags: {$tagSummary}";
 
             if ($isSeriesOrComp) {
                 $allInwarded = Database::fetchAll(
@@ -11842,9 +11924,14 @@ class WarehouseController {
     }
 
     /**
-     * Produce 1 New QR Label on the fly (Stock Adjustment / Next Sequential Series Pack)
+     * Produce consecutive QR labels or extend an existing aggregate QR pack.
      */
     public function produceNewQrAjax(): void {
+        if (!CSRF::validateRequest()) {
+            Response::json(['success' => false, 'message' => 'Security token expired. Refresh the page and try again.'], 403);
+            return;
+        }
+
         $canProduce = hasPermission('wh_labels', 'create') || hasPermission('wh_labels', 'view') || hasPermission('stock', 'view') || hasPermission('warehouse', 'view');
         if (!$canProduce) {
             Response::json(['success' => false, 'message' => 'Access denied.'], 403);
@@ -11852,6 +11939,12 @@ class WarehouseController {
         }
 
         $variantId = (int)($_POST['variant_id'] ?? 0);
+        $countValue = $_POST['count'] ?? 1;
+        if (!is_scalar($countValue) || !preg_match('/^[1-9]\d*$/', (string)$countValue) || (int)$countValue > 500) {
+            Response::json(['success' => false, 'message' => 'Enter a whole number between 1 and 500.'], 400);
+            return;
+        }
+        $count = (int)$countValue;
         $warehouseId = (int)($_POST['warehouse_id'] ?? 0);
         if ($variantId <= 0) {
             Response::json(['success' => false, 'message' => 'Invalid variant ID.'], 400);
@@ -11926,6 +12019,207 @@ class WarehouseController {
         if ($sellingVal <= 0) $sellingVal = (float)($variant['purchase_price'] ?? $variant['production_cost'] ?? $mrpVal);
         if ($sellingVal <= 0) $sellingVal = $mrpVal;
         $costVal = (float)($variant['purchase_price'] ?? $variant['production_cost'] ?? 0);
+
+        if ($isSeriesOrComp && !empty($_POST['aggregate_extension'])) {
+            $qrCode = trim((string)($_POST['qr_code'] ?? ''));
+            if ($qrCode === '' || strlen($qrCode) > 100) {
+                Response::json(['success' => false, 'message' => 'Select a valid existing series or complementary QR code.'], 400);
+                return;
+            }
+
+            Database::beginTransaction();
+            try {
+                $qrRecord = Database::fetchOne(
+                    "SELECT id, qr_code, warehouse_id, pack_quantity, series_end_code, inwarded_at
+                     FROM warehouse_qr_codes
+                     WHERE variant_id = ? AND qr_code = ?
+                     FOR UPDATE",
+                    [$variantId, $qrCode]
+                );
+                if (!$qrRecord) {
+                    throw new DomainException('The selected QR label is no longer available. Refresh the label page and try again.');
+                }
+                if ($warehouseId > 0 && !empty($qrRecord['warehouse_id']) && (int)$qrRecord['warehouse_id'] !== $warehouseId) {
+                    throw new DomainException('The selected QR label belongs to a different warehouse.');
+                }
+
+                $wasInwarded = !empty($qrRecord['inwarded_at']);
+                $sourceType = strtolower(trim((string)($_POST['source_type'] ?? 'tp_purchase')));
+                $isReturnInward = $sourceType === 'returns';
+                $canInwardStock = hasPermission('inward', 'verify')
+                    || hasPermission('inward', 'create')
+                    || hasPermission('purchases', 'receive')
+                    || (function_exists('isAdmin') && isAdmin());
+                $canInwardReturn = hasPermission('returns', 'classify')
+                    || hasPermission('returns', 'receive')
+                    || hasPermission('returns', 'view')
+                    || hasPermission('stock', 'view')
+                    || hasPermission('warehouse', 'view')
+                    || $canInwardStock;
+                if ($wasInwarded && ($isReturnInward ? !$canInwardReturn : !$canInwardStock)) {
+                    Database::rollback();
+                    Response::json([
+                        'success' => false,
+                        'message' => 'You do not have permission to inward the added units. Ask a warehouse inward administrator.',
+                    ], 403);
+                    return;
+                }
+
+                $currentPackQty = max(1, (int)($qrRecord['pack_quantity'] ?? $packQty));
+                $newPackQty = $currentPackQty + $count;
+                $startCode = (string)$qrRecord['qr_code'];
+                $currentEndCode = !empty($qrRecord['series_end_code']) ? (string)$qrRecord['series_end_code'] : $startCode;
+                if (!preg_match('/^(.*?)(\d+)$/', $currentEndCode, $endMatch)) {
+                    throw new DomainException('The selected QR label does not have a valid sequential series range.');
+                }
+                $newEndSequence = (int)$endMatch[2] + $count;
+                $sequenceWidth = max(strlen($endMatch[2]), strlen((string)$newEndSequence));
+                $newEndCode = $endMatch[1] . str_pad((string)$newEndSequence, $sequenceWidth, '0', STR_PAD_LEFT);
+                if (strlen($newEndCode) > 100) {
+                    throw new DomainException('The extended QR sequence exceeds the supported code length.');
+                }
+
+                Database::execute(
+                    "UPDATE warehouse_qr_codes
+                     SET pack_quantity = ?, series_end_code = ?
+                     WHERE id = ?",
+                    [
+                        $newPackQty,
+                        $newEndCode,
+                        (int)$qrRecord['id'],
+                    ]
+                );
+
+                $variantRange = Database::fetchOne(
+                    "SELECT series_end_code FROM product_variants WHERE id = ? FOR UPDATE",
+                    [$variantId]
+                );
+                $existingVariantEnd = (string)($variantRange['series_end_code'] ?? '');
+                $updateVariantEnd = true;
+                if (preg_match('/(\d+)$/', $existingVariantEnd, $variantEndMatch)) {
+                    $updateVariantEnd = (int)$variantEndMatch[1] <= (int)$endMatch[2];
+                }
+                if ($updateVariantEnd) {
+                    Database::execute(
+                        "UPDATE product_variants SET series_end_code = ? WHERE id = ?",
+                        [$newEndCode, $variantId]
+                    );
+                }
+
+                $stockUpdate = null;
+                $totalWarehouseStock = null;
+                if ($wasInwarded) {
+                    $stockWarehouseId = (int)($qrRecord['warehouse_id'] ?? 0);
+                    if ($stockWarehouseId <= 0) {
+                        $stockWarehouseId = $warehouseId;
+                    }
+                    $sessionUserId = Session::get('user_id');
+                    $userId = is_numeric($sessionUserId) && (int)$sessionUserId > 0
+                        ? (int)$sessionUserId
+                        : null;
+                    if ($userId !== null && !Database::fetchOne("SELECT id FROM users WHERE id = ?", [$userId])) {
+                        $userId = null;
+                    }
+                    $sourceId = (int)($_POST['source_id'] ?? 0);
+                    $transactionType = $isReturnInward ? 'RETURN_INWARD' : 'PURCHASE_INWARD';
+                    $referenceType = $isReturnInward ? 'warehouse_returns' : 'THIRD_PARTY_STICKERED';
+                    $stockNote = "QR pack {$startCode} extended by {$count} pcs (pack quantity {$newPackQty}).";
+
+                    StockService::increase(
+                        $variantId,
+                        'WAREHOUSE',
+                        $stockWarehouseId,
+                        'AVAILABLE',
+                        $count,
+                        $transactionType,
+                        $referenceType,
+                        $sourceId > 0 ? $sourceId : null,
+                        $userId,
+                        $stockNote
+                    );
+                    $stockUpdate = Database::fetchOne(
+                        "SELECT quantity FROM stock_balances WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND location_id = ? AND stock_state = 'AVAILABLE'",
+                        [$variantId, $stockWarehouseId]
+                    );
+                    $stockUpdate = (float)($stockUpdate['quantity'] ?? 0);
+                    $totalWarehouseStock = Database::fetchOne(
+                        "SELECT COALESCE(SUM(quantity), 0) as total FROM stock_balances WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND stock_state = 'AVAILABLE'",
+                        [$variantId]
+                    );
+                    AuditService::log('warehouse', 'inward', 'stock_balances', $variantId, null, [
+                        'action'       => $isReturnInward ? 'RETURN_INWARD_ADJUSTMENT' : 'THIRD_PARTY_STICKERED_INWARD_ADJUSTMENT',
+                        'variant_id'   => $variantId,
+                        'sku'          => $variant['sku'],
+                        'quantity'     => $count,
+                        'warehouse_id' => $stockWarehouseId,
+                        'new_balance'  => $stockUpdate,
+                        'qr_code'      => $startCode,
+                    ]);
+                }
+
+                Database::commit();
+                $catH = implode(' › ', array_filter([$variant['category_name'] ?? '', $variant['subcategory_name'] ?? '', $variant['sub_subcategory_name'] ?? '']));
+                $itemData = [
+                    'id'                   => (int)$qrRecord['id'],
+                    'variant_id'           => $variantId,
+                    'warehouse_id'         => (int)($qrRecord['warehouse_id'] ?? $warehouseId),
+                    'qr_prefix'            => strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($variant['qr_code_prefix'] ?? ''))),
+                    'tag_code'             => $startCode,
+                    'product_name'         => $variant['product_name'],
+                    'sku'                  => $variant['sku'],
+                    'clean_sku'            => $cleanSku,
+                    'brand_name'           => $brandOrSeller,
+                    'size_name'            => $variant['size_name'] ?? 'Free',
+                    'color_name'           => $variant['color_name'] ?? 'Std',
+                    'mrp'                  => $mrpVal,
+                    'selling_price'        => $sellingVal,
+                    'cost_price'           => $costVal,
+                    'source_label'         => ($isComp ? 'Master Complementary Pack: ' : 'Master Series Pack: ') . $brandOrSeller . " ({$newPackQty} Pcs)",
+                    'badge_class'          => 'bg-dark text-white',
+                    'qr_payload'           => $startCode,
+                    'is_series'            => true,
+                    'is_complementary'     => $isComp,
+                    'is_inwarded'          => $wasInwarded,
+                    'is_saved_qr'          => true,
+                    'series_start_code'    => $startCode,
+                    'series_end_code'      => $newEndCode,
+                    'pack_quantity'        => $newPackQty,
+                    'start_num'            => (int)(preg_match('/(\d+)$/', $startCode, $startMatch) ? $startMatch[1] : 0),
+                    'end_num'              => $newEndSequence,
+                    'category_name'        => $variant['category_name'] ?? '',
+                    'subcategory_name'     => $variant['subcategory_name'] ?? '',
+                    'sub_subcategory_name' => $variant['sub_subcategory_name'] ?? '',
+                    'category_hierarchy'   => $catH,
+                ];
+
+                Response::json([
+                    'success' => true,
+                    'aggregate_extension' => true,
+                    'message' => $wasInwarded
+                        ? "Updated the existing QR {$startCode}: pack quantity is now {$newPackQty}. Added {$count} unit(s) to warehouse stock."
+                        : "Updated the existing QR {$startCode}: pack quantity is now {$newPackQty}. The added units are pending inward.",
+                    'stock_updated' => $wasInwarded,
+                    'inward_qty' => $wasInwarded ? $count : 0,
+                    'warehouse_stock' => $stockUpdate,
+                    'total_warehouse_stock' => is_array($totalWarehouseStock) ? ($totalWarehouseStock['total'] ?? null) : null,
+                    'item' => $itemData,
+                ]);
+            } catch (DomainException $e) {
+                Database::rollback();
+                Response::json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 409);
+            } catch (Throwable $e) {
+                Database::rollback();
+                error_log('Failed to extend warehouse aggregate QR label: ' . $e->getMessage());
+                Response::json([
+                    'success' => false,
+                    'message' => 'Database error updating the QR label. No warehouse stock was changed.',
+                ], 500);
+            }
+            return;
+        }
 
         // Prefix
         $prodPrefix = !empty($variant['qr_code_prefix']) ? trim($variant['qr_code_prefix']) : '';
@@ -12028,114 +12322,128 @@ class WarehouseController {
             $nextSeq = $otherMaxSeq + 1;
         }
 
-        // Loop to find next sequence range that doesn't overlap with any other variant
-        $rangeFound = false;
-        while (!$rangeFound) {
-            $endSeq = $nextSeq + $packQtyForQr - 1;
-            $overlap = false;
-            foreach ($otherRanges as $rng) {
-                if ($nextSeq <= $rng['end'] && $endSeq >= $rng['start']) {
-                    $overlap = true;
-                    $nextSeq = $rng['end'] + 1;
-                    break;
-                }
-            }
-            if (!$overlap) {
-                $seqPad = ($endSeq > 99) ? 3 : 2;
-                $newTagCode = $baseTagPrefix . sprintf("%0{$seqPad}d", $nextSeq);
-                $newEndCode = $baseTagPrefix . sprintf("%0{$seqPad}d", $endSeq);
-                if (Database::fetchOne("SELECT id FROM warehouse_qr_codes WHERE qr_code = ? LIMIT 1", [$newTagCode])
-                    || Database::fetchOne("SELECT id FROM product_variants WHERE qr_code = ? LIMIT 1", [$newTagCode])) {
-                    $nextSeq += $packQtyForQr;
-                    continue;
-                }
-                $rangeFound = true;
-            }
-        }
-        $seqPad = ($endSeq > 99) ? 3 : 2;
-        $newTagCode = $baseTagPrefix . sprintf("%0{$seqPad}d", $nextSeq);
-        $newEndCode = $baseTagPrefix . sprintf("%0{$seqPad}d", $endSeq);
-
         $sessionUserId = Session::get('user_id');
         $userId = is_numeric($sessionUserId) && (int)$sessionUserId > 0 ? (int)$sessionUserId : null;
 
-        $extraReason = $isSeriesOrComp 
-            ? "Additional Sequential Pack (+{$packQtyForQr} pcs, {$nextSeq} to {$endSeq})" 
-            : "Stock Adjustment Single Piece (+1 pc, #{$nextSeq})";
-
-        // Insert into warehouse_qr_codes as un-inwarded (inwarded_at IS NULL) with is_extra = 1
-        Database::execute(
-            "INSERT INTO warehouse_qr_codes (qr_code, variant_id, warehouse_id, pack_quantity, series_end_code, created_by, is_extra, extra_reason) VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
-            [$newTagCode, $variantId, $warehouseId, $packQtyForQr, $newEndCode, $userId, $extraReason]
-        );
-        $insertedId = Database::lastInsertId();
-
-        // Update product_variants series_end_code if series/comp
-        if ($isSeriesOrComp) {
-            $currentStart = $variant['series_start_code'];
-            if (empty($currentStart) || preg_match('/^\d+$/', $currentStart)) {
-                $currentStart = $newTagCode;
-            }
-            Database::execute(
-                "UPDATE product_variants SET series_start_code = ?, series_end_code = ? WHERE id = ?",
-                [$currentStart, $newEndCode, $variantId]
-            );
-        }
-
-        // Count existing QRs for this variant
+        $catH = implode(' › ', array_filter([$variant['category_name'] ?? '', $variant['subcategory_name'] ?? '', $variant['sub_subcategory_name'] ?? '']));
         $totalPacks = (int)(Database::fetchOne(
             "SELECT COUNT(id) as total FROM warehouse_qr_codes WHERE variant_id = ?",
             [$variantId]
-        )['total'] ?? 1);
+        )['total'] ?? 0);
+        $items = [];
+        $lastEndCode = null;
 
-        $catH = implode(' › ', array_filter([$variant['category_name'] ?? '', $variant['subcategory_name'] ?? '', $variant['sub_subcategory_name'] ?? '']));
+        Database::beginTransaction();
+        try {
+            for ($i = 0; $i < $count; $i++) {
+                while (true) {
+                    $endSeq = $nextSeq + $packQtyForQr - 1;
+                    $overlap = false;
+                    foreach ($otherRanges as $range) {
+                        if ($nextSeq <= $range['end'] && $endSeq >= $range['start']) {
+                            $overlap = true;
+                            $nextSeq = $range['end'] + 1;
+                            break;
+                        }
+                    }
+                    if ($overlap) {
+                        continue;
+                    }
 
-        $itemData = [
-            'id'                   => (int)$insertedId,
-            'piece_no'             => $totalPacks,
-            'total_count'          => $totalPacks,
-            'variant_id'           => $variantId,
-            'qr_prefix'            => $prodPrefix,
-            'tag_code'             => $newTagCode,
-            'product_name'         => $variant['product_name'],
-            'sku'                  => $variant['sku'],
-            'clean_sku'            => $cleanSku,
-            'brand_name'           => $brandOrSeller,
-            'size_name'            => $variant['size_name'] ?? 'Free',
-            'color_name'           => $variant['color_name'] ?? 'Std',
-            'mrp'                  => $mrpVal,
-            'selling_price'        => $sellingVal,
-            'cost_price'           => $costVal,
-            'source_label'         => $isSeriesOrComp ? (($isComp ? 'Master Complementary Pack: ' : 'Master Series Pack: ') . $brandOrSeller . " ({$packQtyForQr} Pcs) ({$nextSeq} to {$endSeq})") : "Stock Adjustment: New QR Piece (#{$nextSeq})",
-            'badge_class'          => $isSeriesOrComp ? 'bg-dark text-white' : 'bg-warning text-dark',
-            'qr_payload'           => $newTagCode,
-            'is_series'            => $isSeriesOrComp,
-            'is_complementary'     => $isComp,
-            'is_adjustment'        => !$isSeriesOrComp,
-            'is_inwarded'          => false,
-            'is_saved_qr'          => true,
-            'series_start_code'    => $newTagCode,
-            'series_end_code'      => $newEndCode,
-            'pack_quantity'        => $packQtyForQr,
-            'start_num'            => $nextSeq,
-            'end_num'              => $endSeq,
-            'category_name'        => $variant['category_name'] ?? '',
-            'subcategory_name'     => $variant['subcategory_name'] ?? '',
-            'sub_subcategory_name' => $variant['sub_subcategory_name'] ?? '',
-            'category_hierarchy'   => $catH,
-        ];
+                    $seqPad = ($endSeq > 99) ? 3 : 2;
+                    $newTagCode = $baseTagPrefix . sprintf("%0{$seqPad}d", $nextSeq);
+                    $newEndCode = $baseTagPrefix . sprintf("%0{$seqPad}d", $endSeq);
+                    if (Database::fetchOne("SELECT id FROM warehouse_qr_codes WHERE qr_code = ? LIMIT 1", [$newTagCode])
+                        || Database::fetchOne("SELECT id FROM product_variants WHERE qr_code = ? LIMIT 1", [$newTagCode])) {
+                        $nextSeq = $endSeq + 1;
+                        continue;
+                    }
+                    break;
+                }
+
+                $extraReason = $isSeriesOrComp
+                    ? "Additional Sequential Pack (+{$packQtyForQr} pcs, {$nextSeq} to {$endSeq})"
+                    : "Stock Adjustment Single Piece (+1 pc, #{$nextSeq})";
+                Database::execute(
+                    "INSERT INTO warehouse_qr_codes (qr_code, variant_id, warehouse_id, pack_quantity, series_end_code, created_by, is_extra, extra_reason) VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
+                    [$newTagCode, $variantId, $warehouseId, $packQtyForQr, $newEndCode, $userId, $extraReason]
+                );
+                $insertedId = Database::lastInsertId();
+                $totalPacks++;
+
+                $items[] = [
+                    'id'                   => (int)$insertedId,
+                    'piece_no'             => $totalPacks,
+                    'total_count'          => $totalPacks,
+                    'variant_id'           => $variantId,
+                    'qr_prefix'            => $prodPrefix,
+                    'tag_code'             => $newTagCode,
+                    'product_name'         => $variant['product_name'],
+                    'sku'                  => $variant['sku'],
+                    'clean_sku'            => $cleanSku,
+                    'brand_name'           => $brandOrSeller,
+                    'size_name'            => $variant['size_name'] ?? 'Free',
+                    'color_name'           => $variant['color_name'] ?? 'Std',
+                    'mrp'                  => $mrpVal,
+                    'selling_price'        => $sellingVal,
+                    'cost_price'           => $costVal,
+                    'source_label'         => $isSeriesOrComp ? (($isComp ? 'Master Complementary Pack: ' : 'Master Series Pack: ') . $brandOrSeller . " ({$packQtyForQr} Pcs) ({$nextSeq} to {$endSeq})") : "Stock Adjustment: New QR Piece (#{$nextSeq})",
+                    'badge_class'          => $isSeriesOrComp ? 'bg-dark text-white' : 'bg-warning text-dark',
+                    'qr_payload'           => $newTagCode,
+                    'is_series'            => $isSeriesOrComp,
+                    'is_complementary'     => $isComp,
+                    'is_adjustment'        => !$isSeriesOrComp,
+                    'is_inwarded'          => false,
+                    'is_saved_qr'          => true,
+                    'series_start_code'    => $newTagCode,
+                    'series_end_code'      => $newEndCode,
+                    'pack_quantity'        => $packQtyForQr,
+                    'start_num'            => $nextSeq,
+                    'end_num'              => $endSeq,
+                    'category_name'        => $variant['category_name'] ?? '',
+                    'subcategory_name'     => $variant['subcategory_name'] ?? '',
+                    'sub_subcategory_name' => $variant['sub_subcategory_name'] ?? '',
+                    'category_hierarchy'   => $catH,
+                ];
+
+                $lastEndCode = $newEndCode;
+                $nextSeq = $endSeq + 1;
+            }
+
+            if ($isSeriesOrComp && $lastEndCode !== null) {
+                $currentStart = $variant['series_start_code'];
+                if (empty($currentStart) || preg_match('/^\d+$/', $currentStart)) {
+                    $currentStart = $items[0]['tag_code'];
+                }
+                Database::execute(
+                    "UPDATE product_variants SET series_start_code = ?, series_end_code = ? WHERE id = ?",
+                    [$currentStart, $lastEndCode, $variantId]
+                );
+            }
+            Database::commit();
+        } catch (Throwable $e) {
+            Database::rollback();
+            error_log('Failed to produce additional warehouse QR labels: ' . $e->getMessage());
+            Response::json(['success' => false, 'message' => 'Database error producing QR labels. No QR labels were saved.'], 500);
+            return;
+        }
 
         Response::json([
             'success' => true,
-            'message' => "Produced 1 New QR: {$newTagCode}" . ($isSeriesOrComp ? " (Pack #{$totalPacks}, {$packQtyForQr} Pcs: {$nextSeq} - {$endSeq})" : " (Piece #{$nextSeq})"),
-            'item'    => $itemData,
+            'message' => "Produced {$count} New QR label(s): {$items[0]['tag_code']} - " . end($items)['tag_code'],
+            'items'   => $items,
+            'item'    => $items[0],
         ]);
     }
 
     public function deleteWarehouseQrAjax(): void {
-        $canDelete = hasPermission('wh_labels', 'create') || hasPermission('wh_labels', 'edit') || hasPermission('wh_labels', 'view') || hasPermission('stock', 'view') || hasPermission('warehouse', 'view');
+        $canDelete = hasPermission('wh_labels', 'create') || hasPermission('wh_labels', 'edit') || isAdmin();
         if (!$canDelete) {
             Response::json(['success' => false, 'message' => 'Access denied.'], 403);
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            Response::json(['success' => false, 'message' => 'Invalid security token. Refresh the page and try again.'], 403);
             return;
         }
 
@@ -12164,6 +12472,12 @@ class WarehouseController {
             return;
         }
 
+        $reason = trim((string)($_POST['reason'] ?? ''));
+        if ($reason === '' || strlen($reason) > 500) {
+            Response::json(['success' => false, 'message' => 'Enter a deletion reason (up to 500 characters).'], 422);
+            return;
+        }
+
         $sessionUserId = Session::get('user_id');
         $userId = is_numeric($sessionUserId) && (int)$sessionUserId > 0 ? (int)$sessionUserId : null;
         $variantId = !empty($_POST['variant_id']) ? (int)$_POST['variant_id'] : null;
@@ -12172,12 +12486,15 @@ class WarehouseController {
         $deletedCodes = [];
         $skippedInwarded = [];
 
-        Database::beginTransaction();
         try {
+            Database::beginTransaction();
             foreach ($codes as $code) {
-                // Check if already inwarded into warehouse inventory
+                // Lock the label row so inwarding cannot race with deletion.
                 $existing = Database::fetchOne(
-                    "SELECT id, variant_id, inwarded_at FROM warehouse_qr_codes WHERE qr_code = ?",
+                    "SELECT id, variant_id, inwarded_at, pack_quantity, series_end_code
+                     FROM warehouse_qr_codes
+                     WHERE UPPER(qr_code) = ?
+                     LIMIT 1 FOR UPDATE",
                     [$code]
                 );
 
@@ -12188,15 +12505,49 @@ class WarehouseController {
 
                 $varId = $existing ? (int)$existing['variant_id'] : $variantId;
 
-                // 1. Delete from warehouse_qr_codes
-                Database::execute("DELETE FROM warehouse_qr_codes WHERE qr_code = ? AND inwarded_at IS NULL", [$code]);
+                if ($existing) {
+                    Database::execute(
+                        "DELETE FROM warehouse_qr_codes WHERE id = ? AND inwarded_at IS NULL",
+                        [(int)$existing['id']]
+                    );
+                }
 
-                // 2. Track in warehouse_deleted_label_codes
                 Database::execute(
                     "INSERT INTO warehouse_deleted_label_codes (code, variant_id, created_by)
                      VALUES (?, ?, ?)
-                     ON DUPLICATE KEY UPDATE variant_id = VALUES(variant_id)",
+                     ON DUPLICATE KEY UPDATE variant_id = VALUES(variant_id), created_by = VALUES(created_by)",
                     [$code, $varId, $userId]
+                );
+
+                $previousValue = json_encode([
+                    'qr_code' => $code,
+                    'variant_id' => $varId,
+                    'qr_record_id' => $existing ? (int)$existing['id'] : null,
+                    'pack_quantity' => $existing ? (int)$existing['pack_quantity'] : null,
+                    'series_end_code' => $existing['series_end_code'] ?? null,
+                    'inwarded_at' => $existing['inwarded_at'] ?? null,
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                $newValue = json_encode([
+                    'deleted' => true,
+                    'reason' => $reason,
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                if ($previousValue === false || $newValue === false) {
+                    throw new RuntimeException('Unable to prepare QR deletion audit data.');
+                }
+
+                Database::execute(
+                    "INSERT INTO audit_logs (
+                        user_id, module, action, reference_type, reference_id,
+                        previous_value, new_value, ip_address, user_agent, created_at
+                     ) VALUES (?, 'warehouse', 'DELETE', 'warehouse_qr_codes', ?, ?, ?, ?, ?, NOW())",
+                    [
+                        $userId,
+                        $existing ? (int)$existing['id'] : null,
+                        $previousValue,
+                        $newValue,
+                        $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
+                        substr($_SERVER['HTTP_USER_AGENT'] ?? 'CLI/System', 0, 500),
+                    ]
                 );
 
                 $deletedCodes[] = $code;
@@ -12210,10 +12561,12 @@ class WarehouseController {
                 'deleted_count'    => $deletedCount,
                 'deleted_codes'    => $deletedCodes,
                 'skipped_inwarded' => $skippedInwarded,
-                'message'          => $deletedCount . ' QR code(s) deleted permanently.',
+                'message'          => $deletedCount . ' QR label(s) deleted and recorded in the audit log.',
             ]);
         } catch (Throwable $e) {
-            Database::rollback();
+            if (Database::inTransaction()) {
+                Database::rollback();
+            }
             Response::json(['success' => false, 'message' => 'Database error deleting QR code: ' . $e->getMessage()], 500);
         }
     }
