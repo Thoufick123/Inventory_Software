@@ -474,13 +474,26 @@ $taxValueForItem = static function (array $item, string $type): float {
     font-size: 8px;
     color: #64748b;
 }
+.hsn-dropdown .hsn-opt-item:hover,
+.hsn-dropdown .hsn-opt-item:focus,
 .hsn-dropdown .hsn-opt-item.active,
-.hsn-dropdown .hsn-opt-item.active:hover,
-.hsn-dropdown .hsn-opt-item.active:focus {
+.hsn-dropdown .hsn-opt-item:active {
+    background-color: #0d6efd !important;
     color: #ffffff !important;
 }
-.hsn-dropdown .hsn-opt-item.active :not(.badge) {
+.hsn-dropdown .hsn-opt-item:hover *,
+.hsn-dropdown .hsn-opt-item:focus *,
+.hsn-dropdown .hsn-opt-item.active *,
+.hsn-dropdown .hsn-opt-item:active * {
     color: #ffffff !important;
+}
+.hsn-dropdown .hsn-opt-item:hover .badge,
+.hsn-dropdown .hsn-opt-item:focus .badge,
+.hsn-dropdown .hsn-opt-item.active .badge,
+.hsn-dropdown .hsn-opt-item:active .badge {
+    background-color: rgba(255, 255, 255, 0.25) !important;
+    color: #ffffff !important;
+    border-color: rgba(255, 255, 255, 0.4) !important;
 }
 </style>
 <template id="editSupplyTemplate">
