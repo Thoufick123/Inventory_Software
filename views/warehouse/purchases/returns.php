@@ -432,9 +432,9 @@ $editData = $editData ?? null;
 
                         <!-- Card 1: Direct Return -->
                         <div class="col-12 col-md-6">
-                            <div class="action-type-card card border-2 h-100 p-3 selected-action shadow-sm"
-                                 id="card_RETURN" onclick="selectActionCard('RETURN')"
-                                 style="border-radius:12px; cursor:pointer;">
+                            <button type="button" class="action-type-card card border-2 h-100 p-3 selected-action shadow-sm"
+                                    id="card_RETURN" aria-pressed="true" onclick="selectActionCard('RETURN')"
+                                    style="border-radius:12px; cursor:pointer; width:100%; text-align:left;">
                                 <div class="d-flex align-items-center gap-2 mb-2">
                                     <span class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
                                           style="width:32px;height:32px;background:#dbeafe;">
@@ -448,14 +448,14 @@ $editData = $editData ?? null;
                                 <p class="text-muted mb-0" style="font-size:11.5px; line-height:1.4;">
                                     Return items and issue direct refund (Cash, UPI).
                                 </p>
-                            </div>
+                            </button>
                         </div>
 
                         <!-- Card 2: Exchange with Warehouse Stock -->
                         <div class="col-12 col-md-6">
-                            <div class="action-type-card card border-2 h-100 p-3 shadow-sm"
-                                 id="card_EXCHANGE_DIFFERENT" onclick="selectActionCard('EXCHANGE_DIFFERENT')"
-                                 style="border-radius:12px; cursor:pointer;">
+                            <button type="button" class="action-type-card card border-2 h-100 p-3 shadow-sm"
+                                    id="card_EXCHANGE_DIFFERENT" aria-pressed="false" onclick="selectActionCard('EXCHANGE_DIFFERENT')"
+                                    style="border-radius:12px; cursor:pointer; width:100%; text-align:left;">
                                 <div class="d-flex align-items-center gap-2 mb-2">
                                     <span class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
                                           style="width:32px;height:32px;background:#f0fdf4;">
@@ -469,14 +469,14 @@ $editData = $editData ?? null;
                                 <p class="text-muted mb-0" style="font-size:11.5px; line-height:1.4;">
                                     Exchange the selected invoice items for any available product in this warehouse.
                                 </p>
-                            </div>
+                            </button>
                         </div>
 
                         <!-- Card 3: Same Product Exchange -->
                         <div class="col-12 col-md-6">
-                            <div class="action-type-card card border-2 h-100 p-3 shadow-sm"
-                                 id="card_EXCHANGE_SAME" onclick="selectActionCard('EXCHANGE_SAME')"
-                                 style="border-radius:12px; cursor:pointer;">
+                            <button type="button" class="action-type-card card border-2 h-100 p-3 shadow-sm"
+                                    id="card_EXCHANGE_SAME" aria-pressed="false" onclick="selectActionCard('EXCHANGE_SAME')"
+                                    style="border-radius:12px; cursor:pointer; width:100%; text-align:left;">
                                 <div class="d-flex align-items-center gap-2 mb-2">
                                     <span class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
                                           style="width:32px;height:32px;background:#eff6ff;">
@@ -490,7 +490,7 @@ $editData = $editData ?? null;
                                 <p class="text-muted mb-0" style="font-size:11.5px; line-height:1.4;">
                                     Scan the same product or another size/color variant from warehouse stock.
                                 </p>
-                            </div>
+                            </button>
                         </div>
 
                     </div><!-- /row -->
@@ -694,7 +694,10 @@ $editData = $editData ?? null;
     transition: all .18s ease;
     border-color: #e2e8f0 !important;
     background: #ffffff !important;
+    color: inherit;
+    font: inherit;
 }
+.action-type-card:focus-visible { outline: 3px solid rgba(37,99,235,.35); outline-offset: 2px; }
 .action-type-card:hover:not(.selected-action) {
     border-color: #93c5fd !important;
     background: #f0f9ff !important;
@@ -1086,11 +1089,13 @@ function restoreReturnTransaction(editTransaction) {
 function selectActionCard(mode) {
     document.querySelectorAll('.action-type-card').forEach(c => {
         c.classList.remove('selected-action');
+        c.setAttribute('aria-pressed', 'false');
     });
     const cardId = mode === 'CREDIT_NOTE' ? 'RETURN' : mode;
     const card = document.getElementById('card_' + cardId);
     if (card) {
         card.classList.add('selected-action');
+        card.setAttribute('aria-pressed', 'true');
     }
 
     // Sync legacy select

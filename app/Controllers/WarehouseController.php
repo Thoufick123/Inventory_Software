@@ -1235,9 +1235,23 @@ class WarehouseController {
                 LEFT JOIN brands b ON p.brand_id = b.id
                 JOIN warehouses w ON sb.location_id = w.id
                 WHERE sb.location_type = 'WAREHOUSE'";
+        $inwardedProductionStockPredicate = "(
+                    COALESCE(p.source_type, '') <> 'OWN_PRODUCTION'
+                    OR EXISTS (
+                        SELECT 1
+                        FROM production_batch_items pbi_inward
+                        JOIN production_batches pb_inward
+                          ON pb_inward.id = pbi_inward.production_batch_id
+                        WHERE pbi_inward.variant_id = sb.variant_id
+                          AND pb_inward.destination_warehouse_id = sb.location_id
+                          AND pb_inward.status = 'RECEIVED'
+                          AND (COALESCE(pbi_inward.received_qty, 0) + COALESCE(pbi_inward.damaged_qty, 0)) > 0
+                    )
+                )";
         $params = [];
         $sql .= " AND sb.location_id = ?";
         $params[] = $selectedWarehouseId;
+        $sql .= " AND " . $inwardedProductionStockPredicate;
 
         if (!empty($stockState)) {
             $sql .= " AND sb.stock_state = ?";
@@ -1252,7 +1266,7 @@ class WarehouseController {
         if (!empty($search)) {
             $sql .= " AND (p.name LIKE ? OR pv.sku LIKE ? OR p.code LIKE ? OR sel.name LIKE ? OR b.name LIKE ? OR pv.qr_code LIKE ? OR p.qr_code_prefix LIKE ? OR s.name LIKE ? OR col.name LIKE ? OR p.material LIKE ? 
                      OR EXISTS (SELECT 1 FROM warehouse_qr_codes wqr_s WHERE wqr_s.variant_id = pv.id AND wqr_s.warehouse_id = sb.location_id AND wqr_s.qr_code LIKE ?)
-                     OR EXISTS (SELECT 1 FROM production_batch_items pbi_s JOIN production_batches pb_s ON pbi_s.production_batch_id = pb_s.id WHERE pbi_s.variant_id = pv.id AND (pb_s.destination_warehouse_id = sb.location_id OR pb_s.destination_warehouse_id IS NULL) AND (pbi_s.piece_tags LIKE ? OR pbi_s.received_qr_codes LIKE ?))
+                     OR EXISTS (SELECT 1 FROM production_batch_items pbi_s JOIN production_batches pb_s ON pbi_s.production_batch_id = pb_s.id WHERE pbi_s.variant_id = pv.id AND pb_s.destination_warehouse_id = sb.location_id AND pb_s.status = 'RECEIVED' AND (COALESCE(pbi_s.received_qty, 0) + COALESCE(pbi_s.damaged_qty, 0)) > 0 AND (pbi_s.piece_tags LIKE ? OR pbi_s.received_qr_codes LIKE ?))
                      OR EXISTS (SELECT 1 FROM stock_transactions st_search WHERE st_search.variant_id = pv.id AND st_search.location_type = 'WAREHOUSE' AND st_search.location_id = sb.location_id AND st_search.notes LIKE ?))";
             $s = '%' . $search . '%';
             $params = array_merge($params, [$s, $s, $s, $s, $s, $s, $s, $s, $s, $s, $s, $s, $s, $s]);
@@ -1277,6 +1291,7 @@ class WarehouseController {
                          LEFT JOIN sizes s ON pv.size_id = s.id
                          LEFT JOIN colors col ON pv.color_id = col.id
                          WHERE sb.location_type = 'WAREHOUSE'
+                           AND " . $inwardedProductionStockPredicate . "
                            AND sb.location_id != ?
                            AND (p.name LIKE ? OR pv.sku LIKE ? OR p.code LIKE ? OR sel.name LIKE ? OR b.name LIKE ? OR pv.qr_code LIKE ? OR p.qr_code_prefix LIKE ? OR s.name LIKE ? OR col.name LIKE ? OR p.material LIKE ? OR EXISTS (SELECT 1 FROM stock_transactions st_search WHERE st_search.variant_id = pv.id AND st_search.location_type = 'WAREHOUSE' AND st_search.location_id = sb.location_id AND st_search.notes LIKE ?))
                          GROUP BY sb.location_id, w.name, w.code, p.id, p.name, p.code, pv.id, pv.sku, p.source_type, sb.stock_state
@@ -1444,12 +1459,14 @@ class WarehouseController {
 
         $warehouseSummary = Database::fetchOne(
             "SELECT 
-                COALESCE(SUM(CASE WHEN stock_state = 'AVAILABLE' THEN quantity ELSE 0 END), 0) as available_qty,
-                COALESCE(SUM(CASE WHEN stock_state = 'RESERVED' THEN quantity ELSE 0 END), 0) as reserved_qty,
-                COALESCE(SUM(CASE WHEN stock_state = 'DAMAGED' THEN quantity ELSE 0 END), 0) as damaged_qty,
-                COUNT(DISTINCT variant_id) as unique_variants
-             FROM stock_balances
-             WHERE location_type = 'WAREHOUSE' AND location_id = ?",
+                COALESCE(SUM(CASE WHEN sb.stock_state = 'AVAILABLE' THEN sb.quantity ELSE 0 END), 0) as available_qty,
+                COALESCE(SUM(CASE WHEN sb.stock_state = 'RESERVED' THEN sb.quantity ELSE 0 END), 0) as reserved_qty,
+                COALESCE(SUM(CASE WHEN sb.stock_state = 'DAMAGED' THEN sb.quantity ELSE 0 END), 0) as damaged_qty,
+                COUNT(DISTINCT sb.variant_id) as unique_variants
+             FROM stock_balances sb
+             JOIN product_variants pv ON pv.id = sb.variant_id
+             JOIN products p ON p.id = pv.product_id
+             WHERE sb.location_type = 'WAREHOUSE' AND sb.location_id = ? AND " . $inwardedProductionStockPredicate,
             [$selectedWarehouseId]
         );
 
@@ -11965,6 +11982,8 @@ class WarehouseController {
             "SELECT st.variant_id, SUM(st.quantity) as inwarded_qty, MAX(st.notes) as latest_notes, MAX(st.created_at) as latest_date
              FROM stock_transactions st
              WHERE st.reference_type = 'THIRD_PARTY_STICKERED'
+               AND st.transaction_type = 'PURCHASE_INWARD'
+               AND COALESCE(st.notes, '') NOT LIKE 'QR pack % extended by % pcs (pack quantity %'
              GROUP BY st.variant_id"
         );
         $inwardMap = [];
@@ -12000,8 +12019,7 @@ class WarehouseController {
                 $isSeries = strtoupper($tpv['qr_type'] ?? '') === 'SERIES_BATCH'
                     || strtoupper($tpv['qr_type'] ?? '') === 'SERIES'
                     || strtoupper($tpv['warehouse_category_type'] ?? '') === 'SERIES';
-                $packQuantity = (int)($tpv['pack_quantity'] ?? 0);
-                $totalQty = max($poQty, (int)($tpv['quantity'] ?? 0), $packQuantity, $inwardedQty);
+                $totalQty = max($poQty, (int)($tpv['quantity'] ?? 0), $inwardedQty);
                 if ($totalQty <= 0) $totalQty = max(1, $inwardedQty);
                 $remainingQty = max(0, $totalQty - $inwardedQty);
 
@@ -12836,7 +12854,7 @@ class WarehouseController {
                         $userId = null;
                     }
                     $sourceId = (int)($_POST['source_id'] ?? 0);
-                    $transactionType = $isReturnInward ? 'RETURN_INWARD' : 'PURCHASE_INWARD';
+                    $transactionType = $isReturnInward ? 'RETURN_INWARD' : 'PURCHASE_INWARD_ADJUSTMENT';
                     $referenceType = $isReturnInward ? 'warehouse_returns' : 'THIRD_PARTY_STICKERED';
                     $stockNote = "QR pack {$startCode} extended by {$count} pcs (pack quantity {$newPackQty}).";
 

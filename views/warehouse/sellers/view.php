@@ -14,11 +14,6 @@
         </span>
     </div>
     <div class="d-flex flex-wrap gap-2">
-        <?php if (hasPermission('wh_sellers', 'edit')): ?>
-        <a href="<?= url('warehouse/sellers/create?seller_id=' . $seller['id'] . '&mode=edit') ?>" class="btn btn-primary shadow-sm">
-            <i class="bi bi-pencil-square me-1"></i> Edit Supplier
-        </a>
-        <?php endif; ?>
         <a href="<?= url('warehouse/sellers') ?>" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i> Back to Suppliers
         </a>
@@ -288,9 +283,6 @@
                                             <th class="text-center">Warehouse Stock</th>
                                             <th class="text-end">Cost Rate (₹)</th>
                                             <th class="text-end">MRP / Selling</th>
-                                            <?php if (hasPermission('wh_sellers', 'edit')): ?>
-                                                <th class="text-center" style="width: 80px;">Action</th>
-                                            <?php endif; ?>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -308,23 +300,6 @@
                                                     'qr_code' => $qrVal,
                                                     'seller'  => $seller['name']
                                                 ]);
-                                                $editPayload = [
-                                                    'product_id'     => (int)($prod['product_id'] ?? 0),
-                                                    'variant_id'     => (int)($prod['variant_id'] ?? 0),
-                                                    'product_name'   => $prod['product_name'] ?? '',
-                                                    'sku'            => $prod['sku'] ?? '',
-                                                    'hsn_code'       => $prod['hsn_code'] ?? '',
-                                                    'variant_name'   => trim(($prod['size_name'] ?? '') . ' / ' . ($prod['color_name'] ?? ''), ' /'),
-                                                    'size_name'      => $prod['size_name'] ?? '',
-                                                    'color_name'     => $prod['color_name'] ?? '',
-                                                    'weight'         => (float)($prod['weight'] ?? 0),
-                                                    'mrp'            => (float)($prod['mrp'] ?? 0),
-                                                    'selling_price'  => (float)($prod['selling_price'] ?? 0),
-                                                    'purchase_price' => (float)($prod['last_unit_price'] ?? 0),
-                                                    'available_stock'=> (float)($prod['current_stock_qty'] ?? 0),
-                                                    'can_edit_stock' => !empty($prod['can_edit_stock']),
-                                                    'row_id'         => $viewRowUid,
-                                                ];
                                             ?>
                                             <tr id="<?= $viewRowUid ?>">
                                                 <td>
@@ -375,13 +350,6 @@
                                                     <div class="text-secondary small view-sp-mrp">MRP: ₹<?= number_format($prod['mrp'], 2) ?></div>
                                                     <div class="fw-bold text-success fs-7 view-sp-selling">Selling: ₹<?= number_format($prod['selling_price'] ?: $prod['mrp'], 2) ?></div>
                                                 </td>
-                                                <?php if (hasPermission('wh_sellers', 'edit')): ?>
-                                                <td class="text-center">
-                                                    <button type="button" class="btn btn-xs btn-outline-primary py-1 px-2 fw-semibold shadow-xs" onclick='openEditSupplierProductModal(<?= htmlspecialchars(json_encode($editPayload, JSON_UNESCAPED_UNICODE), ENT_QUOTES, "UTF-8") ?>)' title="Edit Product Details &amp; Pricing">
-                                                        <i class="bi bi-pencil-square me-1"></i>Edit
-                                                    </button>
-                                                </td>
-                                                <?php endif; ?>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>

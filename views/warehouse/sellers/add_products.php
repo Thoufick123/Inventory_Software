@@ -624,8 +624,56 @@ const HAS_ACTIVE_WAREHOUSE = <?= empty($warehouses) ? 'false' : 'true' ?>;
 
 // Array of active inward products
 let addedProductsList = [];
+const pendingSupplierProductEdits = new Map();
 const touchedProductFields = new WeakMap();
 const submittedProductItems = new WeakSet();
+
+function showSupplierToast(title, message, type = 'info') {
+    let container = document.getElementById('supplierToastContainer');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'supplierToastContainer';
+        container.className = 'toast-container position-fixed top-0 end-0 p-3';
+        container.style.zIndex = '2000';
+        container.setAttribute('aria-live', 'polite');
+        container.setAttribute('aria-atomic', 'true');
+        document.body.appendChild(container);
+    }
+
+    const colorClass = {
+        success: 'text-bg-success',
+        danger: 'text-bg-danger',
+        warning: 'text-bg-warning',
+        info: 'text-bg-primary'
+    }[type] || 'text-bg-primary';
+    const toastElement = document.createElement('div');
+    toastElement.className = `toast align-items-center ${colorClass} border-0 shadow`;
+    toastElement.setAttribute('role', 'status');
+    toastElement.setAttribute('aria-live', 'polite');
+    toastElement.setAttribute('aria-atomic', 'true');
+
+    const layout = document.createElement('div');
+    layout.className = 'd-flex';
+    const body = document.createElement('div');
+    body.className = 'toast-body';
+    const heading = document.createElement('strong');
+    heading.textContent = title;
+    const detail = document.createElement('div');
+    detail.textContent = message;
+    body.append(heading, detail);
+
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'btn-close btn-close-white me-2 m-auto';
+    close.setAttribute('data-bs-dismiss', 'toast');
+    close.setAttribute('aria-label', 'Close');
+    layout.append(body, close);
+    toastElement.appendChild(layout);
+    container.appendChild(toastElement);
+
+    toastElement.addEventListener('hidden.bs.toast', () => toastElement.remove(), { once: true });
+    new bootstrap.Toast(toastElement, { delay: 4500 }).show();
+}
 
 function markProductFieldTouched(item, fieldName) {
     let fields = touchedProductFields.get(item);
@@ -1336,10 +1384,26 @@ function addTemplateProduct(t) {
 // -----------------------------------------------------------------------------
 // 3. INLINE EDITABLE SPREADSHEET TABLE RENDERING
 // -----------------------------------------------------------------------------
+function updateFinalSaveButtonState() {
+    const button = document.getElementById('btnSaveAllProducts');
+    if (!button) return;
+
+    const hasNewProducts = addedProductsList.length > 0;
+    const hasPendingEdits = pendingSupplierProductEdits.size > 0;
+    button.disabled = ((!hasNewProducts && !hasPendingEdits) || !HAS_ACTIVE_WAREHOUSE);
+
+    if (hasPendingEdits && !hasNewProducts) {
+        button.innerHTML = '<i class="bi bi-check2-circle me-1"></i> Save Product Changes';
+    } else if (hasPendingEdits) {
+        button.innerHTML = '<i class="bi bi-qr-code me-1"></i> Save Products &amp; Changes &amp; Generate QR Labels &rarr;';
+    } else {
+        button.innerHTML = '<i class="bi bi-qr-code me-1"></i> Save Products &amp; Generate QR Labels &rarr;';
+    }
+}
+
 function renderAddedProductsTable() {
     const tbody = document.getElementById('addedProductsTableBody');
     const qfBar = document.getElementById('quickFillBar');
-    const btnSubmit = document.getElementById('btnSaveAllProducts');
 
     if (addedProductsList.length === 0) {
         if (qfBar) qfBar.classList.add('d-none');
@@ -1351,7 +1415,7 @@ function renderAddedProductsTable() {
                     <div class="small">Choose a category and click attribute options above to directly load products here.</div>
                 </td>
             </tr>`;
-        if (btnSubmit) btnSubmit.disabled = true;
+        updateFinalSaveButtonState();
         recalculateAllTotals();
         return;
     }
@@ -1795,9 +1859,8 @@ function validateQuickFillPricing() {
  */
 function checkAllRowValidationsAndDuplicates() {
     if (addedProductsList.length === 0) {
-        const btnSubmit = document.getElementById('btnSaveAllProducts');
         const notice = document.getElementById('saveProductsValidationNotice');
-        if (btnSubmit) btnSubmit.disabled = true;
+        updateFinalSaveButtonState();
         if (notice) notice.classList.add('d-none');
         return true;
     }
@@ -2042,12 +2105,8 @@ function checkAllRowValidationsAndDuplicates() {
         if (rowHasError) hasErrors = true;
     });
 
-    const btnSubmit = document.getElementById('btnSaveAllProducts');
     const notice = document.getElementById('saveProductsValidationNotice');
-
-    if (btnSubmit) {
-        btnSubmit.disabled = addedProductsList.length === 0 || !HAS_ACTIVE_WAREHOUSE;
-    }
+    updateFinalSaveButtonState();
     if (notice) {
         notice.classList.toggle('d-none', !hasVisibleErrors || addedProductsList.length === 0);
     }
@@ -2233,10 +2292,7 @@ function recalculateAllTotals() {
     if (gstTotalEl) gstTotalEl.textContent = '₹' + supplierGstTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const supplierTotalEl = document.getElementById('footerSupplierProductTotal');
     if (supplierTotalEl) supplierTotalEl.textContent = '₹' + supplierProductTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const btnSubmit = document.getElementById('btnSaveAllProducts');
-    if (btnSubmit) {
-        btnSubmit.disabled = (addedProductsList.length === 0 || !HAS_ACTIVE_WAREHOUSE);
-    }
+    updateFinalSaveButtonState();
 }
 
 function removeProductItem(itemId) {
@@ -2253,9 +2309,9 @@ function removeProductItem(itemId) {
 // -----------------------------------------------------------------------------
 // 4. FINAL FORM SUBMIT & MULTI-ROW VALIDATION
 // -----------------------------------------------------------------------------
-function submitFinalProducts() {
-    if (addedProductsList.length === 0) {
-        alert('Please add at least one product to the inward list.');
+async function submitFinalProducts() {
+    if (addedProductsList.length === 0 && pendingSupplierProductEdits.size === 0) {
+        showSupplierToast('Nothing to save', 'Add a product or edit an existing product price first.', 'warning');
         return;
     }
 
@@ -2340,9 +2396,24 @@ function submitFinalProducts() {
 
     const btn = document.getElementById('btnSaveAllProducts');
     btn.disabled = true;
-    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Crediting Stock &amp; Saving Bill...`;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Saving Changes...`;
+
+    try {
+        await savePendingSupplierProductEdits();
+    } catch (error) {
+        updateFinalSaveButtonState();
+        showSupplierToast('Save failed', error.message || 'Unable to save supplier product changes.', 'danger');
+        return;
+    }
+
+    if (addedProductsList.length === 0) {
+        updateFinalSaveButtonState();
+        showSupplierToast('Saved', 'Supplier product changes saved successfully.', 'success');
+        return;
+    }
 
     document.getElementById('jsonProductsInput').value = JSON.stringify(addedProductsList);
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Crediting Stock &amp; Saving Bill...`;
     document.getElementById('finalSubmitForm').submit();
 }
 
@@ -2476,8 +2547,61 @@ function onQfHsnSelect(val) {
 // EDIT EXISTING SUPPLIER PRODUCT
 // =========================================================================
 let editSpModalInstance = null;
+function updateSupplierProductRow(rowId, product, hasPendingChanges = false) {
+    const row = document.getElementById(rowId);
+    if (!row) return;
+
+    const setText = (selector, key, format = value => String(value)) => {
+        const element = row.querySelector(selector);
+        if (element && product[key] !== undefined && product[key] !== null) {
+            element.textContent = format(product[key]);
+        }
+    };
+
+    setText('.col-sp-name', 'product_name');
+    setText('.col-sp-sku', 'sku');
+    setText('.col-sp-hsn', 'hsn_code', value => String(value) || '—');
+    setText('.col-sp-variant', 'variant_name', value => String(value) || 'Standard');
+    setText('.col-sp-weight', 'weight', value => (parseFloat(value) || 0).toFixed(3));
+    setText('.col-sp-mrp', 'mrp', value => '₹' + (parseFloat(value) || 0).toFixed(2));
+    setText('.col-sp-selling', 'selling_price', value => '₹' + (parseFloat(value) || 0).toFixed(2));
+    setText('.col-sp-cost', 'purchase_price', value => '₹' + (parseFloat(value) || 0).toFixed(2));
+    setText('.col-sp-stock', 'available_stock', value => String(parseInt(value, 10) || 0));
+    row.classList.toggle('table-warning', hasPendingChanges);
+}
+
+async function savePendingSupplierProductEdits() {
+    const updates = Array.from(pendingSupplierProductEdits.entries());
+    for (const [editKey, editData] of updates) {
+        const formData = new FormData();
+        Object.entries(editData).forEach(([name, value]) => formData.append(name, value));
+        formData.append('_csrf_token', '<?= CSRF::token() ?>');
+        formData.append('csrf_token', '<?= CSRF::token() ?>');
+
+        const response = await fetch('<?= url("warehouse/sellers/update-product") ?>', {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': '<?= CSRF::token() ?>'
+            },
+            body: formData
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.message || 'Unable to save supplier product changes.');
+        }
+
+        pendingSupplierProductEdits.delete(editKey);
+        updateSupplierProductRow(editData.row_id, data.product || editData);
+    }
+}
+
 function openEditSupplierProductModal(prod) {
     if (!prod) return;
+    const editKey = String(prod.variant_id || prod.product_id || '');
+    const pendingEdit = pendingSupplierProductEdits.get(editKey);
+    if (pendingEdit) prod = { ...prod, ...pendingEdit };
+
     document.getElementById('editSpProductId').value = prod.product_id || 0;
     document.getElementById('editSpVariantId').value = prod.variant_id || 0;
     document.getElementById('editSpRowId').value = prod.row_id || '';
@@ -2511,66 +2635,37 @@ function openEditSupplierProductModal(prod) {
 
 function submitEditSupplierProduct(e) {
     e.preventDefault();
+    const form = document.getElementById('formEditSupplierProduct');
+    if (!form.reportValidity()) return;
+
     const btn = document.getElementById('btnSubmitEditSupplierProduct');
     const origHtml = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Staging...';
 
-    const formData = new FormData(document.getElementById('formEditSupplierProduct'));
-    formData.append('_csrf_token', '<?= CSRF::token() ?>');
-    formData.append('csrf_token', '<?= CSRF::token() ?>');
-
-    fetch('<?= url("warehouse/sellers/update-product") ?>', {
-        method: 'POST',
-        headers: { 
-            'X-Requested-With': 'XMLHttpRequest',
-            'X-CSRF-TOKEN': '<?= CSRF::token() ?>'
-        },
-        body: formData
-    })
-    .then(res => res.json())
-    .then(data => {
-        btn.disabled = false;
-        btn.innerHTML = origHtml;
-        if (data.success) {
-            if (editSpModalInstance) editSpModalInstance.hide();
-            const rowId = document.getElementById('editSpRowId').value;
-            const row = document.getElementById(rowId);
-            const p = data.product || {};
-            if (row) {
-                const nameEl = row.querySelector('.col-sp-name');
-                if (nameEl) nameEl.textContent = p.product_name || document.getElementById('editSpProductName').value;
-                const skuEl = row.querySelector('.col-sp-sku');
-                if (skuEl) skuEl.textContent = p.sku || document.getElementById('editSpSku').value;
-                const hsnEl = row.querySelector('.col-sp-hsn');
-                if (hsnEl) hsnEl.textContent = p.hsn_code || document.getElementById('editSpHsnCode').value || '—';
-                const varEl = row.querySelector('.col-sp-variant');
-                if (varEl) varEl.textContent = p.variant_name || document.getElementById('editSpVariantName').value || 'Standard';
-                const wtEl = row.querySelector('.col-sp-weight');
-                if (wtEl) wtEl.textContent = parseFloat(p.weight || document.getElementById('editSpWeight').value || 0).toFixed(3);
-                const mrpEl = row.querySelector('.col-sp-mrp');
-                if (mrpEl) mrpEl.textContent = '₹' + parseFloat(p.mrp || document.getElementById('editSpMrp').value || 0).toFixed(2);
-                const sellEl = row.querySelector('.col-sp-selling');
-                if (sellEl) sellEl.textContent = '₹' + parseFloat(p.selling_price || document.getElementById('editSpSellingPrice').value || 0).toFixed(2);
-                const costEl = row.querySelector('.col-sp-cost');
-                if (costEl) costEl.textContent = '₹' + parseFloat(p.purchase_price || document.getElementById('editSpPurchasePrice').value || 0).toFixed(2);
-                const stockEl = row.querySelector('.col-sp-stock');
-                if (stockEl) stockEl.textContent = parseInt(p.available_stock || document.getElementById('editSpStock').value || 0);
-            }
-            if (typeof showToast === 'function') {
-                showToast('Success', data.message || 'Product updated successfully', 'success');
-            } else {
-                alert(data.message || 'Product updated successfully');
-            }
-        } else {
-            alert(data.message || 'Error updating product');
+    const formData = new FormData(form);
+    const editData = {};
+    formData.forEach((value, name) => {
+        if (name !== 'csrf_token' && name !== '_csrf_token') {
+            editData[name] = String(value);
         }
-    })
-    .catch(err => {
+    });
+    const editKey = String(editData.variant_id || editData.product_id || '');
+    if (!editKey) {
         btn.disabled = false;
         btn.innerHTML = origHtml;
-        alert('Request failed: ' + err.message);
-    });
+        showSupplierToast('Unable to stage changes', 'The product identifier is missing.', 'danger');
+        return;
+    }
+
+    pendingSupplierProductEdits.set(editKey, editData);
+    updateSupplierProductRow(editData.row_id, editData, true);
+    if (editSpModalInstance) editSpModalInstance.hide();
+    btn.disabled = false;
+    btn.innerHTML = origHtml;
+    updateFinalSaveButtonState();
+    const saveAction = addedProductsList.length > 0 ? 'Save Products & Changes' : 'Save Product Changes';
+    showSupplierToast('Changes staged', `Click the bottom "${saveAction}" button to apply the supplier product changes.`, 'info');
 }
 </script>
 
@@ -2676,11 +2771,11 @@ function submitEditSupplierProduct(e) {
                     </div>
                 </div>
                 <div class="modal-footer bg-light py-2 px-4 d-flex justify-content-between align-items-center">
-                    <span class="text-muted small"><i class="bi bi-info-circle me-1 text-primary"></i>Changes will update the supplier catalog style directly.</span>
+                    <span class="text-muted small"><i class="bi bi-info-circle me-1 text-primary"></i>Changes are staged here and saved with the bottom button.</span>
                     <div class="d-flex gap-2">
                         <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Cancel</button>
                         <button type="submit" class="btn btn-primary fw-semibold px-4 shadow-sm" id="btnSubmitEditSupplierProduct">
-                            <i class="bi bi-check2-circle me-1"></i> Save Changes
+                            <i class="bi bi-check2-circle me-1"></i> Stage Changes
                         </button>
                     </div>
                 </div>
