@@ -948,19 +948,19 @@
                     <div class="col-12" id="recStwBatchRow"><strong>Stitching Batch:</strong> <span id="recStwBatch">-</span></div>
                     <div class="col-12" id="recStwProgramRow"><strong>Production Program:</strong> <span id="recStwProgram">-</span></div>
                 </div>
-                <div class="table-responsive mb-3">
-                    <table class="table table-bordered table-sm small mb-0">
+                <div class="table-responsive mb-3 voucher-table-wrap" style="overflow-x: visible;">
+                    <table class="table table-bordered table-sm small mb-0" style="width: 100%; table-layout: fixed;">
                         <thead class="table-light">
                             <tr>
-                                <th>Item / Type</th>
-                                <th class="text-end">Quantity</th>
-                                <th class="text-end">Rate</th>
-                                <th class="text-end">Amount</th>
+                                <th style="width: 38%;">Item / Type</th>
+                                <th class="text-end" style="width: 20%;">Quantity</th>
+                                <th class="text-end" style="width: 20%;">Rate</th>
+                                <th class="text-end" style="width: 22%;">Amount</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
-                                <td id="recStwType">Thread Waste</td>
+                                <td id="recStwType" style="word-break: break-word;">Thread Waste</td>
                                 <td class="text-end" id="recStwQty">0.00 KG</td>
                                 <td class="text-end" id="recStwRate">₹0.00</td>
                                 <td class="text-end fw-bold" id="recStwTotal">₹0.00</td>
@@ -1488,12 +1488,132 @@ function openStitchingWastageReceipt(id) {
 }
 
 function printStwReceiptArea() {
-    const printContents = document.getElementById('printableStwReceiptArea').innerHTML;
-    const origContents = document.body.innerHTML;
-    document.body.innerHTML = printContents;
-    window.print();
-    document.body.innerHTML = origContents;
-    window.location.reload();
+    printVoucherDocument('printableStwReceiptArea', 'Stitching Scrap & Waste Sales Voucher');
+}
+
+function printVoucherDocument(areaId, docTitle) {
+    const el = document.getElementById(areaId);
+    if (!el) return;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(`<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>${docTitle || 'Sales Voucher'}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        @page {
+            size: A4 portrait;
+            margin: 12mm 15mm;
+        }
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #fff !important;
+            color: #111 !important;
+            margin: 0;
+            padding: 16px;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        .voucher-sheet {
+            max-width: 650px;
+            margin: 0 auto;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 24px;
+            background: #fff;
+        }
+        .table-responsive {
+            overflow: visible !important;
+            overflow-x: visible !important;
+            display: block !important;
+            width: 100% !important;
+        }
+        table {
+            width: 100% !important;
+            table-layout: fixed !important;
+            border-collapse: collapse !important;
+            margin-bottom: 0 !important;
+        }
+        th, td {
+            vertical-align: middle !important;
+            word-wrap: break-word !important;
+            overflow-wrap: break-word !important;
+            font-size: 13px !important;
+            padding: 6px 8px !important;
+        }
+        th {
+            background-color: #f8f9fa !important;
+            color: #212529 !important;
+            font-weight: 600 !important;
+        }
+        .badge {
+            display: inline-block !important;
+            padding: 4px 8px !important;
+            font-size: 11px !important;
+            border: 1px solid #adb5bd !important;
+            background-color: #f8f9fa !important;
+            color: #212529 !important;
+        }
+        hr {
+            margin: 12px 0 !important;
+            border-top: 1px solid #dee2e6 !important;
+            opacity: 1 !important;
+        }
+        .text-success { color: #198754 !important; }
+        .text-danger { color: #dc3545 !important; }
+        .text-muted { color: #6c757d !important; }
+        .fw-bold { font-weight: 700 !important; }
+        @media print {
+            body {
+                padding: 0 !important;
+            }
+            .voucher-sheet {
+                border: 1px solid #ccc !important;
+                padding: 20px !important;
+                max-width: 100% !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
+            .table-responsive {
+                overflow: visible !important;
+                overflow-x: visible !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="voucher-sheet">
+        ${el.innerHTML}
+    </div>
+</body>
+</html>`);
+    doc.close();
+
+    iframe.contentWindow.focus();
+    setTimeout(() => {
+        iframe.contentWindow.print();
+        setTimeout(() => {
+            if (iframe.parentNode) {
+                document.body.removeChild(iframe);
+            }
+        }, 1500);
+    }, 300);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
