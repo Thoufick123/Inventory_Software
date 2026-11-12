@@ -1802,13 +1802,26 @@ class WarehouseService {
         ];
     }
 
-    private static function isSeriesOrComplementaryVariant(array $variant): bool {
-        return in_array(strtoupper((string)($variant['qr_type'] ?? '')), ['SERIES', 'SERIES_BATCH'], true)
-            || in_array(strtoupper((string)($variant['category_type'] ?? '')), ['SERIES', 'COMPLEMENTARY'], true)
-            || !empty($variant['series_start_code'])
+    public static function getAdjustmentProductType(array $variant): string {
+        $categoryType = strtoupper((string)($variant['category_type'] ?? ''));
+        if ($categoryType === 'COMPLEMENTARY'
             || !empty($variant['is_complementary'])
-            || !empty($variant['product_is_complementary'])
-            || (int)($variant['pack_quantity'] ?? 1) > 1;
+            || !empty($variant['product_is_complementary'])) {
+            return 'COMPLEMENTARY';
+        }
+
+        if (in_array(strtoupper((string)($variant['qr_type'] ?? '')), ['SERIES', 'SERIES_BATCH'], true)
+            || $categoryType === 'SERIES'
+            || !empty($variant['series_start_code'])
+            || (int)($variant['pack_quantity'] ?? 1) > 1) {
+            return 'SERIES';
+        }
+
+        return 'NORMAL';
+    }
+
+    private static function isSeriesOrComplementaryVariant(array $variant): bool {
+        return self::getAdjustmentProductType($variant) !== 'NORMAL';
     }
 
     /**

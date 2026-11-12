@@ -116,6 +116,15 @@ foreach ($variants as $variantOption) {
                                 <td>
                                     <span class="fw-bold font-monospace"><?= e($adj['sku']) ?></span>
                                     <br><small class="text-muted"><?= e($adj['product_name']) ?> (<?= e($adj['size_name']) ?>, <?= e($adj['color_name']) ?>)</small>
+                                    <?php
+                                    $productType = WarehouseService::getAdjustmentProductType($adj);
+                                    $productTypeBadgeClass = [
+                                        'NORMAL' => 'bg-primary',
+                                        'SERIES' => 'bg-info text-dark',
+                                        'COMPLEMENTARY' => 'bg-warning text-dark',
+                                    ][$productType] ?? 'bg-secondary';
+                                    ?>
+                                    <br><span class="badge <?= e($productTypeBadgeClass) ?>"><?= e(ucfirst(strtolower($productType))) ?> product</span>
                                 </td>
                                 <td>
                                     <span class="badge bg-<?= $adj['adjustment_type'] === 'INCREASE' ? 'success' : 'danger' ?>">
@@ -217,7 +226,13 @@ foreach ($variants as $variantOption) {
                         <div class="card-body">
                             <div class="row g-3">
                                 <div class="col-md-6"><div class="small text-muted">Warehouse</div><div class="fw-semibold" id="detailWarehouse"></div></div>
-                                <div class="col-md-6"><div class="small text-muted">Product</div><div class="fw-semibold" id="detailProduct"></div><div class="small text-muted" id="detailProductVariant"></div></div>
+                                <div class="col-md-6">
+                                    <div class="small text-muted">Product</div>
+                                    <div class="fw-semibold" id="detailProduct"></div>
+                                    <div class="small text-muted" id="detailProductVariant"></div>
+                                    <div class="small text-muted mt-2">Product Type</div>
+                                    <span class="badge" id="detailProductType"></span>
+                                </div>
                                 <div class="col-md-6"><div class="small text-muted">Quantity</div><div class="fw-semibold" id="detailQuantity"></div></div>
                                 <div class="col-md-6"><div class="small text-muted">Requested by</div><div class="fw-semibold" id="detailRequestedBy"></div><div class="small text-muted" id="detailApprovedBy"></div></div>
                                 <div class="col-12"><div class="small text-muted">Reason</div><div class="fw-semibold" id="detailReason"></div></div>

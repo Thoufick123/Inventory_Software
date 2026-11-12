@@ -98,6 +98,20 @@
         document.getElementById('detailWarehouse').textContent = adjustment.warehouse_name || '';
         document.getElementById('detailProduct').textContent = adjustment.product_name || '';
         document.getElementById('detailProductVariant').textContent = `${adjustment.sku || ''} · ${adjustment.size_name || 'Free'} / ${adjustment.color_name || 'Std'}`;
+        const productType = String(adjustment.product_type || 'NORMAL').toUpperCase();
+        const productTypeBadge = document.getElementById('detailProductType');
+        const productTypeLabels = {
+            NORMAL: 'Normal product',
+            SERIES: 'Series product',
+            COMPLEMENTARY: 'Complementary product'
+        };
+        const productTypeClasses = {
+            NORMAL: 'badge bg-primary',
+            SERIES: 'badge bg-info text-dark',
+            COMPLEMENTARY: 'badge bg-warning text-dark'
+        };
+        productTypeBadge.textContent = productTypeLabels[productType] || productTypeLabels.NORMAL;
+        productTypeBadge.className = productTypeClasses[productType] || productTypeClasses.NORMAL;
         const sign = adjustment.adjustment_type === 'INCREASE' ? '+' : '−';
         document.getElementById('detailQuantity').textContent = `${sign}${Number(adjustment.quantity).toLocaleString()} pcs`;
         document.getElementById('detailRequestedBy').textContent = adjustment.requested_by_name || 'Staff';

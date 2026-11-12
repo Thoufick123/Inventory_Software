@@ -7305,6 +7305,7 @@ class WarehouseController {
                 'adjustment_number' => $adjustment['adjustment_number'],
                 'warehouse_name' => $adjustment['warehouse_name'],
                 'product_name' => $adjustment['product_name'],
+                'product_type' => WarehouseService::getAdjustmentProductType($adjustment),
                 'sku' => $adjustment['sku'],
                 'size_name' => $adjustment['size_name'] ?? 'Free',
                 'color_name' => $adjustment['color_name'] ?? 'Std',
@@ -7520,12 +7521,8 @@ class WarehouseController {
 
         $sourceType = strtoupper((string)($variant['source_type'] ?? 'OWN_PRODUCTION'));
         $sourceLabel = $sourceType === 'EXTERNAL_PURCHASE' ? 'Third-party stock' : 'Production stock';
-        $isSeriesOrComplementary = in_array(strtoupper((string)($variant['qr_type'] ?? '')), ['SERIES', 'SERIES_BATCH'], true)
-            || in_array(strtoupper((string)($variant['category_type'] ?? '')), ['SERIES', 'COMPLEMENTARY'], true)
-            || !empty($variant['series_start_code'])
-            || !empty($variant['is_complementary'])
-            || !empty($variant['product_is_complementary'])
-            || (int)($variant['pack_quantity'] ?? 1) > 1;
+        $productType = WarehouseService::getAdjustmentProductType($variant);
+        $isSeriesOrComplementary = $productType !== 'NORMAL';
         $quantityPerTag = $isSeriesOrComplementary ? max(1, (int)($variant['pack_quantity'] ?? 1)) : 1;
 
         $mode = $_GET['mode'] ?? 'product';
@@ -7556,6 +7553,7 @@ class WarehouseController {
                 'source_type' => $sourceType,
                 'source_label' => $sourceLabel,
                 'supplier_name' => $variant['supplier_name'],
+                'product_type' => $productType,
                 'qr_type' => $variant['qr_type'] ?? 'INDIVIDUAL',
                 'pack_quantity' => $quantityPerTag,
                 'is_series_or_complementary' => $isSeriesOrComplementary,
