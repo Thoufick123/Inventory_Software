@@ -3359,7 +3359,19 @@ class WarehouseService {
             LEFT JOIN colors col ON pv.color_id = col.id
             LEFT JOIN warehouse_suppliers sel ON p.warehouse_supplier_id = sel.id
             JOIN warehouses w ON sb.location_id = w.id
-            WHERE sb.location_type = 'WAREHOUSE' AND sb.location_id = ?";
+            WHERE sb.location_type = 'WAREHOUSE' AND sb.location_id = ?
+              AND (
+                  COALESCE(p.source_type, '') <> 'OWN_PRODUCTION'
+                  OR EXISTS (
+                      SELECT 1
+                      FROM stock_transactions st_inward
+                      WHERE st_inward.variant_id = sb.variant_id
+                        AND st_inward.location_type = 'WAREHOUSE'
+                        AND st_inward.location_id = sb.location_id
+                        AND st_inward.stock_state = sb.stock_state
+                        AND st_inward.quantity > 0
+                  )
+              )";
 
         $params = [$warehouseId];
 
@@ -3386,7 +3398,9 @@ class WarehouseService {
             JOIN product_variants pv ON pbi.variant_id = pv.id
             LEFT JOIN production_programs pp ON pb.program_id = pp.id
             LEFT JOIN qc_batches qb ON pb.qc_batch_id = qb.id
-            WHERE pb.destination_warehouse_id = ? OR pb.destination_warehouse_id IS NULL
+            WHERE pb.destination_warehouse_id = ?
+              AND pb.status = 'RECEIVED'
+              AND (COALESCE(pbi.received_qty, 0) + COALESCE(pbi.damaged_qty, 0)) > 0
             ORDER BY pbi.id ASC
         ", [$warehouseId]);
 
@@ -3399,7 +3413,9 @@ class WarehouseService {
         }
 
         $whQrs = Database::fetchAll("
-            SELECT * FROM warehouse_qr_codes WHERE warehouse_id = ? ORDER BY id ASC
+            SELECT * FROM warehouse_qr_codes
+            WHERE warehouse_id = ? AND inwarded_at IS NOT NULL
+            ORDER BY id ASC
         ", [$warehouseId]);
         $whQrByVariant = [];
         foreach ($whQrs as $wqr) {

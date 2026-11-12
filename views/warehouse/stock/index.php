@@ -80,7 +80,7 @@ if (!function_exists('renderCategoryTypeBadge')) {
                 <div class="card-body p-3">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <span class="text-primary small fw-bold d-block text-uppercase"><i class="bi bi-gear-fill me-1"></i>In-House Production</span>
+                            <span class="text-primary small fw-bold d-block text-uppercase"><i class="bi bi-gear-fill me-1"></i>Production Inward Stock</span>
                             <h4 class="mb-0 mt-1 fw-bold text-primary"><?= number_format($prodAvailableQty ?? 0) ?> <span class="fs-6 fw-normal text-muted">pcs</span></h4>
                             <small class="text-muted">Est. Val: ₹<?= number_format($prodValuation ?? 0, 2) ?></small>
                         </div>
@@ -303,7 +303,7 @@ if (!function_exists('renderCategoryTypeBadge')) {
 <ul class="nav nav-pills mb-3 gap-2" id="inventorySectionTabs" role="tablist">
     <li class="nav-item" role="presentation">
         <a class="nav-link fw-semibold px-4 py-2 <?= $currTab === 'production' ? 'active shadow-sm bg-success text-white' : 'bg-white text-dark border' ?>" href="<?= url('warehouse/stock?warehouse_id=' . ($selectedWarehouseId ?? '') . '&stock_state=' . ($stockState ?? '') . '&search=' . urlencode($search ?? '') . '&tab=production') ?>">
-            <i class="bi bi-buildings me-1"></i> Production Unit Products <span class="badge <?= $currTab === 'production' ? 'bg-white text-success' : 'bg-success' ?> ms-1"><?= count($productionItems ?? []) ?></span>
+            <i class="bi bi-buildings me-1"></i> Inwarded Production Products <span class="badge <?= $currTab === 'production' ? 'bg-white text-success' : 'bg-success' ?> ms-1"><?= count($productionItems ?? []) ?></span>
         </a>
     </li>
     <li class="nav-item" role="presentation">
@@ -335,7 +335,7 @@ if (!function_exists('renderCategoryTypeBadge')) {
         <div class="card-header bg-white py-3 border-bottom d-flex align-items-center justify-content-between flex-wrap gap-2">
             <div>
                 <h5 class="card-title mb-0 fw-bold text-dark">
-                    <i class="bi bi-boxes text-primary me-2"></i> <?= $currTab === 'production' ? 'Production Unit Products' : ($currTab === 'series' ? 'Series Products' : ($currTab === 'returned' ? 'Returned Products' : 'Normal Products')) ?>
+                    <i class="bi bi-boxes text-primary me-2"></i> <?= $currTab === 'production' ? 'Inwarded Production Products' : ($currTab === 'series' ? 'Series Products' : ($currTab === 'returned' ? 'Returned Products' : 'Normal Products')) ?>
                 </h5>
                 
             </div>
