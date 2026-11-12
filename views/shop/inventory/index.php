@@ -1168,7 +1168,7 @@ function openProductDetailModal(variantId) {
     if (content) content.classList.add('d-none');
 
     // Fetch dynamic product detail data
-    fetch(`<?= url('shop/inventory/ajax-detail') ?>/${variantId}?shop_id=<?= (int)$shop['id'] ?>`)
+    fetch(`<?= url('shop/inventory/ajax-detail') ?>/${variantId}?shop_id=<?= (int)$shop['id'] ?>`, { cache: 'no-store' })
         .then(response => response.json())
         .then(data => {
             if (!data.success || !data.item) {
@@ -1555,6 +1555,12 @@ function openProductDetailModal(variantId) {
             modal.hide();
         });
 }
+
+window.addEventListener('pageshow', function(event) {
+    if (event.persisted) {
+        window.location.reload();
+    }
+});
 
 // =========================================================================
 // EDIT PRODUCT RETAIL PRICE MODAL & BULK AJAX FUNCTIONS

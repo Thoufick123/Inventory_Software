@@ -396,6 +396,8 @@ class ShopController {
             Response::error(403, 'Access denied: You do not have permission to view shop inventory.');
             return;
         }
+        header('Cache-Control: private, no-store, max-age=0');
+        header('Pragma: no-cache');
 
         $requestedShopId = isset($_GET['shop_id']) ? (int)$_GET['shop_id'] : null;
         if ($requestedShopId !== null && $requestedShopId <= 0) {
@@ -1176,6 +1178,8 @@ class ShopController {
             Response::json(['success' => false, 'message' => 'Access denied: You do not have permission to view shop inventory.'], 403);
             return;
         }
+        header('Cache-Control: private, no-store, max-age=0');
+        header('Pragma: no-cache');
 
         $requestedShopId = isset($_GET['shop_id']) ? (int)$_GET['shop_id'] : null;
         if ($requestedShopId !== null && $requestedShopId <= 0) {
