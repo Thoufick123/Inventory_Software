@@ -58,11 +58,6 @@ if (!function_exists('renderCategoryTypeBadge')) {
         </a>
         <?php endif; ?>
 
-        <?php if (hasPermission('stock', 'view')): ?>
-        <a href="<?= url('warehouse/adjustments') ?>" class="btn btn-outline-secondary">
-            <i class="bi bi-sliders me-1"></i> Stock Adjustments
-        </a>
-        <?php endif; ?>
     </div>
 </div>
 

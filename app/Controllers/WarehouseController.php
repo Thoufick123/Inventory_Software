@@ -7233,6 +7233,9 @@ class WarehouseController {
         $warehouseId = $scopedWarehouseId !== null ? (string)$scopedWarehouseId : ($_GET['warehouse_id'] ?? '');
         $status = $_GET['status'] ?? '';
         $type = $_GET['adjustment_type'] ?? '';
+        $activeAdjustmentMenu = $type === 'INCREASE'
+            ? 'wh-adjustment-increase'
+            : ($type === 'DECREASE' ? 'wh-adjustment-decrease' : 'wh-adjustments');
 
         $filters = [];
         if (!empty($warehouseId)) $filters['warehouse_id'] = $warehouseId;
@@ -7261,9 +7264,11 @@ class WarehouseController {
         }
 
         Response::view('warehouse.adjustments.index', [
-            'pageTitle'          => 'Stock Adjustments & Audits',
+            'pageTitle'          => $type === 'INCREASE'
+                ? 'Stock Increase'
+                : ($type === 'DECREASE' ? 'Stock Decrease' : 'Stock Adjustments & Audits'),
             'activeModule'       => 'warehouse',
-            'activeMenu'         => 'wh-adjustments',
+            'activeMenu'         => $activeAdjustmentMenu,
             'adjustments'        => $adjustments,
             'warehouses'         => $warehouses,
             'variants'           => $variants,

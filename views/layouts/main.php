@@ -320,6 +320,9 @@ if (!empty($authUser['shop_name'])) {
                             <?php endif; ?>
                             <?php if (hasPermission('stock', 'view')): ?>
                             <li><a href="<?= url('warehouse/stock') ?>" class="<?= ($activeMenu ?? '') === 'wh-stock' ? 'active' : '' ?>">Stock</a></li>
+                            <li><a href="<?= url('warehouse/adjustments') ?>" class="<?= ($activeMenu ?? '') === 'wh-adjustments' ? 'active' : '' ?>">Stock Adjustments</a></li>
+                            <li><a href="<?= url('warehouse/adjustments?adjustment_type=INCREASE') ?>" class="<?= ($activeMenu ?? '') === 'wh-adjustment-increase' ? 'active' : '' ?>">Stock Increase</a></li>
+                            <li><a href="<?= url('warehouse/adjustments?adjustment_type=DECREASE') ?>" class="<?= ($activeMenu ?? '') === 'wh-adjustment-decrease' ? 'active' : '' ?>">Stock Decrease</a></li>
                             <?php endif; ?>
                             <?php if (hasPermission('wh_catalog', 'view')): ?>
                             <li><a href="<?= url('warehouse/catalog') ?>" class="<?= ($activeMenu ?? '') === 'wh-catalog' ? 'active' : '' ?>">Catalog</a></li>
