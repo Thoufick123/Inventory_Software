@@ -2046,6 +2046,27 @@ class WarehouseController {
             }
         }
 
+        $adjustmentQrSql = "SELECT qr_code
+                            FROM warehouse_qr_codes
+                            WHERE variant_id = ? AND is_extra = 1
+                              AND extra_reason LIKE ?";
+        $adjustmentQrParams = [$variantId, 'Stock Adjustment%'];
+        if ($selectedWarehouseId) {
+            $adjustmentQrSql .= " AND warehouse_id = ?";
+            $adjustmentQrParams[] = $selectedWarehouseId;
+        }
+        $adjustmentQrSql .= " ORDER BY id ASC";
+        $adjustmentQrRows = Database::fetchAll(
+            $adjustmentQrSql,
+            $adjustmentQrParams
+        );
+        foreach ($adjustmentQrRows as $adjustmentQrRow) {
+            $adjustmentTag = strtoupper(trim((string)($adjustmentQrRow['qr_code'] ?? '')));
+            if ($adjustmentTag !== '' && !in_array($adjustmentTag, $inwardedTagsFromTx, true)) {
+                $inwardedTagsFromTx[] = $adjustmentTag;
+            }
+        }
+
         if ($isSeriesBatch || $isComplementary) {
             $packQty = (int)$pieceListQty;
             if ($packQty <= 0) $packQty = max(1, (int)(!empty($variant['pack_quantity']) ? $variant['pack_quantity'] : 1));
@@ -2285,7 +2306,7 @@ class WarehouseController {
                 }
             }
 
-            // Third, add verified inward tags recorded in stock_transactions (Stickered Inward, Purchase Inward)
+            // Add QR tags recorded by stock transactions and stock adjustments.
             foreach ($inwardedTagsFromTx as $txTag) {
                 if (count($pieceQRs) >= $pieceListQty) break;
                 if (!isset($exchangeOutTags[$txTag]) && !isset($usedTags[$txTag]) && !isset($restockedTags[$txTag]) && !in_array($txTag, $productionPieceTags)) {
