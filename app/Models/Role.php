@@ -298,6 +298,321 @@ class Role {
             ['backup', 'create', 'Generate Manual Database Backup Snapshot', 'backup.create', null],
             ['backup', 'edit', 'Restore Database Snapshots & Edit Configurations', 'backup.edit', 'backup'],
             ['backup', 'delete', 'Delete Database Backup Files & Wipe Test Data', 'backup.delete', null],
+
+            // ── Production submodules ──────────────────────────────────────────
+            ['production', 'view', 'View Production Dashboard & KPIs', 'production.view', null],
+            ['production', 'create', 'Create Production Records & Work Orders', 'production.create', null],
+            ['production', 'edit', 'Edit Production Records & Configurations', 'production.edit', null],
+            ['production', 'delete', 'Delete Production Records', 'production.delete', null],
+
+            ['sellers', 'view', 'View Job Workers & Vendor Ledgers', 'sellers.view', null],
+            ['sellers', 'create', 'Add Job Workers & Vendor Contracts', 'sellers.create', null],
+            ['sellers', 'edit', 'Edit Vendor Details & Contract Rates', 'sellers.edit', null],
+            ['sellers', 'delete', 'Delete Vendor & Job Worker Records', 'sellers.delete', null],
+
+            ['damages', 'view', 'View Production Damage Logs', 'damages.view', null],
+            ['damages', 'create', 'Log Production Damages & Scrap', 'damages.create', null],
+            ['damages', 'edit', 'Edit Damage Records & Scrap Recovery', 'damages.edit', null],
+            ['damages', 'delete', 'Delete Production Damage Logs', 'damages.delete', null],
+
+            ['catalog', 'view', 'View Design Catalog & BOMs', 'catalog.view', null],
+            ['catalog', 'create', 'Create Style Codes & BOM Entries', 'catalog.create', null],
+            ['catalog', 'edit', 'Edit Style Codes & BOM Configurations', 'catalog.edit', null],
+            ['catalog', 'delete', 'Delete Catalog Entries & BOMs', 'catalog.delete', null],
+
+            ['programs', 'view', 'View Cutting Programs & Work Orders', 'programs.view', null],
+            ['programs', 'create', 'Create Cutting Programs & Size Breakdowns', 'programs.create', null],
+            ['programs', 'edit', 'Edit Programs & Work Order Releases', 'programs.edit', null],
+            ['programs', 'delete', 'Delete Programs & Work Orders', 'programs.delete', null],
+
+            ['cutting', 'view', 'View Cutting & Roll Lay Records', 'cutting.view', null],
+            ['cutting', 'create', 'Create Table Cuts & Bundle Records', 'cutting.create', null],
+            ['cutting', 'edit', 'Edit Cutting Records & Cut Counts', 'cutting.edit', null],
+            ['cutting', 'delete', 'Delete Cutting Records & Bundles', 'cutting.delete', null],
+
+            ['wastage', 'view', 'View Wastage & Scrap Selling Records', 'wastage.view', null],
+            ['wastage', 'create', 'Create Scrap Selling Tickets & Invoices', 'wastage.create', null],
+            ['wastage', 'edit', 'Edit Scrap Records & Weights', 'wastage.edit', null],
+            ['wastage', 'delete', 'Delete Scrap & Wastage Records', 'wastage.delete', null],
+
+            ['stitching', 'view', 'View Stitching Lines & Bundle Allocations', 'stitching.view', null],
+            ['stitching', 'create', 'Create Stitching Allocations & Piece Records', 'stitching.create', null],
+            ['stitching', 'edit', 'Edit Stitching Allocations & Piece Rates', 'stitching.edit', null],
+            ['stitching', 'delete', 'Delete Stitching Records & Allocations', 'stitching.delete', null],
+
+            ['stitching_wastage', 'view', 'View Stitching Wastage & Scrap Logs', 'stitching_wastage.view', null],
+            ['stitching_wastage', 'create', 'Log Thread/Trimming Scrap & Defects', 'stitching_wastage.create', null],
+            ['stitching_wastage', 'edit', 'Edit Stitching Wastage Records', 'stitching_wastage.edit', null],
+            ['stitching_wastage', 'delete', 'Delete Stitching Wastage Logs', 'stitching_wastage.delete', null],
+
+            ['labels', 'view', 'View Label Batches & Print History', 'labels.view', null],
+            ['labels', 'create', 'Create Label Batches & Barcode Stickers', 'labels.create', null],
+            ['labels', 'edit', 'Edit Label Configurations & Batches', 'labels.edit', null],
+            ['labels', 'delete', 'Delete Label Batches & Print Records', 'labels.delete', null],
+
+            ['qc', 'view', 'View QC Inspections & Audit Results', 'qc.view', null],
+            ['qc', 'create', 'Create QC Inspections & Rework Queues', 'qc.create', null],
+            ['qc', 'edit', 'Edit QC Results & Rework Status', 'qc.edit', null],
+            ['qc', 'delete', 'Delete QC Records & Inspection Logs', 'qc.delete', null],
+
+            ['inventory', 'view', 'View Production Inventory & Lot Staging', 'inventory.view', null],
+            ['inventory', 'create', 'Create Inventory Entries & Lot Records', 'inventory.create', null],
+            ['inventory', 'edit', 'Edit Inventory Records & Bay Assignments', 'inventory.edit', null],
+            ['inventory', 'delete', 'Delete Inventory Records & Staging Lots', 'inventory.delete', null],
+
+            ['production_expenses', 'view', 'View Production Expenses & Vouchers', 'production_expenses.view', null],
+            ['production_expenses', 'create', 'Create Expense Vouchers & Cost Records', 'production_expenses.create', null],
+            ['production_expenses', 'edit', 'Edit Expense Records & Cost Allocations', 'production_expenses.edit', null],
+            ['production_expenses', 'delete', 'Delete Expense Records & Vouchers', 'production_expenses.delete', null],
+
+            ['outward', 'view', 'View Production Outward Challans', 'outward.view', null],
+            ['outward', 'create', 'Create Delivery Challans & Dispatch Records', 'outward.create', null],
+            ['outward', 'edit', 'Edit Outward Challans & Delivery Notes', 'outward.edit', null],
+            ['outward', 'delete', 'Delete Outward Challans & Dispatch Records', 'outward.delete', null],
+
+            ['warehouse_rework', 'view', 'View Warehouse Rework Queue', 'warehouse_rework.view', null],
+            ['warehouse_rework', 'create', 'Create Rework Dispatch & Repair Jobs', 'warehouse_rework.create', null],
+            ['warehouse_rework', 'edit', 'Edit Rework Records & Repair Status', 'warehouse_rework.edit', null],
+            ['warehouse_rework', 'delete', 'Delete Rework Records', 'warehouse_rework.delete', null],
+
+            // ── Warehouse submodules ───────────────────────────────────────────
+            ['warehouse', 'view', 'View Warehouse Dashboard & Capacity', 'warehouse.view', null],
+            ['warehouse', 'create', 'Create Warehouse Records & Bay Configurations', 'warehouse.create', null],
+            ['warehouse', 'edit', 'Edit Warehouse Bay & Storage Configurations', 'warehouse.edit', null],
+            ['warehouse', 'delete', 'Delete Warehouse Records & Bay Entries', 'warehouse.delete', null],
+
+            ['inward', 'view', 'View Goods Receipt Notes & Inward Records', 'inward.view', null],
+            ['inward', 'create', 'Create GRN & Inward Production Receipts', 'inward.create', null],
+            ['inward', 'edit', 'Edit GRN & Inward Receipts', 'inward.edit', null],
+            ['inward', 'delete', 'Delete GRN & Inward Records', 'inward.delete', null],
+
+            ['stock', 'view', 'View Warehouse Stock & SKU Quantities', 'stock.view', null],
+            ['stock', 'create', 'Create Stock Entries & Bin Records', 'stock.create', null],
+            ['stock', 'edit', 'Edit Stock Records & Bin Assignments', 'stock.edit', null],
+            ['stock', 'delete', 'Delete Stock Records & Bin Entries', 'stock.delete', null],
+
+            ['wh_sellers', 'view', 'View Warehouse Suppliers & Vendor Ledgers', 'wh_sellers.view', null],
+            ['wh_sellers', 'create', 'Add Warehouse Suppliers & Procurement Logs', 'wh_sellers.create', null],
+            ['wh_sellers', 'edit', 'Edit Supplier Details & Vendor Contracts', 'wh_sellers.edit', null],
+            ['wh_sellers', 'delete', 'Delete Warehouse Supplier Records', 'wh_sellers.delete', null],
+
+            ['wh_catalog', 'view', 'View Warehouse Master SKU & Catalog', 'wh_catalog.view', null],
+            ['wh_catalog', 'create', 'Create Master SKU Codes & Barcode Mappings', 'wh_catalog.create', null],
+            ['wh_catalog', 'edit', 'Edit Warehouse Catalog & Pricing', 'wh_catalog.edit', null],
+            ['wh_catalog', 'delete', 'Delete Warehouse Catalog Entries', 'wh_catalog.delete', null],
+
+            ['wh_labels', 'view', 'View Warehouse QR Label Batches', 'wh_labels.view', null],
+            ['wh_labels', 'create', 'Create Shelf Labels & Carton QR Stickers', 'wh_labels.create', null],
+            ['wh_labels', 'edit', 'Edit Label Configurations & Print Batches', 'wh_labels.edit', null],
+            ['wh_labels', 'delete', 'Delete Label Batches & QR Sticker Records', 'wh_labels.delete', null],
+
+            ['purchases', 'view', 'View Purchase Orders & Procurement Bills', 'purchases.view', null],
+            ['purchases', 'create', 'Create Purchase Orders & Supplier Invoices', 'purchases.create', null],
+            ['purchases', 'edit', 'Edit Purchase Orders & Invoice Details', 'purchases.edit', null],
+            ['purchases', 'delete', 'Delete Purchase Orders & Procurement Records', 'purchases.delete', null],
+
+            ['purchases_returns', 'view', 'View Purchase Returns & Credit Notes', 'purchases_returns.view', null],
+            ['purchases_returns', 'create', 'Process Purchase Returns & Exchanges', 'purchases_returns.create', null],
+            ['purchases_returns', 'edit', 'Edit Return Records & Credit Notes', 'purchases_returns.edit', null],
+            ['purchases_returns', 'delete', 'Delete Purchase Return Records', 'purchases_returns.delete', null],
+
+            ['allocation', 'view', 'View Stock Allocation Plans & Demand', 'allocation.view', null],
+            ['allocation', 'create', 'Create Allocation Plans & Box Picking', 'allocation.create', null],
+            ['allocation', 'edit', 'Edit Allocation Plans & Distribution Schedules', 'allocation.edit', null],
+            ['allocation', 'delete', 'Delete Allocation Plans & Picking Records', 'allocation.delete', null],
+
+            ['damage', 'view', 'View Warehouse Damage Logs & Write-offs', 'damage.view', null],
+            ['damage', 'create', 'Log Warehouse Damages & Salvage Records', 'damage.create', null],
+            ['damage', 'edit', 'Edit Damage Records & Salvage Status', 'damage.edit', null],
+            ['damage', 'delete', 'Delete Warehouse Damage Records', 'damage.delete', null],
+
+            ['returns', 'view', 'View Warehouse Return Packages & RTO', 'returns.view', null],
+            ['returns', 'create', 'Process Shop Return Packages & Restock', 'returns.create', null],
+            ['returns', 'edit', 'Edit Return Records & Restock Evaluations', 'returns.edit', null],
+            ['returns', 'delete', 'Delete Return Package Records', 'returns.delete', null],
+
+            ['shop_requests', 'view', 'View Shop Replenishment Requests', 'shop_requests.view', null],
+            ['shop_requests', 'create', 'Create Replenishment Indents & Authorizations', 'shop_requests.create', null],
+            ['shop_requests', 'edit', 'Edit Shop Request Quantities & Priorities', 'shop_requests.edit', null],
+            ['shop_requests', 'delete', 'Delete Shop Replenishment Requests', 'shop_requests.delete', null],
+
+            ['warehouse_expenses', 'view', 'View Warehouse Expenses & Freight Charges', 'warehouse_expenses.view', null],
+            ['warehouse_expenses', 'create', 'Create Warehouse Expense Vouchers', 'warehouse_expenses.create', null],
+            ['warehouse_expenses', 'edit', 'Edit Warehouse Expense Records', 'warehouse_expenses.edit', null],
+            ['warehouse_expenses', 'delete', 'Delete Warehouse Expense Records', 'warehouse_expenses.delete', null],
+
+            ['sales_channels', 'view', 'View Sales Channel Connections', 'sales_channels.view', null],
+            ['sales_channels', 'create', 'Create & Connect Sales Channels', 'sales_channels.create', null],
+            ['sales_channels', 'edit', 'Edit Sales Channel Configurations', 'sales_channels.edit', null],
+            ['sales_channels', 'delete', 'Delete & Disconnect Sales Channels', 'sales_channels.delete', null],
+
+            // ── WhatsApp submodules ────────────────────────────────────────────
+            ['whatsapp_dashboard', 'view', 'View WhatsApp Orders Dashboard & KPIs', 'whatsapp_dashboard.view', null],
+            ['whatsapp_dashboard', 'create', 'Create WhatsApp Dashboard Widgets', 'whatsapp_dashboard.create', null],
+            ['whatsapp_dashboard', 'edit', 'Edit WhatsApp Dashboard Configurations', 'whatsapp_dashboard.edit', null],
+            ['whatsapp_dashboard', 'delete', 'Delete WhatsApp Dashboard Records', 'whatsapp_dashboard.delete', null],
+
+            ['whatsapp_inward', 'view', 'View WhatsApp Stock Inward Records', 'whatsapp_inward.view', null],
+            ['whatsapp_inward', 'create', 'Create WhatsApp Inward Receipts & GRNs', 'whatsapp_inward.create', null],
+            ['whatsapp_inward', 'edit', 'Edit WhatsApp Inward Records', 'whatsapp_inward.edit', null],
+            ['whatsapp_inward', 'delete', 'Delete WhatsApp Inward Records', 'whatsapp_inward.delete', null],
+
+            ['whatsapp_inventory', 'view', 'View WhatsApp Channel Inventory', 'whatsapp_inventory.view', null],
+            ['whatsapp_inventory', 'create', 'Create WhatsApp Inventory Entries', 'whatsapp_inventory.create', null],
+            ['whatsapp_inventory', 'edit', 'Edit WhatsApp Inventory Allocations', 'whatsapp_inventory.edit', null],
+            ['whatsapp_inventory', 'delete', 'Delete WhatsApp Inventory Records', 'whatsapp_inventory.delete', null],
+
+            ['whatsapp_orders', 'view', 'View WhatsApp B2B Orders History', 'whatsapp_orders.view', null],
+            ['whatsapp_orders', 'create', 'Create WhatsApp Orders & Packing Queues', 'whatsapp_orders.create', null],
+            ['whatsapp_orders', 'edit', 'Edit WhatsApp Orders & Processing Status', 'whatsapp_orders.edit', null],
+            ['whatsapp_orders', 'delete', 'Delete WhatsApp Order Records', 'whatsapp_orders.delete', null],
+
+            ['whatsapp_damage', 'view', 'View WhatsApp Damage & Transit Logs', 'whatsapp_damage.view', null],
+            ['whatsapp_damage', 'create', 'Log WhatsApp Parcel Damages & Write-offs', 'whatsapp_damage.create', null],
+            ['whatsapp_damage', 'edit', 'Edit WhatsApp Damage Records', 'whatsapp_damage.edit', null],
+            ['whatsapp_damage', 'delete', 'Delete WhatsApp Damage Records', 'whatsapp_damage.delete', null],
+
+            ['whatsapp_returns', 'view', 'View WhatsApp Returns & Exchanges', 'whatsapp_returns.view', null],
+            ['whatsapp_returns', 'create', 'Process WhatsApp Customer Returns', 'whatsapp_returns.create', null],
+            ['whatsapp_returns', 'edit', 'Edit Return Records & Credit Notes', 'whatsapp_returns.edit', null],
+            ['whatsapp_returns', 'delete', 'Delete WhatsApp Return Records', 'whatsapp_returns.delete', null],
+
+            ['whatsapp_return_to_wh', 'view', 'View WhatsApp-to-Warehouse Returns', 'whatsapp_return_to_wh.view', null],
+            ['whatsapp_return_to_wh', 'create', 'Create WhatsApp-to-Warehouse Return Records', 'whatsapp_return_to_wh.create', null],
+            ['whatsapp_return_to_wh', 'edit', 'Edit WhatsApp-to-Warehouse Return Details', 'whatsapp_return_to_wh.edit', null],
+            ['whatsapp_return_to_wh', 'delete', 'Delete WhatsApp-to-Warehouse Return Records', 'whatsapp_return_to_wh.delete', null],
+
+            ['whatsapp_expenses', 'view', 'View WhatsApp Channel Expenses', 'whatsapp_expenses.view', null],
+            ['whatsapp_expenses', 'create', 'Create WhatsApp Expense Vouchers', 'whatsapp_expenses.create', null],
+            ['whatsapp_expenses', 'edit', 'Edit WhatsApp Expense Records', 'whatsapp_expenses.edit', null],
+            ['whatsapp_expenses', 'delete', 'Delete WhatsApp Expense Records', 'whatsapp_expenses.delete', null],
+
+            // ── Website submodules ─────────────────────────────────────────────
+            ['website_dashboard', 'view', 'View Website Orders Dashboard & KPIs', 'website_dashboard.view', null],
+            ['website_dashboard', 'create', 'Create Website Dashboard Configurations', 'website_dashboard.create', null],
+            ['website_dashboard', 'edit', 'Edit Website Dashboard Settings', 'website_dashboard.edit', null],
+            ['website_dashboard', 'delete', 'Delete Website Dashboard Records', 'website_dashboard.delete', null],
+
+            ['website_inward', 'view', 'View Website Stock Inward Records', 'website_inward.view', null],
+            ['website_inward', 'edit', 'Edit Website Inward Records & GRNs', 'website_inward.edit', null],
+            ['website_inward', 'delete', 'Delete Website Inward Records', 'website_inward.delete', null],
+
+            ['website_inventory', 'view', 'View Website Store Inventory & SKU Stock', 'website_inventory.view', null],
+            ['website_inventory', 'create', 'Create Website Inventory Entries', 'website_inventory.create', null],
+            ['website_inventory', 'delete', 'Delete Website Inventory Records', 'website_inventory.delete', null],
+
+            ['website_orders', 'view', 'View Website Store Orders History', 'website_orders.view', null],
+            ['website_orders', 'create', 'Create Website Order Records & Shipping', 'website_orders.create', null],
+
+            ['website_damage', 'view', 'View Website Damage & Write-off Logs', 'website_damage.view', null],
+            ['website_damage', 'create', 'Log Website Customer Defects & Damages', 'website_damage.create', null],
+            ['website_damage', 'edit', 'Edit Website Damage Records', 'website_damage.edit', null],
+
+            ['website_returns', 'view', 'View Website RTO & Return Requests', 'website_returns.view', null],
+            ['website_returns', 'create', 'Process Website Customer Return Requests', 'website_returns.create', null],
+            ['website_returns', 'edit', 'Edit Website Return & Refund Records', 'website_returns.edit', null],
+            ['website_returns', 'delete', 'Delete Website Return Records', 'website_returns.delete', null],
+
+            ['website_return_to_wh', 'view', 'View Website-to-Warehouse Returns', 'website_return_to_wh.view', null],
+            ['website_return_to_wh', 'create', 'Create Website-to-Warehouse Return Records', 'website_return_to_wh.create', null],
+            ['website_return_to_wh', 'edit', 'Edit Website-to-Warehouse Return Details', 'website_return_to_wh.edit', null],
+            ['website_return_to_wh', 'delete', 'Delete Website-to-Warehouse Return Records', 'website_return_to_wh.delete', null],
+
+            ['website_customers', 'view', 'View Website Customer Directory', 'website_customers.view', null],
+            ['website_customers', 'create', 'Create Website Customer Profiles', 'website_customers.create', null],
+            ['website_customers', 'edit', 'Edit Website Customer Details', 'website_customers.edit', null],
+            ['website_customers', 'delete', 'Delete Website Customer Records', 'website_customers.delete', null],
+
+            ['website_expenses', 'view', 'View Website Channel Expenses', 'website_expenses.view', null],
+            ['website_expenses', 'create', 'Create Website Expense Vouchers', 'website_expenses.create', null],
+            ['website_expenses', 'edit', 'Edit Website Expense Records', 'website_expenses.edit', null],
+            ['website_expenses', 'delete', 'Delete Website Expense Records', 'website_expenses.delete', null],
+
+            // ── Shop submodules ────────────────────────────────────────────────
+            ['shop', 'view', 'View Shop Dashboard & Revenue KPIs', 'shop.view', null],
+            ['shop', 'create', 'Create Shop Configurations & Counter Records', 'shop.create', null],
+            ['shop', 'edit', 'Edit Shop Dashboard & Counter Configurations', 'shop.edit', null],
+            ['shop', 'delete', 'Delete Shop Records & Counter Entries', 'shop.delete', null],
+
+            ['shop_cash', 'view', 'View Shop Cash Register & Flow Records', 'shop_cash.view', null],
+            ['shop_cash', 'create', 'Create Cash Register Openings & Drops', 'shop_cash.create', null],
+            ['shop_cash', 'edit', 'Edit Cash Entries & Shift Handover Records', 'shop_cash.edit', null],
+            ['shop_cash', 'delete', 'Delete Cash Register Records', 'shop_cash.delete', null],
+
+            ['shop_inward', 'view', 'View Shop Inward / GRN Records', 'shop_inward.view', 'inward'],
+
+            ['shop_stock', 'view', 'View Shop Floor Inventory & Rack Counts', 'shop_stock.view', null],
+            ['shop_stock', 'create', 'Create Shop Stock Entries & Rack Records', 'shop_stock.create', null],
+            ['shop_stock', 'edit', 'Edit Shop Stock Records & Price Adjustments', 'shop_stock.edit', null],
+            ['shop_stock', 'delete', 'Delete Shop Stock Records', 'shop_stock.delete', null],
+
+            ['shop_damage', 'view', 'View Shop Damage Logs & Write-offs', 'shop_damage.view', null],
+            ['shop_damage', 'create', 'Log Shop Shelf Defects & Damaged Garments', 'shop_damage.create', null],
+            ['shop_damage', 'edit', 'Edit Shop Damage Records & Salvage Status', 'shop_damage.edit', null],
+            ['shop_damage', 'delete', 'Delete Shop Damage Records', 'shop_damage.delete', null],
+
+            ['pos', 'view', 'View POS Billing History & Receipts', 'pos.view', null],
+            ['pos', 'create', 'Create POS Sales Transactions & Invoices', 'pos.create', null],
+            ['pos', 'edit', 'Edit POS Invoices & Payment Records', 'pos.edit', null],
+            ['pos', 'delete', 'Delete POS Transactions & Void Invoices', 'pos.delete', null],
+
+            ['sales', 'view', 'View Sold Products & Customer Receipts', 'sales.view', null],
+            ['sales', 'create', 'Create Sales Records & Invoice Reprints', 'sales.create', null],
+            ['sales', 'edit', 'Edit Sales Records & Invoice Details', 'sales.edit', null],
+            ['sales', 'delete', 'Delete Sales Records & Receipts', 'sales.delete', null],
+
+            ['customers', 'view', 'View Shop Customer Directory & Histories', 'customers.view', null],
+            ['customers', 'create', 'Create Customer Profiles & Shopper Records', 'customers.create', null],
+            ['customers', 'edit', 'Edit Customer Details & Purchase Histories', 'customers.edit', null],
+            ['customers', 'delete', 'Delete Customer Profiles & Records', 'customers.delete', null],
+
+            ['shop_returns', 'view', 'View Shop Customer Returns & Exchanges', 'shop_returns.view', null],
+            ['shop_returns', 'create', 'Process Customer Return Slips & Exchanges', 'shop_returns.create', null],
+            ['shop_returns', 'edit', 'Edit Return Records & Credit Notes', 'shop_returns.edit', null],
+            ['shop_returns', 'delete', 'Delete Customer Return Records', 'shop_returns.delete', null],
+
+            ['return_to_warehouse', 'view', 'View Shop-to-Warehouse Return Records', 'return_to_warehouse.view', null],
+            ['return_to_warehouse', 'create', 'Create Shop-to-Warehouse Return Dispatches', 'return_to_warehouse.create', null],
+            ['return_to_warehouse', 'edit', 'Edit Return-to-Warehouse Records', 'return_to_warehouse.edit', null],
+            ['return_to_warehouse', 'delete', 'Delete Return-to-Warehouse Records', 'return_to_warehouse.delete', null],
+
+            // ── Assets submodules ──────────────────────────────────────────────
+            ['asset_scanner', 'view', 'View & Scan Asset QR Tags', 'asset_scanner.view', 'assets'],
+            ['asset_scanner', 'create', 'Create Asset QR Scan Records', 'asset_scanner.create', 'assets'],
+            ['asset_scanner', 'edit', 'Edit Asset Scan & Inspection Records', 'asset_scanner.edit', 'assets'],
+            ['asset_scanner', 'delete', 'Delete Asset Scan Records', 'asset_scanner.delete', 'assets'],
+
+            ['asset_transfers', 'view', 'View Asset Transfer & Movement Audit', 'asset_transfers.view', 'assets'],
+            ['asset_transfers', 'create', 'Create Asset Transfer Records', 'asset_transfers.create', 'assets'],
+            ['asset_transfers', 'edit', 'Edit Asset Transfer Details', 'asset_transfers.edit', 'assets'],
+            ['asset_transfers', 'delete', 'Delete Asset Transfer Records', 'asset_transfers.delete', 'assets'],
+
+            ['asset_maintenance', 'view', 'View Asset Maintenance & Service Tickets', 'asset_maintenance.view', 'assets'],
+            ['asset_maintenance', 'create', 'Create Maintenance Tickets & Service Logs', 'asset_maintenance.create', 'assets'],
+            ['asset_maintenance', 'edit', 'Edit Maintenance Records & Repair Status', 'asset_maintenance.edit', 'assets'],
+            ['asset_maintenance', 'delete', 'Delete Maintenance Records & Service Logs', 'asset_maintenance.delete', 'assets'],
+
+            ['asset_bulk_labels', 'view', 'View Asset QR Label Print Batches', 'asset_bulk_labels.view', 'assets'],
+            ['asset_bulk_labels', 'create', 'Create & Print Asset QR Label Batches', 'asset_bulk_labels.create', 'assets'],
+            ['asset_bulk_labels', 'edit', 'Edit Asset Label Configurations', 'asset_bulk_labels.edit', 'assets'],
+            ['asset_bulk_labels', 'delete', 'Delete Asset Label Batches', 'asset_bulk_labels.delete', 'assets'],
+
+            // ── Staff submodules ───────────────────────────────────────────────
+            ['staff', 'view', 'View Staff Accounts & Employee Directory', 'staff.view', null],
+            ['staff', 'create', 'Create Staff Accounts & Employee Records', 'staff.create', null],
+            ['staff', 'edit', 'Edit Staff Details & Unit Assignments', 'staff.edit', null],
+            ['staff', 'delete', 'Delete Staff Accounts & Employee Records', 'staff.delete', null],
+
+            ['roles', 'view', 'View Roles & Permission Configurations', 'roles.view', null],
+            ['roles', 'create', 'Create New Roles & Access Policies', 'roles.create', null],
+            ['roles', 'edit', 'Edit Role Permissions & Access Rights', 'roles.edit', null],
+            ['roles', 'delete', 'Delete Roles & Access Configurations', 'roles.delete', null],
+
+            // ── System: Notifications ──────────────────────────────────────────
+            ['notifications', 'view', 'View System Notifications & Alerts', 'notifications.view', null],
+            ['notifications', 'create', 'Create System Notification Records', 'notifications.create', null],
+            ['notifications', 'edit', 'Mark & Archive Notifications', 'notifications.edit', null],
+            ['notifications', 'delete', 'Clear & Delete Notifications', 'notifications.delete', null],
         ];
 
         try {
@@ -356,7 +671,25 @@ class Role {
                 SELECT r.id, p.id
                 FROM roles r
                 CROSS JOIN permissions p
-                WHERE r.id IN (1, 2) AND p.module IN ('allocation_outward', 'shop_inward', 'audit', 'settings', 'backup')
+                WHERE r.id IN (1, 2) AND p.module IN (
+                    'allocation_outward', 'shop_inward', 'audit', 'settings', 'backup',
+                    'production', 'sellers', 'damages', 'catalog', 'programs', 'cutting',
+                    'wastage', 'stitching', 'stitching_wastage', 'labels', 'qc', 'inventory',
+                    'production_expenses', 'outward', 'warehouse_rework',
+                    'warehouse', 'inward', 'stock', 'wh_sellers', 'wh_catalog', 'wh_labels',
+                    'purchases', 'purchases_returns', 'allocation', 'damage', 'returns',
+                    'shop_requests', 'warehouse_expenses', 'sales_channels',
+                    'whatsapp_dashboard', 'whatsapp_inward', 'whatsapp_inventory', 'whatsapp_orders',
+                    'whatsapp_damage', 'whatsapp_returns', 'whatsapp_return_to_wh', 'whatsapp_expenses',
+                    'website_dashboard', 'website_inward', 'website_inventory', 'website_orders',
+                    'website_damage', 'website_returns', 'website_return_to_wh', 'website_customers', 'website_expenses',
+                    'shop', 'shop_cash', 'shop_stock', 'shop_damage', 'pos', 'sales',
+                    'customers', 'shop_returns', 'return_to_warehouse',
+                    'asset_scanner', 'asset_transfers', 'asset_maintenance', 'asset_bulk_labels',
+                    'staff', 'roles', 'notifications',
+                    'dashboard', 'batches', 'asset_register', 'asset_dashboard', 'whatsapp_returned_products',
+                    'production_purchases', 'production_billing', 'production_returns', 'production_stock_requests'
+                )
             ");
 
             // Sync roles that have shop_inward.receive or shop_inward.verify or inward.create to have shop_inward.create
