@@ -976,6 +976,12 @@ class AdminController {
                     break;
                 }
             } while (true);
+        } else {
+            $existing = ProductionUnit::findByCode($code);
+            if ($existing) {
+                Response::redirect(url('admin/dashboard?tab=production-units'), 'error', "Production Unit code '{$code}' already exists (used by '{$existing['name']}'). Please use a unique code (e.g. PU-02) or leave it blank for auto-generation.");
+                return;
+            }
         }
 
         try {
@@ -1123,6 +1129,12 @@ class AdminController {
                     break;
                 }
             } while (true);
+        } else {
+            $existing = ProductionUnit::findByCode($code);
+            if ($existing) {
+                Response::jsonError("Production Unit code '{$code}' already exists (used by '{$existing['name']}'). Please use a unique code (e.g. PU-02) or leave it blank for auto-generation.");
+                return;
+            }
         }
 
         try {

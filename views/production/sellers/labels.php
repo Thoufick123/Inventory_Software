@@ -42,7 +42,8 @@
             break-inside: avoid;
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
+            justify-content: flex-start;
+            gap: 4px;
             position: relative;
             transition: all 0.2s ease;
         }
@@ -252,7 +253,12 @@
                 break-inside: avoid !important;
                 padding: 6px 8px !important;
                 width: 250px !important;
-                min-height: 130px !important;
+                min-height: auto !important;
+                height: auto !important;
+                display: flex !important;
+                flex-direction: column !important;
+                justify-content: flex-start !important;
+                gap: 4px !important;
             }
 
             .fabric-sticker-card.has-damage-report {
@@ -280,6 +286,11 @@
             }
             body.single-print-mode .fabric-sticker-card.print-target {
                 display: flex !important;
+                flex-direction: column !important;
+                justify-content: flex-start !important;
+                gap: 4px !important;
+                min-height: auto !important;
+                height: auto !important;
                 margin: 0 !important;
                 border: 1px solid #000 !important;
                 page-break-inside: avoid !important;

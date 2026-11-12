@@ -261,7 +261,7 @@ $canDeleteCutting = hasPermission('cutting', 'delete');
                                         </td>
                                         <td class="text-end">
                                             <?php if ($canDeleteCutting): ?>
-                                            <button type="button" class="btn btn-sm text-danger p-0" onclick="removeVariantRow(<?= $counter ?>)" title="Remove row">
+                                            <button type="button" class="btn btn-sm text-secondary p-0" disabled style="opacity: 0.45; cursor: not-allowed;" title="Delete disabled for saved cutting details">
                                                 <i class="bi bi-trash"></i>
                                             </button>
                                             <?php endif; ?>
@@ -1092,7 +1092,7 @@ function appendVariantRow(sizeName, colorName, variantId, sku, plannedQty, rollI
         </td>
         <td class="text-end">
             ${canDeleteCutting ? `
-            <button type="button" class="btn btn-sm text-danger p-0" onclick="removeVariantRow(${variantCounter})" title="Remove row">
+            <button type="button" class="btn btn-sm text-secondary p-0" disabled style="opacity: 0.45; cursor: not-allowed;" title="Delete disabled for saved cutting details">
                 <i class="bi bi-trash"></i>
             </button>
             ` : ''}
@@ -1122,11 +1122,8 @@ function updateRollCatalogBadge(rowIdx) {
 
 function removeVariantRow(id) {
     if (!canDeleteCutting) return;
-    const row = document.getElementById('variant_row_' + id);
-    if (row) {
-        row.remove();
-        calculateMetrics();
-    }
+    // Deletion is disabled for saved cutting details in edit mode
+    return false;
 }
 
 function calculateMetrics() {
