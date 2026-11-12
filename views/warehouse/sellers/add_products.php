@@ -10,8 +10,8 @@
         <p class="text-muted small mb-0">Select pre-set categories to auto-fill hierarchy, then enter product pricing, HSN &amp; weights.</p>
     </div>
     <div class="d-flex gap-2">
-        <a href="<?= url('warehouse/sellers/view/' . $seller['id']) ?>" class="btn btn-outline-secondary">
-            <i class="bi bi-arrow-left me-1"></i> Supplier Profile
+        <a href="<?= url('warehouse/sellers/create?seller_id=' . (int)$seller['id'] . '&mode=edit') ?>" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Back to Phase 1
         </a>
     </div>
 </div>
@@ -544,8 +544,8 @@
     <div class="card border-0 shadow-lg rounded-3 bg-white border-top border-3 border-success">
         <div class="card-body p-3 d-flex align-items-center justify-content-between flex-wrap gap-3">
             <div class="d-flex align-items-center gap-3">
-                <a href="<?= url('warehouse/sellers/create') ?>" class="btn btn-outline-secondary">
-                    <i class="bi bi-arrow-left me-1"></i> Back to Step 1
+                <a href="<?= url('warehouse/sellers/create?seller_id=' . (int)$seller['id'] . '&mode=edit') ?>" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-1"></i> Back to Phase 1
                 </a>
             </div>
             <div class="d-flex align-items-center gap-2">
