@@ -409,9 +409,9 @@
                                     </button>
                                     <div class="dropdown-menu w-100 p-2 shadow-lg border-warning" style="max-height: 320px; overflow-y: auto; z-index: 1060;" aria-labelledby="stitchingBatchDropdownBtn">
                                         <div class="d-flex justify-content-between align-items-center px-2 py-1.5 mb-2 bg-light rounded border small">
-                                            <div class="form-check mb-0">
-                                                <input class="form-check-input cursor-pointer" type="checkbox" id="selectAllStitchingBatchesCheck" onchange="toggleSelectAllStitchingBatches(this.checked)">
-                                                <label class="form-check-label fw-bold text-dark cursor-pointer ms-1" for="selectAllStitchingBatchesCheck">Select All Batches</label>
+                                            <div class="d-flex align-items-center gap-2 mb-0">
+                                                <input class="form-check-input cursor-pointer flex-shrink-0" type="checkbox" id="selectAllStitchingBatchesCheck" onchange="toggleSelectAllStitchingBatches(this.checked)" style="width: 1.2rem; height: 1.2rem; margin: 0; float: none;">
+                                                <label class="form-check-label fw-bold text-dark cursor-pointer ms-1 mb-0" for="selectAllStitchingBatchesCheck">Select All Batches</label>
                                             </div>
                                             <span class="badge bg-warning-subtle text-dark border"><?= count($availableBatches) ?> Ready to Sell</span>
                                         </div>
@@ -419,11 +419,14 @@
                                         <div id="stitchingBatchOptionsList">
                                             <?php if (!empty($availableBatches)): ?>
                                                 <?php foreach ($availableBatches as $sb): ?>
-                                                    <div class="form-check p-2 rounded border-bottom d-flex align-items-start gap-2 stitching-batch-row" style="cursor: pointer;">
-                                                        <input type="checkbox" class="form-check-input mt-1 stitching-batch-checkbox cursor-pointer" 
+                                                    <div class="p-2.5 rounded border-bottom bg-white d-flex align-items-center gap-3 stitching-batch-row" 
+                                                         style="cursor: pointer; transition: background-color 0.15s ease;"
+                                                         onclick="toggleStitchingBatchRow(<?= $sb['id'] ?>, event)">
+                                                        <input type="checkbox" class="form-check-input stitching-batch-checkbox cursor-pointer flex-shrink-0" 
                                                                name="stitching_batch_ids[]"
                                                                id="sb_check_<?= $sb['id'] ?>" 
                                                                value="<?= $sb['id'] ?>"
+                                                               style="width: 1.25rem; height: 1.25rem; margin: 0; float: none; cursor: pointer;"
                                                                data-id="<?= $sb['id'] ?>"
                                                                data-batch-no="<?= e($sb['batch_number']) ?>" 
                                                                data-batch-name="<?= e($sb['name'] ?? '') ?>" 
@@ -435,20 +438,20 @@
                                                                data-stitched-qty="<?= (int)($sb['stitched_qty'] ?? 0) ?>" 
                                                                data-total-weight="<?= (float)($sb['total_weight'] ?? 0) ?>" 
                                                                onchange="onStitchingBatchCheckChange()">
-                                                        <label class="form-check-label w-100 cursor-pointer" for="sb_check_<?= $sb['id'] ?>">
+                                                        <label class="w-100 cursor-pointer mb-0" for="sb_check_<?= $sb['id'] ?>" onclick="event.stopPropagation();">
                                                             <div class="d-flex justify-content-between align-items-center flex-wrap gap-1">
-                                                                <span class="fw-bold text-dark">[<?= e($sb['batch_number']) ?>] <?= e($sb['name'] ?: 'Stitching Batch') ?></span>
-                                                                <span class="badge bg-warning-subtle text-dark border">Stitched: <?= number_format($sb['stitched_qty'] ?? 0) ?> pcs</span>
+                                                                <span class="fw-bold text-dark fs-7">[<?= e($sb['batch_number']) ?>] <?= e($sb['name'] ?: 'Stitching Batch') ?></span>
+                                                                <span class="badge bg-warning-subtle text-dark border fw-bold">Stitched: <?= number_format($sb['stitched_qty'] ?? 0) ?> pcs</span>
                                                             </div>
                                                             <div class="small text-muted mt-1 d-flex flex-wrap gap-2">
-                                                                <span>Total Wt: <?= number_format($sb['total_weight'], 2) ?> kg</span>
+                                                                <span>Total Wt: <strong><?= number_format($sb['total_weight'], 2) ?> kg</strong></span>
                                                                 <?php if (!empty($sb['program_number'])): ?>
                                                                     <span>•</span>
-                                                                    <span class="text-primary"><?= e($sb['program_number']) ?></span>
+                                                                    <span class="text-primary fw-semibold"><?= e($sb['program_number']) ?></span>
                                                                 <?php endif; ?>
                                                                 <?php if (!empty($sb['cutting_batch_number'])): ?>
                                                                     <span>•</span>
-                                                                    <span>Cut: <?= e($sb['cutting_batch_number']) ?></span>
+                                                                    <span>Cut: <strong><?= e($sb['cutting_batch_number']) ?></strong></span>
                                                                 <?php endif; ?>
                                                             </div>
                                                         </label>
@@ -1001,6 +1004,17 @@
 </div>
 
 <script>
+function toggleStitchingBatchRow(id, event) {
+    if (event && event.target && event.target.tagName && event.target.tagName.toLowerCase() === 'input') {
+        return;
+    }
+    const cb = document.getElementById('sb_check_' + id);
+    if (cb) {
+        cb.checked = !cb.checked;
+        onStitchingBatchCheckChange();
+    }
+}
+
 function toggleSelectAllStitchingBatches(checked) {
     const checkboxes = document.querySelectorAll('.stitching-batch-checkbox');
     checkboxes.forEach(cb => cb.checked = checked);
@@ -1635,6 +1649,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Sale Date is required.');
                 document.getElementById('editStwSaleDate').focus();
                 return false;
+            }
+        });
+    }
+
+    // Auto-select first batch on Record Stitching Wastage Modal shown if none checked
+    const recordModal = document.getElementById('recordStitchingWastageModal');
+    if (recordModal) {
+        recordModal.addEventListener('shown.bs.modal', function() {
+            const checked = document.querySelectorAll('.stitching-batch-checkbox:checked');
+            const allBoxes = document.querySelectorAll('.stitching-batch-checkbox');
+            if (checked.length === 0 && allBoxes.length > 0) {
+                allBoxes[0].checked = true;
+                onStitchingBatchCheckChange();
             }
         });
     }
