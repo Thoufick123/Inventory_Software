@@ -912,6 +912,10 @@ function renderDamageScannedLabels() {
         remove.textContent = 'Remove';
         remove.setAttribute('aria-label', `Remove ${item.code}`);
         remove.addEventListener('click', () => {
+            if (item.photoPreviewUrl) {
+                URL.revokeObjectURL(item.photoPreviewUrl);
+                item.photoPreviewUrl = null;
+            }
             damageScannedLabels.splice(index, 1);
             renderDamageScannedLabels();
         });
@@ -923,12 +927,12 @@ function renderDamageScannedLabels() {
 
         const reasonColumn = document.createElement('div');
         reasonColumn.className = 'col-md-6';
+        const reasonHeader = document.createElement('div');
+        reasonHeader.className = 'd-flex justify-content-between align-items-center mb-1';
         const reasonLabel = document.createElement('label');
-        reasonLabel.className = 'form-label small fw-semibold mb-1';
+        reasonLabel.className = 'form-label small fw-bold text-dark mb-0';
         reasonLabel.htmlFor = `damageReason_${index}`;
         reasonLabel.textContent = 'Damage / Defect Reason *';
-        const reasonControls = document.createElement('div');
-        reasonControls.className = 'd-flex gap-1';
         const reasonSelect = document.createElement('select');
         reasonSelect.id = `damageReason_${index}`;
         reasonSelect.name = `damage_reasons[${index}]`;
@@ -950,15 +954,12 @@ function renderDamageScannedLabels() {
         });
         const addReasonButton = document.createElement('button');
         addReasonButton.type = 'button';
-        addReasonButton.className = 'btn btn-sm btn-outline-primary rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0';
-        addReasonButton.style.width = '32px';
-        addReasonButton.style.height = '32px';
+        addReasonButton.className = 'btn btn-link btn-sm text-decoration-none p-0 fw-semibold';
         addReasonButton.title = 'Add damage reason';
-        addReasonButton.setAttribute('aria-label', 'Add damage reason');
-        addReasonButton.innerHTML = '<i class="bi bi-plus" aria-hidden="true"></i>';
+        addReasonButton.innerHTML = '<i class="bi bi-plus-circle me-1" aria-hidden="true"></i>New';
         addReasonButton.addEventListener('click', () => addDamageReason(reasonSelect.id));
-        reasonControls.append(reasonSelect, addReasonButton);
-        reasonColumn.append(reasonLabel, reasonControls);
+        reasonHeader.append(reasonLabel, addReasonButton);
+        reasonColumn.append(reasonHeader, reasonSelect);
 
         const photoColumn = document.createElement('div');
         photoColumn.className = 'col-md-6';
@@ -972,10 +973,35 @@ function renderDamageScannedLabels() {
             item.photoInput.accept = 'image/*,application/pdf';
             item.photoInput.className = 'form-control form-control-sm';
             item.photoInput.required = true;
+            item.photoInput.addEventListener('change', () => {
+                if (item.photoPreviewUrl) {
+                    URL.revokeObjectURL(item.photoPreviewUrl);
+                    item.photoPreviewUrl = null;
+                }
+                const file = item.photoInput.files && item.photoInput.files[0];
+                if (!file || !file.type.startsWith('image/')) {
+                    if (item.photoPreviewImage) item.photoPreviewImage.removeAttribute('src');
+                    if (item.photoPreviewContainer) item.photoPreviewContainer.classList.add('d-none');
+                    return;
+                }
+                item.photoPreviewUrl = URL.createObjectURL(file);
+                if (item.photoPreviewImage) item.photoPreviewImage.src = item.photoPreviewUrl;
+                if (item.photoPreviewContainer) item.photoPreviewContainer.classList.remove('d-none');
+            });
         }
         item.photoInput.id = `damagePhoto_${index}`;
         item.photoInput.name = `damage_photos[${index}]`;
-        photoColumn.append(photoLabel, item.photoInput);
+        const photoPreview = document.createElement('div');
+        photoPreview.className = `damage-photo-preview mt-2 ${item.photoPreviewUrl ? '' : 'd-none'}`;
+        const previewImage = document.createElement('img');
+        previewImage.className = 'rounded border bg-white p-1';
+        previewImage.alt = `Evidence preview for ${item.code}`;
+        previewImage.style.cssText = 'display:block;max-width:100%;max-height:120px;object-fit:contain;';
+        if (item.photoPreviewUrl) previewImage.src = item.photoPreviewUrl;
+        photoPreview.appendChild(previewImage);
+        item.photoPreviewContainer = photoPreview;
+        item.photoPreviewImage = previewImage;
+        photoColumn.append(photoLabel, item.photoInput, photoPreview);
         fields.append(reasonColumn, photoColumn);
         row.appendChild(fields);
         list.appendChild(row);

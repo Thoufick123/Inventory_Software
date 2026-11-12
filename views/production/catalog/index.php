@@ -16,7 +16,7 @@
     <div class="card-body p-3">
         <form method="GET" action="<?= url('production/catalog') ?>" id="catalogFilterForm" class="row g-2 align-items-center">
             <!-- Search input with live search and clear button -->
-            <div class="col-lg-5 col-md-6">
+            <div class="col-lg-4 col-xl-5 col-md-6">
                 <label class="form-label small text-muted fw-semibold mb-1">Search Product Styles</label>
                 <div class="input-group">
                     <span class="input-group-text bg-light text-primary"><i class="bi bi-search"></i></span>
@@ -60,8 +60,8 @@
             </div>
 
             <!-- Actions (Filter & Reset) -->
-            <div class="col-lg-2 col-md-12 d-flex align-items-end gap-1">
-                <button type="submit" class="btn btn-primary flex-grow-1" title="Filter Records">
+            <div class="col-lg-3 col-xl-2 col-md-12 d-flex align-items-end gap-1 flex-nowrap">
+                <button type="submit" class="btn btn-primary flex-grow-1 text-nowrap" title="Filter Records">
                     <i class="bi bi-filter me-1"></i> Filter
                 </button>
                 <button type="button" class="btn btn-outline-secondary" id="btnResetCatalogFilters" onclick="resetAllCatalogFilters()" title="Reset All Filters">
