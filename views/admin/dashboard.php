@@ -277,6 +277,9 @@
                                 <tr>
                                     <td class="ps-3">
                                         <div class="d-flex align-items-center gap-2">
+                                            <?php if (!empty($unit['logo_url'])): ?>
+                                                <img src="<?= e($unit['logo_url']) ?>" alt="<?= e($unit['name']) ?> logo" class="rounded border bg-white p-1" style="width:44px;height:44px;object-fit:contain;">
+                                            <?php endif; ?>
                                             <span class="badge bg-primary-subtle text-primary font-monospace fw-bold px-2 py-1"><?= e($unit['code']) ?></span>
                                             <div>
                                                 <div class="fw-bold text-dark"><?= e($unit['name']) ?></div>
@@ -1026,6 +1029,9 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-4">
+                <div id="facilityDetailLogoContainer" class="text-center mb-3 d-none">
+                    <img id="facilityDetailLogo" src="" alt="Facility logo" class="img-thumbnail bg-white" style="max-width:180px;max-height:100px;object-fit:contain;">
+                </div>
                 <div class="row g-3 mb-3">
                     <div class="col-md-6">
                         <div class="p-3 bg-light rounded border h-100">
@@ -1620,8 +1626,20 @@ function viewFacilityDetails(type, data) {
     const manager = document.getElementById('facilityDetailManager');
     const phone = document.getElementById('facilityDetailPhone');
     const address = document.getElementById('facilityDetailAddress');
+    const logoContainer = document.getElementById('facilityDetailLogoContainer');
+    const logoImage = document.getElementById('facilityDetailLogo');
     const metricsTitle = document.getElementById('facilityMetricsTitle');
     const metricsCont = document.getElementById('facilityMetricsContainer');
+
+    const logoUrl = typeof data.logo_url === 'string' ? data.logo_url.trim() : '';
+    logoContainer.classList.toggle('d-none', !logoUrl);
+    if (logoUrl) {
+        logoImage.src = logoUrl;
+        logoImage.alt = `${data.name || 'Facility'} logo`;
+    } else {
+        logoImage.removeAttribute('src');
+        logoImage.alt = 'Facility logo';
+    }
 
     name.textContent = data.name || '-';
     code.textContent = data.code || '-';
