@@ -40,25 +40,25 @@ $taxValueForItem = static function (array $item, string $type): float {
                 <div class="col-md-6">
                     <label class="form-label" for="editPurchaseDocument">Tax Invoice / Bill Attachment (Optional)</label>
                     <input type="file" name="document" id="editPurchaseDocument" class="form-control" accept=".jpg,.jpeg,.png,.webp,.pdf">
-                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-1">
+                    <div class="mt-1">
                         <small class="text-muted">JPG, PNG, WEBP or PDF up to 5 MB.</small>
-                        <div class="d-flex align-items-center gap-2">
+                        <div class="d-flex align-items-center flex-wrap gap-1 mt-1">
                             <?php if (!empty($purchase['document_url'])): ?>
-                                <span class="small text-muted" id="existingDocWrapper">Current: 
-                                    <a href="<?= uploadUrl($purchase['document_url']) ?>" target="_blank" rel="noopener" class="badge bg-primary-subtle text-primary border text-decoration-none px-2 py-1" id="existingDocLink">
+                                <span class="small text-muted me-1" id="existingDocWrapper">Current:
+                                    <a href="<?= uploadUrl($purchase['document_url']) ?>" target="_blank" rel="noopener" class="badge bg-primary-subtle text-primary border text-decoration-none px-2 py-1" id="existingDocLink" style="font-size:11px;">
                                         <i class="bi bi-eye me-1"></i>View File
                                     </a>
                                 </span>
                             <?php endif; ?>
-                            <div id="editDocPreviewContainer" class="d-none align-items-center gap-1">
-                                <span class="badge bg-success-subtle text-success border border-success-subtle d-inline-flex align-items-center gap-1 py-1 px-2">
-                                    <i class="bi bi-file-earmark-check"></i>
-                                    <span id="editDocPreviewFilename" class="text-truncate" style="max-width: 140px;">file.pdf</span>
+                            <div id="editDocPreviewContainer" class="d-none align-items-center flex-wrap gap-1">
+                                <span class="badge bg-success-subtle text-success border border-success-subtle d-inline-flex align-items-center gap-1 py-1 px-2" style="font-size:11px;max-width:190px;">
+                                    <i class="bi bi-file-earmark-check flex-shrink-0"></i>
+                                    <span id="editDocPreviewFilename" class="text-truncate" style="max-width: 160px;">file.pdf</span>
                                 </span>
-                                <button type="button" class="btn btn-xs btn-outline-primary" id="btnViewEditSelectedDoc" onclick="viewEditSelectedDoc()" title="View selected document">
+                                <button type="button" class="btn btn-sm btn-outline-primary py-1 px-2" id="btnViewEditSelectedDoc" onclick="viewEditSelectedDoc()" title="View selected document" style="font-size:12px;line-height:1.2;">
                                     <i class="bi bi-eye me-1"></i>View Selected File
                                 </button>
-                                <button type="button" class="btn btn-xs btn-outline-danger" onclick="clearEditSelectedDoc()" title="Clear file">
+                                <button type="button" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center p-1" onclick="clearEditSelectedDoc()" title="Clear file" aria-label="Clear selected file" style="width:30px;height:30px;">
                                     <i class="bi bi-x"></i>
                                 </button>
                             </div>
