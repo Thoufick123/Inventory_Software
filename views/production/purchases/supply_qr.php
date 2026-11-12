@@ -272,7 +272,7 @@
                     <strong>Supplier:</strong> <?= htmlspecialchars($purchase['supplier_company'] ?: ($purchase['supplier_name'] ?? 'Direct Supplier')) ?>
                     · <strong>PO Date:</strong> <?= date('d M Y', strtotime($purchase['purchase_date'])) ?>
                     · <strong>Invoice:</strong> <?= htmlspecialchars($purchase['invoice_number'] ?: 'N/A') ?>
-                    · <strong>Total Supplies:</strong> <span class="badge bg-success-subtle text-success border border-success"><?= count($supplies) ?> Item<?= count($supplies) === 1 ? '' : 's' ?> (<?= count($stickers) ?> Labels)</span>
+                    · <strong>Total Supplies:</strong> <span class="badge bg-success-subtle text-success border border-success"><?= count($supplies) ?> Item<?= count($supplies) === 1 ? '' : 's' ?> (<?= count($stickers) ?> Labels<?= !empty($inwardedOnly) ? ' — Inwarded Only' : '' ?>)</span>
                     <?php if ($isAllInwarded): ?>
                         <span class="badge bg-success text-white ms-1"><i class="bi bi-check-circle-fill me-1"></i>Inward Complete</span>
                     <?php endif; ?>
@@ -280,13 +280,13 @@
             </div>
 
             <div class="d-flex align-items-center gap-2 flex-wrap">
-                <a href="<?= url('production/purchases') ?>" class="btn btn-outline-secondary btn-sm">
-                    <i class="bi bi-arrow-left me-1"></i> Back to Purchases
+                <a href="<?= !empty($inwardedOnly) ? url('production/inventory') : url('production/purchases') ?>" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-arrow-left me-1"></i> <?= !empty($inwardedOnly) ? 'Back to Inventory' : 'Back to Purchases' ?>
                 </a>
 
                 <?php if ($isAllInwarded): ?>
-                    <span class="badge bg-success-subtle text-success border border-success px-2.5 py-1.5 fw-bold d-inline-flex align-items-center gap-1 shadow-xs" title="All <?= count($stickers) ?> supplies inwarded to inventory">
-                        <i class="bi bi-check-circle-fill text-success"></i> Inwarded to Inventory (<?= (int)($inwardedCount ?? count($stickers)) ?>/<?= count($stickers) ?>)
+                    <span class="badge bg-success-subtle text-success border border-success px-2.5 py-1.5 fw-bold d-inline-flex align-items-center gap-1 shadow-xs" title="All <?= (int)($allStickersCount ?? count($stickers)) ?> supplies inwarded to inventory">
+                        <i class="bi bi-check-circle-fill text-success"></i> Inwarded to Inventory (<?= (int)($inwardedCount ?? count($stickers)) ?>/<?= (int)($allStickersCount ?? count($stickers)) ?>)
                     </span>
                     <a href="<?= url('production/inventory') ?>" class="btn btn-outline-success btn-sm fw-bold">
                         <i class="bi bi-box-seam me-1"></i> View in Inventory
@@ -314,10 +314,10 @@
 
                 <!-- Mode Switcher: Per Piece vs Master Package -->
                 <div class="btn-group btn-group-sm" role="group" title="Choose label generation mode">
-                    <a href="<?= url('production/purchases/supply-qr/' . $purchase['id'] . '?mode=piece' . ($selectedItemId ? '&item_id=' . $selectedItemId : '')) ?>" class="btn <?= $mode === 'piece' ? 'btn-primary' : 'btn-outline-primary' ?>">
+                    <a href="<?= url('production/purchases/supply-qr/' . $purchase['id'] . '?mode=piece' . ($selectedItemId ? '&item_id=' . $selectedItemId : '') . (!empty($inwardedOnly) ? '&inwarded_only=1' : '')) ?>" class="btn <?= $mode === 'piece' ? 'btn-primary' : 'btn-outline-primary' ?>">
                         <i class="bi bi-grid-3x3-gap me-1"></i> Per Piece
                     </a>
-                    <a href="<?= url('production/purchases/supply-qr/' . $purchase['id'] . '?mode=package' . ($selectedItemId ? '&item_id=' . $selectedItemId : '')) ?>" class="btn <?= $mode === 'package' ? 'btn-primary' : 'btn-outline-primary' ?>">
+                    <a href="<?= url('production/purchases/supply-qr/' . $purchase['id'] . '?mode=package' . ($selectedItemId ? '&item_id=' . $selectedItemId : '') . (!empty($inwardedOnly) ? '&inwarded_only=1' : '')) ?>" class="btn <?= $mode === 'package' ? 'btn-primary' : 'btn-outline-primary' ?>">
                         <i class="bi bi-box-seam me-1"></i> Per Item Line
                     </a>
                 </div>
@@ -333,7 +333,14 @@
             </div>
         </div>
 
-        <?php if ($selectedItemId > 0): ?>
+        <?php if (!empty($inwardedOnly)): ?>
+            <div class="mt-2 pt-2 border-top d-flex align-items-center justify-content-between small flex-wrap gap-2">
+                <span class="text-success fw-bold"><i class="bi bi-check-circle-fill me-1"></i> Showing <strong>Inwarded QR Labels only (<?= count($stickers) ?>)</strong> from Production Inventory.</span>
+                <a href="<?= url('production/purchases/supply-qr/' . $purchase['id'] . ($selectedItemId ? '?item_id=' . $selectedItemId : '')) ?>" class="btn btn-outline-primary btn-sm py-0.5 px-2.5 fw-semibold">
+                    <i class="bi bi-grid me-1"></i> Show All <?= (int)($allStickersCount ?? count($stickers)) ?> QR Labels
+                </a>
+            </div>
+        <?php elseif ($selectedItemId > 0): ?>
             <div class="mt-2 pt-2 border-top d-flex align-items-center justify-content-between small">
                 <span class="text-muted"><i class="bi bi-filter me-1 text-primary"></i> Filtered to selected supply item only.</span>
                 <a href="<?= url('production/purchases/supply-qr/' . $purchase['id'] . ($mode ? '?mode=' . $mode : '')) ?>" class="text-decoration-none fw-semibold">
@@ -346,18 +353,27 @@
     <!-- Supplies Status -->
     <?php if (empty($stickers)): ?>
         <div class="card border-0 shadow-sm p-5 text-center bg-white rounded-3">
-            <i class="bi bi-inbox fs-1 text-secondary opacity-50 mb-3"></i>
-            <h4 class="fw-bold text-dark">No Other Garment Supplies In This Purchase</h4>
-            <p class="text-muted">This purchase record contains fabric rolls only or no garment supply items were recorded.</p>
+            <i class="bi bi-qr-code-scan fs-1 text-secondary opacity-50 mb-3"></i>
+            <h4 class="fw-bold text-dark"><?= !empty($inwardedOnly) ? 'No Inwarded QR Labels Found' : 'No Other Garment Supplies In This Purchase' ?></h4>
+            <p class="text-muted"><?= !empty($inwardedOnly) ? 'No labels for this supply item have been inwarded to inventory yet.' : 'This purchase record contains fabric rolls only or no garment supply items were recorded.' ?></p>
             <div class="mt-3 d-flex justify-content-center gap-2">
-                <?php if ($rollCount > 0): ?>
-                    <a href="<?= url('production/purchases/roll-qr/' . $purchase['id']) ?>" class="btn btn-dark btn-sm">
-                        <i class="bi bi-qr-code text-warning me-1"></i> View Roll QR Labels (<?= $rollCount ?>)
+                <?php if (!empty($inwardedOnly)): ?>
+                    <a href="<?= url('production/purchases/supply-qr/' . $purchase['id'] . ($selectedItemId ? '?item_id=' . $selectedItemId : '')) ?>" class="btn btn-primary btn-sm">
+                        <i class="bi bi-grid me-1"></i> View All QR Labels
+                    </a>
+                    <a href="<?= url('production/inventory') ?>" class="btn btn-outline-secondary btn-sm">
+                        <i class="bi bi-box-seam me-1"></i> Back to Inventory
+                    </a>
+                <?php else: ?>
+                    <?php if ($rollCount > 0): ?>
+                        <a href="<?= url('production/purchases/roll-qr/' . $purchase['id']) ?>" class="btn btn-dark btn-sm">
+                            <i class="bi bi-qr-code text-warning me-1"></i> View Roll QR Labels (<?= $rollCount ?>)
+                        </a>
+                    <?php endif; ?>
+                    <a href="<?= url('production/purchases/edit/' . $purchase['id']) ?>" class="btn btn-primary btn-sm">
+                        <i class="bi bi-plus-circle me-1"></i> Edit Purchase &amp; Add Supplies
                     </a>
                 <?php endif; ?>
-                <a href="<?= url('production/purchases/edit/' . $purchase['id']) ?>" class="btn btn-primary btn-sm">
-                    <i class="bi bi-plus-circle me-1"></i> Edit Purchase &amp; Add Supplies
-                </a>
             </div>
         </div>
     <?php else: ?>

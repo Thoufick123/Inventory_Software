@@ -9180,6 +9180,238 @@ class ProductionController {
         Response::json(['success' => true, 'code' => $code]);
     }
 
+    /**
+     * Update in-stock quantity for a garment supply item in Production Inventory.
+     */
+    public function updateProductionInventorySupplyStock(): void {
+        if (!hasPermission('inventory', 'edit')) {
+            Session::flash('error', 'You do not have permission to edit Production inventory stock.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        $supplyItemId = (int)($_POST['supply_item_id'] ?? 0);
+        $newQty = max(0.0, (float)($_POST['new_quantity'] ?? 0));
+        $reason = trim((string)($_POST['adjustment_reason'] ?? 'Inventory stock update'));
+
+        $item = Database::fetchOne(
+            "SELECT ppi.*, pp.purchase_number, p.name AS catalog_product_name
+             FROM production_purchase_items ppi
+             JOIN production_purchases pp ON ppi.purchase_id = pp.id
+             LEFT JOIN products p ON ppi.product_id = p.id
+             WHERE ppi.id = ? AND ppi.item_type = 'GENERAL_SUPPLY'",
+            [$supplyItemId]
+        );
+
+        if (!$item) {
+            Session::flash('error', 'Supply product record not found.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        $variantId = !empty($item['variant_id']) ? (int)$item['variant_id'] : 0;
+        $currentAvailable = 0.0;
+        if ($variantId > 0) {
+            $currentAvailable = (float)(Database::fetchOne(
+                "SELECT COALESCE(SUM(quantity), 0) AS cnt FROM stock_balances WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                [$variantId]
+            )['cnt'] ?? 0);
+        }
+
+        $userId = Session::userId() ?? 1;
+        $wh = Database::fetchOne("SELECT id, name FROM warehouses WHERE is_active = 1 ORDER BY id ASC LIMIT 1");
+        $warehouseId = (int)($wh['id'] ?? 1);
+
+        try {
+            Database::beginTransaction();
+
+            $diff = $newQty - $currentAvailable;
+            if ($variantId > 0 && abs($diff) > 0.0001) {
+                if ($diff > 0) {
+                    StockService::increase(
+                        variantId: $variantId,
+                        locationType: 'WAREHOUSE',
+                        locationId: $warehouseId,
+                        stockState: 'AVAILABLE',
+                        quantity: $diff,
+                        transactionType: 'PURCHASE_GRN',
+                        referenceType: 'production_purchases',
+                        referenceId: (int)$item['purchase_id'],
+                        userId: $userId,
+                        notes: "Stock adjustment for {$item['item_name']}: +{$diff} {$item['unit']} ({$reason})"
+                    );
+                } else {
+                    StockService::decrease(
+                        variantId: $variantId,
+                        locationType: 'WAREHOUSE',
+                        locationId: $warehouseId,
+                        stockState: 'AVAILABLE',
+                        quantity: abs($diff),
+                        transactionType: 'INVENTORY_ADJUSTMENT',
+                        referenceType: 'production_purchases',
+                        referenceId: (int)$item['purchase_id'],
+                        userId: $userId,
+                        notes: "Stock adjustment for {$item['item_name']}: -{$diff} {$item['unit']} ({$reason})"
+                    );
+                }
+
+                // Ensure exact stock_balances matches $newQty
+                Database::execute(
+                    "UPDATE stock_balances SET quantity = ? WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                    [$newQty, $variantId]
+                );
+            }
+
+            Database::execute(
+                "UPDATE production_purchase_items SET inwarded_qty = ?, is_inwarded = ? WHERE id = ?",
+                [$newQty, ($newQty > 0 ? 1 : 0), $supplyItemId]
+            );
+
+            AuditService::log('production', 'UPDATE_STOCK', 'production_purchase_items', $supplyItemId, $item, [
+                'old_qty' => $currentAvailable,
+                'new_qty' => $newQty,
+                'reason'  => $reason,
+            ]);
+
+            Database::commit();
+
+            $prodTitle = !empty($item['catalog_product_name']) ? $item['catalog_product_name'] : $item['item_name'];
+            Session::flash('success', "In-stock quantity for '{$prodTitle}' updated to " . number_format($newQty) . " {$item['unit']} successfully.");
+        } catch (\Throwable $e) {
+            Database::rollback();
+            Session::flash('error', 'Error updating supply stock: ' . $e->getMessage());
+        }
+
+        Response::redirect(url('production/inventory'));
+    }
+
+    /**
+     * Delete supply stock from Production Inventory and reset it to uninwarded status (Pending Inward) in Purchase module.
+     */
+    public function deleteProductionInventorySupplyStock(): void {
+        if (!hasPermission('inventory', 'delete')) {
+            Session::flash('error', 'You do not have permission to delete Production inventory stock.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        $supplyItemId = (int)($_POST['supply_item_id'] ?? 0);
+        $item = Database::fetchOne(
+            "SELECT ppi.*, pp.purchase_number, pp.id AS po_id, pp.purchase_date, p.name AS catalog_product_name
+             FROM production_purchase_items ppi
+             JOIN production_purchases pp ON ppi.purchase_id = pp.id
+             LEFT JOIN products p ON ppi.product_id = p.id
+             WHERE ppi.id = ? AND ppi.item_type = 'GENERAL_SUPPLY'",
+            [$supplyItemId]
+        );
+
+        if (!$item) {
+            Session::flash('error', 'Supply product record not found.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        $purchaseId = (int)$item['po_id'];
+        $variantId = !empty($item['variant_id']) ? (int)$item['variant_id'] : 0;
+        $userId = Session::userId() ?? 1;
+
+        try {
+            Database::beginTransaction();
+
+            // 1. Remove/reverse stock balance from stock_balances
+            if ($variantId > 0) {
+                $curBal = (float)(Database::fetchOne(
+                    "SELECT COALESCE(SUM(quantity), 0) AS cnt FROM stock_balances WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                    [$variantId]
+                )['cnt'] ?? 0);
+
+                if ($curBal > 0) {
+                    StockService::decrease(
+                        variantId: $variantId,
+                        locationType: 'WAREHOUSE',
+                        locationId: 1,
+                        stockState: 'AVAILABLE',
+                        quantity: $curBal,
+                        transactionType: 'PURCHASE_RETURN',
+                        referenceType: 'production_purchases',
+                        referenceId: $purchaseId,
+                        userId: $userId,
+                        notes: "Stock deleted from Production Inventory (returned to uninwarded)"
+                    );
+                }
+                Database::execute(
+                    "UPDATE stock_balances SET quantity = 0 WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                    [$variantId]
+                );
+            }
+
+            // 2. Reset QR codes for this variant to uninwarded (Pending Inward)
+            if ($variantId > 0) {
+                Database::execute(
+                    "UPDATE warehouse_qr_codes SET inwarded_at = NULL WHERE variant_id = ?",
+                    [$variantId]
+                );
+            }
+            $prefix = 'SP' . date('my', strtotime($item['purchase_date'] ?? 'now'));
+            if ($variantId > 0) {
+                Database::execute(
+                    "UPDATE warehouse_qr_codes SET inwarded_at = NULL WHERE qr_code LIKE ? AND variant_id = ?",
+                    [$prefix . '%', $variantId]
+                );
+            }
+
+            // 3. Mark supply purchase item as uninwarded
+            Database::execute(
+                "UPDATE production_purchase_items
+                 SET is_inwarded = 0, inwarded_at = NULL, inwarded_by = NULL, inwarded_qty = 0.000
+                 WHERE id = ?",
+                [$supplyItemId]
+            );
+
+            // 4. Check if the purchase still has other inwarded supply items
+            $otherInwarded = (int)(Database::fetchOne(
+                "SELECT COUNT(*) AS cnt FROM production_purchase_items
+                 WHERE purchase_id = ? AND item_type = 'GENERAL_SUPPLY' AND is_inwarded = 1",
+                [$purchaseId]
+            )['cnt'] ?? 0);
+
+            if ($otherInwarded === 0) {
+                Database::execute(
+                    "UPDATE production_purchases SET is_inwarded = 0, inwarded_at = NULL WHERE id = ?",
+                    [$purchaseId]
+                );
+            }
+
+            AuditService::log('production', 'DELETE_SUPPLY_STOCK', 'production_purchase_items', $supplyItemId, $item, [
+                'purchase_number' => $item['purchase_number'],
+                'item_name'       => $item['item_name'],
+                'message'         => 'Stock deleted from inventory and returned to uninwarded in purchase module',
+            ]);
+
+            Database::commit();
+
+            $prodTitle = !empty($item['catalog_product_name']) ? $item['catalog_product_name'] : $item['item_name'];
+            Session::flash('success', "Supply stock for '{$prodTitle}' successfully deleted from inventory. The product's QR label(s) are now reset to Pending Inward in Purchase module.");
+        } catch (\Throwable $e) {
+            Database::rollback();
+            Session::flash('error', 'Error deleting supply stock: ' . $e->getMessage());
+        }
+
+        Response::redirect(url('production/inventory'));
+    }
+
     public function createLabel(): void {
         $programId = $_GET['program_id'] ?? null;
         $stitchingBatchId = $_GET['stitching_batch_id'] ?? null;
@@ -15089,9 +15321,15 @@ class ProductionController {
         }
         unset($stk);
 
+        $allStickersCount = count($stickers);
         $inwardedCount = count(array_filter($stickers, fn($s) => !empty($s['is_inwarded'])));
-        $pendingCount = count($stickers) - $inwardedCount;
-        $isAllInwarded = count($stickers) > 0 && $pendingCount === 0;
+        $pendingCount = $allStickersCount - $inwardedCount;
+        $isAllInwarded = $allStickersCount > 0 && $pendingCount === 0;
+
+        $inwardedOnly = !empty($_GET['inwarded_only']) || (isset($_GET['filter']) && $_GET['filter'] === 'inwarded');
+        if ($inwardedOnly) {
+            $stickers = array_values(array_filter($stickers, fn($s) => !empty($s['is_inwarded'])));
+        }
 
         // Count rolls in this purchase for quick navigation
         $rollCount = (int)(Database::fetchOne(
@@ -15111,6 +15349,8 @@ class ProductionController {
             'isAllInwarded'      => $isAllInwarded,
             'inwardedCount'      => $inwardedCount,
             'pendingInwardCount' => $pendingCount,
+            'inwardedOnly'       => $inwardedOnly,
+            'allStickersCount'   => $allStickersCount,
         ]);
     }
 

@@ -620,9 +620,27 @@ let HSN_OPTIONS = <?= json_encode(array_values(array_map(function($h) {
     ];
 }, $hsnCodes ?? [])), JSON_UNESCAPED_UNICODE) ?>;
 const EXISTING_SUPPLIER_PRODUCTS = <?= json_encode($existingSupplierProducts ?? [], JSON_UNESCAPED_UNICODE) ?>;
+const HAS_ACTIVE_WAREHOUSE = <?= empty($warehouses) ? 'false' : 'true' ?>;
 
 // Array of active inward products
 let addedProductsList = [];
+const touchedProductFields = new WeakMap();
+const submittedProductItems = new WeakSet();
+
+function markProductFieldTouched(item, fieldName) {
+    let fields = touchedProductFields.get(item);
+    if (!fields) {
+        fields = new Set();
+        touchedProductFields.set(item, fields);
+    }
+    fields.add(fieldName);
+}
+
+function shouldShowProductFieldError(item, ...fieldNames) {
+    const fields = touchedProductFields.get(item);
+    return submittedProductItems.has(item)
+        || (fields !== undefined && fieldNames.some(fieldName => fields.has(fieldName)));
+}
 
 // Track current available attributes for active category
 let currentCategoryAttributes = [];
@@ -1519,6 +1537,7 @@ function handleRowHsnChange(itemId, selectEl) {
     const item = addedProductsList.find(it => it.id === itemId);
     if (!item) return;
 
+    markProductFieldTouched(item, 'hsn_code');
     item.hsn_code = val;
 
     const selectedOpt = selectEl.options[selectEl.selectedIndex];
@@ -1531,11 +1550,14 @@ function handleRowHsnChange(itemId, selectEl) {
         }
     }
     recalculateAllTotals();
+    checkAllRowValidationsAndDuplicates();
 }
 
 function updateItemField(itemId, fieldName, value) {
     const item = addedProductsList.find(it => it.id === itemId);
     if (!item) return;
+
+    markProductFieldTouched(item, fieldName);
 
     if (fieldName === 'category_type') {
         item.category_type = value;
@@ -1781,6 +1803,7 @@ function checkAllRowValidationsAndDuplicates() {
     }
 
     let hasErrors = false;
+    let hasVisibleErrors = false;
     const variantMap = new Map();
 
     // 1. Identify duplicates inside the added inward list
@@ -1832,9 +1855,16 @@ function checkAllRowValidationsAndDuplicates() {
         let rowHasError = false;
 
         // Name
-        if (!pName || pName.length < 2) {
-            if (nameInput) nameInput.classList.add('is-invalid', 'border-danger');
-            if (nameWarn) { nameWarn.textContent = 'Name required (min 2 chars)'; nameWarn.classList.remove('d-none'); }
+        const isNameInvalid = !pName || pName.length < 2;
+        const showNameError = shouldShowProductFieldError(item, 'product_name');
+        if (isNameInvalid) {
+            if (nameInput) nameInput.classList.toggle('is-invalid', showNameError);
+            if (nameInput) nameInput.classList.toggle('border-danger', showNameError);
+            if (nameWarn) {
+                nameWarn.textContent = showNameError ? 'Name required (min 2 chars)' : '';
+                nameWarn.classList.toggle('d-none', !showNameError);
+            }
+            if (showNameError) hasVisibleErrors = true;
             rowHasError = true;
         } else {
             if (nameInput) nameInput.classList.remove('is-invalid', 'border-danger');
@@ -1842,9 +1872,16 @@ function checkAllRowValidationsAndDuplicates() {
         }
 
         // HSN
-        if (!hsn) {
-            if (hsnInput) hsnInput.classList.add('is-invalid', 'border-danger');
-            if (hsnWarn) { hsnWarn.textContent = 'HSN required'; hsnWarn.classList.remove('d-none'); }
+        const isHsnInvalid = !hsn;
+        const showHsnError = shouldShowProductFieldError(item, 'hsn_code');
+        if (isHsnInvalid) {
+            if (hsnInput) hsnInput.classList.toggle('is-invalid', showHsnError);
+            if (hsnInput) hsnInput.classList.toggle('border-danger', showHsnError);
+            if (hsnWarn) {
+                hsnWarn.textContent = showHsnError ? 'HSN required' : '';
+                hsnWarn.classList.toggle('d-none', !showHsnError);
+            }
+            if (showHsnError) hasVisibleErrors = true;
             rowHasError = true;
         } else {
             if (hsnInput) hsnInput.classList.remove('is-invalid', 'border-danger');
@@ -1852,9 +1889,16 @@ function checkAllRowValidationsAndDuplicates() {
         }
 
         // Weight
-        if (wt <= 0) {
-            if (wtInput) wtInput.classList.add('is-invalid', 'border-danger');
-            if (wtWarn) { wtWarn.textContent = 'Weight must be > 0'; wtWarn.classList.remove('d-none'); }
+        const isWeightInvalid = wt <= 0;
+        const showWeightError = shouldShowProductFieldError(item, 'weight');
+        if (isWeightInvalid) {
+            if (wtInput) wtInput.classList.toggle('is-invalid', showWeightError);
+            if (wtInput) wtInput.classList.toggle('border-danger', showWeightError);
+            if (wtWarn) {
+                wtWarn.textContent = showWeightError ? 'Weight must be > 0' : '';
+                wtWarn.classList.toggle('d-none', !showWeightError);
+            }
+            if (showWeightError) hasVisibleErrors = true;
             rowHasError = true;
         } else {
             if (wtInput) wtInput.classList.remove('is-invalid', 'border-danger');
@@ -1866,21 +1910,19 @@ function checkAllRowValidationsAndDuplicates() {
         let isMrpErr = false;
         let isCostErr = false;
         let spErrMsg = '';
+        let mrpErrMsg = '';
+        let costErrMsg = '';
 
         if (mrp <= 0) {
             isMrpErr = true;
-            if (mrpWarn) { mrpWarn.textContent = 'MRP > 0 required'; mrpWarn.classList.remove('d-none'); }
+            mrpErrMsg = 'MRP > 0 required';
             rowHasError = true;
-        } else {
-            if (mrpWarn) mrpWarn.classList.add('d-none');
         }
 
         if (cost <= 0) {
             isCostErr = true;
-            if (costWarn) { costWarn.textContent = 'Cost > 0 required'; costWarn.classList.remove('d-none'); }
+            costErrMsg = 'Cost > 0 required';
             rowHasError = true;
-        } else {
-            if (costWarn) costWarn.classList.add('d-none');
         }
 
         if (sp <= 0) {
@@ -1891,41 +1933,79 @@ function checkAllRowValidationsAndDuplicates() {
             isSpErr = true;
             isCostErr = true;
             spErrMsg = `<i class="bi bi-exclamation-triangle-fill"></i> Selling must be &gt; Cost (₹${cost.toFixed(2)})!`;
-            if (costWarn) { costWarn.textContent = `Cost must be < Selling Price (₹${sp.toFixed(2)})`; costWarn.classList.remove('d-none'); }
+            costErrMsg = `Cost must be < Selling Price (₹${sp.toFixed(2)})`;
             rowHasError = true;
         } else if (mrp > 0 && sp >= mrp) {
             isSpErr = true;
             isMrpErr = true;
             spErrMsg = `<i class="bi bi-exclamation-triangle-fill"></i> Selling must be &lt; MRP (₹${mrp.toFixed(2)})!`;
-            if (mrpWarn) { mrpWarn.textContent = `MRP must be > Selling Price (₹${sp.toFixed(2)})`; mrpWarn.classList.remove('d-none'); }
+            mrpErrMsg = `MRP must be > Selling Price (₹${sp.toFixed(2)})`;
             rowHasError = true;
         }
 
+        const anyPriceFieldTouched = shouldShowProductFieldError(item, 'mrp', 'selling_price', 'purchase_price');
+        const showSpError = isSpErr && (sp <= 0
+            ? shouldShowProductFieldError(item, 'selling_price')
+            : anyPriceFieldTouched);
+        const showMrpError = isMrpErr && (mrp <= 0
+            ? shouldShowProductFieldError(item, 'mrp')
+            : anyPriceFieldTouched);
+        const showCostError = isCostErr && (cost <= 0
+            ? shouldShowProductFieldError(item, 'purchase_price')
+            : anyPriceFieldTouched);
+
         if (spInput) {
-            spInput.classList.toggle('is-invalid', isSpErr);
-            spInput.classList.toggle('border-danger', isSpErr);
+            spInput.classList.toggle('is-invalid', showSpError);
+            spInput.classList.toggle('border-danger', showSpError);
         }
         if (mrpInput) {
-            mrpInput.classList.toggle('is-invalid', isMrpErr);
-            mrpInput.classList.toggle('border-danger', isMrpErr);
+            mrpInput.classList.toggle('is-invalid', showMrpError);
+            mrpInput.classList.toggle('border-danger', showMrpError);
         }
         if (costInput) {
-            costInput.classList.toggle('is-invalid', isCostErr);
-            costInput.classList.toggle('border-danger', isCostErr);
+            costInput.classList.toggle('is-invalid', showCostError);
+            costInput.classList.toggle('border-danger', showCostError);
         }
         if (valWarn) {
-            if (spErrMsg) {
+            if (showSpError) {
                 valWarn.innerHTML = spErrMsg;
                 valWarn.classList.remove('d-none');
             } else {
                 valWarn.classList.add('d-none');
+                valWarn.innerHTML = '';
             }
         }
+        if (mrpWarn) {
+            if (showMrpError) {
+                mrpWarn.textContent = mrpErrMsg;
+                mrpWarn.classList.remove('d-none');
+            } else {
+                mrpWarn.textContent = '';
+                mrpWarn.classList.add('d-none');
+            }
+        }
+        if (costWarn) {
+            if (showCostError) {
+                costWarn.textContent = costErrMsg;
+                costWarn.classList.remove('d-none');
+            } else {
+                costWarn.textContent = '';
+                costWarn.classList.add('d-none');
+            }
+        }
+        if (showSpError || showMrpError || showCostError) hasVisibleErrors = true;
 
         // Qty
-        if (qty < 1) {
-            if (qtyInput) qtyInput.classList.add('is-invalid', 'border-danger');
-            if (qtyWarn) { qtyWarn.textContent = 'Qty >= 1 required'; qtyWarn.classList.remove('d-none'); }
+        const isQtyInvalid = qty < 1;
+        const showQtyError = shouldShowProductFieldError(item, 'quantity');
+        if (isQtyInvalid) {
+            if (qtyInput) qtyInput.classList.toggle('is-invalid', showQtyError);
+            if (qtyInput) qtyInput.classList.toggle('border-danger', showQtyError);
+            if (qtyWarn) {
+                qtyWarn.textContent = showQtyError ? 'Qty >= 1 required' : '';
+                qtyWarn.classList.toggle('d-none', !showQtyError);
+            }
+            if (showQtyError) hasVisibleErrors = true;
             rowHasError = true;
         } else {
             if (qtyInput) qtyInput.classList.remove('is-invalid', 'border-danger');
@@ -1937,6 +2017,7 @@ function checkAllRowValidationsAndDuplicates() {
         if (duplicateItemIds.has(item.id)) {
             dupHtml += `<span class="badge bg-danger text-white py-0.5 px-1 fs-8 d-block mt-1 shadow-xs"><i class="bi bi-copy me-1"></i>Duplicate Variant Line</span>`;
             rowHasError = true;
+            hasVisibleErrors = true;
         }
 
         // Catalog duplicate
@@ -1965,10 +2046,10 @@ function checkAllRowValidationsAndDuplicates() {
     const notice = document.getElementById('saveProductsValidationNotice');
 
     if (btnSubmit) {
-        btnSubmit.disabled = hasErrors || addedProductsList.length === 0;
+        btnSubmit.disabled = addedProductsList.length === 0 || !HAS_ACTIVE_WAREHOUSE;
     }
     if (notice) {
-        notice.classList.toggle('d-none', !hasErrors || addedProductsList.length === 0);
+        notice.classList.toggle('d-none', !hasVisibleErrors || addedProductsList.length === 0);
     }
 
     return !hasErrors;
@@ -2063,20 +2144,39 @@ function applyQuickFillToAll() {
     }
 
     addedProductsList.forEach(item => {
-        if (pName) item.product_name = pName;
+        if (pName) {
+            item.product_name = pName;
+            markProductFieldTouched(item, 'product_name');
+        }
         if (catType) {
             item.category_type = catType;
             item.is_complementary = (catType === 'COMPLEMENTARY') ? 1 : 0;
             item.qr_type = (catType === 'SERIES') ? 'SERIES_BATCH' : 'INDIVIDUAL';
         }
-        if (hsn) item.hsn_code = hsn;
+        if (hsn) {
+            item.hsn_code = hsn;
+            markProductFieldTouched(item, 'hsn_code');
+        }
         if (qfGstVal !== undefined && qfGstVal !== '') item.gst_percentage = parseFloat(qfGstVal) || 0;
-        if (weightVal !== undefined && weightVal !== '') item.weight = parseFloat(weightVal) || 0;
-        if (mrpVal !== undefined && mrpVal !== '') item.mrp = parseFloat(mrpVal) || 0;
-        if (spVal !== undefined && spVal !== '') item.selling_price = parseFloat(spVal) || 0;
-        if (costVal !== undefined && costVal !== '') item.purchase_price = parseFloat(costVal) || 0;
+        if (weightVal !== undefined && weightVal !== '') {
+            item.weight = parseFloat(weightVal) || 0;
+            markProductFieldTouched(item, 'weight');
+        }
+        if (mrpVal !== undefined && mrpVal !== '') {
+            item.mrp = parseFloat(mrpVal) || 0;
+            markProductFieldTouched(item, 'mrp');
+        }
+        if (spVal !== undefined && spVal !== '') {
+            item.selling_price = parseFloat(spVal) || 0;
+            markProductFieldTouched(item, 'selling_price');
+        }
+        if (costVal !== undefined && costVal !== '') {
+            item.purchase_price = parseFloat(costVal) || 0;
+            markProductFieldTouched(item, 'purchase_price');
+        }
         if (qtyVal !== undefined && qtyVal !== '') {
             item.quantity = parseInt(qtyVal) || 0;
+            markProductFieldTouched(item, 'quantity');
         }
 
         if (item.category_type === 'SERIES' || item.category_type === 'COMPLEMENTARY') {
@@ -2135,7 +2235,7 @@ function recalculateAllTotals() {
     if (supplierTotalEl) supplierTotalEl.textContent = '₹' + supplierProductTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const btnSubmit = document.getElementById('btnSaveAllProducts');
     if (btnSubmit) {
-        btnSubmit.disabled = (addedProductsList.length === 0);
+        btnSubmit.disabled = (addedProductsList.length === 0 || !HAS_ACTIVE_WAREHOUSE);
     }
 }
 
@@ -2156,6 +2256,16 @@ function removeProductItem(itemId) {
 function submitFinalProducts() {
     if (addedProductsList.length === 0) {
         alert('Please add at least one product to the inward list.');
+        return;
+    }
+
+    addedProductsList.forEach(item => submittedProductItems.add(item));
+    if (!checkAllRowValidationsAndDuplicates()) {
+        const firstInvalid = document.querySelector('#addedProductsTableBody .is-invalid');
+        if (firstInvalid) {
+            firstInvalid.focus();
+            firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
         return;
     }
 
@@ -2383,26 +2493,14 @@ function openEditSupplierProductModal(prod) {
     const stockInput = document.getElementById('editSpStock');
     const stockLockBadge = document.getElementById('editSpStockLockBadge');
     const stockLockNotice = document.getElementById('editSpStockLockNotice');
-    const canEditStock = Boolean(prod.can_edit_stock);
 
     stockInput.value = prod.available_stock !== undefined ? parseInt(prod.available_stock) : 0;
-    if (!canEditStock) {
-        stockInput.readOnly = true;
-        stockInput.classList.add('bg-light', 'text-muted');
-        stockInput.classList.remove('text-primary');
-        stockInput.style.cursor = 'not-allowed';
-        stockInput.title = 'Stock is locked: QR codes not generated and product not inwarded.';
-        if (stockLockBadge) stockLockBadge.classList.remove('d-none');
-        if (stockLockNotice) stockLockNotice.classList.remove('d-none');
-    } else {
-        stockInput.readOnly = false;
-        stockInput.classList.remove('bg-light', 'text-muted');
-        stockInput.classList.add('text-primary');
-        stockInput.style.cursor = 'text';
-        stockInput.title = 'Live available warehouse stock';
-        if (stockLockBadge) stockLockBadge.classList.add('d-none');
-        if (stockLockNotice) stockLockNotice.classList.add('d-none');
-    }
+    stockInput.disabled = true;
+    stockInput.classList.add('bg-light', 'text-muted');
+    stockInput.classList.remove('text-primary');
+    stockInput.title = 'Stock is read-only in supplier product editing.';
+    if (stockLockBadge) stockLockBadge.classList.remove('d-none');
+    if (stockLockNotice) stockLockNotice.classList.remove('d-none');
 
     const modalEl = document.getElementById('modalEditSupplierProduct');
     if (modalEl) {
@@ -2561,16 +2659,16 @@ function submitEditSupplierProduct(e) {
                                 <div class="col-md-3 col-6">
                                     <label class="form-label small fw-bold text-dark mb-1 d-flex align-items-center justify-content-between">
                                         <span>Available Stock (Pcs)</span>
-                                        <span id="editSpStockLockBadge" class="badge bg-danger-subtle text-danger border border-danger-subtle small d-none" style="font-size: 0.65rem;">
-                                            <i class="bi bi-lock-fill"></i> Locked
+                                        <span id="editSpStockLockBadge" class="badge bg-secondary-subtle text-secondary border border-secondary-subtle small" style="font-size: 0.65rem;">
+                                            <i class="bi bi-lock-fill"></i> Read-only
                                         </span>
                                     </label>
                                     <div class="input-group input-group-sm">
-                                        <input type="number" id="editSpStock" name="available_stock" class="form-control form-control-sm text-center fw-bold text-primary" step="1" min="0">
+                                        <input type="number" id="editSpStock" name="available_stock" class="form-control form-control-sm text-center fw-bold bg-light text-muted" step="1" min="0" disabled>
                                         <span class="input-group-text">pcs</span>
                                     </div>
-                                    <small id="editSpStockLockNotice" class="text-danger small mt-1 d-none" style="font-size: 0.72rem; line-height: 1.25;">
-                                        <i class="bi bi-exclamation-triangle-fill me-1"></i>Cannot edit: QR not generated &amp; not inwarded. Stock must be inwarded via Inward GRN.
+                                    <small id="editSpStockLockNotice" class="text-muted small mt-1" style="font-size: 0.72rem; line-height: 1.25;">
+                                        <i class="bi bi-info-circle-fill me-1"></i>Update inventory through warehouse stock workflows.
                                     </small>
                                 </div>
                             </div>
