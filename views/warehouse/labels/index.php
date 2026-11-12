@@ -1737,7 +1737,7 @@ foreach ($qrBatches as $batch) {
                 <div class="text-center py-5 text-muted">
                     <i class="bi bi-patch-plus fs-1 d-block mb-2 text-secondary opacity-50"></i>
                     <div class="fw-semibold">No extra generated QR stickers recorded yet</div>
-                    <div class="small">Extra sequential packs or single pieces produced via <strong>+ Produce 1 New QR</strong> will automatically appear here.</div>
+                    <div class="small">Extra sequential packs or single pieces created via <strong>Add QR</strong> will automatically appear here.</div>
                 </div>
             <?php else: ?>
                 <div class="d-flex flex-column gap-3">
@@ -2421,7 +2421,7 @@ foreach ($qrBatches as $batch) {
                         <div>
                             <h6 class="fw-bold mb-1 text-dark"><i class="bi bi-info-circle-fill text-info me-1"></i>Stock Inwarded - Sequential QR Pack Extension Enabled</h6>
                             <p class="mb-0 small text-secondary">
-                                Product <strong id="lblAlreadyInwardedCode" class="text-dark font-monospace"><?= e($selectedCatalogCode ?: 'Selected Code') ?></strong> has inwarded packs in stock. You can produce additional sequential packs or pieces anytime using <strong>+ Produce 1 New QR</strong> and inward them to warehouse inventory.
+                                Product <strong id="lblAlreadyInwardedCode" class="text-dark font-monospace"><?= e($selectedCatalogCode ?: 'Selected Code') ?></strong> has inwarded packs in stock. You can add additional sequential QR labels anytime using <strong>Add QR</strong> and inward them to warehouse inventory.
                             </p>
                         </div>
                     </div>
@@ -2651,9 +2651,9 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
 
                     <!-- New QR adjustment control -->
                     <div class="col-lg-5 col-md-12 d-flex align-items-center justify-content-lg-end gap-2 flex-wrap">
-                        <!-- Produce 1 New QR button -->
-                        <button type="button" class="btn btn-sm btn-outline-success fw-bold bg-white shadow-2xs" onclick="produceNewAdjustmentQR()" title="Produce one new QR code sticker with next sequence number for this product">
-                            <i class="bi bi-plus-circle-fill text-success me-1"></i> + Produce 1 New QR
+                        <!-- Add consecutive QR labels -->
+                        <button type="button" class="btn btn-sm btn-outline-success fw-bold bg-white shadow-2xs" onclick="produceNewAdjustmentQR()" title="Add consecutive QR code stickers for this product">
+                            <i class="bi bi-plus-circle-fill text-success me-1"></i> Add QR
                         </button>
                         <button type="button" class="btn btn-sm btn-outline-danger fw-bold bg-white shadow-2xs" id="btnDeleteSelectedQrs" onclick="deleteSelectedQrs()" disabled title="Permanently delete selected QR code(s) so they will not appear again">
                             <i class="bi bi-trash3 me-1"></i>Delete Selected QR(s)
@@ -2738,7 +2738,7 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                                     }
                                     ?>
                                     <?php if ($rangeBadge): ?>
-                                    <div class="badge bg-light text-primary border font-monospace mt-1 px-1 py-0.5 w-100" style="font-size: 0.54rem;" title="Piece Sequence Range">Range: <?= $rangeBadge ?></div>
+                                    <div class="badge bg-light text-primary border font-monospace mt-1 px-1 py-0.5 w-100 series-range-badge" style="font-size: 0.54rem;" title="Piece Sequence Range">Range: <?= $rangeBadge ?></div>
                                     <?php endif; ?>
                                 </div>
                                 <!-- Right: Brand, Clean Variant SKU, MRP, Disc (Matching Production Unit Standard) -->
@@ -4813,6 +4813,18 @@ function produceNewAdjustmentQR() {
         return;
     }
 
+    const isAggregateQr = !!(lastItem.is_series || lastItem.is_complementary);
+    const countPrompt = isAggregateQr
+        ? 'How many units should be added to this existing series/complementary QR pack? (1-500)'
+        : 'How many QR labels would you like to generate? (1-500)';
+    const countValue = window.prompt(countPrompt, '1');
+    if (countValue === null) return;
+    if (!/^[1-9]\d*$/.test(countValue.trim()) || Number(countValue) > 500) {
+        showPrintToast('Enter a whole number between 1 and 500.', 'warning');
+        return;
+    }
+    const count = Number(countValue);
+
     const variantId = lastItem.variant_id;
     const warehouseId = document.getElementById('inwardWarehouseId')?.value || document.querySelector('input[name="warehouse_id"]')?.value || '1';
     const sourceType = document.querySelector('input[name="source_type"]')?.value || 'tp_purchase';
@@ -4827,6 +4839,11 @@ function produceNewAdjustmentQR() {
 
     const formData = new FormData();
     formData.append('variant_id', variantId);
+    formData.append('count', String(count));
+    if (isAggregateQr) {
+        formData.append('aggregate_extension', '1');
+        formData.append('qr_code', lastItem.tag_code);
+    }
     formData.append('warehouse_id', warehouseId);
     formData.append('source_type', sourceType);
     formData.append('source_id', sourceId);
@@ -4846,19 +4863,33 @@ function produceNewAdjustmentQR() {
             btnProduce.innerHTML = origHtml;
         }
 
-        if (data.success && data.item) {
+        if (data.success && data.aggregate_extension && data.item) {
+            const existingIndex = GENERATED_ITEMS.indexOf(lastItem);
+            if (existingIndex < 0) {
+                showPrintToast('The existing QR label is no longer on this page. Refresh and try again.', 'warning');
+                return;
+            }
+            GENERATED_ITEMS[existingIndex] = data.item;
             window.hasStockOrQrChanged = true;
-            const newItem = data.item;
-            const newIndex = GENERATED_ITEMS.length;
-            GENERATED_ITEMS.push(newItem);
+            updateAggregateStickerCard(data.item, existingIndex);
+            showPrintToast(data.message || `Updated QR pack quantity to ${data.item.pack_quantity}.`, 'success');
+            return;
+        }
+
+        const items = Array.isArray(data.items) ? data.items : (data.item ? [data.item] : []);
+        if (data.success && items.length > 0) {
+            window.hasStockOrQrChanged = true;
             document.getElementById('emptyGeneratedQrMessage')?.remove();
 
-            renderNewStickerCard(newItem, newIndex);
-
-            selectedStickerIndices.add(newIndex);
+            items.forEach(newItem => {
+                const newIndex = GENERATED_ITEMS.length;
+                GENERATED_ITEMS.push(newItem);
+                renderNewStickerCard(newItem, newIndex);
+                selectedStickerIndices.add(newIndex);
+            });
             updateSelectionCounter();
 
-            showPrintToast(data.message || `Produced 1 New QR: ${newItem.tag_code}!`, 'success');
+            showPrintToast(data.message || `Produced ${items.length} New QR label(s).`, 'success');
         } else {
             showPrintToast(data.message || 'Failed to produce new QR sticker.', 'danger');
         }
@@ -4870,6 +4901,38 @@ function produceNewAdjustmentQR() {
         }
         showPrintToast('Network error producing new QR sticker: ' + err.message, 'danger');
     });
+}
+
+function updateAggregateStickerCard(item, index) {
+    const col = document.getElementById(`col-piece-${index}`);
+    if (!col) return;
+
+    const packQty = Number(item.pack_quantity || 1);
+    const packBadge = col.querySelector('.piece-label-badge');
+    if (packBadge) {
+        packBadge.innerHTML = `<i class="bi bi-boxes me-1"></i>Master Pack (${packQty} Pcs)`;
+    }
+
+    const displaySku = item.clean_sku || ((item.size_name && item.color_name)
+        ? `${item.size_name}-${item.color_name}`
+        : item.sku);
+    const skuLabel = col.querySelector('.lbl-sku');
+    if (skuLabel) skuLabel.textContent = `${displaySku} (${packQty} Pcs)`;
+
+    const startMatch = String(item.series_start_code || item.tag_code || '').match(/(\d+)$/);
+    const endMatch = String(item.series_end_code || '').match(/(\d+)$/);
+    if (startMatch && endMatch) {
+        const rangeText = `Range: ${parseInt(startMatch[1], 10)} → ${parseInt(endMatch[1], 10)}`;
+        let rangeBadge = col.querySelector('.series-range-badge');
+        if (!rangeBadge) {
+            rangeBadge = document.createElement('div');
+            rangeBadge.className = 'badge bg-light text-primary border font-monospace mt-1 px-1 py-0.5 w-100 series-range-badge';
+            rangeBadge.style.fontSize = '0.54rem';
+            rangeBadge.title = 'Piece Sequence Range';
+            col.querySelector('.label-tag-code')?.after(rangeBadge);
+        }
+        if (rangeBadge) rangeBadge.textContent = rangeText;
+    }
 }
 
 function renderNewStickerCard(newItem, newIndex) {
@@ -4925,7 +4988,7 @@ function renderNewStickerCard(newItem, newIndex) {
                         <div class="label-tag-code badge bg-dark text-white font-monospace mt-1 px-1 py-0.5 w-100" style="font-size: 0.56rem; letter-spacing: 0.1px;" title="${newItem.tag_code}">
                             ${newItem.tag_code}
                         </div>
-                        ${rangeBadge ? `<div class="badge bg-light text-primary border font-monospace mt-1 px-1 py-0.5 w-100" style="font-size: 0.54rem;" title="Piece Sequence Range">Range: ${rangeBadge}</div>` : ''}
+                        ${rangeBadge ? `<div class="badge bg-light text-primary border font-monospace mt-1 px-1 py-0.5 w-100 series-range-badge" style="font-size: 0.54rem;" title="Piece Sequence Range">Range: ${rangeBadge}</div>` : ''}
                     </div>
                     <div class="overflow-hidden flex-grow-1" style="font-size: 0.76rem; margin-top: 1px;">
                         <div class="lbl-title fw-bold text-uppercase text-dark text-truncate" style="font-size: 0.80rem; letter-spacing: 0.2px;" title="${escapeHtml(newItem.brand_name || 'GRM CLASSIC')}">

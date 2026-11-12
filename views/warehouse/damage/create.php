@@ -313,6 +313,14 @@ function getRowScannedQrs(row) {
     }
 }
 
+function getRowScanAliases(row) {
+    try {
+        return JSON.parse(row?.dataset?.scanAliases || '[]');
+    } catch(e) {
+        return [];
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     const warehouseSelect = document.getElementById('warehouseSelect');
     const scanInput = document.getElementById('damage_qr_input');
@@ -731,12 +739,13 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // 1. DUPLICATE CHECK IN SCANNED ITEMS
-        if (SCANNED_DAMAGE_TAGS.has(tagCode)) {
+        const rows = document.querySelectorAll('#damageItemsContainer tr.item-row');
+        const hasScannedAlias = Array.from(rows).some(r => getRowScanAliases(r).includes(tagCode));
+        if (SCANNED_DAMAGE_TAGS.has(tagCode) || hasScannedAlias) {
             let existingPackRow = null;
-            const rows = document.querySelectorAll('#damageItemsContainer tr.item-row');
             rows.forEach(r => {
                 let scannedQrs = getRowScannedQrs(r);
-                if (scannedQrs.map(s => s.toUpperCase()).includes(tagCode)) {
+                if (scannedQrs.map(s => s.toUpperCase()).includes(tagCode) || getRowScanAliases(r).includes(tagCode)) {
                     const sel = r.querySelector('.variant-select');
                     const vId = sel ? sel.value : null;
                     const vObj = variantsList.find(v => String(v.id) === String(vId));
@@ -792,7 +801,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const vId = data.variant_id || data.id;
             const packQty = parseInt(data.scan_qty || data.damage_quantity || data.pack_quantity || 1);
-            const targetQty = isSeriesOrComp ? (data.is_series ? 1 : packQty) : 1;
+            const targetQty = 1;
             const unitCost = parseFloat(data.cost_per_unit || data.selling_price || data.mrp || 0);
 
             let cachedVariant = variantsList.find(v => String(v.id) === String(vId));
@@ -825,6 +834,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (targetRow) {
                 targetRow.dataset.scannedQrs = JSON.stringify([resolvedTag]);
+                targetRow.dataset.scanAliases = JSON.stringify(Array.from(new Set([tagCode, resolvedTag])));
                 targetRow.classList.add('row-scan-highlight');
                 setTimeout(() => targetRow.classList.remove('row-scan-highlight'), 1500);
                 targetRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
