@@ -320,9 +320,19 @@ if (!empty($authUser['shop_name'])) {
                             <?php endif; ?>
                             <?php if (hasPermission('stock', 'view')): ?>
                             <li><a href="<?= url('warehouse/stock') ?>" class="<?= ($activeMenu ?? '') === 'wh-stock' ? 'active' : '' ?>">Stock</a></li>
-                            <li><a href="<?= url('warehouse/adjustments') ?>" class="<?= ($activeMenu ?? '') === 'wh-adjustments' ? 'active' : '' ?>">Stock Adjustments</a></li>
-                            <li><a href="<?= url('warehouse/adjustments?adjustment_type=INCREASE') ?>" class="<?= ($activeMenu ?? '') === 'wh-adjustment-increase' ? 'active' : '' ?>">Stock Increase</a></li>
-                            <li><a href="<?= url('warehouse/adjustments?adjustment_type=DECREASE') ?>" class="<?= ($activeMenu ?? '') === 'wh-adjustment-decrease' ? 'active' : '' ?>">Stock Decrease</a></li>
+                            <?php $isAdjustmentMenuActive = in_array(($activeMenu ?? ''), ['wh-adjustments', 'wh-adjustment-increase', 'wh-adjustment-decrease'], true); ?>
+                            <li class="nav-item has-submenu">
+                                <a href="<?= url('warehouse/adjustments') ?>" class="nav-link <?= $isAdjustmentMenuActive ? 'active' : '' ?>" aria-expanded="<?= $isAdjustmentMenuActive ? 'true' : 'false' ?>">
+                                    <i class="bi bi-sliders"></i>
+                                    <span>Stock Adjustments</span>
+                                    <i class="bi bi-chevron-down submenu-arrow"></i>
+                                </a>
+                                <ul class="submenu <?= $isAdjustmentMenuActive ? 'show' : '' ?>">
+                                    <li><a href="<?= url('warehouse/adjustments') ?>" class="<?= ($activeMenu ?? '') === 'wh-adjustments' ? 'active' : '' ?>">All Adjustments</a></li>
+                                    <li><a href="<?= url('warehouse/adjustments?adjustment_type=INCREASE') ?>" class="<?= ($activeMenu ?? '') === 'wh-adjustment-increase' ? 'active' : '' ?>">Stock Increase</a></li>
+                                    <li><a href="<?= url('warehouse/adjustments?adjustment_type=DECREASE') ?>" class="<?= ($activeMenu ?? '') === 'wh-adjustment-decrease' ? 'active' : '' ?>">Stock Decrease</a></li>
+                                </ul>
+                            </li>
                             <?php endif; ?>
                             <?php if (hasPermission('wh_catalog', 'view')): ?>
                             <li><a href="<?= url('warehouse/catalog') ?>" class="<?= ($activeMenu ?? '') === 'wh-catalog' ? 'active' : '' ?>">Catalog</a></li>

@@ -23,7 +23,7 @@ class StockAdjustment {
         self::ensureQrCodesColumn();
         $sql = "SELECT adjustment_number, status
                 FROM stock_adjustments
-                WHERE qr_codes LIKE ? AND status IN ('PENDING', 'APPROVED')";
+                WHERE qr_codes LIKE ? AND adjustment_type = 'DECREASE' AND status IN ('PENDING', 'APPROVED')";
         $params = ['%"' . strtoupper(trim($tagCode)) . '"%'];
         if ($excludeAdjustmentId > 0) {
             $sql .= " AND id != ?";
