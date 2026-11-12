@@ -3364,12 +3364,13 @@ class WarehouseService {
                   COALESCE(p.source_type, '') <> 'OWN_PRODUCTION'
                   OR EXISTS (
                       SELECT 1
-                      FROM stock_transactions st_inward
-                      WHERE st_inward.variant_id = sb.variant_id
-                        AND st_inward.location_type = 'WAREHOUSE'
-                        AND st_inward.location_id = sb.location_id
-                        AND st_inward.stock_state = sb.stock_state
-                        AND st_inward.quantity > 0
+                      FROM production_batch_items pbi_inward
+                      JOIN production_batches pb_inward
+                        ON pb_inward.id = pbi_inward.production_batch_id
+                      WHERE pbi_inward.variant_id = sb.variant_id
+                        AND pb_inward.destination_warehouse_id = sb.location_id
+                        AND pb_inward.status = 'RECEIVED'
+                        AND (COALESCE(pbi_inward.received_qty, 0) + COALESCE(pbi_inward.damaged_qty, 0)) > 0
                   )
               )";
 
