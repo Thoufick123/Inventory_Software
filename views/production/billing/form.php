@@ -6,6 +6,7 @@ $existingItems = array_map(static function (array $item): array {
         'qc_item_id' => (int)$item['qc_item_id'],
         'product_name' => (string)$item['product_name'],
         'sku' => (string)($item['sku'] ?? ''),
+        'hsn_code' => (string)($item['hsn_code'] ?? '6109'),
         'size_name' => (string)($item['size_name'] ?? ''),
         'color_name' => (string)($item['color_name'] ?? ''),
         'mrp' => (float)$item['mrp'],
@@ -22,9 +23,7 @@ $existingItems = array_map(static function (array $item): array {
 ?>
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
     <div>
-        <?php if (!empty($prodUnit['logo_url'])): ?>
-            <img src="<?= $escape($prodUnit['logo_url']) ?>" alt="<?= $escape($prodUnit['name'] ?? 'Production unit') ?> logo" class="mb-2" style="max-width:180px;max-height:64px;object-fit:contain;">
-        <?php endif; ?>
+        <img id="productionUnitLogo" src="<?= $escape($prodUnit['logo_url'] ?? '') ?>" alt="<?= $escape($prodUnit['name'] ?? 'Production unit') ?> logo" class="mb-2 <?= empty($prodUnit['logo_url']) ? 'd-none' : '' ?>" style="max-width:180px;max-height:64px;object-fit:contain;">
         <h4 class="mb-1 fw-bold"><?= $isEdit ? 'Edit Production Bill' : 'Create Production Bill' ?></h4>
         <div class="text-muted small">Scan QR labels from available QC-passed Production Inventory.</div>
     </div>
@@ -35,6 +34,20 @@ $existingItems = array_map(static function (array $item): array {
     <?= CSRF::input() ?>
     <div class="row g-3">
         <div class="col-xl-4">
+            <div class="card border-0 shadow-sm mb-3">
+                <div class="card-header bg-white fw-semibold"><i class="bi bi-building-gear me-2 text-primary"></i>Production Unit</div>
+                <div class="card-body">
+                    <label class="form-label" for="productionUnitSelect">Bill issued by</label>
+                    <select class="form-select" name="production_unit_id" id="productionUnitSelect" required>
+                        <?php foreach ($productionUnits ?? [] as $unit): ?>
+                            <option value="<?= (int)$unit['id'] ?>" <?= (int)($bill['production_unit_id'] ?? $prodUnit['id'] ?? 0) === (int)$unit['id'] ? 'selected' : '' ?> data-name="<?= $escape($unit['name'] ?? '') ?>" data-code="<?= $escape($unit['code'] ?? '') ?>" data-manager="<?= $escape($unit['manager_name'] ?? '') ?>" data-address="<?= $escape($unit['address'] ?? '') ?>" data-phone="<?= $escape($unit['phone'] ?? '') ?>" data-gstin="<?= $escape($unit['gst_number'] ?? '') ?>" data-logo="<?= $escape($unit['logo_url'] ?? '') ?>">
+                                <?= $escape($unit['name'] ?? 'Production unit') ?><?= !empty($unit['code']) ? ' (' . $escape($unit['code']) . ')' : '' ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div id="productionUnitDetails" class="small text-muted mt-2" aria-live="polite"></div>
+                </div>
+            </div>
             <div class="card border-0 shadow-sm mb-3">
                 <div class="card-body">
                     <label class="form-label fw-semibold" for="buyerType">Bill To</label>
@@ -87,7 +100,7 @@ $existingItems = array_map(static function (array $item): array {
                         <div class="col-6"><label class="form-label">Cash amount</label><input class="form-control" type="number" step="0.01" min="0" name="cash_amount" value="<?= $escape($bill['cash_amount'] ?? '0.00') ?>"></div>
                         <div class="col-6"><label class="form-label">UPI amount</label><input class="form-control" type="number" step="0.01" min="0" name="upi_amount" value="<?= $escape($bill['upi_amount'] ?? '0.00') ?>"></div>
                     </div>
-                    <div class="mt-3"><label class="form-label">UPI reference</label><input class="form-control" name="upi_reference" value="<?= $escape($bill['upi_reference'] ?? '') ?>"></div>
+                    <div class="mt-3"><label class="form-label">UPI reference</label><input class="form-control" name="upi_reference" id="upiReference" maxlength="150" value="<?= $escape($bill['upi_reference'] ?? '') ?>"></div>
                     <div class="mt-3"><label class="form-label">Notes</label><textarea class="form-control" name="notes" rows="2"><?= $escape($bill['notes'] ?? '') ?></textarea></div>
                 </div>
             </div>
@@ -101,9 +114,26 @@ $existingItems = array_map(static function (array $item): array {
                     <div class="input-group">
                         <span class="input-group-text"><i class="bi bi-search"></i></span>
                         <input id="inventorySearch" class="form-control" autocomplete="off" placeholder="Scan QR label or type to search">
+                        <button class="btn btn-outline-primary" type="button" id="openCameraScanner" aria-label="Scan QR with camera" title="Scan QR with camera"><i class="bi bi-camera"></i><span class="ms-1">Camera</span></button>
                     </div>
                     <div id="searchResults" class="list-group mt-2"></div>
                     <div id="cartMessage" class="small text-muted mt-2">Only unbilled, available QC-passed QR pieces can be added.</div>
+                </div>
+            </div>
+
+            <div class="modal fade" id="cameraScanModal" tabindex="-1" aria-labelledby="cameraScanModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="cameraScanModalLabel">Scan Production QR</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div id="productionBillQrReader" class="w-100"></div>
+                            <div id="cameraScanMessage" class="small text-muted mt-2" aria-live="polite">Allow camera access to scan a production label.</div>
+                        </div>
+                        <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button></div>
+                    </div>
                 </div>
             </div>
 
@@ -149,8 +179,26 @@ $existingItems = array_map(static function (array $item): array {
     const resultBox = document.getElementById('searchResults');
     const cartBody = document.getElementById('billCart');
     const buyerType = document.getElementById('buyerType');
+    const unitSelect = document.getElementById('productionUnitSelect');
+    const unitDetails = document.getElementById('productionUnitDetails');
     const money = value => '₹' + Number(value || 0).toFixed(2);
     let searchTimer;
+    let cameraScanner = null;
+    let cameraScanBusy = false;
+
+    function updateProductionUnitDetails() {
+        const option = unitSelect.selectedOptions[0];
+        if (!option) {
+            unitDetails.textContent = 'No active production unit is available.';
+            return;
+        }
+        const unitLogo = document.getElementById('productionUnitLogo');
+        unitLogo.classList.toggle('d-none', !option.dataset.logo);
+        if (option.dataset.logo) unitLogo.src = option.dataset.logo;
+        unitLogo.alt = `${option.dataset.name || 'Production unit'} logo`;
+        unitDetails.textContent = [option.dataset.name, option.dataset.code, option.dataset.manager, option.dataset.address, option.dataset.phone, option.dataset.gstin ? `GSTIN: ${option.dataset.gstin}` : '']
+            .filter(Boolean).join(' · ');
+    }
 
     function updateBuyerFields() {
         const selectedType = buyerType.value;
@@ -159,6 +207,17 @@ $existingItems = array_map(static function (array $item): array {
         form.querySelectorAll('[data-required-for]').forEach(input => {
             input.required = input.dataset.requiredFor === selectedType;
         });
+    }
+
+    function updatePaymentFields() {
+        const method = document.getElementById('paymentMethod').value;
+        const isSplit = method === 'CASH_UPI';
+        const needsUpiReference = method === 'UPI' || isSplit;
+        document.getElementById('splitPaymentFields').classList.toggle('d-none', !isSplit);
+        form.elements.cash_amount.required = isSplit;
+        form.elements.upi_amount.required = isSplit;
+        document.getElementById('upiReference').required = needsUpiReference;
+        updateTotals();
     }
 
     initialItems.forEach(item => cart.set(Number(item.qc_item_id), {
@@ -200,6 +259,19 @@ $existingItems = array_map(static function (array $item): array {
             meta.className = 'small text-muted';
             meta.textContent = [item.sku, item.size_name, item.color_name, `${item.tags.length} piece(s)`].filter(Boolean).join(' · ');
             productCell.append(meta);
+            const hsnInput = document.createElement('input');
+            hsnInput.type = 'text';
+            hsnInput.inputMode = 'numeric';
+            hsnInput.maxLength = 8;
+            hsnInput.pattern = '(?:[0-9]{4}|[0-9]{6}|[0-9]{8})';
+            hsnInput.required = true;
+            hsnInput.className = 'form-control form-control-sm mt-2';
+            hsnInput.placeholder = 'HSN (4, 6 or 8 digits)';
+            hsnInput.setAttribute('aria-label', `HSN code for ${item.product_name}`);
+            hsnInput.name = `items[${index}][hsn_code]`;
+            hsnInput.value = item.hsn_code || '6109';
+            hsnInput.addEventListener('input', () => { item.hsn_code = hsnInput.value.trim(); });
+            productCell.append(hsnInput);
 
             const tagsWrap = document.createElement('div');
             tagsWrap.className = 'd-flex flex-wrap gap-1 mt-1';
@@ -435,6 +507,7 @@ $existingItems = array_map(static function (array $item): array {
                 qc_item_id: key,
                 product_name: item.product_name,
                 sku: item.sku || '',
+                hsn_code: item.hsn_code || '6109',
                 size_name: item.size_name || '',
                 color_name: item.color_name || '',
                 mrp: Number(item.mrp || 0),
@@ -539,11 +612,70 @@ $existingItems = array_map(static function (array $item): array {
             });
         }
     });
-    buyerType.addEventListener('change', updateBuyerFields);
-    document.getElementById('paymentMethod').addEventListener('change', event => {
-        document.getElementById('splitPaymentFields').classList.toggle('d-none', event.target.value !== 'CASH_UPI');
-        updateTotals();
+    const cameraModalElement = document.getElementById('cameraScanModal');
+    const cameraModal = bootstrap.Modal.getOrCreateInstance(cameraModalElement);
+    const cameraMessage = document.getElementById('cameraScanMessage');
+    async function stopCameraScanner() {
+        if (!cameraScanner) return;
+        try {
+            if (cameraScanner.isScanning) await cameraScanner.stop();
+            await cameraScanner.clear();
+        } catch (error) {
+            cameraMessage.textContent = 'Camera stopped.';
+        }
+        cameraScanner = null;
+        cameraScanBusy = false;
+    }
+    document.getElementById('openCameraScanner').addEventListener('click', () => cameraModal.show());
+    cameraModalElement.addEventListener('shown.bs.modal', async () => {
+        cameraMessage.textContent = 'Starting camera…';
+        if (typeof Html5Qrcode === 'undefined') {
+            cameraMessage.textContent = 'Camera scanner is unavailable in this browser.';
+            return;
+        }
+        try {
+            cameraScanner = new Html5Qrcode('productionBillQrReader');
+            await cameraScanner.start(
+                {facingMode: 'environment'},
+                {fps: 10, qrbox: {width: 250, height: 250}},
+                async decodedText => {
+                    if (cameraScanBusy) return;
+                    cameraScanBusy = true;
+                    search.value = decodedText.trim();
+                    cameraMessage.textContent = 'QR detected. Checking production inventory…';
+                    clearTimeout(searchTimer);
+                    await lookup();
+                    const exactResult = [...resultBox.querySelectorAll('button')].find(button => button.textContent.toUpperCase().includes(decodedText.trim().toUpperCase()));
+                    if (exactResult) {
+                        exactResult.click();
+                        cameraMessage.textContent = 'QR added to this bill.';
+                        cameraModal.hide();
+                    } else {
+                        cameraMessage.textContent = 'QR was not added. Check the inventory result and try again.';
+                        cameraScanBusy = false;
+                    }
+                },
+                () => {}
+            );
+            cameraMessage.textContent = 'Point the camera at a production inventory QR label.';
+        } catch (error) {
+            cameraMessage.textContent = error.message || 'Unable to start camera. Check camera permission and use HTTPS.';
+            cameraScanner = null;
+        }
     });
+    cameraModalElement.addEventListener('hidden.bs.modal', stopCameraScanner);
+    unitSelect.addEventListener('change', updateProductionUnitDetails);
+    document.getElementById('paymentMethod').addEventListener('change', updatePaymentFields);
+    buyerType.addEventListener('change', updateBuyerFields);
+    form.elements.company_phone.pattern = '\\+?[0-9][0-9 ()-]{6,19}';
+    form.elements.customer_phone.pattern = '\\+?[0-9][0-9 ()-]{6,19}';
+    form.elements.company_gstin.pattern = '[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]';
+    form.elements.customer_gstin.pattern = '[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]';
+    form.elements.company_gstin.maxLength = 15;
+    form.elements.customer_gstin.maxLength = 15;
+    form.elements.bill_date.required = true;
+    document.getElementById('paymentMethod').required = true;
+    updatePaymentFields();
     ['cash_amount', 'upi_amount'].forEach(name => form.elements[name]?.addEventListener('input', updateTotals));
     form.addEventListener('submit', event => {
         if (!cart.size || [...cart.values()].some(item => !item.tags.length)) {
@@ -557,6 +689,7 @@ $existingItems = array_map(static function (array $item): array {
         }
     });
     updateBuyerFields();
+    updateProductionUnitDetails();
     renderCart();
 })();
 </script>

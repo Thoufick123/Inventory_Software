@@ -287,13 +287,22 @@ class ProductionBillingController
     private function renderForm(?array $bill): void
     {
         $billItems = $bill ? $this->loadBillItems((int)$bill['id']) : [];
+        $productionUnits = function_exists('getScopedProductionUnits')
+            ? getScopedProductionUnits()
+            : ProductionUnit::getAll(['is_active' => 1]);
+        $savedUnit = !empty($bill['production_unit_id']) ? ProductionUnit::find((int)$bill['production_unit_id']) : null;
+        $prodUnit = $savedUnit ?: ProductionUnit::getActiveFacility();
+        if ($savedUnit && !array_filter($productionUnits, static fn(array $unit): bool => (int)$unit['id'] === (int)$savedUnit['id'])) {
+            $productionUnits[] = $savedUnit;
+        }
         Response::view('production.billing.form', [
             'pageTitle' => $bill ? 'Edit Production Bill' : 'Create Production Bill',
             'activeModule' => 'production',
             'activeMenu' => 'prod-billing',
             'bill' => $bill,
             'billItems' => $billItems,
-            'prodUnit' => ProductionUnit::getActiveFacility($bill['production_unit_id'] ?? null),
+            'prodUnit' => $prodUnit,
+            'productionUnits' => $productionUnits,
         ]);
     }
 
@@ -476,7 +485,20 @@ class ProductionBillingController
         $buyerType = strtoupper(trim((string)($_POST['buyer_type'] ?? 'COMPANY')));
         $billDate = trim((string)($_POST['bill_date'] ?? date('Y-m-d')));
         $paymentMethod = strtoupper(trim((string)($_POST['payment_method'] ?? 'CASH')));
+        $productionUnitId = (int)($_POST['production_unit_id'] ?? 0);
         $submittedItems = $_POST['items'] ?? [];
+
+        $scopedUnitId = function_exists('currentProductionUnitId') ? currentProductionUnitId() : null;
+        if ($scopedUnitId !== null) {
+            $productionUnitId = $scopedUnitId;
+        }
+        $productionUnit = $productionUnitId > 0
+            ? Database::fetchOne("SELECT id, is_active FROM production_units WHERE id = ?", [$productionUnitId])
+            : null;
+        if (!$productionUnit || (int)$productionUnit['is_active'] !== 1) {
+            Response::redirect($billId ? 'production/billing/edit/' . $billId : 'production/billing/create', 'error', 'Select an active production unit for this bill.');
+            return;
+        }
 
         if (!in_array($buyerType, ['COMPANY', 'CUSTOMER'], true)) {
             Response::redirect($billId ? 'production/billing/edit/' . $billId : 'production/billing/create', 'error', 'Select whether this bill is for a company or customer.');
@@ -489,6 +511,26 @@ class ProductionBillingController
             Response::redirect($billId ? 'production/billing/edit/' . $billId : 'production/billing/create', 'error', $requiredMessage);
             return;
         }
+        $validPhone = static fn(string $phone): bool => $phone === '' || (bool)preg_match('/^\+?[0-9][0-9 ()-]{6,19}$/', $phone);
+        $validGstin = static fn(string $gstin): bool => $gstin === '' || (bool)preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/', strtoupper($gstin));
+        if (
+            ($buyerType === 'COMPANY' && (
+                strlen($companyName) > 200 ||
+                !$validPhone($companyPhone) || strlen($companyPhone) > 30 ||
+                ($companyEmail !== '' && (!filter_var($companyEmail, FILTER_VALIDATE_EMAIL) || strlen($companyEmail) > 150)) ||
+                !$validGstin($companyGstin) || strlen($companyGstin) > 30
+            )) ||
+            ($buyerType === 'CUSTOMER' && (
+                strlen($customerName) > 150 || !$validPhone($customerPhone) || strlen($customerPhone) > 20 ||
+                !$validGstin($customerGstin) || strlen($customerGstin) > 30 ||
+                strlen($customerCity) > 100 || strlen($customerState) > 100
+            ))
+        ) {
+            Response::redirect($billId ? 'production/billing/edit/' . $billId : 'production/billing/create', 'error', 'Check the company or customer contact details, phone, email, and GSTIN.');
+            return;
+        }
+        $companyGstin = strtoupper($companyGstin);
+        $customerGstin = strtoupper($customerGstin);
         if ($buyerType === 'COMPANY') {
             $customerName = null;
             $customerPhone = null;
@@ -510,6 +552,15 @@ class ProductionBillingController
         }
         if (!in_array($paymentMethod, ['CASH', 'UPI', 'CASH_UPI', 'CARD', 'NET_BANKING', 'CREDIT'], true)) {
             Response::redirect($billId ? 'production/billing/edit/' . $billId : 'production/billing/create', 'error', 'Select a valid payment method.');
+            return;
+        }
+        $upiReference = trim((string)($_POST['upi_reference'] ?? ''));
+        if (in_array($paymentMethod, ['UPI', 'CASH_UPI'], true) && $upiReference === '') {
+            Response::redirect($billId ? 'production/billing/edit/' . $billId : 'production/billing/create', 'error', 'Enter the UPI reference for this payment.');
+            return;
+        }
+        if (strlen($upiReference) > 150) {
+            Response::redirect($billId ? 'production/billing/edit/' . $billId : 'production/billing/create', 'error', 'UPI reference must be 150 characters or fewer.');
             return;
         }
 
@@ -601,6 +652,7 @@ class ProductionBillingController
             }
 
             $unitPrice = filter_var($submitted['unit_price'] ?? null, FILTER_VALIDATE_FLOAT);
+            $hsnCode = trim((string)($submitted['hsn_code'] ?? $stock['hsn_code'] ?? '6109'));
             $gstType = strtoupper(trim((string)($submitted['gst_type'] ?? 'BOTH')));
             $taxInputType = strtoupper(trim((string)($submitted['tax_input_type'] ?? 'PERCENT')));
             $sgstRate = filter_var($submitted['sgst_rate'] ?? 0, FILTER_VALIDATE_FLOAT);
@@ -610,6 +662,7 @@ class ProductionBillingController
             $validTaxInputTypes = ['PERCENT', 'FIXED'];
             if (
                 $unitPrice === false || $unitPrice < 0 ||
+                !preg_match('/^(?:[0-9]{4}|[0-9]{6}|[0-9]{8})$/', $hsnCode) ||
                 !in_array($gstType, $validGstTypes, true) ||
                 !in_array($taxInputType, $validTaxInputTypes, true) ||
                 $sgstRate === false || $cgstRate === false || $igstRate === false ||
@@ -637,7 +690,7 @@ class ProductionBillingController
                 'tags' => $tags,
                 'quantity' => count($tags),
                 'unit_price' => round((float)$unitPrice, 2),
-                'hsn_code' => trim((string)($submitted['hsn_code'] ?? $stock['hsn_code'] ?? '6109')),
+                'hsn_code' => $hsnCode,
                 'gst_type' => $gstType,
                 'tax_input_type' => $taxInputType,
                 'sgst_rate' => round((float)$sgstRate, 3),
@@ -734,6 +787,7 @@ class ProductionBillingController
 
         $paymentStatus = $paymentMethod === 'CREDIT' ? 'PENDING' : 'PAID';
         $header = [
+            $productionUnitId,
             $buyerType,
             $companyName,
             $companyAddress,
@@ -752,7 +806,7 @@ class ProductionBillingController
             $taxType,
             $cashAmount,
             $upiAmount,
-            trim((string)($_POST['upi_reference'] ?? '')),
+            $upiReference,
             $totals['gross_amount'],
             $totals['discount_amount'],
             $totals['subtotal'],
@@ -770,18 +824,18 @@ class ProductionBillingController
                 $billNumber = 'PB-' . date('Y') . '-' . date('mdHis') . '-' . random_int(10, 99);
                 Database::execute(
                     "INSERT INTO production_bills
-                     (bill_number, buyer_type, company_name, company_address, company_phone, company_email, company_gstin,
+                     (bill_number, production_unit_id, buyer_type, company_name, company_address, company_phone, company_email, company_gstin,
                       customer_name, customer_phone, customer_address, customer_city, customer_state, customer_gstin,
                       bill_date, payment_method, payment_status, tax_type, cash_amount, upi_amount, upi_reference,
                       gross_amount, discount_amount, subtotal, cgst_amount, sgst_amount, igst_amount, tax_amount,
                       total_amount, notes, created_by)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     array_merge([$billNumber], $header, [(int)(Auth::id() ?? 0) ?: null])
                 );
                 $billId = (int)Database::lastInsertId();
             } else {
                 Database::execute(
-                    "UPDATE production_bills SET buyer_type = ?, company_name = ?, company_address = ?, company_phone = ?, company_email = ?,
+                    "UPDATE production_bills SET production_unit_id = ?, buyer_type = ?, company_name = ?, company_address = ?, company_phone = ?, company_email = ?,
                      company_gstin = ?, customer_name = ?, customer_phone = ?, customer_address = ?, customer_city = ?,
                      customer_state = ?, customer_gstin = ?, bill_date = ?, payment_method = ?, payment_status = ?,
                      tax_type = ?, cash_amount = ?, upi_amount = ?, upi_reference = ?, gross_amount = ?, discount_amount = ?,
@@ -799,14 +853,14 @@ class ProductionBillingController
                 Database::execute(
                     "INSERT INTO production_bill_items
                      (bill_id, qc_item_id, variant_id, product_name, sku, size_name, color_name, quantity, mrp,
-                      unit_price, discount_percentage, discount_amount, gst_percentage, gst_type, tax_input_type,
+                      hsn_code, unit_price, discount_percentage, discount_amount, gst_percentage, gst_type, tax_input_type,
                       sgst_rate, cgst_rate, igst_rate, taxable_amount, cgst_amount, sgst_amount, igst_amount,
                       tax_amount, total_amount)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     [
                         $billId, $stock['qc_item_id'], $stock['variant_id'] ?: null,
                         $stock['product_name'], $stock['sku'], $stock['size_name'], $stock['color_name'],
-                        $item['quantity'], $amounts['mrp'], $item['unit_price'], $amounts['discount_percentage'],
+                        $item['quantity'], $amounts['mrp'], $item['hsn_code'], $item['unit_price'], $amounts['discount_percentage'],
                         $amounts['discount_amount'], $item['gst_percentage'], $item['gst_type'], $item['tax_input_type'],
                         $item['sgst_rate'], $item['cgst_rate'], $item['igst_rate'], $amounts['taxable_amount'],
                         $amounts['cgst_amount'], $amounts['sgst_amount'], $amounts['igst_amount'],

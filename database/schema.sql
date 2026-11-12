@@ -1101,6 +1101,7 @@ DROP TABLE IF EXISTS `production_bills`;
 CREATE TABLE `production_bills` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `bill_number` varchar(50) NOT NULL,
+  `production_unit_id` int(10) unsigned DEFAULT NULL,
   `buyer_type` enum('COMPANY','CUSTOMER') NOT NULL DEFAULT 'COMPANY',
   `company_name` varchar(200) DEFAULT NULL,
   `company_address` text DEFAULT NULL,
@@ -1134,6 +1135,7 @@ CREATE TABLE `production_bills` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_production_bills_number` (`bill_number`),
+  KEY `idx_production_bills_unit` (`production_unit_id`),
   KEY `idx_production_bills_date` (`bill_date`),
   KEY `idx_production_bills_company` (`company_name`),
   KEY `idx_production_bills_customer_phone` (`customer_phone`),
