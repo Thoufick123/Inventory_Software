@@ -59,6 +59,8 @@ $definitions = array_merge($definitions, [
 
     ['module' => 'whatsapp_damage', 'action' => 'view', 'desc' => 'View WhatsApp defective and damaged items'],
     ['module' => 'whatsapp_damage', 'action' => 'create', 'desc' => 'Log new WhatsApp damage entry'],
+    ['module' => 'whatsapp_damage', 'action' => 'edit', 'desc' => 'Edit quarantined WhatsApp damage details'],
+    ['module' => 'whatsapp_damage', 'action' => 'delete', 'desc' => 'Delete quarantined WhatsApp damage records'],
     ['module' => 'whatsapp_damage', 'action' => 'outward', 'desc' => 'Dispatch damaged goods outward'],
     ['module' => 'whatsapp_damage', 'action' => 'print', 'desc' => 'Print damage gate pass and carton labels'],
 
@@ -189,6 +191,10 @@ $definitions = array_merge($definitions, [
     ['module' => 'warehouse_rework', 'action' => 'dispatch', 'desc' => 'Re-dispatch repaired goods back to warehouse'],
 
     // Permission actions currently required by route middleware.
+    ['module' => 'shop_cash', 'action' => 'edit', 'desc' => 'Edit manual shop cash ledger transactions'],
+    ['module' => 'shop_cash', 'action' => 'delete', 'desc' => 'Void manual shop cash ledger transactions'],
+    ['module' => 'sales', 'action' => 'edit', 'desc' => 'Edit Shop POS invoices'],
+    ['module' => 'sales', 'action' => 'delete', 'desc' => 'Void Shop POS invoices and reverse stock and payments'],
     ['module' => 'wh_sellers', 'action' => 'delete', 'desc' => 'Delete warehouse supplier'],
     ['module' => 'whatsapp_customers', 'action' => 'view', 'desc' => 'View WhatsApp channel customers'],
     ['module' => 'whatsapp_return_to_wh', 'action' => 'view', 'desc' => 'View WhatsApp returns to warehouse'],

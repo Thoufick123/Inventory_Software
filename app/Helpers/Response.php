@@ -406,15 +406,9 @@ function hasPermission(string $module, ?string $action = null): bool {
         }
     }
 
-    // Inward GRN verification / creation aliases (allows standard create/edit permissions to perform inward verification & scanning)
+    // Inward GRN verification / creation aliases (allows standard create permission to perform inward verification & scanning)
     if ($module === 'inward') {
-        if ($action === 'verify' && (in_array('inward.create', $userPermissions, true) || in_array('inward.edit', $userPermissions, true))) {
-            return true;
-        }
-        if ($action === 'create' && in_array('inward.verify', $userPermissions, true)) {
-            return true;
-        }
-        if ($action === 'edit' && in_array('inward.verify', $userPermissions, true)) {
+        if ($action === 'verify' && in_array('inward.create', $userPermissions, true)) {
             return true;
         }
     }
@@ -501,6 +495,21 @@ function hasPermission(string $module, ?string $action = null): bool {
             return true;
         }
         if ($action === 'edit' && in_array('backup.restore', $userPermissions, true)) {
+            return true;
+        }
+    }
+
+    // Warehouse: Stock Adjustments aliases & backward-compatibility
+    if ($module === 'stock_adjustments') {
+        if (in_array('stock_adjustments.' . $action, $userPermissions, true)) {
+            return true;
+        }
+        if (($action === 'create' || $action === 'edit') && in_array('stock.adjust', $userPermissions, true)) {
+            return true;
+        }
+    }
+    if ($module === 'stock' && $action === 'adjust') {
+        if (in_array('stock_adjustments.create', $userPermissions, true) || in_array('stock_adjustments.edit', $userPermissions, true)) {
             return true;
         }
     }

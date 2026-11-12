@@ -17,7 +17,7 @@ foreach ($variants as $variantOption) {
         <span class="text-muted">Scan products, preview QR labels for increases, and post stock changes immediately</span>
     </div>
     <div class="d-flex gap-2">
-        <?php if (hasPermission('stock', 'adjust')): ?>
+        <?php if (hasPermission('stock_adjustments', 'create')): ?>
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newAdjustmentModal">
             <i class="bi bi-plus-circle me-1"></i> New Adjustment
         </button>
@@ -83,7 +83,7 @@ foreach ($variants as $variantOption) {
                 <i class="bi bi-check-circle fs-1 text-success d-block mb-3"></i>
                 <h5 class="text-muted">No Adjustment Requests Found</h5>
                 <p class="text-muted small">Submit an adjustment request whenever a physical audit variance is detected.</p>
-                <?php if (hasPermission('stock', 'adjust')): ?>
+                <?php if (hasPermission('stock_adjustments', 'create')): ?>
                     <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newAdjustmentModal">
                         Create First Adjustment
                     </button>
@@ -162,15 +162,17 @@ foreach ($variants as $variantOption) {
                                 </td>
                                 <td class="text-end">
                                     <div class="d-inline-flex flex-wrap justify-content-end gap-1">
+                                        <?php if (hasPermission('stock_adjustments', 'view')): ?>
                                         <button type="button" class="btn btn-sm btn-outline-primary view-adjustment-btn" data-adjustment-id="<?= (int)$adj['id'] ?>">
                                             <i class="bi bi-eye me-1"></i>View
                                         </button>
-                                        <?php if (hasPermission('stock', 'adjust')): ?>
+                                        <?php endif; ?>
+                                        <?php if (hasPermission('stock_adjustments', 'edit')): ?>
                                             <button type="button" class="btn btn-sm btn-outline-secondary edit-adjustment-btn" data-adjustment-id="<?= (int)$adj['id'] ?>">
                                                 <i class="bi bi-pencil me-1"></i>Edit
                                             </button>
                                         <?php endif; ?>
-                                        <?php if ($adj['status'] === 'PENDING' && hasPermission('stock', 'adjust')): ?>
+                                        <?php if ($adj['status'] === 'PENDING' && hasPermission('stock_adjustments', 'edit')): ?>
                                             <form method="POST" action="<?= url('warehouse/adjustments/approve/' . $adj['id']) ?>" class="d-inline">
                                                 <?= CSRF::input() ?>
                                                 <input type="hidden" name="action" value="APPROVE">
@@ -179,6 +181,8 @@ foreach ($variants as $variantOption) {
                                                     <i class="bi bi-check-lg"></i> Approve
                                                 </button>
                                             </form>
+                                        <?php endif; ?>
+                                        <?php if ($adj['status'] === 'PENDING' && hasPermission('stock_adjustments', 'delete')): ?>
                                             <form method="POST" action="<?= url('warehouse/adjustments/approve/' . $adj['id']) ?>" class="d-inline">
                                                 <?= CSRF::input() ?>
                                                 <input type="hidden" name="action" value="REJECT">
@@ -189,6 +193,15 @@ foreach ($variants as $variantOption) {
                                             </form>
                                         <?php elseif ($adj['status'] === 'PENDING'): ?>
                                             <span class="badge bg-warning-subtle text-warning-emphasis">Pending Review</span>
+                                        <?php endif; ?>
+                                        <?php if (hasPermission('stock_adjustments', 'delete')): ?>
+                                            <form method="POST" action="<?= url('warehouse/adjustments/delete/' . $adj['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to permanently delete this stock adjustment record?');">
+                                                <?= CSRF::input() ?>
+                                                <input type="hidden" name="return_adjustment_type" value="<?= e($activeAdjustmentType) ?>">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete Adjustment Record">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
                                         <?php endif; ?>
                                     </div>
                                 </td>
@@ -255,7 +268,7 @@ foreach ($variants as $variantOption) {
     </div>
 </div>
 
-<?php if (hasPermission('stock', 'adjust')): ?>
+<?php if (hasPermission('stock_adjustments', 'edit')): ?>
 <div class="modal fade" id="editAdjustmentModal" tabindex="-1" aria-labelledby="editAdjustmentModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <form method="POST" action="#" id="editAdjustmentForm" data-metadata-url="<?= url('warehouse/adjustments') ?>">
@@ -290,7 +303,7 @@ foreach ($variants as $variantOption) {
 <script src="<?= url('assets/js/qrcode.min.js') ?>"></script>
 <script src="<?= asset('js/warehouse-adjustment-details.js') ?>?v=<?= file_exists(BASE_PATH . '/public/assets/js/warehouse-adjustment-details.js') ? filemtime(BASE_PATH . '/public/assets/js/warehouse-adjustment-details.js') : '1' ?>"></script>
 
-<?php if (hasPermission('stock', 'adjust')): ?>
+<?php if (hasPermission('stock_adjustments', 'create')): ?>
 <!-- Modal: Stock Adjustment -->
 <div class="modal fade" id="newAdjustmentModal" tabindex="-1" aria-labelledby="newAdjustmentModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -411,7 +424,7 @@ foreach ($variants as $variantOption) {
         </form>
     </div>
 </div>
-<?php if (!empty($selectedVariantId) && hasPermission('stock', 'adjust')): ?>
+<?php if (!empty($selectedVariantId) && hasPermission('stock_adjustments', 'create')): ?>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const modal = document.getElementById('newAdjustmentModal');

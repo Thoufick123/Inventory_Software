@@ -71,9 +71,9 @@ $displayMis = $batch['status'] === 'RECEIVED' ? (int) ($totalMissing ?? ($batch[
 $displayPct = $totalExpected > 0 ? round(($displayRec / $totalExpected) * 100) : ($batch['status'] === 'RECEIVED' ? 100 : 0);
 
 // Permissions
-$canVerify = hasPermission('inward', 'verify') || hasPermission('inward', 'create') || hasPermission('inward', 'edit');
-$canEdit = hasPermission('inward', 'edit') || hasPermission('inward', 'verify') || hasPermission('warehouse', 'edit') || hasPermission('inward', 'create');
-$canDelete = hasPermission('inward', 'delete') || hasPermission('inward', 'verify') || hasPermission('warehouse', 'delete') || hasPermission('warehouse', 'manage');
+$canVerify = hasPermission('inward', 'create');
+$canEdit = hasPermission('inward', 'edit');
+$canDelete = hasPermission('inward', 'delete');
 $isFullyReceived = ($batch['status'] === 'RECEIVED' && $displayMis === 0 && ($displayRec + $displayDmg) >= $totalExpected);
 $canScanOrEdit = $canVerify && ($batch['status'] === 'DISPATCHED' || !$isFullyReceived);
 ?>

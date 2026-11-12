@@ -182,7 +182,7 @@ class WarehouseController {
     // =========================================================================
 
     public function inwardList(): void {
-        if (!hasPermission('inward', 'view') && !hasPermission('warehouse', 'view')) {
+        if (!hasPermission('inward', 'view')) {
             Session::flash('error', 'Access denied: You do not have permission to view inward shipments.');
             Response::redirect(url('warehouse/dashboard'));
             return;
@@ -401,9 +401,9 @@ class WarehouseController {
     }
 
     public function viewInward(string $id): void {
-        if (!hasPermission('inward', 'view') && !hasPermission('warehouse', 'view')) {
+        if (!hasPermission('inward', 'view')) {
             Session::flash('error', 'Access denied: You do not have permission to view inward shipments.');
-            Response::redirect(url('warehouse/dashboard'));
+            Response::redirect(url('warehouse/inward'));
             return;
         }
         $batchId = (int)$id;
@@ -476,7 +476,7 @@ class WarehouseController {
 
     public function verifyInward(string $id): void {
         $batchId = (int)$id;
-        if (!hasPermission('inward', 'verify') && !hasPermission('inward', 'create') && !hasPermission('inward', 'edit')) {
+        if (!hasPermission('inward', 'create')) {
             Session::flash('error', 'Access denied: You do not have permission to verify or inward stock.');
             Response::redirect(url('warehouse/inward/view/' . $batchId));
             return;
@@ -513,7 +513,7 @@ class WarehouseController {
      * Show Edit Form for an Inward Shipment.
      */
     public function editInward(string $id): void {
-        if (!hasPermission('inward', 'edit') && !hasPermission('inward', 'verify') && !hasPermission('warehouse', 'edit') && !hasPermission('inward', 'create')) {
+        if (!hasPermission('inward', 'edit')) {
             Session::flash('error', 'Access denied: You do not have permission to edit inward shipments.');
             Response::redirect(url('warehouse/inward/view/' . $id));
             return;
@@ -588,7 +588,7 @@ class WarehouseController {
             return;
         }
 
-        if (!hasPermission('inward', 'edit') && !hasPermission('inward', 'verify') && !hasPermission('warehouse', 'edit') && !hasPermission('inward', 'create')) {
+        if (!hasPermission('inward', 'edit')) {
             Session::flash('error', 'Access denied: You do not have permission to edit inward shipments.');
             Response::redirect(url('warehouse/inward/view/' . $id));
             return;
@@ -644,7 +644,7 @@ class WarehouseController {
             return;
         }
 
-        if (!hasPermission('inward', 'delete') && !hasPermission('inward', 'verify') && !hasPermission('warehouse', 'delete') && !hasPermission('warehouse', 'manage')) {
+        if (!hasPermission('inward', 'delete')) {
             if (Request::isAjax()) {
                 Response::jsonError('Access denied: You do not have permission to delete inward shipments.', [], 403);
                 return;
@@ -734,7 +734,7 @@ class WarehouseController {
     }
 
     public function ajaxCrossCheckScan(): void {
-        if (!hasPermission('inward', 'verify') && !hasPermission('inward', 'create') && !hasPermission('inward', 'edit')) {
+        if (!hasPermission('inward', 'create')) {
             Response::jsonError('Access denied: You do not have permission to verify inward scans.', [], 403);
             return;
         }
@@ -815,7 +815,7 @@ class WarehouseController {
     }
 
     public function ajaxScanInward(): void {
-        if (!hasPermission('inward', 'verify') && !hasPermission('inward', 'create') && !hasPermission('inward', 'edit')) {
+        if (!hasPermission('inward', 'create')) {
             Response::jsonError('Access denied: You do not have permission to receive or inward stock via scan.', [], 403);
             return;
         }
@@ -7359,8 +7359,8 @@ class WarehouseController {
     // =========================================================================
 
     public function adjustmentList(): void {
-        if (!hasPermission('stock', 'view') && !hasPermission('stock', 'adjust') && !hasPermission('warehouse', 'view')) {
-            Session::flash('error', 'Access denied.');
+        if (!hasPermission('stock_adjustments', 'view')) {
+            Session::flash('error', 'Access denied: You do not have permission to view stock adjustments.');
             Response::redirect(url('warehouse/dashboard'));
             return;
         }
@@ -7416,7 +7416,7 @@ class WarehouseController {
     }
 
     public function ajaxAdjustmentDetails(string $id): void {
-        if (!hasPermission('stock', 'view')) {
+        if (!hasPermission('stock_adjustments', 'view')) {
             Response::json(['success' => false, 'message' => 'Access denied.'], 403);
             return;
         }
@@ -7459,8 +7459,8 @@ class WarehouseController {
     }
 
     public function updateAdjustmentMetadata(string $id): void {
-        if (!hasPermission('stock', 'adjust')) {
-            Response::redirect(url('warehouse/adjustments'), 'error', 'Access denied.');
+        if (!hasPermission('stock_adjustments', 'edit')) {
+            Response::redirect(url('warehouse/adjustments'), 'error', 'Access denied: You do not have permission to edit stock adjustments.');
             return;
         }
         if (!CSRF::validateRequest()) {
@@ -7523,7 +7523,7 @@ class WarehouseController {
     }
 
     public function ajaxLookupAdjustmentProduct(): void {
-        if (!hasPermission('stock', 'adjust')) {
+        if (!hasPermission('stock_adjustments', 'create')) {
             Response::json(['success' => false, 'message' => 'Access denied.'], 403);
             return;
         }
@@ -7706,7 +7706,7 @@ class WarehouseController {
             Response::json(['success' => false, 'message' => 'Security token expired. Refresh the page and try again.'], 403);
             return;
         }
-        if (!hasPermission('stock', 'adjust')) {
+        if (!hasPermission('stock_adjustments', 'create')) {
             Response::json(['success' => false, 'message' => 'Access denied.'], 403);
             return;
         }
@@ -7738,8 +7738,8 @@ class WarehouseController {
     }
 
     public function applyImmediateAdjustment(): void {
-        if (!hasPermission('stock', 'adjust')) {
-            Response::redirect(url('warehouse/adjustments'), 'error', 'Access denied: You do not have permission to adjust stock.');
+        if (!hasPermission('stock_adjustments', 'create')) {
+            Response::redirect(url('warehouse/adjustments'), 'error', 'Access denied: You do not have permission to create or apply stock adjustments.');
             return;
         }
         if (!CSRF::validateRequest()) {
@@ -7785,7 +7785,7 @@ class WarehouseController {
     }
 
     public function storeAdjustment(): void {
-        if (!hasPermission('stock', 'adjust')) {
+        if (!hasPermission('stock_adjustments', 'create')) {
             Session::flash('error', 'Access denied: You do not have permission to create stock adjustments.');
             Response::redirect(url('warehouse/adjustments'));
             return;
@@ -7822,8 +7822,14 @@ class WarehouseController {
     }
 
     public function approveAdjustment(string $id): void {
-        if (!hasPermission('stock', 'adjust')) {
+        $action = strtoupper($_POST['action'] ?? 'APPROVE');
+        if ($action === 'APPROVE' && !hasPermission('stock_adjustments', 'edit')) {
             Session::flash('error', 'Access denied: You do not have permission to approve stock adjustments.');
+            Response::redirect(url('warehouse/adjustments'));
+            return;
+        }
+        if ($action === 'REJECT' && !hasPermission('stock_adjustments', 'delete') && !hasPermission('stock_adjustments', 'edit')) {
+            Session::flash('error', 'Access denied: You do not have permission to reject stock adjustments.');
             Response::redirect(url('warehouse/adjustments'));
             return;
         }
@@ -7831,7 +7837,6 @@ class WarehouseController {
         $returnType = is_string($returnType) ? strtoupper(trim($returnType)) : '';
         $returnUrl = url('warehouse/adjustments' . (in_array($returnType, ['INCREASE', 'DECREASE'], true) ? '?adjustment_type=' . $returnType : ''));
         $adjId = (int)$id;
-        $action = $_POST['action'] ?? 'APPROVE';
         try {
             $userId = Session::userId() ?? 1;
             WarehouseService::approveAdjustment($adjId, $action, $userId);
@@ -7839,6 +7844,36 @@ class WarehouseController {
             Response::redirect($returnUrl, 'success', $msg);
         } catch (Exception $e) {
             Response::redirect($returnUrl, 'error', 'Approval failed: ' . $e->getMessage());
+        }
+    }
+
+    public function deleteAdjustment(string $id): void {
+        if (!hasPermission('stock_adjustments', 'delete')) {
+            Session::flash('error', 'Access denied: You do not have permission to delete stock adjustments.');
+            Response::redirect(url('warehouse/adjustments'));
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Security token expired. Refresh and try again.');
+            Response::redirect(url('warehouse/adjustments'));
+            return;
+        }
+        $adjId = (int)$id;
+        $adjustment = StockAdjustment::find($adjId);
+        if (!$adjustment) {
+            Response::redirect(url('warehouse/adjustments'), 'error', 'Stock adjustment not found.');
+            return;
+        }
+        try {
+            Database::execute("DELETE FROM stock_adjustments WHERE id = ?", [$adjId]);
+            AuditService::log('warehouse_adjustments', 'DELETE', 'stock_adjustments', $adjId, [
+                'adjustment_number' => $adjustment['adjustment_number'] ?? "#$adjId",
+                'type' => $adjustment['adjustment_type'] ?? '',
+                'quantity' => $adjustment['quantity'] ?? 0
+            ], null);
+            Response::redirect(url('warehouse/adjustments'), 'success', 'Stock adjustment record deleted successfully.');
+        } catch (\Throwable $e) {
+            Response::redirect(url('warehouse/adjustments'), 'error', 'Failed to delete adjustment: ' . $e->getMessage());
         }
     }
 

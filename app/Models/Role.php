@@ -26,7 +26,7 @@ class Role {
             'warehouse_rework', 'reports_production'
         ],
         'WAREHOUSE'  => [
-            'warehouse', 'inward', 'stock', 'wh_sellers', 'wh_catalog', 'wh_labels', 'purchases', 'purchases_returns', 'allocation',
+            'warehouse', 'inward', 'stock', 'stock_adjustments', 'wh_sellers', 'wh_catalog', 'wh_labels', 'purchases', 'purchases_returns', 'allocation',
             'allocation_outward', 'damage', 'returns', 'shop_requests',
             'warehouse_expenses', 'sales_channels',
             'reports_warehouse', 'reports_purchase', 'reports_inventory'
@@ -391,6 +391,11 @@ class Role {
             ['stock', 'edit', 'Edit Stock Records & Bin Assignments', 'stock.edit', null],
             ['stock', 'delete', 'Delete Stock Records & Bin Entries', 'stock.delete', null],
 
+            ['stock_adjustments', 'view', 'View Stock Adjustments & Physical Count History', 'stock_adjustments.view', null],
+            ['stock_adjustments', 'create', 'Create & Apply Stock Adjustments', 'stock_adjustments.create', null],
+            ['stock_adjustments', 'edit', 'Edit Stock Adjustment Metadata & Reason Notes', 'stock_adjustments.edit', null],
+            ['stock_adjustments', 'delete', 'Delete & Reject Pending Stock Adjustments', 'stock_adjustments.delete', null],
+
             ['wh_sellers', 'view', 'View Warehouse Suppliers & Vendor Ledgers', 'wh_sellers.view', null],
             ['wh_sellers', 'create', 'Add Warehouse Suppliers & Procurement Logs', 'wh_sellers.create', null],
             ['wh_sellers', 'edit', 'Edit Supplier Details & Vendor Contracts', 'wh_sellers.edit', null],
@@ -734,6 +739,7 @@ class Role {
                     'warehouse'          => ['name' => 'Dashboard', 'icon' => 'bi-speedometer2', 'desc' => 'Storage capacity, bay occupancy, and dispatch workflows', 'department' => 'WAREHOUSE'],
                     'inward'             => ['name' => 'Inward / GRN', 'icon' => 'bi-box-arrow-in-down', 'desc' => 'Goods receipt notes, production receipts, and seller inwarding', 'department' => 'WAREHOUSE'],
                     'stock'              => ['name' => 'Stock', 'icon' => 'bi-grid-3x3-gap', 'desc' => 'Bin/rack storage, live SKU quantities, count audits, and price editing', 'department' => 'WAREHOUSE'],
+                    'stock_adjustments'  => ['name' => 'Stock Adjustments', 'icon' => 'bi-sliders', 'desc' => 'Physical count variance audits, QR tag reconciliation, and manual stock updates', 'department' => 'WAREHOUSE'],
                     'wh_sellers'         => ['name' => 'Suppliers', 'icon' => 'bi-truck-front', 'desc' => 'Fabric/apparel suppliers, procurement logs, and vendor ledgers', 'department' => 'WAREHOUSE'],
                     'wh_catalog'         => ['name' => 'Catalog', 'icon' => 'bi-card-list', 'desc' => 'Master SKU codes, wholesale pricing, and barcode mappings', 'department' => 'WAREHOUSE'],
                     'wh_labels'          => ['name' => 'QR Labels', 'icon' => 'bi-qr-code', 'desc' => 'Shelf labels, bulk carton QR stickers, and barcode printing', 'department' => 'WAREHOUSE'],

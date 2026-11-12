@@ -18,28 +18,55 @@ class AuditService {
         ?int $userId = null
     ): void {
         try {
-            $userId = $userId ?? (class_exists('Session') ? Session::userId() : null);
-            $module = strtolower(trim($module));
-            $action = strtoupper(trim($action));
-
-            Database::execute(
-                "INSERT INTO audit_logs (user_id, module, action, reference_type, reference_id, 
-                    previous_value, new_value, ip_address, user_agent, created_at) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
-                [
-                    $userId,
-                    $module,
-                    $action,
-                    $referenceType,
-                    $referenceId,
-                    $previousValue !== null ? (is_string($previousValue) ? $previousValue : json_encode($previousValue, JSON_UNESCAPED_UNICODE)) : null,
-                    $newValue !== null ? (is_string($newValue) ? $newValue : json_encode($newValue, JSON_UNESCAPED_UNICODE)) : null,
-                    $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
-                    substr($_SERVER['HTTP_USER_AGENT'] ?? 'CLI/System', 0, 500),
-                ]
-            );
+            self::writeLog($module, $action, $referenceType, $referenceId, $previousValue, $newValue, $userId);
         } catch (Exception $e) {
             error_log("AuditService::log failed: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Persist an audit entry and fail the caller if it cannot be recorded.
+     */
+    public static function logStrict(
+        string $module,
+        string $action,
+        ?string $referenceType = null,
+        ?int $referenceId = null,
+        $previousValue = null,
+        $newValue = null,
+        ?int $userId = null
+    ): void {
+        self::writeLog($module, $action, $referenceType, $referenceId, $previousValue, $newValue, $userId);
+    }
+
+    private static function writeLog(
+        string $module,
+        string $action,
+        ?string $referenceType,
+        ?int $referenceId,
+        $previousValue,
+        $newValue,
+        ?int $userId
+    ): void {
+        $userId = $userId ?? (class_exists('Session') ? Session::userId() : null);
+        $result = Database::execute(
+            "INSERT INTO audit_logs (user_id, module, action, reference_type, reference_id,
+                previous_value, new_value, ip_address, user_agent, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+            [
+                $userId,
+                strtolower(trim($module)),
+                strtoupper(trim($action)),
+                $referenceType,
+                $referenceId,
+                $previousValue !== null ? (is_string($previousValue) ? $previousValue : json_encode($previousValue, JSON_UNESCAPED_UNICODE)) : null,
+                $newValue !== null ? (is_string($newValue) ? $newValue : json_encode($newValue, JSON_UNESCAPED_UNICODE)) : null,
+                $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
+                substr($_SERVER['HTTP_USER_AGENT'] ?? 'CLI/System', 0, 500),
+            ]
+        );
+        if ($result < 1) {
+            throw new RuntimeException('Audit log entry was not persisted.');
         }
     }
 

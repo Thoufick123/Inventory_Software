@@ -84,7 +84,14 @@ class ShopDamage {
                        cat.name as category_name, subcat.name as subcategory_name, subsubcat.name as sub_subcategory_name,
                        u.full_name as reported_by_name,
                        wa.allocation_number, wa.id as allocation_id, wa.status as allocation_status,
-                       ao.outward_number
+                       ao.outward_number,
+                       EXISTS (
+                           SELECT 1 FROM stock_transactions st
+                           WHERE st.reference_type = 'shop_damages' AND st.reference_id = sd.id
+                             AND st.variant_id = sd.variant_id AND st.location_type = 'SHOP'
+                             AND st.location_id = sd.shop_id AND st.stock_state = 'DAMAGED'
+                             AND st.transaction_type IN ('DAMAGE_IN', 'DAMAGE_EDIT_QUARANTINE')
+                       ) AS has_quarantine_movement
                 FROM shop_damages sd
                 JOIN shops sh ON sd.shop_id = sh.id
                 JOIN product_variants pv ON sd.variant_id = pv.id
@@ -138,8 +145,167 @@ class ShopDamage {
             $r['piece_tags'] = self::resolvePieceTags($r);
             $r['tag_code'] = implode(', ', $r['piece_tags']);
         }
+        unset($r);
+        self::addWarehouseReturnFlags($records);
 
         return $records;
+    }
+
+    /**
+     * Mark records whose tagged damaged pieces have already left the shop.
+     */
+    public static function addWarehouseReturnFlags(array &$records): void {
+        if (!$records) {
+            return;
+        }
+
+        $shopIds = array_values(array_unique(array_filter(array_map(
+            static fn(array $record): int => (int)($record['shop_id'] ?? 0),
+            $records
+        ))));
+        $variantIds = array_values(array_unique(array_filter(array_map(
+            static fn(array $record): int => (int)($record['variant_id'] ?? 0),
+            $records
+        ))));
+        if (!$shopIds || !$variantIds) {
+            return;
+        }
+
+        $shopPlaceholders = implode(',', array_fill(0, count($shopIds), '?'));
+        $variantPlaceholders = implode(',', array_fill(0, count($variantIds), '?'));
+        $returnRows = Database::fetchAll(
+            "SELECT DISTINCT wr.source_id AS shop_id, wr.return_number,
+                    wri.variant_id, wri.damaged_qty, wri.scanned_qr_codes
+             FROM warehouse_returns wr
+             JOIN warehouse_return_items wri ON wri.warehouse_return_id = wr.id
+             JOIN stock_transactions st ON st.reference_type = 'warehouse_returns'
+                AND st.reference_id = wr.id AND st.variant_id = wri.variant_id
+                AND st.location_type = 'SHOP' AND st.location_id = wr.source_id
+                AND st.stock_state = 'DAMAGED' AND st.transaction_type = 'TRANSFER_OUT'
+             WHERE wr.source_type = 'SHOP'
+               AND wr.source_id IN ($shopPlaceholders)
+               AND wri.variant_id IN ($variantPlaceholders)
+               AND wri.damaged_qty > 0",
+            array_merge($shopIds, $variantIds)
+        );
+
+        $returnsByStock = [];
+        foreach ($returnRows as $returnRow) {
+            $key = (int)$returnRow['shop_id'] . ':' . (int)$returnRow['variant_id'];
+            $rawTags = trim((string)($returnRow['scanned_qr_codes'] ?? ''));
+            $decodedTags = json_decode($rawTags, true);
+            $tagValues = is_array($decodedTags) ? $decodedTags : (preg_split('/[,|]/', $rawTags) ?: []);
+            $tagSet = [];
+            foreach ($tagValues as $tagValue) {
+                $tag = is_array($tagValue)
+                    ? (string)($tagValue['tag_code'] ?? $tagValue['qr_code'] ?? '')
+                    : (string)$tagValue;
+                $tag = strtoupper(trim($tag, " \t\n\r\0\x0B\"'"));
+                if ($tag !== '') {
+                    $tagSet[$tag] = true;
+                }
+            }
+            $returnsByStock[$key][] = [
+                'return_number' => $returnRow['return_number'],
+                'quantity' => (float)$returnRow['damaged_qty'],
+                'tags' => $tagSet,
+            ];
+        }
+
+        foreach ($records as &$record) {
+            $record['has_outward_return'] = false;
+            $record['outward_return_number'] = null;
+            $record['outward_return_quantity'] = 0;
+            $key = (int)($record['shop_id'] ?? 0) . ':' . (int)($record['variant_id'] ?? 0);
+            $damageTags = array_fill_keys(array_map('strtoupper', self::resolvePieceTags($record)), true);
+            $returnedTags = [];
+            $unmatchedReturnedQuantity = 0.0;
+            foreach ($returnsByStock[$key] ?? [] as $return) {
+                if (!$damageTags || !$return['tags']) {
+                    $record['has_outward_return'] = true;
+                    $unmatchedReturnedQuantity += $return['quantity'];
+                } else {
+                    $matchedTags = array_intersect_key($damageTags, $return['tags']);
+                    if ($matchedTags) {
+                        $returnedTags += $matchedTags;
+                        $record['has_outward_return'] = true;
+                    }
+                }
+                if ($record['has_outward_return'] && empty($record['outward_return_number'])) {
+                    $record['outward_return_number'] = $return['return_number'];
+                }
+            }
+            if ($record['has_outward_return']) {
+                $recordQuantity = (float)($record['quantity'] ?? 0);
+                $returnedQuantity = $returnedTags
+                    ? (float)count($returnedTags)
+                    : $unmatchedReturnedQuantity;
+                $record['outward_return_quantity'] = min($recordQuantity, $returnedQuantity);
+            }
+        }
+        unset($record);
+    }
+
+    /**
+     * Mark fully returned, QR-tracked damage records as returned to the warehouse.
+     */
+    public static function markReturnedToWarehouse(
+        int $shopId,
+        int $variantId,
+        int $quantity,
+        array $returnedTags,
+        int $returnId,
+        string $returnNumber,
+        ?int $userId
+    ): void {
+        $returnedTagSet = [];
+        foreach ($returnedTags as $tag) {
+            $normalizedTag = strtoupper(trim((string)$tag, " \t\n\r\0\x0B\"'"));
+            if ($normalizedTag !== '') {
+                $returnedTagSet[$normalizedTag] = true;
+            }
+        }
+        if (!$returnedTagSet) {
+            return;
+        }
+
+        $records = Database::fetchAll(
+            "SELECT * FROM shop_damages
+             WHERE shop_id = ? AND variant_id = ?
+               AND status IN ('LOGGED', 'INSPECTED')
+               AND COALESCE(source_type, '') <> 'INWARD_TRANSIT'
+             FOR UPDATE",
+            [$shopId, $variantId]
+        );
+        foreach ($records as $record) {
+            $damageTags = array_map('strtoupper', self::resolvePieceTags($record));
+            $recordQuantity = (int)$record['quantity'];
+            if (!$damageTags || count($damageTags) !== $recordQuantity || $recordQuantity > $quantity) {
+                continue;
+            }
+            if (count(array_intersect_key(array_fill_keys($damageTags, true), $returnedTagSet)) !== $recordQuantity) {
+                continue;
+            }
+
+            $notes = trim((string)($record['disposition_notes'] ?? ''));
+            $returnNote = "Returned to warehouse in {$returnNumber}.";
+            $newNotes = $notes === '' ? $returnNote : $notes . "\n" . $returnNote;
+            Database::execute(
+                "UPDATE shop_damages
+                 SET status = 'RETURN_TO_WH', disposition_notes = ?, updated_at = NOW()
+                 WHERE id = ?",
+                [$newNotes, (int)$record['id']]
+            );
+            AuditService::logStrict(
+                'SHOP',
+                'DAMAGE_RETURNED_TO_WAREHOUSE',
+                'shop_damages',
+                (int)$record['id'],
+                ['status' => $record['status'], 'disposition_notes' => $record['disposition_notes']],
+                ['status' => 'RETURN_TO_WH', 'disposition_notes' => $newNotes, 'warehouse_return_id' => $returnId],
+                $userId
+            );
+        }
     }
 
     /**

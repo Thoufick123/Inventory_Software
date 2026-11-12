@@ -4708,6 +4708,408 @@ class WhatsappController {
         ]);
     }
 
+    public function editWhatsappDamage(int $id): void {
+        if (!hasPermission('whatsapp_damage', 'edit')) {
+            $_SESSION['flash_error'] = 'Access denied: You do not have permission to edit WhatsApp damage records.';
+            Response::redirect(url('warehouse/whatsapp-orders/damage'));
+            return;
+        }
+
+        $channel = $this->getChannel();
+        $channelId = (int)($channel['id'] ?? 0);
+        $damage = ChannelDamage::find($id);
+        if (!$damage || (int)$damage['channel_id'] !== $channelId) {
+            $_SESSION['flash_error'] = 'Damage record not found for the active WhatsApp channel.';
+            Response::redirect(url('warehouse/whatsapp-orders/damage'));
+            return;
+        }
+        if (!$this->canEditWhatsappDamage($damage)) {
+            $_SESSION['flash_error'] = 'Only manual damage records that remain quarantined can be edited.';
+            Response::redirect(url('warehouse/whatsapp-orders/damage'));
+            return;
+        }
+
+        $channelIds = $this->getWhatsappChannelIds();
+        $placeholders = implode(',', array_fill(0, count($channelIds), '?'));
+        $variants = Database::fetchAll(
+            "SELECT pv.id, pv.sku, p.name AS product_name, p.code AS product_code,
+                    sz.name AS size_name, cl.name AS color_name,
+                    COALESCE((SELECT SUM(sb.quantity) FROM stock_balances sb
+                              WHERE sb.variant_id = pv.id AND sb.location_type = 'CHANNEL'
+                                AND sb.location_id IN ($placeholders) AND sb.stock_state = 'AVAILABLE'), 0) AS available_qty
+             FROM product_variants pv
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN sizes sz ON sz.id = pv.size_id
+             LEFT JOIN colors cl ON cl.id = pv.color_id
+             WHERE (pv.is_active = 1 AND EXISTS (
+                       SELECT 1 FROM stock_balances sb
+                       WHERE sb.variant_id = pv.id AND sb.location_type = 'CHANNEL'
+                         AND sb.location_id IN ($placeholders) AND sb.stock_state = 'AVAILABLE' AND sb.quantity > 0
+                   ))
+                OR pv.id = ?
+             ORDER BY p.name, pv.sku",
+            array_merge($channelIds, $channelIds, [(int)$damage['variant_id']])
+        );
+
+        Response::view('whatsapp_orders.damage.edit', [
+            'damage'       => $damage,
+            'channel'      => $channel,
+            'variants'     => $variants,
+            'activeModule' => 'whatsapp',
+            'activeMenu'   => 'wh-whatsapp-damage',
+            'pageTitle'    => 'Edit Damage: ' . $damage['damage_number'],
+        ]);
+    }
+
+    public function updateWhatsappDamage(int $id): void {
+        if (!hasPermission('whatsapp_damage', 'edit')) {
+            $_SESSION['flash_error'] = 'Access denied: You do not have permission to edit WhatsApp damage records.';
+            Response::redirect(url('warehouse/whatsapp-orders/damage'));
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            $_SESSION['flash_error'] = 'Invalid security token. Please try again.';
+            Response::back();
+        }
+
+        $channel = $this->getChannel();
+        $channelId = (int)($channel['id'] ?? 0);
+        $channelIds = $this->getWhatsappChannelIds();
+        $damage = ChannelDamage::find($id);
+        if (!$damage || (int)$damage['channel_id'] !== $channelId) {
+            $_SESSION['flash_error'] = 'Damage record not found for the active WhatsApp channel.';
+            Response::redirect(url('warehouse/whatsapp-orders/damage'));
+            return;
+        }
+        if (!$this->canEditWhatsappDamage($damage)) {
+            $_SESSION['flash_error'] = 'Only manual damage records that remain quarantined can be edited.';
+            Response::redirect(url('warehouse/whatsapp-orders/damage'));
+            return;
+        }
+
+        try {
+            $variantId = (int)($_POST['variant_id'] ?? 0);
+            $quantity = filter_var($_POST['quantity'] ?? null, FILTER_VALIDATE_INT);
+            $tagCode = trim((string)($_POST['tag_code'] ?? ''));
+            $sourceType = strtoupper(trim((string)($_POST['source_type'] ?? '')));
+            $defectType = strtoupper(trim((string)($_POST['defect_type'] ?? '')));
+            $costPerUnit = $_POST['cost_per_unit'] ?? null;
+            $totalLoss = $_POST['total_loss'] ?? null;
+            $damageReason = trim((string)($_POST['damage_reason'] ?? ''));
+            $defectNotes = trim((string)($_POST['defect_notes'] ?? ''));
+            $allowedSources = ['STORAGE_HANDLING', 'CUSTOMER_RETURN', 'EXPIRED_SPOILED', 'OTHER'];
+            $allowedDefects = ['FABRIC_DEFECT', 'COLOR_FADE', 'STITCHING_ERROR', 'PACKAGING_DAMAGE', 'WATER_STAIN', 'TRANSIT_DAMAGE', 'EXPIRED', 'OTHER'];
+            if ($variantId <= 0 || !is_int($quantity) || $quantity < 1
+                || !is_numeric($costPerUnit) || (float)$costPerUnit < 0
+                || !is_numeric($totalLoss) || (float)$totalLoss < 0
+                || !in_array($sourceType, $allowedSources, true)
+                || !in_array($defectType, $allowedDefects, true)
+                || $damageReason === '' || strlen($damageReason) > 255 || strlen($tagCode) > 2000) {
+                throw new RuntimeException('Please provide valid damage details.');
+            }
+
+            $variant = Database::fetchOne(
+                "SELECT pv.id, pv.product_id, pv.is_active, pv.sku, pv.qr_code, pv.qr_type, pv.pack_quantity,
+                        GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) AS is_complementary,
+                        p.code AS product_code, COALESCE(wc.category_type, 'NORMAL') AS category_type
+                 FROM product_variants pv
+                 JOIN products p ON p.id = pv.product_id
+                 LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+                 WHERE pv.id = ?",
+                [$variantId]
+            );
+            if (!$variant || ((int)$variant['is_active'] !== 1 && $variantId !== (int)$damage['variant_id'])) {
+                throw new RuntimeException('The selected product variant is not available.');
+            }
+            $categoryType = strtoupper((string)$variant['category_type']);
+            $isAggregate = !empty($variant['is_complementary']) || $categoryType === 'COMPLEMENTARY'
+                || $categoryType === 'SERIES'
+                || in_array(strtoupper((string)$variant['qr_type']), ['SERIES_BATCH', 'SERIES'], true)
+                || (int)$variant['pack_quantity'] > 1;
+            if (!$isAggregate && ($quantity !== 1 || $tagCode === '')) {
+                throw new RuntimeException('Normal products require one piece QR tag and quantity 1.');
+            }
+
+            $samePiece = $variantId === (int)$damage['variant_id']
+                && strtoupper(trim($tagCode)) === strtoupper(trim((string)($damage['tag_code'] ?? '')));
+            if ($tagCode !== '' && !$samePiece) {
+                $existingDamage = ChannelDamage::findActiveByPieceTag($tagCode, $channelIds, $variantId);
+                if ($existingDamage && (int)$existingDamage['id'] !== $id) {
+                    throw new RuntimeException("Piece tag '{$tagCode}' is already recorded as damaged.");
+                }
+                if (!$isAggregate) {
+                    $existingSale = Database::fetchOne(
+                        "SELECT s.invoice_number
+                         FROM sale_items si
+                         JOIN sales s ON s.id = si.sale_id
+                         WHERE (si.scanned_qr_codes LIKE ? OR si.scanned_qr_codes = ?)
+                           AND s.status NOT IN ('CANCELLED', 'RETURNED')
+                         LIMIT 1",
+                        ['%' . $tagCode . '%', $tagCode]
+                    );
+                    if ($existingSale) {
+                        throw new RuntimeException("Piece tag '{$tagCode}' was already sold in invoice {$existingSale['invoice_number']}.");
+                    }
+                }
+            }
+
+            $photoUrl = $damage['photo_url'] ?? null;
+            if (!empty($_FILES['photo']['name'])) {
+                if (($_FILES['photo']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                    throw new RuntimeException('The damage photo could not be uploaded.');
+                }
+                $extension = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
+                if (!in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true)) {
+                    throw new RuntimeException('Damage photos must be JPG, PNG, or WebP images.');
+                }
+                require_once BASE_PATH . '/app/Services/CloudinaryService.php';
+                $photoUrl = CloudinaryService::upload($_FILES['photo'], 'grm_inventory/channel/damages', 'image');
+                if (!$photoUrl) {
+                    throw new RuntimeException('The damage photo could not be saved.');
+                }
+            }
+
+            $userId = Session::userId();
+            Database::beginTransaction();
+            $locked = Database::fetchOne(
+                "SELECT * FROM channel_damages WHERE id = ? AND channel_id = ? FOR UPDATE",
+                [$id, $channelId]
+            );
+            if (!$locked || !$this->canEditWhatsappDamage($locked)) {
+                throw new RuntimeException('This damage record is no longer editable.');
+            }
+            $movementPlaceholders = implode(',', array_fill(0, count($channelIds), '?'));
+            $movement = Database::fetchOne(
+                "SELECT location_id FROM stock_transactions
+                 WHERE reference_type = 'channel_damages' AND reference_id = ?
+                   AND variant_id = ? AND location_type = 'CHANNEL'
+                   AND location_id IN ($movementPlaceholders)
+                   AND stock_state = 'DAMAGED'
+                   AND transaction_type IN ('DAMAGE_LOGGED', 'DAMAGE_EDIT_QUARANTINE')
+                 ORDER BY id DESC LIMIT 1",
+                array_merge([$id, (int)$locked['variant_id']], $channelIds)
+            );
+            if (!$movement) {
+                throw new RuntimeException('This record has no matching quarantine stock movement and cannot be safely edited.');
+            }
+            $oldLocationId = (int)$movement['location_id'];
+
+            StockService::decrease((int)$locked['variant_id'], 'CHANNEL', $oldLocationId, 'DAMAGED', (float)$locked['quantity'], 'DAMAGE_EDIT_RESTORE', 'channel_damages', $id, $userId, 'Restore old damage quantity before editing.');
+            StockService::increase((int)$locked['variant_id'], 'CHANNEL', $oldLocationId, 'AVAILABLE', (float)$locked['quantity'], 'DAMAGE_EDIT_RESTORE', 'channel_damages', $id, $userId, 'Restore old damage quantity before editing.');
+
+            $availablePlaceholders = implode(',', array_fill(0, count($channelIds), '?'));
+            $availableLocations = Database::fetchAll(
+                "SELECT location_id, quantity FROM stock_balances
+                 WHERE variant_id = ? AND location_type = 'CHANNEL'
+                   AND location_id IN ($availablePlaceholders) AND stock_state = 'AVAILABLE' AND quantity >= ?
+                 ORDER BY quantity DESC",
+                array_merge([$variantId], $channelIds, [(float)$quantity])
+            );
+            if (!$availableLocations) {
+                throw new RuntimeException('The selected product does not have enough good stock in WhatsApp channels.');
+            }
+            $newLocationId = (int)$availableLocations[0]['location_id'];
+            StockService::decrease($variantId, 'CHANNEL', $newLocationId, 'AVAILABLE', (float)$quantity, 'DAMAGE_EDIT_QUARANTINE', 'channel_damages', $id, $userId, 'Quarantine edited damage details.');
+            StockService::increase($variantId, 'CHANNEL', $newLocationId, 'DAMAGED', (float)$quantity, 'DAMAGE_EDIT_QUARANTINE', 'channel_damages', $id, $userId, 'Quarantine edited damage details.');
+
+            $previous = $locked;
+            if (!ChannelDamage::update($id, [
+                'variant_id' => $variantId,
+                'product_id' => (int)$variant['product_id'],
+                'tag_code' => $tagCode,
+                'source_type' => $sourceType,
+                'defect_type' => $defectType,
+                'quantity' => $quantity,
+                'cost_per_unit' => round((float)$costPerUnit, 2),
+                'estimated_cost' => round((float)$costPerUnit, 2),
+                'total_loss' => round((float)$totalLoss, 2),
+                'damage_reason' => $damageReason,
+                'defect_notes' => $defectNotes,
+                'photo_url' => $photoUrl,
+            ])) {
+                throw new RuntimeException('Damage details could not be saved.');
+            }
+            $updated = ChannelDamage::find($id);
+            AuditService::logStrict('WHATSAPP', 'DAMAGE_UPDATED', 'channel_damages', $id, $previous, $updated, $userId);
+            Database::commit();
+
+            $_SESSION['flash_success'] = "Damage record {$damage['damage_number']} was updated and stock balances were adjusted.";
+            Response::redirect(url('warehouse/whatsapp-orders/damage'));
+        } catch (Throwable $e) {
+            if (Database::inTransaction()) {
+                Database::rollback();
+            }
+            $_SESSION['flash_error'] = 'Unable to update damage record: ' . $e->getMessage();
+            Response::redirect(url('warehouse/whatsapp-orders/damage/edit/' . $id));
+        }
+    }
+
+    public function deleteWhatsappDamage(int $id): void {
+        if (!hasPermission('whatsapp_damage', 'delete')) {
+            $_SESSION['flash_error'] = 'Access denied: You do not have permission to delete WhatsApp damage records.';
+            Response::redirect(url('warehouse/whatsapp-orders/damage'));
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            $_SESSION['flash_error'] = 'Invalid security token. Please try again.';
+            Response::back();
+        }
+
+        $channel = $this->getChannel();
+        $channelId = (int)($channel['id'] ?? 0);
+        $channelIds = $this->getWhatsappChannelIds();
+        try {
+            Database::beginTransaction();
+            $damage = Database::fetchOne(
+                "SELECT * FROM channel_damages WHERE id = ? AND channel_id = ? FOR UPDATE",
+                [$id, $channelId]
+            );
+            if (!$damage) {
+                throw new RuntimeException('WhatsApp damage record was not found.');
+            }
+            $isInwardTransit = strtoupper((string)($damage['source_type'] ?? '')) === 'INWARD_TRANSIT';
+            $status = strtoupper((string)($damage['status'] ?? ''));
+            $outwardBatchId = (int)($damage['outward_batch_id'] ?? 0);
+            if (!in_array($status, ['LOGGED', 'INSPECTED', 'DISPATCHED', 'OUTWARD_BATCHED', 'RECEIVED_AT_WH'], true)
+                && $outwardBatchId <= 0
+                && !$isInwardTransit) {
+                throw new RuntimeException('This damage record has already been processed and cannot be deleted from this list.');
+            }
+            $movement = null;
+            if (!$isInwardTransit) {
+                $movementPlaceholders = implode(',', array_fill(0, count($channelIds), '?'));
+                $movement = Database::fetchOne(
+                    "SELECT location_id FROM stock_transactions
+                     WHERE reference_type = 'channel_damages' AND reference_id = ?
+                       AND variant_id = ? AND location_type = 'CHANNEL'
+                       AND location_id IN ($movementPlaceholders)
+                       AND stock_state = 'DAMAGED'
+                       AND transaction_type IN ('DAMAGE_LOGGED', 'DAMAGE_EDIT_QUARANTINE')
+                     ORDER BY id DESC LIMIT 1",
+                    array_merge([$id, (int)$damage['variant_id']], $channelIds)
+                );
+            }
+
+            $locationId = (int)($movement['location_id'] ?? 0);
+            $dispatchedQuantity = 0.0;
+            if ($outwardBatchId > 0 && $movement) {
+                $outwardItems = Database::fetchAll(
+                    "SELECT damaged_qty, scanned_qr_codes
+                     FROM warehouse_return_items
+                     WHERE warehouse_return_id = ? AND variant_id = ?",
+                    [$outwardBatchId, (int)$damage['variant_id']]
+                );
+                $damageTags = array_fill_keys(
+                    array_map('strtoupper', ChannelDamage::resolvePieceTags($damage)),
+                    true
+                );
+                $matchedTags = [];
+                $unmatchedDispatchedQuantity = 0.0;
+                foreach ($outwardItems as $outwardItem) {
+                    $decodedTags = json_decode((string)($outwardItem['scanned_qr_codes'] ?? ''), true);
+                    $outwardTags = is_array($decodedTags)
+                        ? $decodedTags
+                        : (preg_split('/[,|]/', (string)($outwardItem['scanned_qr_codes'] ?? '')) ?: []);
+                    $outwardTagSet = [];
+                    foreach ($outwardTags as $outwardTag) {
+                        if (is_array($outwardTag)) {
+                            $outwardTag = $outwardTag['tag_code'] ?? $outwardTag['qr_code'] ?? '';
+                        }
+                        $outwardTag = strtoupper(trim((string)$outwardTag, " \t\n\r\0\x0B\"'"));
+                        if ($outwardTag !== '') {
+                            $outwardTagSet[$outwardTag] = true;
+                        }
+                    }
+                    if ($damageTags && $outwardTagSet) {
+                        $matchedTags += array_intersect_key($damageTags, $outwardTagSet);
+                    } else {
+                        $unmatchedDispatchedQuantity += (float)$outwardItem['damaged_qty'];
+                    }
+                }
+                if ($matchedTags) {
+                    $dispatchedQuantity = min((float)$damage['quantity'], (float)count($matchedTags));
+                } elseif ($unmatchedDispatchedQuantity > 0) {
+                    $sameBatchRecords = Database::fetchOne(
+                        "SELECT COUNT(*) AS record_count
+                         FROM channel_damages
+                         WHERE outward_batch_id = ? AND channel_id = ? AND variant_id = ?",
+                        [$outwardBatchId, $channelId, (int)$damage['variant_id']]
+                    );
+                    if ((int)($sameBatchRecords['record_count'] ?? 0) === 1) {
+                        $dispatchedQuantity = min(
+                            (float)$damage['quantity'],
+                            $unmatchedDispatchedQuantity
+                        );
+                    } else {
+                        throw new RuntimeException('The linked return does not identify this damage item unambiguously; stock was not changed.');
+                    }
+                }
+                if ($dispatchedQuantity <= 0) {
+                    throw new RuntimeException('The linked warehouse return has no matching damaged quantity for this record; stock was not changed.');
+                }
+            } elseif ($movement && !$isInwardTransit && in_array($status, ['DISPATCHED', 'OUTWARD_BATCHED', 'RECEIVED_AT_WH'], true)) {
+                throw new RuntimeException('This damage record is marked as dispatched but has no linked return batch; stock was not changed.');
+            }
+
+            $restoreQuantity = $movement
+                ? max(0, (float)$damage['quantity'] - $dispatchedQuantity)
+                : 0;
+            $userId = Session::userId();
+            if ($restoreQuantity > 0) {
+                $damagedBalance = StockService::getBalance(
+                    (int)$damage['variant_id'],
+                    'CHANNEL',
+                    $locationId,
+                    'DAMAGED'
+                );
+                if ($damagedBalance < $restoreQuantity) {
+                    throw new RuntimeException(sprintf(
+                        'Cannot delete this damage record: only %s of %s remaining damaged units are quarantined. Reconcile the stock before deleting.',
+                        rtrim(rtrim(number_format($damagedBalance, 2, '.', ''), '0'), '.'),
+                        rtrim(rtrim(number_format($restoreQuantity, 2, '.', ''), '0'), '.')
+                    ));
+                }
+                StockService::decrease((int)$damage['variant_id'], 'CHANNEL', $locationId, 'DAMAGED', $restoreQuantity, 'DAMAGE_DELETE_RESTORE', 'channel_damages', $id, $userId, 'Restore remaining quarantined stock after audited damage deletion.');
+                StockService::increase((int)$damage['variant_id'], 'CHANNEL', $locationId, 'AVAILABLE', $restoreQuantity, 'DAMAGE_DELETE_RESTORE', 'channel_damages', $id, $userId, 'Restore remaining quarantined stock after audited damage deletion.');
+            }
+            AuditService::logStrict(
+                'WHATSAPP',
+                'DAMAGE_DELETED',
+                'channel_damages',
+                $id,
+                $damage,
+                [
+                    'dispatched_quantity' => $dispatchedQuantity,
+                    'restored_quantity' => $restoreQuantity,
+                    'quarantine_movement_found' => (bool)$movement,
+                ],
+                $userId
+            );
+            if (Database::execute("DELETE FROM channel_damages WHERE id = ? AND channel_id = ?", [$id, $channelId]) !== 1) {
+                throw new RuntimeException('Damage record could not be deleted.');
+            }
+            Database::commit();
+
+            $_SESSION['flash_success'] = $restoreQuantity > 0
+                ? "Damage record {$damage['damage_number']} was deleted; {$restoreQuantity} remaining quarantined unit(s) were restored."
+                : ($dispatchedQuantity > 0
+                    ? "Damage record {$damage['damage_number']} was deleted. Already dispatched stock was not restored again."
+                    : "Damage record {$damage['damage_number']} was deleted without changing stock balances.");
+        } catch (Throwable $e) {
+            if (Database::inTransaction()) {
+                Database::rollback();
+            }
+            $_SESSION['flash_error'] = 'Unable to delete damage record: ' . $e->getMessage();
+        }
+        Response::redirect(url('warehouse/whatsapp-orders/damage'));
+    }
+
+    private function canEditWhatsappDamage(array $damage): bool {
+        return in_array(strtoupper((string)($damage['status'] ?? '')), ['LOGGED', 'INSPECTED'], true)
+            && empty($damage['outward_batch_id'])
+            && strtoupper((string)($damage['source_type'] ?? '')) !== 'INWARD_TRANSIT';
+    }
+
     /**
      * WhatsApp Damaged Stock Outward Batches List
      */
@@ -4832,13 +5234,14 @@ class WhatsappController {
             // Insert into warehouse_return_items
             Database::execute(
                 "INSERT INTO warehouse_return_items 
-                 (warehouse_return_id, variant_id, returned_qty, good_qty, damaged_qty, defective_qty, classification)
-                 VALUES (?, ?, ?, 0, ?, 0, 'DAMAGED')",
+                 (warehouse_return_id, variant_id, returned_qty, good_qty, damaged_qty, defective_qty, classification, scanned_qr_codes)
+                 VALUES (?, ?, ?, 0, ?, 0, 'DAMAGED', ?)",
                 [
                     $returnId,
                     $dmg['variant_id'],
                     $qty,
-                    $qty
+                    $qty,
+                    json_encode(ChannelDamage::resolvePieceTags($dmg))
                 ]
             );
 

@@ -106,6 +106,56 @@ class CashController {
         ]);
     }
 
+    public function updateLedgerTransaction(string $id): void {
+        CSRF::verify();
+        $transactionId = (int)$id;
+        if (!hasPermission('shop_cash', 'edit')) {
+            Session::flash('error', 'Access denied: You do not have permission to edit cash transactions.');
+            Response::redirect(url('shop/cash'));
+            return;
+        }
+        $userId = Session::userId();
+        if ($transactionId <= 0 || !$userId) {
+            Session::flash('error', $transactionId <= 0 ? 'A valid cash transaction is required.' : 'Your session has expired. Please sign in again.');
+            Response::redirect(url('shop/cash'));
+            return;
+        }
+
+        $shop = ShopService::getActiveShop();
+        try {
+            CashService::updateManualLedgerTransaction($transactionId, (int)$shop['id'], $_POST, $userId);
+            Session::flash('success', 'Cash transaction updated and register balances recalculated.');
+        } catch (Exception $e) {
+            Session::flash('error', $e->getMessage());
+        }
+        Response::redirect(url('shop/cash'));
+    }
+
+    public function voidLedgerTransaction(string $id): void {
+        CSRF::verify();
+        $transactionId = (int)$id;
+        if (!hasPermission('shop_cash', 'delete')) {
+            Session::flash('error', 'Access denied: You do not have permission to void cash transactions.');
+            Response::redirect(url('shop/cash'));
+            return;
+        }
+        $userId = Session::userId();
+        if ($transactionId <= 0 || !$userId) {
+            Session::flash('error', $transactionId <= 0 ? 'A valid cash transaction is required.' : 'Your session has expired. Please sign in again.');
+            Response::redirect(url('shop/cash'));
+            return;
+        }
+
+        $shop = ShopService::getActiveShop();
+        try {
+            CashService::voidManualLedgerTransaction($transactionId, (int)$shop['id'], $userId);
+            Session::flash('success', 'Cash transaction voided; its original values remain in audit history.');
+        } catch (Exception $e) {
+            Session::flash('error', $e->getMessage());
+        }
+        Response::redirect(url('shop/cash'));
+    }
+
     /**
      * Start / Open a new Register Shift.
      */
