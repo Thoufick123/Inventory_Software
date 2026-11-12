@@ -2,19 +2,8 @@
     <div>
         <h2 class="mb-1"><i class="bi bi-receipt me-2 text-primary"></i><?= e($purchase['purchase_number']) ?></h2>
     </div>
-    <?php
-    $hasSupplies = false;
-    foreach ($items as $it) {
-        if (($it['item_type'] ?? '') === 'GENERAL_SUPPLY') $hasSupplies = true;
-    }
-    ?>
     <div class="d-flex gap-2 flex-wrap">
         <a href="<?= url('production/purchases') ?>" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
-        <?php if ($hasSupplies): ?>
-            <a href="<?= url('production/purchases/supply-qr/' . $purchase['id']) ?>" class="btn btn-success" target="_blank" rel="noopener" title="Print Other Garment Supplies QR Labels">
-                <i class="bi bi-tags-fill me-1"></i> Supply QR Labels
-            </a>
-        <?php endif; ?>
     </div>
 </div>
 
