@@ -86,6 +86,47 @@ class StockAdjustment {
         );
     }
 
+    public static function getAdjustmentQrCodes(array $adjustment): array {
+        $codes = json_decode((string)($adjustment['qr_codes'] ?? '[]'), true);
+        $codes = is_array($codes)
+            ? array_values(array_filter($codes, static fn($code): bool => is_scalar($code) && trim((string)$code) !== ''))
+            : [];
+        if ($codes || strtoupper((string)($adjustment['adjustment_type'] ?? '')) !== 'INCREASE') {
+            return array_map('strval', $codes);
+        }
+
+        $adjustmentNumber = trim((string)($adjustment['adjustment_number'] ?? ''));
+        if ($adjustmentNumber === '') {
+            return [];
+        }
+
+        $transaction = Database::fetchOne(
+            "SELECT notes
+             FROM stock_transactions
+             WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND location_id = ?
+               AND transaction_type = 'ADJUSTMENT_INCREASE' AND notes LIKE ?
+             ORDER BY id DESC
+             LIMIT 1",
+            [
+                (int)($adjustment['variant_id'] ?? 0),
+                (int)($adjustment['warehouse_id'] ?? 0),
+                '%Audit Ref: ' . $adjustmentNumber . '%',
+            ]
+        );
+        $notes = (string)($transaction['notes'] ?? '');
+        $marker = 'Added QR codes: ';
+        $markerPosition = strrpos($notes, $marker);
+        if ($markerPosition === false) {
+            return [];
+        }
+
+        $codes = array_map('trim', explode(',', substr($notes, $markerPosition + strlen($marker))));
+        return array_values(array_filter(
+            $codes,
+            static fn(string $code): bool => preg_match('/^[A-Z0-9_-]+$/i', $code) === 1
+        ));
+    }
+
     /**
      * Get all adjustments with filters.
      */

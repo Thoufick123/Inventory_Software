@@ -7297,8 +7297,7 @@ class WarehouseController {
             return;
         }
 
-        $qrCodes = json_decode((string)($adjustment['qr_codes'] ?? '[]'), true);
-        $qrCodes = is_array($qrCodes) ? array_values(array_filter($qrCodes, 'is_scalar')) : [];
+        $qrCodes = StockAdjustment::getAdjustmentQrCodes($adjustment);
         Response::json([
             'success' => true,
             'adjustment' => [
