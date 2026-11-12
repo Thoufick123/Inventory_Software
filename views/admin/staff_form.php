@@ -1170,9 +1170,18 @@ document.addEventListener('DOMContentLoaded', function () {
         updateActiveCounterAndSwitches();
         const roleOption = roleSelect ? roleSelect.options[roleSelect.selectedIndex] : null;
         const roleName = roleOption && roleOption.value ? roleOption.getAttribute('data-name') : 'Assigned Role';
+        const roleId = roleSelect ? roleSelect.value : '';
+        const rolePerms = (rolePermissionsMap[roleId] || []).map(Number).sort();
+        const staffPerms = (initialStaffPerms || []).map(Number).sort();
+        const isCustom = rolePerms.length !== staffPerms.length || !rolePerms.every((v, i) => v === staffPerms[i]);
         if (permSyncBadge) {
-            permSyncBadge.className = 'badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1';
-            permSyncBadge.innerHTML = `<i class="bi bi-shield-check me-1"></i>Active Permissions: <strong>${roleName}</strong>`;
+            if (isCustom) {
+                permSyncBadge.className = 'badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2.5 py-1';
+                permSyncBadge.innerHTML = `<i class="bi bi-pencil-square me-1"></i>Custom Permissions: <strong>${roleName}</strong> (Modified)`;
+            } else {
+                permSyncBadge.className = 'badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1';
+                permSyncBadge.innerHTML = `<i class="bi bi-shield-check me-1"></i>Role Defaults: <strong>${roleName}</strong>`;
+            }
         }
     } else {
         // In create mode: if role already selected (e.g. from old input), sync permissions
