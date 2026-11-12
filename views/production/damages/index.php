@@ -380,14 +380,6 @@
                                 </div>
                             </div>
                             <div id="damageRollScanStatus" class="small mt-1" role="status" aria-live="polite"></div>
-                            <div id="damageSupplyChoice" class="mt-2 p-2 border rounded d-none">
-                                <label for="damageSupplyChoiceSelect" class="form-label small fw-semibold mb-1">This supply QR matches multiple purchase lines. Select the item shown on the label.</label>
-                                <div class="input-group input-group-sm">
-                                    <select id="damageSupplyChoiceSelect" class="form-select"></select>
-                                    <button type="button" class="btn btn-success" onclick="addSelectedDamageSupply()">Add selected</button>
-                                    <button type="button" class="btn btn-outline-secondary" onclick="cancelDamageSupplyChoice()" aria-label="Cancel supply selection">Cancel</button>
-                                </div>
-                            </div>
                             <div class="border rounded mt-2 p-2">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
                                     <strong>Scanned labels</strong>
@@ -840,7 +832,6 @@
 let loadedEditRollsMap = {};
 let damageScannedLabels = [];
 let damageScanInProgress = false;
-let pendingDamageSupplyCode = '';
 let editDamageRollScanInProgress = false;
 let editDamageRollScanRequestId = 0;
 let activeDamageReasonEditor = null;
@@ -953,8 +944,12 @@ function renderDamageScannedLabels() {
         });
         const addReasonButton = document.createElement('button');
         addReasonButton.type = 'button';
-        addReasonButton.className = 'btn btn-sm btn-outline-primary flex-shrink-0';
-        addReasonButton.textContent = 'New';
+        addReasonButton.className = 'btn btn-sm btn-outline-primary rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0';
+        addReasonButton.style.width = '32px';
+        addReasonButton.style.height = '32px';
+        addReasonButton.title = 'Add damage reason';
+        addReasonButton.setAttribute('aria-label', 'Add damage reason');
+        addReasonButton.innerHTML = '<i class="bi bi-plus" aria-hidden="true"></i>';
         addReasonButton.addEventListener('click', () => addDamageReason(reasonSelect.id));
         reasonControls.append(reasonSelect, addReasonButton);
         reasonColumn.append(reasonLabel, reasonControls);
@@ -1024,10 +1019,21 @@ function scanDamageRollQr() {
             }
             return data;
         })
-        .then(data => {
+        .then(async data => {
             if (data.needs_supply_selection) {
-                showDamageSupplyChoices(data.code, data.candidates || []);
-                setDamageRollScanStatus(`Select the matching purchase line for ${data.code}.`);
+                const candidate = (data.candidates || [])[0];
+                if (!candidate) {
+                    throw new Error('No matching purchase supply was found for this label.');
+                }
+
+                setDamageRollScanStatus('Verifying matching purchase supply…');
+                const query = new URLSearchParams({code: data.code, supply_item_id: candidate.id});
+                const response = await fetch('<?= url('api/production/damages/scan-roll') ?>?' + query.toString());
+                const supplyData = await response.json();
+                if (!response.ok || !supplyData.success || supplyData.needs_supply_selection) {
+                    throw new Error(supplyData.message || 'The matching purchase supply could not be verified.');
+                }
+                addScannedDamageItem(supplyData, scanInput);
                 return;
             }
             addScannedDamageItem(data, scanInput);
@@ -1038,54 +1044,6 @@ function scanDamageRollQr() {
         .finally(() => {
             damageScanInProgress = false;
         });
-}
-
-function showDamageSupplyChoices(code, candidates) {
-    const panel = document.getElementById('damageSupplyChoice');
-    const select = document.getElementById('damageSupplyChoiceSelect');
-    if (!panel || !select) return;
-
-    pendingDamageSupplyCode = code;
-    select.replaceChildren();
-    candidates.forEach(candidate => {
-        const option = document.createElement('option');
-        option.value = candidate.id;
-        option.textContent = candidate.label;
-        select.appendChild(option);
-    });
-    panel.classList.remove('d-none');
-}
-
-function cancelDamageSupplyChoice() {
-    pendingDamageSupplyCode = '';
-    document.getElementById('damageSupplyChoice')?.classList.add('d-none');
-    setDamageRollScanStatus('Supply selection cancelled.', true);
-}
-
-async function addSelectedDamageSupply() {
-    const scanInput = document.getElementById('damageRollQrScan');
-    const select = document.getElementById('damageSupplyChoiceSelect');
-    const supplyItemId = select ? select.value : '';
-    if (!pendingDamageSupplyCode || !supplyItemId || damageScanInProgress) return;
-
-    damageScanInProgress = true;
-    setDamageRollScanStatus('Verifying selected purchase supply…');
-    try {
-        const query = new URLSearchParams({code: pendingDamageSupplyCode, supply_item_id: supplyItemId});
-        const response = await fetch('<?= url('api/production/damages/scan-roll') ?>?' + query.toString());
-        const data = await response.json();
-        if (!response.ok || !data.success || data.needs_supply_selection) {
-            throw new Error(data.message || 'The selected purchase line does not match this QR code.');
-        }
-
-        pendingDamageSupplyCode = '';
-        document.getElementById('damageSupplyChoice')?.classList.add('d-none');
-        addScannedDamageItem(data, scanInput);
-    } catch (error) {
-        setDamageRollScanStatus(error.message || 'Unable to verify this supply label.', true);
-    } finally {
-        damageScanInProgress = false;
-    }
 }
 
 function addScannedDamageItem(data, scanInput) {

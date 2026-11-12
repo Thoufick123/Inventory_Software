@@ -5603,7 +5603,18 @@ class ProductionController {
                 }
 
                 if ($level > 0) {
-                    $attrKey = mb_strtoupper(trim($row['attr_name']));
+                    $rawName = trim($row['attr_name']);
+                    $attrKey = mb_strtoupper($rawName);
+
+                    // Normalize Size & Color attribute names and keys to avoid duplicate cards (e.g. SIZE vs SIZES)
+                    if (in_array($attrKey, ['SIZE', 'SIZES', 'SIZE ATTRIBUTE', 'SIZE ATTRIBUTES', 'SIZES ATTRIBUTE', 'SIZES ATTRIBUTES'], true)) {
+                        $attrKey = 'SIZE';
+                        $row['attr_name'] = 'SIZE';
+                    } elseif (in_array($attrKey, ['COLOR', 'COLORS', 'COLOR ATTRIBUTE', 'COLOR ATTRIBUTES'], true)) {
+                        $attrKey = 'COLOR';
+                        $row['attr_name'] = 'COLOR';
+                    }
+
                     if (!isset($scopedAttrs[$attrKey]) || $level >= $scopedAttrs[$attrKey]['level']) {
                         $scopedAttrs[$attrKey] = [
                             'level' => $level,
@@ -5688,33 +5699,46 @@ class ProductionController {
                 $attr = $item['data'];
                 $attrNameUpper = mb_strtoupper(trim($attr['attr_name']));
 
-                if ($attrNameUpper === 'SIZE') {
+                if (in_array($attrNameUpper, ['SIZE', 'SIZES', 'SIZE ATTRIBUTE', 'SIZE ATTRIBUTES', 'SIZES ATTRIBUTE', 'SIZES ATTRIBUTES'], true)) {
                     $hasSizeAttr = true;
-                    $opts = !empty($attr['attr_options']) ? array_map('trim', explode(',', $attr['attr_options'])) : [];
-                    $opts = array_values(array_unique(array_filter($opts)));
+                    $attr['attr_name'] = 'SIZE';
 
-                    // If catalog style has defined sizes, prioritize/merge them
+                    // If catalog product style exists and has defined sizes, prioritize catalog style's sizes so they match exactly
                     if (!empty($catalogSizes)) {
-                        $opts = array_values(array_unique(array_merge($catalogSizes, $opts)));
-                    }
-                    if (empty($opts)) {
-                        $opts = $defaultSizeCodes;
+                        $opts = $catalogSizes;
+                    } else {
+                        $opts = !empty($attr['attr_options']) ? array_map('trim', explode(',', $attr['attr_options'])) : [];
+                        $opts = array_values(array_unique(array_filter($opts)));
+                        if (empty($opts)) {
+                            $opts = $defaultSizeCodes;
+                        }
                     }
                     $attr['attr_options'] = implode(',', $opts);
                     $attr['attr_type'] = 'MULTI_SELECT';
                     $attr['sort_order'] = 1;
-                } elseif ($attrNameUpper === 'COLOR') {
+                } elseif (in_array($attrNameUpper, ['COLOR', 'COLORS', 'COLOR ATTRIBUTE', 'COLOR ATTRIBUTES'], true)) {
                     $hasColorAttr = true;
-                    $opts = !empty($attr['attr_options']) ? array_map('trim', explode(',', $attr['attr_options'])) : [];
-                    $opts = array_values(array_unique(array_filter($opts)));
+                    $attr['attr_name'] = 'COLOR';
 
-                    // If catalog style has defined colors, prioritize/merge them
                     if (!empty($catalogColors)) {
-                        $opts = array_values(array_unique(array_merge($catalogColors, $opts)));
+                        $opts = $catalogColors;
+                    } else {
+                        $opts = !empty($attr['attr_options']) ? array_map('trim', explode(',', $attr['attr_options'])) : [];
+                        $opts = array_values(array_unique(array_filter($opts)));
+                    }
+
+                    // Suppress empty color attribute if no options or catalog colors exist
+                    if (empty($opts)) {
+                        continue;
                     }
                     $attr['attr_options'] = implode(',', $opts);
                     $attr['attr_type'] = 'MULTI_SELECT';
                     $attr['sort_order'] = 2;
+                } else {
+                    // Suppress empty select/multi_select attributes with zero options
+                    if (in_array($attr['attr_type'], ['SELECT', 'MULTI_SELECT'], true) && empty(trim($attr['attr_options'] ?? ''))) {
+                        continue;
+                    }
                 }
 
                 $finalAttributes[] = $attr;
@@ -5773,6 +5797,11 @@ class ProductionController {
         try {
             $attrId = (int)($_POST['attribute_id'] ?? 0);
             $attrName = mb_strtoupper(trim($_POST['attr_name'] ?? ''));
+            if (in_array($attrName, ['SIZE', 'SIZES', 'SIZE ATTRIBUTE', 'SIZE ATTRIBUTES', 'SIZES ATTRIBUTE', 'SIZES ATTRIBUTES'], true)) {
+                $attrName = 'SIZE';
+            } elseif (in_array($attrName, ['COLOR', 'COLORS', 'COLOR ATTRIBUTE', 'COLOR ATTRIBUTES'], true)) {
+                $attrName = 'COLOR';
+            }
             $optionsInput = trim($_POST['options'] ?? '');
 
             if (empty($optionsInput)) {
@@ -5840,6 +5869,11 @@ class ProductionController {
         try {
             $attrId = (int)($_POST['attribute_id'] ?? 0);
             $attrName = mb_strtoupper(trim($_POST['attr_name'] ?? ''));
+            if (in_array($attrName, ['SIZE', 'SIZES', 'SIZE ATTRIBUTE', 'SIZE ATTRIBUTES', 'SIZES ATTRIBUTE', 'SIZES ATTRIBUTES'], true)) {
+                $attrName = 'SIZE';
+            } elseif (in_array($attrName, ['COLOR', 'COLORS', 'COLOR ATTRIBUTE', 'COLOR ATTRIBUTES'], true)) {
+                $attrName = 'COLOR';
+            }
             $optionToDelete = mb_strtoupper(trim($_POST['option'] ?? ''));
 
             if (empty($optionToDelete)) {
@@ -5881,8 +5915,13 @@ class ProductionController {
             $subcategoryId = !empty($_POST['subcategory_id']) ? (int)$_POST['subcategory_id'] : null;
             $subSubcategoryId = !empty($_POST['sub_subcategory_id']) ? (int)$_POST['sub_subcategory_id'] : null;
             $attrName = mb_strtoupper(trim($_POST['attr_name'] ?? ''));
+            if (in_array($attrName, ['SIZE', 'SIZES', 'SIZE ATTRIBUTE', 'SIZE ATTRIBUTES', 'SIZES ATTRIBUTE', 'SIZES ATTRIBUTES'], true)) {
+                $attrName = 'SIZE';
+            } elseif (in_array($attrName, ['COLOR', 'COLORS', 'COLOR ATTRIBUTE', 'COLOR ATTRIBUTES'], true)) {
+                $attrName = 'COLOR';
+            }
             $attrType = in_array(strtoupper(trim($_POST['attr_type'] ?? '')), ['TEXT', 'NUMBER', 'SELECT', 'MULTI_SELECT']) ? strtoupper(trim($_POST['attr_type'])) : 'SELECT';
-            if ($attrName === 'SIZE') {
+            if ($attrName === 'SIZE' || $attrName === 'COLOR') {
                 $attrType = 'MULTI_SELECT';
             }
             $attrOptions = trim($_POST['attr_options'] ?? '');
@@ -7119,7 +7158,7 @@ class ProductionController {
                     $dec = is_string($ar['attributes']) ? json_decode($ar['attributes'], true) : $ar['attributes'];
                     if (is_array($dec)) {
                         foreach ($dec as $k => $v) {
-                            if (strtoupper($k) === 'SIZE' && is_array($v)) {
+                            if (in_array(strtoupper($k), ['SIZE', 'SIZES'], true) && is_array($v)) {
                                 foreach ($v as $sz) {
                                     $sz = trim((string)$sz);
                                     if ($sz !== '' && !in_array($sz, $parsedSizes, true)) {
@@ -7572,7 +7611,7 @@ class ProductionController {
                     $dec = is_string($ppr['attributes']) ? json_decode($ppr['attributes'], true) : $ppr['attributes'];
                     if (is_array($dec)) {
                         foreach ($dec as $k => $v) {
-                            if (strtoupper($k) === 'SIZE' && is_array($v) && !empty($v)) {
+                            if (in_array(strtoupper($k), ['SIZE', 'SIZES'], true) && is_array($v) && !empty($v)) {
                                 foreach ($v as $sz) {
                                     $sz = trim((string)$sz);
                                     if ($sz !== '' && !in_array($sz, $parsedSizes, true)) {
