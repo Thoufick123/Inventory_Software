@@ -28,19 +28,15 @@ $inwardedVariantIds= $inwardedVariantIds ?? [];
 $viewParam         = $_GET['view'] ?? '';
 $isViewingExisting = $viewParam === 'existing';
 $isGeneratingView  = in_array($viewParam, ['generate', 'existing'], true) || (!empty($selectedCatalogCode) && $viewParam !== 'batches') || (!empty($selectedVariantId) && $viewParam !== 'batches');
-$canEditWarehouseQr = hasPermission('wh_labels', 'create');
-$canInwardQrUnits = hasPermission('inward', 'verify')
+$canCreateWarehouseQr = hasPermission('wh_labels', 'create') || (function_exists('isAdmin') && isAdmin());
+$canEditWarehouseQr = hasPermission('wh_labels', 'edit') || (function_exists('isAdmin') && isAdmin());
+$canDeleteWarehouseQr = hasPermission('wh_labels', 'delete') || (function_exists('isAdmin') && isAdmin());
+$canViewWarehouseQr = hasPermission('wh_labels', 'view') || (function_exists('isAdmin') && isAdmin());
+$canInwardQrUnits = hasPermission('wh_labels', 'create')
+    || hasPermission('inward', 'verify')
     || hasPermission('inward', 'create')
     || hasPermission('purchases', 'receive')
-    || hasPermission('returns', 'classify')
-    || hasPermission('returns', 'receive')
-    || hasPermission('returns', 'view')
-    || hasPermission('stock', 'view')
-    || hasPermission('warehouse', 'view')
     || (function_exists('isAdmin') && isAdmin());
-$canDeleteWarehouseQr = hasPermission('wh_labels', 'create')
-    || hasPermission('wh_labels', 'edit')
-    || isAdmin();
 
 // Build items to generate labels for
 $activeVar = null;
@@ -2154,7 +2150,7 @@ foreach ($qrBatches as $batch) {
                                                     </td>
                                                     <td class="text-end pe-3">
                                                         <div class="d-flex align-items-center justify-content-end gap-1.5 flex-wrap">
-                                                            <?php if ($isPartial && hasPermission('wh_labels', 'create') && (hasPermission('inward', 'create') || hasPermission('inward', 'verify') || hasPermission('purchases', 'receive'))): ?>
+                                                            <?php if ($isPartial && $canCreateWarehouseQr && $canInwardQrUnits): ?>
                                                                 <a href="<?= $loadUrl ?>" class="btn btn-sm btn-success fw-bold px-2.5 py-1 shadow-2xs" title="Generate remaining QR labels and inward remaining pieces">
                                                                     <i class="bi bi-box-arrow-in-down me-1"></i>Inward Remaining (+<?= (int)$batch['remaining_qty'] ?>)
                                                                 </a>
@@ -2169,10 +2165,12 @@ foreach ($qrBatches as $batch) {
                                                                     </a>
                                                                 <?php endif; ?>
                                                             <?php else: ?>
-                                                                <?php if (hasPermission('wh_labels', 'create') && (hasPermission('inward', 'create') || hasPermission('inward', 'verify') || hasPermission('purchases', 'receive'))): ?>
+                                                                <?php if ($canCreateWarehouseQr && $canInwardQrUnits): ?>
                                                                 <a href="<?= $loadUrl ?>" class="btn btn-sm btn-success fw-bold px-2.5 py-1 shadow-2xs" title="Generate QR stickers and inward this product to inventory">
                                                                     <i class="bi bi-qr-code me-1"></i>Generate &amp; Inward (+<?= (int)$batch['total_qty'] ?>)
                                                                 </a>
+                                                                <?php else: ?>
+                                                                <span class="badge bg-light text-muted border px-2 py-1"><i class="bi bi-lock me-1"></i>View Only</span>
                                                                 <?php endif; ?>
                                                             <?php endif; ?>
                                                         </div>
@@ -2621,19 +2619,19 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                 <input type="text" id="filterTagInput" class="form-control" placeholder="Filter by Code or SKU..." onkeyup="filterRenderedStickers()">
             </div>
             <!-- Print Selected Stickers Button -->
-            <?php if (!$isViewingExisting && hasPermission('wh_labels', 'print')): ?>
+            <?php if (!$isViewingExisting && (hasPermission('wh_labels', 'view') || hasPermission('wh_labels', 'print'))): ?>
                 <button type="button" class="btn btn-sm btn-primary fw-semibold shadow-sm" id="btnPrintSelectedStickers" onclick="printSelectedStickers()" disabled title="Print only the selected checked stickers">
                     <i class="bi bi-check2-circle me-1"></i> Print Selected (<span id="btnSelectedCount">0</span>)
                 </button>
             <?php endif; ?>
             <!-- Print All Stickers Button -->
-            <?php if (hasPermission('wh_labels', 'print')): ?>
+            <?php if (hasPermission('wh_labels', 'view') || hasPermission('wh_labels', 'print')): ?>
             <button type="button" class="btn btn-sm btn-success fw-semibold shadow-sm" onclick="printAllGeneratedStickers()">
                 <i class="bi bi-printer me-1"></i> Print All Stickers
             </button>
             <?php endif; ?>
           
-            <?php if (hasPermission('wh_labels', 'print')): ?>
+            <?php if (hasPermission('wh_labels', 'view') || hasPermission('wh_labels', 'print')): ?>
             <button type="button" class="btn btn-sm btn-outline-dark fw-semibold shadow-sm" onclick="openPrinterSettingsModal()" title="Calibrate TSC TE244 printer alignment and dimensions">
                 <i class="bi bi-sliders me-1 text-warning"></i> Printer Settings
             </button>
@@ -2679,17 +2677,21 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                     <!-- New QR adjustment control -->
                     <div class="col-lg-5 col-md-12 d-flex align-items-center justify-content-lg-end gap-2 flex-wrap">
                         <!-- Add consecutive QR labels or extend an aggregate pack -->
+                        <?php if ($canEditWarehouseQr || $canCreateWarehouseQr): ?>
                         <button type="button" class="btn btn-sm btn-outline-success fw-bold bg-white shadow-2xs" onclick="produceNewAdjustmentQR()" title="Add QR labels or extend the selected master pack">
                             <i class="bi bi-plus-circle-fill text-success me-1"></i> Add QR / Units
                         </button>
+                        <?php endif; ?>
                         <?php if ($canDeleteWarehouseQr): ?>
                             <button type="button" class="btn btn-sm btn-outline-danger fw-bold bg-white shadow-2xs" id="btnDeleteSelectedQrs" onclick="deleteSelectedQrs()" disabled title="Delete selected QR labels and record the reason">
                                 <i class="bi bi-trash3 me-1"></i>Delete Selected QR(s)
                             </button>
                         <?php endif; ?>
+                        <?php if ($canInwardQrUnits): ?>
                         <button type="button" class="btn btn-sm btn-outline-success fw-bold bg-white shadow-2xs" id="btnQuickInwardSelected" onclick="confirmStickeredInwardAction(event)" title="Inward stickered product(s) to warehouse inventory stock">
                             <i class="bi bi-box-arrow-in-down-right me-1"></i>Inward to Stock
                         </button>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -2799,7 +2801,7 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                                         onclick="printSinglePieceSticker(<?= $index ?>)" title="Print Thermal Sticker">
                                     <i class="bi bi-printer"></i> Print
                                 </button>
-                                <?php if (!empty($item['is_series']) && hasPermission('wh_labels', 'create') && (empty($item['is_inwarded']) || $canInwardQrUnits)): ?>
+                                <?php if (!empty($item['is_series']) && $canEditWarehouseQr && (empty($item['is_inwarded']) || $canInwardQrUnits)): ?>
                                     <button type="button"
                                             class="btn btn-xs btn-outline-success flex-fill fw-semibold py-1.5"
                                             onclick="produceNewAdjustmentQR(<?= $index ?>)"
@@ -3114,8 +3116,8 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
 
             <?php 
             $canConfirmInward = ($currentSourceType === 'returns') 
-                ? (hasPermission('returns', 'classify') || hasPermission('returns', 'receive') || hasPermission('returns', 'view') || hasPermission('inward', 'create') || hasPermission('inward', 'verify') || hasPermission('purchases', 'receive') || hasPermission('stock', 'view') || hasPermission('warehouse', 'view') || (function_exists('isAdmin') && isAdmin()))
-                : (hasPermission('inward', 'create') || hasPermission('inward', 'verify') || hasPermission('purchases', 'receive') || (function_exists('isAdmin') && isAdmin()));
+                ? (hasPermission('returns', 'classify') || hasPermission('returns', 'receive') || hasPermission('wh_labels', 'create') || hasPermission('inward', 'create') || hasPermission('inward', 'verify') || hasPermission('purchases', 'receive') || (function_exists('isAdmin') && isAdmin()))
+                : (hasPermission('wh_labels', 'create') || hasPermission('inward', 'create') || hasPermission('inward', 'verify') || hasPermission('purchases', 'receive') || (function_exists('isAdmin') && isAdmin()));
             ?>
             <?php if ($canConfirmInward): ?>
             <div class="d-flex align-items-center gap-2">
@@ -3202,7 +3204,7 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
             </div>
             <div class="modal-footer bg-white border-top py-2">
                 <button type="button" class="btn btn-secondary px-4 fw-semibold" data-bs-dismiss="modal">Close</button>
-                <?php if (hasPermission('wh_labels', 'print')): ?>
+                <?php if (hasPermission('wh_labels', 'view') || hasPermission('wh_labels', 'print') || (function_exists('isAdmin') && isAdmin())): ?>
                     <button type="button" class="btn btn-success px-4 fw-semibold shadow-sm" id="btnSinglePrintModal" onclick="printSinglePieceFromModal()">
                         <i class="bi bi-printer-fill me-1"></i> Print This Tag
                     </button>
@@ -3462,6 +3464,7 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
 
 <script>
 const GENERATED_ITEMS = <?= json_encode($generatedItems ?? []) ?>;
+const CAN_CREATE_WAREHOUSE_QR = <?= $canCreateWarehouseQr ? 'true' : 'false' ?>;
 const CAN_EDIT_WAREHOUSE_QR = <?= $canEditWarehouseQr ? 'true' : 'false' ?>;
 const CAN_EDIT_INWARDED_WAREHOUSE_QR = <?= $canInwardQrUnits ? 'true' : 'false' ?>;
 const CAN_DELETE_WAREHOUSE_QR = <?= $canDeleteWarehouseQr ? 'true' : 'false' ?>;
@@ -5037,6 +5040,10 @@ function produceNewAdjustmentQR(itemIndex = null) {
         return;
     }
 
+    if (!CAN_EDIT_WAREHOUSE_QR && !CAN_CREATE_WAREHOUSE_QR) {
+        showPrintToast('You do not have permission to edit packs or add QR labels.', 'danger');
+        return;
+    }
     const activeIndices = GENERATED_ITEMS
         .map((item, index) => item && !item.is_deleted ? index : -1)
         .filter(index => index >= 0);

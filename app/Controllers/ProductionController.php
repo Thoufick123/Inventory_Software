@@ -11593,6 +11593,113 @@ class ProductionController {
         }
     }
 
+    /**
+     * AJAX: Quick Add QC Inspector into users table dynamically
+     */
+    public function ajaxAddQcInspector(): void {
+        header('Content-Type: application/json; charset=utf-8');
+
+        $fullName = trim((string)($_POST['full_name'] ?? ''));
+        $phone = trim((string)($_POST['phone'] ?? ''));
+        $empId = trim((string)($_POST['emp_id'] ?? ''));
+
+        if ($fullName === '' || mb_strlen($fullName) < 2) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Please enter a valid inspector name (at least 2 characters).'
+            ]);
+            return;
+        }
+
+        // Clean phone
+        $cleanPhone = null;
+        if (!empty($phone)) {
+            $digits = preg_replace('/\D+/', '', $phone);
+            if (strlen($digits) >= 10) {
+                $cleanPhone = substr($digits, -10);
+            } else {
+                $cleanPhone = $phone;
+            }
+        }
+
+        // Generate clean username from full name
+        $baseUsername = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $fullName));
+        if (empty($baseUsername)) {
+            $baseUsername = 'inspector';
+        }
+        $username = $baseUsername;
+        $counter = 1;
+        while (Database::fetchOne("SELECT id FROM users WHERE username = ?", [$username])) {
+            $username = $baseUsername . $counter;
+            $counter++;
+        }
+
+        // Auto-generate emp_id if empty
+        if (empty($empId)) {
+            $lastUser = Database::fetchOne("SELECT id FROM users ORDER BY id DESC LIMIT 1");
+            $nextId = ($lastUser ? (int)$lastUser['id'] : 0) + 1;
+            $empId = 'QC-' . str_pad((string)$nextId, 4, '0', STR_PAD_LEFT);
+        }
+
+        // Check if emp_id already exists, if so make it unique
+        $checkEmp = Database::fetchOne("SELECT id FROM users WHERE emp_id = ?", [$empId]);
+        if ($checkEmp) {
+            $empId = $empId . '-' . time();
+        }
+
+        // Generate email if not given
+        $email = $username . '@grm.local';
+
+        // Find appropriate role (QC or Production Staff)
+        $role = Database::fetchOne("SELECT id FROM roles WHERE slug IN ('qc', 'qc-inspector', 'production-staff') OR name LIKE '%QC%' OR name LIKE '%Production Staff%' ORDER BY id ASC LIMIT 1");
+        $roleId = $role ? (int)$role['id'] : 4;
+
+        $passwordHash = password_hash('grm@123', PASSWORD_BCRYPT);
+
+        try {
+            Database::execute(
+                "INSERT INTO users (username, emp_id, email, password_hash, full_name, phone, role_id, department, is_active, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 'QUALITY CONTROL', 1, NOW(), NOW())",
+                [
+                    $username,
+                    $empId,
+                    $email,
+                    $passwordHash,
+                    $fullName,
+                    $cleanPhone,
+                    $roleId
+                ]
+            );
+            $newId = (int)Database::lastInsertId();
+
+            if (class_exists('AuditService')) {
+                try {
+                    AuditService::log('staff', 'create', 'users', $newId, null, [
+                        'Full Name'  => $fullName,
+                        'Username'   => $username,
+                        'Department' => 'QUALITY CONTROL',
+                        'Source'     => 'QC Initialize Quick-Add'
+                    ]);
+                } catch (\Throwable $e) {}
+            }
+
+            echo json_encode([
+                'success' => true,
+                'message' => 'QC Inspector added successfully.',
+                'inspector' => [
+                    'id'        => $newId,
+                    'full_name' => $fullName,
+                    'emp_id'    => $empId
+                ]
+            ]);
+        } catch (\Throwable $e) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Database error: ' . $e->getMessage()
+            ]);
+        }
+    }
+
     public function deleteQC(string $id): void {
         if (!CSRF::validateRequest()) {
             Session::flash('error', 'Invalid security token. Please try again.');

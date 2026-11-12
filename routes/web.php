@@ -493,6 +493,7 @@ class Router {
         $this->get('production/qc/view/{id}', 'ProductionController', 'viewQCBatch', ['AuthMiddleware', ['PermissionMiddleware', 'qc', 'view']]);
         $this->get('production/qc/create', 'ProductionController', 'createQC', ['AuthMiddleware', ['PermissionMiddleware', 'qc', 'create']]);
         $this->post('production/qc/store', 'ProductionController', 'storeQC', ['AuthMiddleware', ['PermissionMiddleware', 'qc', 'create']]);
+        $this->post('production/qc/ajax-add-inspector', 'ProductionController', 'ajaxAddQcInspector', ['AuthMiddleware', ['PermissionMiddleware', 'qc', 'create']]);
         $this->get('production/qc/inspect/{id}', 'ProductionController', 'inspectQC', ['AuthMiddleware', ['PermissionMiddleware', 'qc', 'edit']]);
         $this->post('production/qc/update/{id}', 'ProductionController', 'updateQC', ['AuthMiddleware', ['PermissionMiddleware', 'qc', 'edit']]);
         $this->post('production/qc/save-ajax/{id}', 'ProductionController', 'saveQCAjax', ['AuthMiddleware', ['PermissionMiddleware', 'qc', 'edit']]);
@@ -560,7 +561,7 @@ class Router {
         // Stock
         $this->get('warehouse/stock', 'WarehouseController', 'stockList', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'view']]);
         $this->get('warehouse/stock/detail/{id}', 'WarehouseController', 'stockDetail', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'view']]);
-        $this->post('warehouse/stock/regenerate-qr/{id}', 'WarehouseController', 'regenerateStockQR', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'print']]);
+        $this->post('warehouse/stock/regenerate-qr/{id}', 'WarehouseController', 'regenerateStockQR', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'create']]);
         $this->post('warehouse/stock/quick-inward', 'WarehouseController', 'storeQuickInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'create']]);
         $this->post('warehouse/stock/update-price', 'WarehouseController', 'ajaxUpdateProductPrice', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'edit']]);
         $this->post('api/warehouse/stock/update-price', 'WarehouseController', 'ajaxUpdateProductPrice', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'edit']]);
@@ -665,12 +666,12 @@ class Router {
         $this->get('warehouse/labels', 'WarehouseController', 'labels', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'view']]);
         $this->get('warehouse/labels/ajax-source/{type}/{id}', 'WarehouseController', 'ajaxLabelSourceData', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'view']]);
         $this->post('warehouse/labels/generate', 'WarehouseController', 'generateLabels', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'create']]);
-        $this->post('warehouse/labels/produce-new-qr', 'WarehouseController', 'produceNewQrAjax', ['AuthMiddleware']);
-        $this->post('api/warehouse/labels/produce-new-qr', 'WarehouseController', 'produceNewQrAjax', ['AuthMiddleware']);
-        $this->post('warehouse/labels/confirm-stickered-inward', 'WarehouseController', 'confirmStickeredInward', ['AuthMiddleware']);
-        $this->post('api/warehouse/labels/confirm-stickered-inward', 'WarehouseController', 'confirmStickeredInward', ['AuthMiddleware']);
-        $this->post('warehouse/labels/delete-qr', 'WarehouseController', 'deleteWarehouseQrAjax', ['AuthMiddleware']);
-        $this->post('api/warehouse/labels/delete-qr', 'WarehouseController', 'deleteWarehouseQrAjax', ['AuthMiddleware']);
+        $this->post('warehouse/labels/produce-new-qr', 'WarehouseController', 'produceNewQrAjax', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'edit']]);
+        $this->post('api/warehouse/labels/produce-new-qr', 'WarehouseController', 'produceNewQrAjax', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'edit']]);
+        $this->post('warehouse/labels/confirm-stickered-inward', 'WarehouseController', 'confirmStickeredInward', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'create']]);
+        $this->post('api/warehouse/labels/confirm-stickered-inward', 'WarehouseController', 'confirmStickeredInward', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'create']]);
+        $this->post('warehouse/labels/delete-qr', 'WarehouseController', 'deleteWarehouseQrAjax', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'delete']]);
+        $this->post('api/warehouse/labels/delete-qr', 'WarehouseController', 'deleteWarehouseQrAjax', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'delete']]);
 
         // Shop Requests, WhatsApp & Website Channel Orders
         $this->get('warehouse/shop-requests', 'WarehouseController', 'shopRequestList', ['AuthMiddleware', ['PermissionMiddleware', 'shop_requests', 'view']]);

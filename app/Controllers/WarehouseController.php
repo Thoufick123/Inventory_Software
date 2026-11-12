@@ -2836,7 +2836,7 @@ class WarehouseController {
      * Re-generate QR Code stickers for active/available warehouse stock.
      */
     public function regenerateStockQR(string $id): void {
-        if (!hasPermission('wh_labels', 'create') && !hasPermission('wh_labels', 'print') && !hasPermission('stock', 'view')) {
+        if (!hasPermission('wh_labels', 'create') && !hasPermission('wh_labels', 'edit') && !(function_exists('isAdmin') && isAdmin())) {
             Session::flash('error', 'Access denied: You do not have permission to generate QR tags.');
             Response::redirect(url('warehouse/stock'));
             return;
@@ -11637,7 +11637,7 @@ class WarehouseController {
     // =========================================================================
 
     public function labels(): void {
-        if (!hasPermission('wh_labels', 'view') && !hasPermission('stock', 'view') && !hasPermission('warehouse', 'view')) {
+        if (!hasPermission('wh_labels', 'view') && !(function_exists('isAdmin') && isAdmin())) {
             Session::flash('error', 'Access denied.');
             Response::redirect(url('warehouse/dashboard'));
             return;
@@ -12006,7 +12006,7 @@ class WarehouseController {
     }
 
     public function ajaxLabelSourceData(string $type, string $id): void {
-        if (!hasPermission('wh_labels', 'view') && !hasPermission('stock', 'view') && !hasPermission('warehouse', 'view')) {
+        if (!hasPermission('wh_labels', 'view') && !(function_exists('isAdmin') && isAdmin())) {
             Response::json(['success' => false, 'message' => 'Access denied.'], 403);
             return;
         }
@@ -12145,7 +12145,7 @@ class WarehouseController {
     }
 
     public function generateLabels(): void {
-        if (!hasPermission('wh_labels', 'create')) {
+        if (!hasPermission('wh_labels', 'create') && !(function_exists('isAdmin') && isAdmin())) {
             Session::flash('error', 'Access denied.');
             Response::redirect(url('warehouse/labels'));
             return;
@@ -12184,8 +12184,8 @@ class WarehouseController {
      */
     public function confirmStickeredInward(): void {
         $isReturnInward = ($_POST['return_inward'] ?? '0') === '1';
-        $canInwardStock = hasPermission('inward', 'verify') || hasPermission('inward', 'create') || hasPermission('purchases', 'receive') || (function_exists('isAdmin') && isAdmin());
-        $canInwardReturn = hasPermission('returns', 'classify') || hasPermission('returns', 'receive') || hasPermission('returns', 'view') || hasPermission('stock', 'view') || hasPermission('warehouse', 'view') || $canInwardStock;
+        $canInwardStock = hasPermission('wh_labels', 'create') || hasPermission('inward', 'verify') || hasPermission('inward', 'create') || hasPermission('purchases', 'receive') || (function_exists('isAdmin') && isAdmin());
+        $canInwardReturn = hasPermission('returns', 'classify') || hasPermission('returns', 'receive') || hasPermission('wh_labels', 'create') || $canInwardStock;
         if ($isReturnInward ? !$canInwardReturn : !$canInwardStock) {
             Response::json(['success' => false, 'message' => 'Access denied.'], 403);
             return;
@@ -12478,7 +12478,7 @@ class WarehouseController {
             return;
         }
 
-        $canProduce = hasPermission('wh_labels', 'create') || hasPermission('wh_labels', 'view') || hasPermission('stock', 'view') || hasPermission('warehouse', 'view');
+        $canProduce = hasPermission('wh_labels', 'edit') || hasPermission('wh_labels', 'create') || (function_exists('isAdmin') && isAdmin());
         if (!$canProduce) {
             Response::json(['success' => false, 'message' => 'Access denied.'], 403);
             return;
@@ -12983,7 +12983,7 @@ class WarehouseController {
     }
 
     public function deleteWarehouseQrAjax(): void {
-        $canDelete = hasPermission('wh_labels', 'create') || hasPermission('wh_labels', 'edit') || isAdmin();
+        $canDelete = hasPermission('wh_labels', 'delete') || (function_exists('isAdmin') && isAdmin());
         if (!$canDelete) {
             Response::json(['success' => false, 'message' => 'Access denied.'], 403);
             return;
