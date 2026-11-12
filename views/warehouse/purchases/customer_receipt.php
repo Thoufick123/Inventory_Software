@@ -19,19 +19,10 @@ if ($storeGst === '') {
 $storeEmail = trim((string)($companySettings['company_email'] ?? ''));
 $warehouseLogo = trim((string)($po['warehouse_logo_url'] ?? ''));
 $billNumber = (string)($po['po_number'] ?? $po['id'] ?? '');
-if (preg_match('/(\d+)$/', $billNumber, $billNumberMatch)) {
-    $billNumber = $billNumberMatch[1];
-}
 $customerName = trim((string)($po['display_customer_name'] ?? ''));
 if ($customerName === '') {
     $customerName = 'Walk-in Customer';
 }
-$customerPhone = trim((string)($po['display_customer_phone'] ?? ''));
-$customerAddress = trim(implode(', ', array_filter([
-    trim((string)($po['customer_address'] ?? '')),
-    trim((string)($po['customer_city'] ?? '')),
-    trim((string)($po['customer_state'] ?? '')),
-])));
 $customerGst = trim((string)($po['customer_gst'] ?? ''));
 $paymentMethod = trim((string)($po['payment_method'] ?? 'CASH'));
 $paymentStatus = trim((string)($po['payment_status'] ?? ''));
@@ -121,19 +112,35 @@ foreach ($items as $item) {
             text-align: center;
         }
 
+        .store-brand {
+            display: flex;
+            align-items: center;
+            gap: 3mm;
+            text-align: left;
+        }
+
         .store-logo {
             display: block;
-            max-width: 42mm;
+            flex: 0 0 22mm;
+            width: 22mm;
+            max-width: 22mm;
             max-height: 20mm;
-            margin: 0 auto 5px;
+            margin: 0;
             object-fit: contain;
+        }
+
+        .store-brand-info {
+            flex: 1;
+            min-width: 0;
+            text-align: right;
         }
 
         .store-name {
             margin: 0 0 3px;
-            font-size: 17px;
+            font-size: 14px;
             font-weight: 800;
             text-transform: uppercase;
+            overflow-wrap: anywhere;
         }
 
         .store-details {
@@ -168,10 +175,6 @@ foreach ($items as $item) {
         .customer-name {
             margin: 3px 0;
             font-weight: 700;
-        }
-
-        .customer-address {
-            overflow-wrap: anywhere;
         }
 
         table {
@@ -279,26 +282,26 @@ foreach ($items as $item) {
 
     <main class="receipt">
         <header class="store-header">
+            <div class="store-brand">
             <?php if ($warehouseLogo !== ''): ?>
                 <img class="store-logo" src="<?= e($warehouseLogo) ?>" alt="<?= e($storeName) ?>">
-            <?php else: ?>
-                <div class="store-name"><?= e($storeName !== '' ? $storeName : 'Store') ?></div>
             <?php endif; ?>
-            <?php if ($warehouseLogo !== '' && $storeName !== ''): ?>
-                <h1 class="store-name"><?= e($storeName) ?></h1>
-            <?php endif; ?>
+                <div class="store-brand-info">
+                    <h1 class="store-name"><?= e($storeName !== '' ? $storeName : 'Store') ?></h1>
             <?php if ($storeAddress !== ''): ?>
-                <div class="store-details"><?= nl2br(e($storeAddress)) ?></div>
+                    <div class="store-details"><?= nl2br(e($storeAddress)) ?></div>
             <?php endif; ?>
             <?php if ($storePhone !== ''): ?>
-                <div class="store-details">Ph: <?= e($storePhone) ?></div>
+                    <div class="store-details">Ph: <?= e($storePhone) ?></div>
             <?php endif; ?>
             <?php if ($storeGst !== ''): ?>
-                <div class="store-details">GST No: <?= e($storeGst) ?></div>
+                    <div class="store-details">GST No: <?= e($storeGst) ?></div>
             <?php endif; ?>
             <?php if ($storeEmail !== ''): ?>
-                <div class="store-details">Email: <?= e($storeEmail) ?></div>
+                    <div class="store-details">Email: <?= e($storeEmail) ?></div>
             <?php endif; ?>
+                </div>
+            </div>
             <div class="receipt-title">CUSTOMER BILL</div>
         </header>
 
@@ -315,12 +318,6 @@ foreach ($items as $item) {
         <hr class="rule">
         <section class="customer-header">
             <div class="customer-name"><?= e($customerName) ?></div>
-            <?php if ($customerPhone !== ''): ?>
-                <div>Ph: <?= e($customerPhone) ?></div>
-            <?php endif; ?>
-            <?php if ($customerAddress !== ''): ?>
-                <div class="customer-address">Address: <?= e($customerAddress) ?></div>
-            <?php endif; ?>
             <?php if ($customerGst !== ''): ?>
                 <div>GST No: <?= e($customerGst) ?></div>
             <?php endif; ?>
