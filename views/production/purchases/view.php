@@ -107,6 +107,9 @@
                     <td><?= $index + 1 ?></td>
                     <td>
                         <span class="badge <?= $item['item_type'] === 'FABRIC_ROLL' ? 'bg-primary-subtle text-primary' : 'bg-secondary-subtle text-secondary' ?>"><?= $item['item_type'] === 'FABRIC_ROLL' ? 'Fabric Roll' : 'Supply' ?></span>
+                        <?php if (!empty($item['is_inwarded'])): ?>
+                            <span class="badge bg-success-subtle text-success border border-success ms-1" title="Inwarded to inventory on <?= !empty($item['inwarded_at']) ? date('d M Y', strtotime($item['inwarded_at'])) : 'Completed' ?>"><i class="bi bi-check2 me-1"></i>Inwarded</span>
+                        <?php endif; ?>
                         <strong class="d-block"><?= e($item['item_name']) ?></strong>
                         <?php if ($item['item_type'] === 'FABRIC_ROLL'): ?>
                             <small class="text-muted"><?= e($item['roll_number'] ?: '—') ?> · <?= e($item['color'] ?: '—') ?> · <?= e($item['design_name'] ?: '—') ?></small>
@@ -121,17 +124,19 @@
                     <td class="text-end">₹<?= number_format($tax, 2) ?></td>
                     <td class="text-end fw-bold">₹<?= number_format((float)$item['total_price'], 2) ?></td>
                     <td class="text-center">
+                        <div class="action-btns-group justify-content-center">
                         <?php if ($item['item_type'] === 'FABRIC_ROLL' && !empty($item['seller_roll_id'])): ?>
-                            <a class="btn btn-xs btn-outline-dark fw-semibold" href="<?= url('production/sellers/roll-labels/' . $item['seller_roll_id']) ?>" target="_blank" rel="noopener" title="Thermal Print Roll Label">
-                                <i class="bi bi-qr-code text-primary me-1"></i> Label
+                            <a class="btn btn-outline-info btn-action-icon" href="<?= url('production/sellers/roll-labels/' . $item['seller_roll_id']) ?>" target="_blank" rel="noopener" title="Thermal Print Roll Label">
+                                <i class="bi bi-qr-code"></i>
                             </a>
                         <?php elseif ($item['item_type'] === 'GENERAL_SUPPLY'): ?>
-                            <a class="btn btn-xs btn-outline-success fw-semibold" href="<?= url('production/purchases/supply-qr/' . $purchase['id'] . '?item_id=' . $item['id']) ?>" target="_blank" rel="noopener" title="Thermal Print Supply Label">
-                                <i class="bi bi-tags-fill me-1"></i> Label
+                            <a class="btn btn-outline-success btn-action-icon" href="<?= url('production/purchases/supply-qr/' . $purchase['id'] . '?item_id=' . $item['id']) ?>" target="_blank" rel="noopener" title="Thermal Print Supply Label">
+                                <i class="bi bi-tags-fill"></i>
                             </a>
                         <?php else: ?>
                             <span class="text-muted small">—</span>
                         <?php endif; ?>
+                        </div>
                     </td>
                 </tr>
             <?php endforeach; ?>

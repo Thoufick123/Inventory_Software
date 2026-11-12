@@ -40,12 +40,20 @@ document.addEventListener('DOMContentLoaded', function() {
         link.addEventListener('click', function(e) {
             e.preventDefault();
             const submenu = this.nextElementSibling;
+            const parentItem = this.parentElement;
             if (submenu) {
-                submenu.classList.toggle('show');
+                const isExpanded = submenu.classList.toggle('show');
+                this.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
             }
-            // Close other submenus
-            document.querySelectorAll('.submenu.show').forEach(sm => {
-                if (sm !== submenu) sm.classList.remove('show');
+            document.querySelectorAll('.has-submenu > .nav-link').forEach(otherLink => {
+                const otherItem = otherLink.parentElement;
+                if (otherLink !== this && otherItem.parentElement === parentItem.parentElement) {
+                    const otherSubmenu = otherLink.nextElementSibling;
+                    if (otherSubmenu) {
+                        otherSubmenu.classList.remove('show');
+                        otherLink.setAttribute('aria-expanded', 'false');
+                    }
+                }
             });
         });
     });

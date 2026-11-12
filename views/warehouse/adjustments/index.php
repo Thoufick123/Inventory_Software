@@ -3,16 +3,23 @@ $activeAdjustmentType = strtoupper((string)($type ?? ''));
 if (!in_array($activeAdjustmentType, ['INCREASE', 'DECREASE'], true)) {
     $activeAdjustmentType = '';
 }
+$selectedVariantSku = '';
+foreach ($variants as $variantOption) {
+    if ((int)$variantOption['id'] === (int)($selectedVariantId ?? 0)) {
+        $selectedVariantSku = (string)$variantOption['sku'];
+        break;
+    }
+}
 ?>
 <div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
     <div>
-        <h2 class="mb-1"><i class="bi bi-sliders me-2 text-primary"></i><?= $activeAdjustmentType === '' ? 'Stock Adjustments & Audits' : 'Stock ' . e(ucfirst(strtolower($activeAdjustmentType))) ?></h2>
-        <span class="text-muted">Reconcile physical inventory counts, record write-offs, and submit audit discrepancy requests</span>
+        <h2 class="mb-1"><i class="bi bi-sliders me-2 text-primary"></i>Stock Adjustments</h2>
+        <span class="text-muted">Scan products, preview QR labels for increases, and post stock changes immediately</span>
     </div>
     <div class="d-flex gap-2">
         <?php if (hasPermission('stock', 'adjust')): ?>
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newAdjustmentModal">
-            <i class="bi bi-plus-circle me-1"></i> Request <?= $activeAdjustmentType === '' ? 'Adjustment' : 'Stock ' . e(ucfirst(strtolower($activeAdjustmentType))) ?>
+            <i class="bi bi-plus-circle me-1"></i> New Adjustment
         </button>
         <?php endif; ?>
     </div>
@@ -109,6 +116,15 @@ if (!in_array($activeAdjustmentType, ['INCREASE', 'DECREASE'], true)) {
                                 <td>
                                     <span class="fw-bold font-monospace"><?= e($adj['sku']) ?></span>
                                     <br><small class="text-muted"><?= e($adj['product_name']) ?> (<?= e($adj['size_name']) ?>, <?= e($adj['color_name']) ?>)</small>
+                                    <?php
+                                    $productType = WarehouseService::getAdjustmentProductType($adj);
+                                    $productTypeBadgeClass = [
+                                        'NORMAL' => 'bg-primary',
+                                        'SERIES' => 'bg-info text-dark',
+                                        'COMPLEMENTARY' => 'bg-warning text-dark',
+                                    ][$productType] ?? 'bg-secondary';
+                                    ?>
+                                    <br><span class="badge <?= e($productTypeBadgeClass) ?>"><?= e(ucfirst(strtolower($productType))) ?> product</span>
                                 </td>
                                 <td>
                                     <span class="badge bg-<?= $adj['adjustment_type'] === 'INCREASE' ? 'success' : 'danger' ?>">
@@ -122,9 +138,12 @@ if (!in_array($activeAdjustmentType, ['INCREASE', 'DECREASE'], true)) {
                                     <span class="fw-semibold"><?= e($adj['reason']) ?></span>
                                     <?php
                                     $adjustmentQrCodes = json_decode((string)($adj['qr_codes'] ?? '[]'), true);
-                                    if (is_array($adjustmentQrCodes) && !empty($adjustmentQrCodes)):
+                                    $adjustmentQrCodes = is_array($adjustmentQrCodes) ? $adjustmentQrCodes : [];
+                                    if (!empty($adjustmentQrCodes)):
                                     ?>
-                                        <br><small class="text-danger-emphasis fw-semibold"><?= $adj['status'] === 'APPROVED' ? 'Removed QR' : 'QR tags' ?>: <?= e(implode(', ', $adjustmentQrCodes)) ?></small>
+                                        <br><small class="text-danger-emphasis fw-semibold"><?= count($adjustmentQrCodes) ?> QR tag(s)</small>
+                                    <?php else: ?>
+                                        <br><small class="text-muted">Quantity-only</small>
                                     <?php endif; ?>
                                     <?php if (!empty($adj['notes'])): ?>
                                         <br><small class="text-muted"><?= e($adj['notes']) ?></small>
@@ -142,8 +161,16 @@ if (!in_array($activeAdjustmentType, ['INCREASE', 'DECREASE'], true)) {
                                     </span>
                                 </td>
                                 <td class="text-end">
-                                    <?php if ($adj['status'] === 'PENDING' && hasPermission('stock', 'adjust')): ?>
-                                        <div class="d-inline-flex gap-1">
+                                    <div class="d-inline-flex flex-wrap justify-content-end gap-1">
+                                        <button type="button" class="btn btn-sm btn-outline-primary view-adjustment-btn" data-adjustment-id="<?= (int)$adj['id'] ?>">
+                                            <i class="bi bi-eye me-1"></i>View
+                                        </button>
+                                        <?php if (hasPermission('stock', 'adjust')): ?>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary edit-adjustment-btn" data-adjustment-id="<?= (int)$adj['id'] ?>">
+                                                <i class="bi bi-pencil me-1"></i>Edit
+                                            </button>
+                                        <?php endif; ?>
+                                        <?php if ($adj['status'] === 'PENDING' && hasPermission('stock', 'adjust')): ?>
                                             <form method="POST" action="<?= url('warehouse/adjustments/approve/' . $adj['id']) ?>" class="d-inline">
                                                 <?= CSRF::input() ?>
                                                 <input type="hidden" name="action" value="APPROVE">
@@ -160,12 +187,10 @@ if (!in_array($activeAdjustmentType, ['INCREASE', 'DECREASE'], true)) {
                                                     <i class="bi bi-x-lg"></i>
                                                 </button>
                                             </form>
-                                        </div>
-                                    <?php elseif ($adj['status'] === 'PENDING'): ?>
-                                        <span class="badge bg-warning-subtle text-warning-emphasis">Pending Review</span>
-                                    <?php else: ?>
-                                        <span class="text-muted small">Processed</span>
-                                    <?php endif; ?>
+                                        <?php elseif ($adj['status'] === 'PENDING'): ?>
+                                            <span class="badge bg-warning-subtle text-warning-emphasis">Pending Review</span>
+                                        <?php endif; ?>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -176,70 +201,190 @@ if (!in_array($activeAdjustmentType, ['INCREASE', 'DECREASE'], true)) {
     </div>
 </div>
 
+<div class="modal fade" id="adjustmentDetailsModal" tabindex="-1" aria-labelledby="adjustmentDetailsModalLabel" aria-hidden="true" data-details-url="<?= url('api/warehouse/adjustments') ?>">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="adjustmentDetailsModalLabel">Stock Adjustment Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="adjustmentDetailsLoading" class="text-center py-4 d-none"><span class="spinner-border spinner-border-sm me-2" role="status"></span>Loading adjustment details...</div>
+                <div id="adjustmentDetailsError" class="alert alert-danger d-none" role="alert"></div>
+                <div id="adjustmentDetailsContent" class="d-none">
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                        <div>
+                            <div class="fw-bold font-monospace text-primary fs-5" id="detailAdjustmentNumber"></div>
+                            <div class="small text-muted" id="detailCreatedAt"></div>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <span class="badge" id="detailAdjustmentType"></span>
+                            <span class="badge" id="detailAdjustmentStatus"></span>
+                        </div>
+                    </div>
+                    <div class="card bg-light border-0 mb-3">
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-6"><div class="small text-muted">Warehouse</div><div class="fw-semibold" id="detailWarehouse"></div></div>
+                                <div class="col-md-6">
+                                    <div class="small text-muted">Product</div>
+                                    <div class="fw-semibold" id="detailProduct"></div>
+                                    <div class="small text-muted" id="detailProductVariant"></div>
+                                    <div class="small text-muted mt-2">Product Type</div>
+                                    <span class="badge" id="detailProductType"></span>
+                                </div>
+                                <div class="col-md-6"><div class="small text-muted">Quantity</div><div class="fw-semibold" id="detailQuantity"></div></div>
+                                <div class="col-md-6"><div class="small text-muted">Requested by</div><div class="fw-semibold" id="detailRequestedBy"></div><div class="small text-muted" id="detailApprovedBy"></div></div>
+                                <div class="col-12"><div class="small text-muted">Reason</div><div class="fw-semibold" id="detailReason"></div></div>
+                                <div class="col-12" id="detailNotesRow"><div class="small text-muted">Notes</div><div id="detailNotes" class="text-break"></div></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="fw-bold mb-0" id="detailQrHeading">QR codes for this adjustment</h6>
+                        <span class="badge bg-secondary" id="detailQrCount"></span>
+                    </div>
+                    <div id="detailQrEmpty" class="alert alert-light border small mb-0 d-none"></div>
+                    <div class="row g-2" id="detailQrList"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <?php if (hasPermission('stock', 'adjust')): ?>
-<!-- Modal: New Adjustment Request -->
-<div class="modal fade" id="newAdjustmentModal" tabindex="-1" aria-labelledby="newAdjustmentModalLabel" aria-hidden="true">
+<div class="modal fade" id="editAdjustmentModal" tabindex="-1" aria-labelledby="editAdjustmentModalLabel" aria-hidden="true">
     <div class="modal-dialog">
-        <form method="POST" action="<?= url('warehouse/adjustments/store') ?>" id="stockAdjustmentForm">
+        <form method="POST" action="#" id="editAdjustmentForm" data-metadata-url="<?= url('warehouse/adjustments') ?>">
             <?= CSRF::input() ?>
-            <input type="hidden" name="qr_codes" id="adjustmentQrCodes" value="[]">
             <input type="hidden" name="return_adjustment_type" value="<?= e($activeAdjustmentType) ?>">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title fw-bold" id="newAdjustmentModalLabel"><i class="bi bi-sliders me-2 text-primary"></i>Request <?= $activeAdjustmentType === '' ? 'Stock Adjustment' : 'Stock ' . e(ucfirst(strtolower($activeAdjustmentType))) ?></h5>
+                    <h5 class="modal-title fw-bold" id="editAdjustmentModalLabel">Edit Adjustment Details</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <div id="editAdjustmentError" class="alert alert-danger d-none" role="alert"></div>
+                    <div class="alert alert-info py-2 small">Only the reason and notes can be edited. Stock quantity, adjustment type, and QR codes are not changed.</div>
+                    <div class="mb-3">
+                        <label for="editAdjustmentReason" class="form-label small fw-semibold">Reason <span class="text-danger">*</span></label>
+                        <textarea id="editAdjustmentReason" name="reason" class="form-control" rows="2" required></textarea>
+                    </div>
+                    <div class="mb-0">
+                        <label for="editAdjustmentNotes" class="form-label small fw-semibold">Notes</label>
+                        <textarea id="editAdjustmentNotes" name="notes" class="form-control" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="editAdjustmentSaveButton" disabled><i class="bi bi-check2-circle me-1"></i>Save Details</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
+<script src="<?= url('assets/js/qrcode.min.js') ?>"></script>
+<script src="<?= asset('js/warehouse-adjustment-details.js') ?>?v=<?= file_exists(BASE_PATH . '/public/assets/js/warehouse-adjustment-details.js') ? filemtime(BASE_PATH . '/public/assets/js/warehouse-adjustment-details.js') : '1' ?>"></script>
+
+<?php if (hasPermission('stock', 'adjust')): ?>
+<!-- Modal: Stock Adjustment -->
+<div class="modal fade" id="newAdjustmentModal" tabindex="-1" aria-labelledby="newAdjustmentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <form method="POST" action="<?= url('warehouse/adjustments/apply') ?>" id="stockAdjustmentForm" data-lookup-url="<?= url('api/warehouse/adjustments/lookup') ?>" data-preview-url="<?= url('api/warehouse/adjustments/preview-increase') ?>" data-selected-product="<?= e($selectedVariantSku) ?>">
+            <?= CSRF::input() ?>
+            <input type="hidden" name="qr_codes" id="adjustmentQrCodes" value="[]">
+            <input type="hidden" name="variant_id" id="adjustmentVariantId" value="">
+            <input type="hidden" name="adjustment_type" id="adjustmentTypeValue" value="<?= e($activeAdjustmentType ?: 'INCREASE') ?>">
+            <input type="hidden" name="return_adjustment_type" value="">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold" id="newAdjustmentModalLabel"><i class="bi bi-sliders me-2 text-primary"></i>Stock Adjustment</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <?php $adjustmentWarehouseDisabled = (function_exists('currentWarehouseId') && currentWarehouseId() !== null) || count($warehouses) <= 1; ?>
+                    <?php $adjustmentWarehouseValue = $scopedWarehouseId ?? ($warehouseId ?: ($warehouses[0]['id'] ?? 0)); ?>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Warehouse <span class="text-danger">*</span></label>
-                        <select name="warehouse_id" id="adjustmentWarehouseSelect" class="form-select" required <?= ((function_exists('currentWarehouseId') && currentWarehouseId() !== null) || count($warehouses) <= 1) ? 'disabled' : '' ?>>
+                        <select <?= $adjustmentWarehouseDisabled ? '' : 'name="warehouse_id"' ?> id="adjustmentWarehouseSelect" class="form-select" required <?= $adjustmentWarehouseDisabled ? 'disabled' : '' ?>>
+                            <?php if (!$adjustmentWarehouseDisabled): ?>
+                                <option value="">Select warehouse</option>
+                            <?php endif; ?>
                             <?php foreach ($warehouses as $wh): ?>
-                                <option value="<?= $wh['id'] ?>" <?= (int)$wh['id'] === (int)($warehouseId ?: ($warehouses[0]['id'] ?? 0)) ? 'selected' : '' ?>><?= e($wh['name']) ?><?= !empty($wh['code']) ? ' (' . e($wh['code']) . ')' : '' ?></option>
+                                <option value="<?= $wh['id'] ?>" <?= (int)$wh['id'] === (int)$adjustmentWarehouseValue ? 'selected' : '' ?>><?= e($wh['name']) ?><?= !empty($wh['code']) ? ' (' . e($wh['code']) . ')' : '' ?></option>
                             <?php endforeach; ?>
                         </select>
-                        <?php if ($scopedWarehouseId === null && count($warehouses) <= 1): ?>
-                            <input type="hidden" name="warehouse_id" value="<?= (int)($warehouseId ?: ($warehouses[0]['id'] ?? 0)) ?>">
-                        <?php endif; ?>
-                        <?php if ((function_exists('currentWarehouseId') && currentWarehouseId() !== null) || count($warehouses) <= 1): ?>
-                            <input type="hidden" name="warehouse_id" value="<?= e($scopedWarehouseId ?? ($warehouses[0]['id'] ?? '')) ?>">
+                        <?php if ($adjustmentWarehouseDisabled): ?>
+                            <input type="hidden" name="warehouse_id" value="<?= e($adjustmentWarehouseValue) ?>">
                         <?php endif; ?>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label small fw-semibold">Item / Variant (SKU) <span class="text-danger">*</span></label>
-                        <select name="variant_id" id="adjustmentVariantSelect" class="form-select" required>
-                            <option value="">Select Variant</option>
-                            <?php foreach ($variants as $v): ?>
-                                <option value="<?= $v['id'] ?>" <?= (int)$v['id'] === (int)($selectedVariantId ?? 0) ? 'selected' : '' ?>>
-                                    <?= e($v['sku']) ?> — <?= e($v['product_name']) ?> (<?= e($v['size_name']) ?>, <?= e($v['color_name']) ?>)
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
+                        <label for="adjustmentProductScanInput" class="form-label small fw-semibold">Scan product QR / enter SKU <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <input type="text" id="adjustmentProductScanInput" class="form-control" placeholder="Scan a product label or enter its SKU..." autocomplete="off">
+                            <button type="button" class="btn btn-outline-primary" id="adjustmentProductScanButton"><i class="bi bi-upc-scan me-1"></i>Find Product</button>
+                        </div>
+                        <div id="adjustmentProductScanMessage" class="small mt-2" role="status"></div>
+                    </div>
+                    <div class="card bg-light border-start border-4 border-primary shadow-sm mb-3 d-none" id="adjustmentProductDetails">
+                        <div class="card-body py-3">
+                            <div class="d-flex justify-content-between align-items-start gap-2">
+                                <div>
+                                    <div class="small text-primary text-uppercase fw-semibold mb-1">Scanned product</div>
+                                    <div class="fw-bold" id="adjustmentProductName"></div>
+                                    <div class="small text-muted"><span id="adjustmentProductSku"></span> · <span id="adjustmentProductVariant"></span></div>
+                                </div>
+                                <span class="badge" id="adjustmentProductSource"></span>
+                            </div>
+                            <div class="row g-2 small mt-1">
+                                <div class="col-sm-6"><span class="text-muted">Available in warehouse:</span> <strong id="adjustmentAvailableStock">0 pcs</strong></div>
+                                <div class="col-sm-6"><span class="text-muted">QR format:</span> <strong id="adjustmentQrFormat"></strong></div>
+                                <div class="col-sm-6 d-none" id="adjustmentSupplierRow"><span class="text-muted">Supplier:</span> <strong id="adjustmentSupplier"></strong></div>
+                                <div class="col-sm-4"><span class="text-muted">MRP:</span> <strong id="adjustmentMrp"></strong></div>
+                                <div class="col-sm-4"><span class="text-muted">Selling price:</span> <strong id="adjustmentSellingPrice"></strong></div>
+                                <div class="col-sm-4"><span class="text-muted">Cost:</span> <strong id="adjustmentCostPrice"></strong></div>
+                            </div>
+                        </div>
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Adjustment Type <span class="text-danger">*</span></label>
-                            <select <?= $activeAdjustmentType === '' ? 'name="adjustment_type"' : '' ?> id="adjustmentTypeSelect" class="form-select" required <?= $activeAdjustmentType !== '' ? 'disabled' : '' ?>>
+                            <select id="adjustmentTypeSelect" class="form-select" required>
                                 <option value="INCREASE" <?= $activeAdjustmentType === 'INCREASE' || $activeAdjustmentType === '' ? 'selected' : '' ?>>INCREASE (+ Found Stock)</option>
                                 <option value="DECREASE" <?= $activeAdjustmentType === 'DECREASE' ? 'selected' : '' ?>>DECREASE (- Discrepancy / Damage)</option>
                             </select>
-                            <?php if ($activeAdjustmentType !== ''): ?>
-                                <input type="hidden" name="adjustment_type" value="<?= e($activeAdjustmentType) ?>">
-                            <?php endif; ?>
                         </div>
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Quantity (Pcs) <span class="text-danger">*</span></label>
-                            <input type="number" name="quantity" id="adjustmentQuantityInput" class="form-control" min="1" step="1" value="1" required>
+                            <input type="number" name="quantity" id="adjustmentQuantityInput" class="form-control" min="1" step="1" value="" placeholder="0" required>
                         </div>
                     </div>
-                    <div class="mb-3 d-none" id="adjustmentQrScanner">
-                        <label class="form-label small fw-semibold">Scan QR codes to remove from stock <span class="text-danger">*</span></label>
-                        <div class="input-group">
-                            <input type="text" id="adjustmentQrScanInput" class="form-control" placeholder="Scan or enter product QR code..." autocomplete="off">
-                            <button type="button" class="btn btn-outline-primary" id="adjustmentQrScanButton"><i class="bi bi-upc-scan me-1"></i>Add QR</button>
+                    <div id="adjustmentQuantityMessage" class="small mb-3" role="status"></div>
+                    <div class="alert alert-info py-2 small" id="adjustmentImmediateNotice">
+                        <i class="bi bi-info-circle me-1"></i>Saving this form updates the selected warehouse stock immediately.
+                    </div>
+                    <div class="mb-3 d-none" id="adjustmentIncreaseControls">
+                        <div id="adjustmentGenerateQrControls">
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="adjustmentPreviewButton"><i class="bi bi-qr-code me-1"></i>Generate QR Preview</button>
+                            <div id="adjustmentPreviewMessage" class="small mt-2" role="status"></div>
+                            <div class="d-none mt-3" id="adjustmentQrPreview">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="fw-semibold small">Live QR label preview</span>
+                                    <span class="badge bg-success-subtle text-success-emphasis" id="adjustmentPreviewSummary"></span>
+                                </div>
+                                <div class="row g-2" id="adjustmentQrPreviewList"></div>
+                            </div>
                         </div>
-                        <small class="form-text text-muted">Each scanned QR removes its available unit(s). Scanned tags are permanently recorded in adjustment history.</small>
-                        <div id="adjustmentQrMessage" class="small mt-2" role="status"></div>
-                        <div id="adjustmentQrList" class="d-flex flex-wrap gap-1 mt-2"></div>
+                        <div class="alert alert-info py-2 small d-none mb-0" id="adjustmentCountOnlyNotice">
+                            <i class="bi bi-info-circle me-1"></i>Enter the additional piece count. Stock will increase without generating a new series/complementary QR label.
+                        </div>
+                    </div>
+                    <div class="alert alert-warning py-2 small d-none" id="adjustmentDecreaseCountNotice">
+                        <i class="bi bi-info-circle me-1"></i>Enter the pieces to remove; no second QR scan is needed. The count is limited to available stock, but individual QR tags are not checked.
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Primary Reason <span class="text-danger">*</span></label>
@@ -257,151 +402,10 @@ if (!in_array($activeAdjustmentType, ['INCREASE', 'DECREASE'], true)) {
                     </div>
                 </div>
 
-                <script>
-                (() => {
-                    const form = document.getElementById('stockAdjustmentForm');
-                    const typeSelect = document.getElementById('adjustmentTypeSelect');
-                    const quantityInput = document.getElementById('adjustmentQuantityInput');
-                    const qrCodesInput = document.getElementById('adjustmentQrCodes');
-                    const qrScanner = document.getElementById('adjustmentQrScanner');
-                    const scanInput = document.getElementById('adjustmentQrScanInput');
-                    const scanButton = document.getElementById('adjustmentQrScanButton');
-                    const qrMessage = document.getElementById('adjustmentQrMessage');
-                    const qrList = document.getElementById('adjustmentQrList');
-                    const warehouseSelect = document.getElementById('adjustmentWarehouseSelect');
-                    const variantSelect = document.getElementById('adjustmentVariantSelect');
-                    const scannedTags = [];
-
-                    function renderScannedTags() {
-                        qrList.replaceChildren();
-                        scannedTags.forEach((entry, index) => {
-                            const badge = document.createElement('span');
-                            badge.className = 'badge bg-dark font-monospace d-inline-flex align-items-center gap-1';
-                            const label = document.createElement('span');
-                            label.textContent = `${entry.tag} (${entry.quantity} pcs)`;
-                            const remove = document.createElement('button');
-                            remove.type = 'button';
-                            remove.className = 'btn-close btn-close-white';
-                            remove.setAttribute('aria-label', `Remove QR ${entry.tag}`);
-                            remove.addEventListener('click', () => {
-                                scannedTags.splice(index, 1);
-                                updateQrState();
-                            });
-                            badge.append(label, remove);
-                            qrList.appendChild(badge);
-                        });
-                        qrCodesInput.value = JSON.stringify(scannedTags.map(entry => entry.tag));
-                        quantityInput.value = scannedTags.reduce((total, entry) => total + entry.quantity, 0) || 1;
-                    }
-
-                    function updateQrState() {
-                        renderScannedTags();
-                        qrMessage.textContent = scannedTags.length ? `${scannedTags.length} QR code(s) selected.` : '';
-                        qrMessage.className = 'small mt-2 text-muted';
-                    }
-
-                    typeSelect.addEventListener('change', () => {
-                        const isDecrease = typeSelect.value === 'DECREASE';
-                        qrScanner.classList.toggle('d-none', !isDecrease);
-                        quantityInput.readOnly = isDecrease;
-                        quantityInput.title = isDecrease ? 'Quantity is set by the scanned QR code(s).' : '';
-                        if (!isDecrease) {
-                            qrCodesInput.value = '[]';
-                        } else {
-                            updateQrState();
-                            scanInput.focus();
-                        }
-                    });
-                    typeSelect.dispatchEvent(new Event('change'));
-
-                    async function addScannedQr() {
-                        const code = scanInput.value.trim();
-                        if (!code) return;
-                        scanButton.disabled = true;
-                        qrMessage.textContent = 'Checking QR code and warehouse stock...';
-                        qrMessage.className = 'small mt-2 text-muted';
-
-                        try {
-                            const warehouseId = warehouseSelect.value || document.querySelector('input[name="warehouse_id"]')?.value || '';
-                            const url = `<?= url('api/warehouse/purchases/lookup-scan') ?>?code=${encodeURIComponent(code)}&warehouse_id=${encodeURIComponent(warehouseId)}&purpose=stock_adjustment`;
-                            const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
-                            const result = await response.json();
-                            if (result.variant) {
-                                const resolvedVariantId = Number(result.variant.id);
-                                if (scannedTags.length && Number(scannedTags[0].variantId) !== resolvedVariantId) {
-                                    throw new Error('The scanned QR code does not match the selected variant.');
-                                }
-                                variantSelect.value = String(resolvedVariantId);
-                            }
-                            if (!response.ok || !result.success || !result.variant) {
-                                throw new Error(result.message || 'This QR code is not eligible for stock adjustment.');
-                            }
-                            if (result.eligible === false) {
-                                throw new Error(result.message || 'This QR code is not eligible for stock adjustment.');
-                            }
-
-                            const variant = result.variant;
-                            const tag = String(variant.piece_tag || result.extracted_tag || '').trim().toUpperCase();
-                            if (!tag) throw new Error('The scanned QR code did not resolve to a product tag.');
-                            if (scannedTags.some(entry => entry.tag === tag)) throw new Error(`QR code ${tag} is already in this request.`);
-                            if (scannedTags.length && Number(scannedTags[0].variantId) !== Number(variant.id)) {
-                                throw new Error('A single adjustment request can only contain QR codes for one variant.');
-                            }
-
-                            const isPack = variant.is_series || variant.is_complementary;
-                            const tagQuantity = isPack ? Math.max(1, Number(variant.pack_quantity) || 1) : 1;
-                            const availableStock = Number(variant.available_stock) || 0;
-                            const currentQuantity = scannedTags.reduce((total, entry) => total + entry.quantity, 0);
-                            if (currentQuantity + tagQuantity > availableStock) {
-                                throw new Error(`Only ${availableStock} available pcs remain; this QR would exceed the available stock.`);
-                            }
-                            scannedTags.push({ tag, quantity: tagQuantity, variantId: variant.id, availableStock });
-                            scanInput.value = '';
-                            updateQrState();
-                            scanInput.focus();
-                        } catch (error) {
-                            qrMessage.textContent = error.message || 'QR scan failed.';
-                            qrMessage.className = 'small mt-2 text-danger fw-semibold';
-                        } finally {
-                            scanButton.disabled = false;
-                        }
-                    }
-
-                    scanButton.addEventListener('click', addScannedQr);
-                    scanInput.addEventListener('keydown', event => {
-                        if (event.key === 'Enter') {
-                            event.preventDefault();
-                            addScannedQr();
-                        }
-                    });
-
-                    form.addEventListener('submit', event => {
-                        if (typeSelect.value === 'DECREASE' && scannedTags.length === 0) {
-                            event.preventDefault();
-                            qrMessage.textContent = 'Scan at least one product QR code before requesting a stock decrease.';
-                            qrMessage.className = 'small mt-2 text-danger fw-semibold';
-                            scanInput.focus();
-                        }
-                    });
-
-                    document.getElementById('newAdjustmentModal').addEventListener('hidden.bs.modal', () => {
-                        scannedTags.splice(0, scannedTags.length);
-                        variantSelect.value = '';
-                        typeSelect.value = <?= json_encode($activeAdjustmentType !== '' ? $activeAdjustmentType : 'INCREASE') ?>;
-                        typeSelect.dispatchEvent(new Event('change'));
-                        quantityInput.value = '1';
-                        quantityInput.readOnly = false;
-                        quantityInput.title = '';
-                        qrScanner.classList.add('d-none');
-                        qrCodesInput.value = '[]';
-                        qrList.replaceChildren();
-                        qrMessage.textContent = '';
-                    });
-                })();
-                </script>
+                <script src="<?= asset('js/warehouse-stock-adjustment.js') ?>?v=<?= file_exists(BASE_PATH . '/public/assets/js/warehouse-stock-adjustment.js') ? filemtime(BASE_PATH . '/public/assets/js/warehouse-stock-adjustment.js') : '1' ?>"></script>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary"><i class="bi bi-send me-1"></i> Submit for Approval</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle me-1"></i> Save & Update Stock</button>
                 </div>
             </div>
         </form>

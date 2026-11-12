@@ -303,20 +303,17 @@
 
                                 <!-- Actions -->
                                 <td class="text-center text-nowrap">
-                                    <div class="d-flex align-items-center justify-content-center gap-1 flex-nowrap">
-                                        <a href="<?= url('production/damages/view/' . $d['id']) ?>" class="btn btn-sm btn-outline-info d-inline-flex align-items-center justify-content-center flex-shrink-0" style="width: 34px; height: 34px;" title="View Damage Details" aria-label="View Damage Details">
+                                    <div class="action-btns-group justify-content-center">
+                                        <a href="<?= url('production/damages/view/' . $d['id']) ?>" class="btn btn-action-icon btn-outline-info" title="View Damage Details" aria-label="View Damage Details">
                                             <i class="bi bi-eye"></i>
                                         </a>
                                         <?php if (hasPermission('damages', 'edit')): ?>
-                                        <button type="button" class="btn btn-sm btn-outline-warning d-inline-flex align-items-center justify-content-center flex-shrink-0" style="width: 34px; height: 34px;" title="Edit Damage Record" aria-label="Edit Damage Record" onclick='openEditDamageModal(<?= json_encode($d) ?>)'>
-                                            <i class="bi bi-pencil-square"></i>
-                                        </button>
-                                        <button type="button" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center flex-shrink-0" style="width: 34px; height: 34px;" title="Update Return / Refund / Resolution" aria-label="Update Return / Refund / Resolution" onclick='openResolveModal(<?= json_encode($d) ?>)'>
-                                            <i class="bi bi-arrow-repeat"></i>
+                                        <button type="button" class="btn btn-action-icon btn-outline-primary" title="Edit Damage Record" aria-label="Edit Damage Record" onclick='openEditDamageModal(<?= json_encode($d) ?>)'>
+                                            <i class="bi bi-pencil"></i>
                                         </button>
                                         <?php endif; ?>
                                         <?php if (hasPermission('damages', 'delete')): ?>
-                                        <button type="button" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center flex-shrink-0" style="width: 34px; height: 34px;" title="Delete Damage Record" aria-label="Delete Damage Record" onclick="confirmDeleteDamage('<?= url('production/damages/delete/' . $d['id']) ?>', '<?= e(addslashes($d['damage_number'])) ?>')">
+                                        <button type="button" class="btn btn-action-icon btn-outline-danger" title="Delete Damage Record" aria-label="Delete Damage Record" onclick="confirmDeleteDamage('<?= url('production/damages/delete/' . $d['id']) ?>', '<?= e(addslashes($d['damage_number'])) ?>')">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                         <?php endif; ?>
@@ -1266,8 +1263,7 @@ async function scanEditDamageRollQr() {
     }
     const scanInput = document.getElementById('editDamageRollQrScan');
     const scannedCode = scanInput ? scanInput.value.trim() : '';
-    const editForm = document.getElementById('editDamageForm');
-    const damageId = parseInt(editForm.dataset.damageId, 10) || 0;
+    const damageId = parseInt(editForm?.dataset?.damageId, 10) || 0;
     if (!scannedCode || editDamageRollScanInProgress) return;
     if (!damageId) {
         setEditDamageRollScanStatus('Open an existing damage record before scanning a roll.', true);
@@ -1865,15 +1861,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const qty = parseInt(document.getElementById('editDamagedQty').value) || 0;
             const photoInput = document.getElementById('editPhotoInput');
 
-            if (!sellerId) {
-                alert('Please choose a Material Supplier / Mill.');
-                e.preventDefault();
-                return false;
-            }
-            if (!rollId) {
-                alert('Please select a Defective Fabric Roll.');
-                e.preventDefault();
-                return false;
+            const isNonRollDamage = editForm.dataset.supplyDamage === '1' || !editForm.dataset.originalRollId || editForm.dataset.originalRollId === '0';
+            if (!isNonRollDamage) {
+                if (!sellerId) {
+                    alert('Please choose a Material Supplier / Mill.');
+                    e.preventDefault();
+                    return false;
+                }
+                if (!rollId) {
+                    alert('Please select a Defective Fabric Roll.');
+                    e.preventDefault();
+                    return false;
+                }
             }
             if (rollId && loadedEditRollsMap[rollId]) {
                 const m = getRollMetrics(loadedEditRollsMap[rollId]);

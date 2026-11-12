@@ -176,6 +176,11 @@ $totalInwardQty = (int)array_sum(array_map(fn($r) => max(1, (int)($r['quantity']
                                     <span class="badge bg-secondary-subtle text-secondary border">
                                         <i class="bi bi-box me-1"></i><?= $supplyCount ?> <?= $supplyCount === 1 ? 'Supply' : 'Supplies' ?>
                                     </span>
+                                    <?php if (!empty($purchase['is_inwarded'])): ?>
+                                        <span class="badge bg-success-subtle text-success border border-success" title="Inwarded to inventory">
+                                            <i class="bi bi-check2-circle me-1"></i>Inwarded
+                                        </span>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                             </div>
                             <?php if ($rollItemCount > 0): 
@@ -209,15 +214,15 @@ $totalInwardQty = (int)array_sum(array_map(fn($r) => max(1, (int)($r['quantity']
                             ₹<?= number_format((float)$purchase['total_amount'], 2) ?>
                         </td>
                         <td class="text-center">
-                            <div class="d-inline-flex gap-1 align-items-center">
+                            <div class="action-btns-group justify-content-center">
                                 <?php if (hasPermission('production_purchases', 'view') || hasPermission('sellers', 'view')): ?>
-                                    <a class="btn btn-sm btn-outline-secondary py-1 px-2" href="<?= url('production/purchases/view/' . $purchase['id']) ?>" title="View PO Details">
+                                    <a class="btn btn-action-icon btn-outline-info" href="<?= url('production/purchases/view/' . $purchase['id']) ?>" title="View PO Details">
                                         <i class="bi bi-eye"></i>
                                     </a>
-                                    <a class="btn btn-sm btn-outline-primary py-1 px-2" href="<?= url('production/purchases/print/' . $purchase['id']) ?>" target="_blank" rel="noopener" title="Print PO Invoice">
+                                    <a class="btn btn-action-icon btn-outline-primary" href="<?= url('production/purchases/print/' . $purchase['id']) ?>" target="_blank" rel="noopener" title="Print PO Invoice">
                                         <i class="bi bi-printer"></i>
                                     </a>
-                                    <a class="btn btn-sm btn-dark py-1 px-2 fw-semibold" href="<?= url('production/purchases/roll-qr/' . $purchase['id']) ?>" target="_blank" rel="noopener" title="Print Roll QR Labels (Select &amp; Print)">
+                                    <a class="btn btn-action-icon btn-dark" href="<?= url('production/purchases/roll-qr/' . $purchase['id']) ?>" target="_blank" rel="noopener" title="Print Roll QR Labels (Select &amp; Print)">
                                         <i class="bi bi-qr-code text-warning"></i>
                                     </a>
                                     <?php
@@ -232,18 +237,18 @@ $totalInwardQty = (int)array_sum(array_map(fn($r) => max(1, (int)($r['quantity']
                                     }
                                     ?>
                                     <?php if ($pHasSupplies): ?>
-                                        <a class="btn btn-sm btn-success py-1 px-2 fw-semibold text-white" href="<?= url('production/purchases/supply-qr/' . $purchase['id']) ?>" target="_blank" rel="noopener" title="Print Other Garment Supplies QR Labels">
+                                        <a class="btn btn-action-icon btn-outline-success" href="<?= url('production/purchases/supply-qr/' . $purchase['id']) ?>" target="_blank" rel="noopener" title="Print Other Garment Supplies QR Labels">
                                             <i class="bi bi-tags-fill"></i>
                                         </a>
                                     <?php endif; ?>
                                 <?php endif; ?>
                                 <?php if (hasPermission('production_purchases', 'edit') || hasPermission('sellers', 'edit')): ?>
-                                    <a class="btn btn-sm btn-outline-primary py-1 px-2" href="<?= url('production/purchases/edit/' . $purchase['id']) ?>" title="Edit Purchase">
+                                    <a class="btn btn-action-icon btn-outline-primary" href="<?= url('production/purchases/edit/' . $purchase['id']) ?>" title="Edit Purchase">
                                         <i class="bi bi-pencil"></i>
                                     </a>
                                 <?php endif; ?>
                                 <?php if (hasPermission('production_purchases', 'delete') || hasPermission('sellers', 'delete')): ?>
-                                    <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2" title="Delete Purchase" onclick="confirmDeletePurchase('<?= url('production/purchases/delete/' . $purchase['id']) ?>', '<?= e(addslashes($purchase['purchase_number'])) ?>')">
+                                    <button type="button" class="btn btn-action-icon btn-outline-danger" title="Delete Purchase" onclick="confirmDeletePurchase('<?= url('production/purchases/delete/' . $purchase['id']) ?>', '<?= e(addslashes($purchase['purchase_number'])) ?>')">
                                         <i class="bi bi-trash"></i>
                                     </button>
                                 <?php endif; ?>

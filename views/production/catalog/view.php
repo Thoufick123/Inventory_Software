@@ -185,10 +185,12 @@
                                             <span class="badge bg-secondary"><?= e($prg['status']) ?></span>
                                         </td>
                                         <td class="small text-muted"><?= formatDate($prg['created_at']) ?></td>
-                                        <td>
-                                            <a href="<?= url('production/programs/view/' . $prg['id']) ?>" class="btn btn-sm btn-outline-secondary">
-                                                View
-                                            </a>
+                                        <td class="text-end">
+                                            <div class="action-btns-group justify-content-end">
+                                                <a href="<?= url('production/programs/view/' . $prg['id']) ?>" class="btn btn-outline-info btn-action-icon" title="View Program">
+                                                    <i class="bi bi-eye"></i>
+                                                </a>
+                                            </div>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>

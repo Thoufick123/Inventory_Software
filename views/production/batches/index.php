@@ -155,29 +155,29 @@
                                 <td><?= e($b['prepared_by_name'] ?: 'Staff') ?></td>
                                 <td><span class="badge <?= $statusClass ?>"><?= e($b['status']) ?></span></td>
                                 <td class="text-end">
-                                    <div class="d-inline-flex gap-1">
-                                        <a href="<?= url('production/batches/label/' . $b['id']) ?>" target="_blank" class="btn btn-sm btn-outline-secondary" title="Print Carton QR Label">
-                                            <i class="bi bi-qr-code me-1"></i> QR Sticker
+                                    <div class="action-btns-group justify-content-end">
+                                        <a href="<?= url('production/batches/label/' . $b['id']) ?>" target="_blank" class="btn btn-outline-info btn-action-icon" title="Print Carton QR Label">
+                                            <i class="bi bi-qr-code"></i>
                                         </a>
                                         <?php if (hasPermission('batches', 'edit')): ?>
-                                        <button type="button" class="btn btn-sm btn-outline-primary" onclick='openEditBatchModal(<?= json_encode($b, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)' title="Edit Batch Details">
+                                        <button type="button" class="btn btn-outline-primary btn-action-icon" onclick='openEditBatchModal(<?= json_encode($b, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)' title="Edit Batch Details">
                                             <i class="bi bi-pencil"></i>
                                         </button>
                                         <?php endif; ?>
                                         <?php if ($b['status'] === 'PREPARING' && hasPermission('batches', 'approve')): ?>
                                             <form method="POST" action="<?= url('production/batches/approve/' . $b['id']) ?>" class="d-inline" onsubmit="return confirm('Approve this batch for outward dispatch?');">
                                                 <?= CSRF::field() ?>
-                                                <button type="submit" class="btn btn-sm btn-outline-success">
-                                                    <i class="bi bi-check2"></i> Approve
+                                                <button type="submit" class="btn btn-outline-success btn-action-icon" title="Approve Batch">
+                                                    <i class="bi bi-patch-check"></i>
                                                 </button>
                                             </form>
                                         <?php elseif ($b['status'] === 'APPROVED' && hasPermission('outward', 'create')): ?>
-                                            <a href="<?= url('production/outward') ?>" class="btn btn-sm btn-primary">
-                                                <i class="bi bi-truck me-1"></i> Dispatch
+                                            <a href="<?= url('production/outward') ?>" class="btn btn-outline-success btn-action-icon" title="Dispatch Outward">
+                                                <i class="bi bi-truck"></i>
                                             </a>
                                         <?php elseif ($b['status'] === 'DISPATCHED' || $b['status'] === 'RECEIVED' || !empty($b['outward_id'])): ?>
-                                            <button type="button" class="btn btn-sm btn-outline-info" onclick="viewBatchDispatchDetails(<?= $b['id'] ?>)" title="View Dispatched Details">
-                                                <i class="bi bi-eye me-1"></i> View Dispatch
+                                            <button type="button" class="btn btn-outline-info btn-action-icon" onclick="viewBatchDispatchDetails(<?= $b['id'] ?>)" title="View Dispatched Details">
+                                                <i class="bi bi-eye"></i>
                                             </button>
                                         <?php endif; ?>
                                     </div>

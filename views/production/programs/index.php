@@ -174,19 +174,19 @@
                                 </td>
                                 <td><span class="badge <?= $prioClass ?>"><?= e($prog['priority']) ?></span></td>
                                 <td class="text-end">
-                                    <div class="btn-group btn-group-sm">
-                                        <a href="<?= url('production/programs/view/' . $prog['id']) ?>" class="btn btn-outline-primary" title="View Details">
+                                    <div class="action-btns-group justify-content-end">
+                                        <a href="<?= url('production/programs/view/' . $prog['id']) ?>" class="btn btn-action-icon btn-outline-info" title="View Details">
                                             <i class="bi bi-eye"></i>
                                         </a>
                                         <?php if (hasPermission('programs', 'edit')): ?>
-                                        <a href="<?= url('production/programs/edit/' . $prog['id']) ?>" class="btn btn-outline-secondary" title="Edit Program">
+                                        <a href="<?= url('production/programs/edit/' . $prog['id']) ?>" class="btn btn-action-icon btn-outline-primary" title="Edit Program">
                                             <i class="bi bi-pencil"></i>
                                         </a>
                                         <?php endif; ?>
                                         <?php if (hasPermission('programs', 'delete')): ?>
                                         <form method="POST" action="<?= url('production/programs/delete/' . $prog['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to delete production program \'<?= e(addslashes($prog['name'] ?: $prog['program_number'])) ?>\'?');">
                                             <?= CSRF::field() ?>
-                                            <button type="submit" class="btn btn-outline-danger" title="Delete Program">
+                                            <button type="submit" class="btn btn-action-icon btn-outline-danger" title="Delete Program">
                                                 <i class="bi bi-trash"></i>
                                             </button>
                                         </form>

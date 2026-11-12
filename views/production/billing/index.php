@@ -127,21 +127,23 @@
                                 </span>
                             </td>
                             <td class="text-end text-nowrap">
-                                <?php if (hasPermission('production_billing', 'view')): ?>
-                                    <a class="btn btn-sm btn-outline-primary" title="View" href="<?= url('production/billing/view/' . (int)$bill['id']) ?>"><i class="bi bi-eye"></i></a>
-                                <?php endif; ?>
-                                <?php if (hasPermission('production_billing', 'edit')): ?>
-                                    <a class="btn btn-sm btn-outline-secondary" title="Edit" href="<?= url('production/billing/edit/' . (int)$bill['id']) ?>"><i class="bi bi-pencil"></i></a>
-                                <?php endif; ?>
-                                <?php if (hasPermission('production_billing', 'print')): ?>
-                                    <a class="btn btn-sm btn-outline-dark" title="Print" target="_blank" href="<?= url('production/billing/print/' . (int)$bill['id']) ?>"><i class="bi bi-printer"></i></a>
-                                <?php endif; ?>
-                                <?php if (hasPermission('production_billing', 'delete')): ?>
-                                    <form class="d-inline" method="POST" action="<?= url('production/billing/delete/' . (int)$bill['id']) ?>" onsubmit="return confirm('Delete this bill? Its billed QR pieces will become available again.')">
-                                        <?= CSRF::input() ?>
-                                        <button class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
-                                    </form>
-                                <?php endif; ?>
+                                <div class="action-btns-group justify-content-end">
+                                    <?php if (hasPermission('production_billing', 'view')): ?>
+                                        <a class="btn btn-outline-info btn-action-icon" title="View" href="<?= url('production/billing/view/' . (int)$bill['id']) ?>"><i class="bi bi-eye"></i></a>
+                                    <?php endif; ?>
+                                    <?php if (hasPermission('production_billing', 'edit')): ?>
+                                        <a class="btn btn-outline-primary btn-action-icon" title="Edit" href="<?= url('production/billing/edit/' . (int)$bill['id']) ?>"><i class="bi bi-pencil"></i></a>
+                                    <?php endif; ?>
+                                    <?php if (hasPermission('production_billing', 'print')): ?>
+                                        <a class="btn btn-outline-success btn-action-icon" title="Print" target="_blank" href="<?= url('production/billing/print/' . (int)$bill['id']) ?>"><i class="bi bi-printer"></i></a>
+                                    <?php endif; ?>
+                                    <?php if (hasPermission('production_billing', 'delete')): ?>
+                                        <form class="d-inline" method="POST" action="<?= url('production/billing/delete/' . (int)$bill['id']) ?>" onsubmit="return confirm('Delete this bill? Its billed QR pieces will become available again.')">
+                                            <?= CSRF::input() ?>
+                                            <button class="btn btn-outline-danger btn-action-icon" title="Delete"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                    <?php endif; ?>
+                                </div>
                             </td>
                         </tr>
                     <?php endforeach; ?>

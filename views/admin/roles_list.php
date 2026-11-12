@@ -30,22 +30,22 @@
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th class="ps-4">Role Name</th>
-                        <th>Identifier (Slug)</th>
-                        <th>Description</th>
-                        <th>Assigned Users</th>
-                        <th>Status</th>
-                        <th class="text-end pe-4">Actions</th>
+                        <th class="ps-4" style="min-width:140px;">Role Name</th>
+                        <th style="min-width:160px;">Identifier (Slug)</th>
+                        <th style="min-width:160px;">Description</th>
+                        <th style="min-width:120px;">Assigned Users</th>
+                        <th style="min-width:90px;">Status</th>
+                        <th class="text-end pe-4" style="min-width:270px;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($roles as $r): ?>
                         <tr>
                             <td class="ps-4">
-                                <div class="fw-bold text-dark"><?= e($r['name']) ?></div>
+                                <div class="fw-semibold text-dark"><?= e($r['name']) ?></div>
                             </td>
                             <td>
-                                <code class="text-primary"><?= e($r['slug']) ?></code>
+                                <code class="text-primary small"><?= e($r['slug']) ?></code>
                             </td>
                             <td>
                                 <span class="text-muted small"><?= e($r['description'] ?: '—') ?></span>
@@ -63,20 +63,29 @@
                                 <?php endif; ?>
                             </td>
                             <td class="text-end pe-4">
-                                <div class="btn-group">
+                                <div class="d-flex align-items-center justify-content-end gap-2 flex-nowrap">
                                     <?php if (hasPermission('roles', 'edit')): ?>
-                                    <a href="<?= url('admin/roles/permissions/' . $r['id']) ?>" class="btn btn-sm btn-outline-primary">
-                                        <i class="bi bi-key me-1"></i> Permissions
+                                    <a href="<?= url('admin/roles/permissions/' . $r['id']) ?>"
+                                       class="btn btn-sm btn-outline-primary"
+                                       title="Manage Permissions">
+                                        <i class="bi bi-key me-1"></i>Permissions
                                     </a>
-                                    <a href="<?= url('admin/roles/edit/' . $r['id']) ?>" class="btn btn-sm btn-outline-secondary">
-                                        <i class="bi bi-pencil"></i> Edit
+                                    <a href="<?= url('admin/roles/edit/' . $r['id']) ?>"
+                                       class="btn btn-sm btn-outline-secondary"
+                                       title="Edit Role">
+                                        <i class="bi bi-pencil me-1"></i>Edit
                                     </a>
                                     <?php endif; ?>
                                     <?php if (hasPermission('roles', 'delete')): ?>
-                                    <form method="POST" action="<?= url('admin/roles/delete/' . $r['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to delete the <?= e(addslashes($r['name'])) ?> role?');">
+                                    <form method="POST"
+                                          action="<?= url('admin/roles/delete/' . $r['id']) ?>"
+                                          class="d-inline m-0"
+                                          onsubmit="return confirm('Are you sure you want to delete the <?= e(addslashes($r['name'])) ?> role?');">
                                         <?= CSRF::field() ?>
-                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete Role">
-                                            <i class="bi bi-trash"></i> Delete
+                                        <button type="submit"
+                                                class="btn btn-sm btn-outline-danger"
+                                                title="Delete Role">
+                                            <i class="bi bi-trash me-1"></i>Delete
                                         </button>
                                     </form>
                                     <?php endif; ?>

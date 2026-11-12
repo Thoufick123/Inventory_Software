@@ -160,6 +160,20 @@ class Database {
     }
 
     /**
+     * Alias for fetchOne.
+     */
+    public static function fetch(string $sql, array $params = []): ?array {
+        return self::fetchOne($sql, $params);
+    }
+
+    /**
+     * Fetch a single column value from the first row.
+     */
+    public static function fetchColumn(string $sql, array $params = [], int $column = 0): mixed {
+        return self::query($sql, $params)->fetchColumn($column);
+    }
+
+    /**
      * Fetch all rows.
      */
     public static function fetchAll(string $sql, array $params = []): array {

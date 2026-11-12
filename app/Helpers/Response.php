@@ -95,6 +95,20 @@ class Response {
     }
 
     /**
+     * Redirect with an error flash message.
+     */
+    public static function redirectWithError(string $url, string $message): void {
+        self::redirect($url, 'error', $message);
+    }
+
+    /**
+     * Redirect with a success flash message.
+     */
+    public static function redirectWithSuccess(string $url, string $message): void {
+        self::redirect($url, 'success', $message);
+    }
+
+    /**
      * Redirect back to the previous page.
      */
     public static function back(?string $flashType = null, ?string $flashMessage = null): void {

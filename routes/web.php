@@ -367,6 +367,7 @@ class Router {
         $this->get('production/purchases/print/{id}', 'ProductionController', 'printProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'view']]);
         $this->get('production/purchases/roll-qr/{id}', 'ProductionController', 'productionPurchaseRollQr', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'view']]);
         $this->get('production/purchases/supply-qr/{id}', 'ProductionController', 'productionPurchaseSupplyQr', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'view']]);
+        $this->post('production/purchases/supply-inward/{id}', 'ProductionController', 'productionPurchaseSupplyInward', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'view']]);
         $this->get('production/purchases/create', 'ProductionController', 'createProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'create']]);
         $this->post('production/purchases/store', 'ProductionController', 'storeProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'create']]);
 
@@ -812,6 +813,11 @@ class Router {
 
         // Stock Adjustments
         $this->get('warehouse/adjustments', 'WarehouseController', 'adjustmentList', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'view']]);
+        $this->get('api/warehouse/adjustments/lookup', 'WarehouseController', 'ajaxLookupAdjustmentProduct', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'adjust']]);
+        $this->get('api/warehouse/adjustments/{id}', 'WarehouseController', 'ajaxAdjustmentDetails', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'view']]);
+        $this->post('api/warehouse/adjustments/preview-increase', 'WarehouseController', 'previewAdjustmentIncrease', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'adjust']]);
+        $this->post('warehouse/adjustments/apply', 'WarehouseController', 'applyImmediateAdjustment', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'adjust']]);
+        $this->post('warehouse/adjustments/{id}/metadata', 'WarehouseController', 'updateAdjustmentMetadata', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'adjust']]);
         $this->post('warehouse/adjustments/store', 'WarehouseController', 'storeAdjustment', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'adjust']]);
         $this->post('warehouse/adjustments/approve/{id}', 'WarehouseController', 'approveAdjustment', ['AuthMiddleware', ['PermissionMiddleware', 'stock', 'adjust']]);
 
