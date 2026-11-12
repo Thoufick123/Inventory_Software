@@ -326,9 +326,6 @@
                             <div class="meta-line">
                                 <span>Type:</span> <strong>GARMENT SUPPLY</strong>
                             </div>
-                            <div class="meta-line">
-                                <span>Qty:</span> <strong style="color:#0d6efd"><?= htmlspecialchars($stk['quantity_label']) ?></strong>
-                            </div>
                             <?php if (!empty($stk['hsn_code']) && $stk['hsn_code'] !== '—'): ?>
                                 <div class="meta-line">
                                     <span>HSN:</span> <strong class="font-monospace"><?= htmlspecialchars($stk['hsn_code']) ?></strong>
@@ -338,15 +335,9 @@
                                 <span>Price:</span> <strong>₹<?= number_format((float)$stk['unit_price'], 2) ?></strong>
                             </div>
                             <div class="meta-line">
-                                <span>Code:</span> <span class="font-monospace text-muted" style="font-size:8px"><?= htmlspecialchars($stk['code']) ?></span>
+                                <span>Code:</span> <strong class="font-monospace" style="font-size: 10.5px; font-weight: 800; color: #0f172a; letter-spacing: 0.3px;"><?= htmlspecialchars($stk['code']) ?></strong>
                             </div>
                         </div>
-                    </div>
-
-                    <div class="label-footer no-print">
-                        <button type="button" class="btn btn-outline-dark single-print-btn" <?= $canManageSupplies ? 'onclick="printSingleLabel(' . $stk['index'] . ')"' : 'disabled style="opacity: 0.5;"' ?> title="Print ONLY this label">
-                            <i class="bi bi-printer-fill me-1"></i> Print This Label
-                        </button>
                     </div>
                 </div>
             <?php endforeach; ?>

@@ -18,20 +18,26 @@
         }
 
         .labels-container {
-            max-width: 1140px;
+            max-width: 1200px;
             margin: 0 auto;
         }
 
         .stickers-grid {
-            display: flex;
-            flex-wrap: wrap;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
             gap: 16px;
             justify-content: flex-start;
         }
 
+        @media (max-width: 1100px) {
+            .stickers-grid {
+                grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            }
+        }
+
         /* 50x30mm / 2x1 inch standard thermal sticker card matching Image 1 Roll QR Module */
         .fabric-sticker-card {
-            width: 275px;
+            width: 100%;
             min-height: 155px;
             background: #ffffff;
             border: 1.5px solid #0f172a;
@@ -387,23 +393,8 @@
                             <?php endif; ?>
                         </div>
                         <div class="meta-line">
-                            <span>Code:</span> <span class="font-monospace text-muted" style="font-size:8px"><?= e($stk['code']) ?></span>
+                            <span>Code:</span> <strong class="font-monospace" style="font-size: 10.5px; font-weight: 800; color: #0f172a; letter-spacing: 0.3px;"><?= e($stk['code']) ?></strong>
                         </div>
-                    </div>
-                </div>
-
-                <!-- Label Footer: Action Buttons for Reprint & Delete (hidden on print) -->
-                <div class="label-footer no-print">
-                    <span class="text-muted fw-semibold">#<?= (int)$stk['piece_index'] ?></span>
-                    <div class="d-flex align-items-center gap-1">
-                        <button type="button" class="btn btn-outline-dark single-print-btn" <?= $canManageLabels ? 'onclick="printSingleSticker(' . $idx . ')"' : 'disabled style="opacity: 0.5;"' ?> title="Print ONLY this label">
-                            <i class="bi bi-printer-fill me-1"></i> Print This Label
-                        </button>
-                        <?php if ($canDeleteLabels): ?>
-                        <button type="button" class="btn btn-outline-danger single-print-btn" onclick="deleteSingleSticker(<?= $idx ?>)" title="Delete this label">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                        <?php endif; ?>
                     </div>
                 </div>
             </div>

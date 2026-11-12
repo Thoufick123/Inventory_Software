@@ -310,7 +310,7 @@
                                 <?php endif; ?>
                             </div>
                             <div class="meta-line">
-                                <span>Code:</span> <span class="font-monospace text-muted" style="font-size:8px"><?= htmlspecialchars($stk['code']) ?></span>
+                                <span>Code:</span> <strong class="font-monospace" style="font-size: 10.5px; font-weight: 800; color: #0f172a; letter-spacing: 0.3px;"><?= htmlspecialchars($stk['code']) ?></strong>
                             </div>
                         </div>
                     </div>
