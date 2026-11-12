@@ -30,8 +30,8 @@ class WarehouseReportService
             // Production Finished Goods Inward
             $prodInward = Database::fetchAll(
                 "SELECT pb.id, pb.batch_number, 'PRODUCTION' as source_type,
-                        COALESCE(pu.name, 'Production Factory') as supplier_or_source,
-                        COALESCE(p.name, pp.name, 'Finished Apparel') as product_name,
+                        pu.name as supplier_or_source,
+                        COALESCE(p.name, pp.name) as product_name,
                         p.code as product_code,
                         w.name as warehouse_name,
                         pb.box_count, pb.total_qty as total_pieces,
@@ -56,8 +56,8 @@ class WarehouseReportService
             // Direct Vendor GRN Inward
             $vendorInward = Database::fetchAll(
                 "SELECT pi.id, pi.grn_number as batch_number, 'VENDOR_PURCHASE' as source_type,
-                        COALESCE(ws.name, ws.company, s.name, 'Vendor / Mill') as supplier_or_source,
-                        COALESCE(po.po_number, pi.invoice_number, 'Vendor Inward') as product_name,
+                        COALESCE(ws.name, ws.company, s.name) as supplier_or_source,
+                        COALESCE(po.po_number, pi.invoice_number) as product_name,
                         COALESCE(pi.invoice_number, '-') as product_code,
                         w.name as warehouse_name,
                         1 as box_count,
@@ -90,7 +90,7 @@ class WarehouseReportService
             $data['stock'] = Database::fetchAll(
                 "SELECT p.id as product_id, p.name as product_name, p.code as product_code,
                         p.catalog_code, p.hsn_code, p.gst_percentage,
-                        COALESCE(wc.name, cat.name, 'General Apparel') as category_name,
+                        COALESCE(wc.name, cat.name) as category_name,
                         pv.id as variant_id, pv.sku, pv.qr_code,
                         s.name as size_name, c.name as color_name,
                         w.name as warehouse_name,
@@ -120,11 +120,11 @@ class WarehouseReportService
         if (in_array('catalog', $selectedModules, true)) {
             $data['catalog'] = Database::fetchAll(
                 "SELECT p.id, p.name, p.code, p.catalog_code,
-                        COALESCE(p.hsn_code, wc.hsn_code, '6109') as hsn_code,
-                        COALESCE(p.gst_percentage, wc.gst_rate, 5.00) as gst_percentage,
-                        COALESCE(wc.name, cat.name, 'General') as category_name,
-                        COALESCE(b.name, 'Standard Brand') as brand_name,
-                        COALESCE(ws.company, ws.name, 'Internal / Own') as supplier_name,
+                        COALESCE(p.hsn_code, wc.hsn_code) as hsn_code,
+                        COALESCE(p.gst_percentage, wc.gst_rate) as gst_percentage,
+                        COALESCE(wc.name, cat.name) as category_name,
+                        b.name as brand_name,
+                        COALESCE(ws.company, ws.name) as supplier_name,
                         p.source_type, p.is_complementary,
                         (SELECT COUNT(*) FROM product_variants WHERE product_id = p.id) as variants_count,
                         COALESCE((
@@ -170,7 +170,7 @@ class WarehouseReportService
         if (in_array('purchases', $selectedModules, true)) {
             $data['purchases'] = Database::fetchAll(
                 "SELECT po.id, po.po_number, po.order_date, po.expected_date,
-                        COALESCE(ws.company, ws.name, s.name, 'Vendor') as supplier_name,
+                        COALESCE(ws.company, ws.name, s.name) as supplier_name,
                         w.name as warehouse_name,
                         po.subtotal, po.tax_amount, po.total_amount, po.paid_amount,
                         po.payment_status, po.status, po.notes,
@@ -326,6 +326,24 @@ class WarehouseReportService
                  WHERE p.is_complementary = 1 OR pv.is_complementary = 1
                  ORDER BY p.name ASC, pv.sku ASC"
             );
+        }
+
+        // =========================================================================
+        // 12. STOCK ADJUSTMENTS
+        // =========================================================================
+        if (in_array('adjustments', $selectedModules, true)) {
+            $data['adjustments'] = \StockAdjustment::getAll([
+                'warehouse_id' => $warehouseId,
+                'date_from' => $startDate,
+                'date_to' => $endDate,
+            ]);
+            foreach ($data['adjustments'] as &$adjustment) {
+                $adjustment['qr_codes_text'] = implode(
+                    ', ',
+                    \StockAdjustment::getAdjustmentQrCodes($adjustment)
+                );
+            }
+            unset($adjustment);
         }
 
         // =========================================================================
@@ -547,7 +565,7 @@ class WarehouseReportService
      */
     public static function streamCsv(string $periodLabel, string $startDate, string $endDate, array $data, ?array $warehouse = null): void
     {
-        $whName = !empty($warehouse['name']) ? strtoupper($warehouse['name']) : 'CENTRAL DISTRIBUTION WAREHOUSE';
+        $whName = !empty($warehouse['name']) ? strtoupper($warehouse['name']) : 'ALL WAREHOUSES';
 
         header('Content-Type: text/csv; charset=UTF-8');
         header('Content-Disposition: attachment; filename="warehouse_report_' . date('Ymd_His') . '.csv"');
@@ -564,12 +582,12 @@ class WarehouseReportService
             fputcsv($out, ['Warehouse Address:', str_replace(["\r\n", "\n", "\r"], ' ', (string)$warehouse['address'])]);
         }
         fputcsv($out, [
-            'Facility Code:', $warehouse['code'] ?? 'WH-01',
+            'Facility Code:', $warehouse['code'] ?? '',
             'Phone / Contact:', $warehouse['phone'] ?? '-',
-            'Report Scope:', !empty($warehouse['id']) ? "Specific Warehouse #{$warehouse['id']}" : 'All Warehouses (Admin Scope)'
+            'Report Scope:', !empty($warehouse['id']) ? "Specific Warehouse #{$warehouse['id']}" : 'All Warehouses'
         ]);
         fputcsv($out, ['Report Period:', $periodLabel, "From: {$startDate}", "To: {$endDate}"]);
-        fputcsv($out, ['Generated Timestamp:', date('Y-m-d H:i:s') . ' IST']);
+        fputcsv($out, ['Generated Timestamp:', date('Y-m-d H:i:s')]);
         fputcsv($out, []); // Blank separator line
 
         // 2. Executive Operations & Stock Summary
@@ -635,8 +653,8 @@ class WarehouseReportService
                     $row['sku'],
                     $row['size_name'] ?? '-',
                     $row['color_name'] ?? '-',
-                    $row['hsn_code'] ?? '6109',
-                    number_format((float)($row['gst_percentage'] ?? 5.0), 2, '.', ''),
+                    $row['hsn_code'] ?? '',
+                    isset($row['gst_percentage']) ? number_format((float)$row['gst_percentage'], 2, '.', '') : '',
                     $row['available_qty'],
                     number_format((float)$row['cost_price'], 2, '.', ''),
                     number_format((float)$row['selling_price'], 2, '.', ''),
@@ -659,8 +677,8 @@ class WarehouseReportService
                     $row['category_name'],
                     $row['brand_name'],
                     $row['supplier_name'],
-                    $row['hsn_code'] ?? '6109',
-                    number_format((float)($row['gst_percentage'] ?? 5.0), 2, '.', ''),
+                    $row['hsn_code'] ?? '',
+                    isset($row['gst_percentage']) ? number_format((float)$row['gst_percentage'], 2, '.', '') : '',
                     $row['source_type'],
                     $row['variants_count'],
                     $row['current_warehouse_stock'],
@@ -849,6 +867,33 @@ class WarehouseReportService
                     number_format((float)$row['mrp'], 2, '.', ''),
                     number_format((float)$row['selling_price'], 2, '.', ''),
                     number_format((float)$row['potential_revenue'], 2, '.', '')
+                ]);
+            }
+            fputcsv($out, []);
+        }
+
+        // 12. Stock Adjustments
+        if (!empty($data['adjustments'])) {
+            fputcsv($out, ['=== 12. WAREHOUSE STOCK ADJUSTMENTS ===']);
+            fputcsv($out, ['Adjustment #', 'Created At', 'Warehouse', 'Product', 'SKU', 'Size', 'Color', 'Adjustment Type', 'Quantity', 'Reason', 'Notes', 'QR Codes', 'Status', 'Requested By', 'Approved By', 'Approved At']);
+            foreach ($data['adjustments'] as $row) {
+                fputcsv($out, [
+                    $row['adjustment_number'],
+                    $row['created_at'],
+                    $row['warehouse_name'],
+                    $row['product_name'],
+                    $row['sku'],
+                    $row['size_name'] ?? '',
+                    $row['color_name'] ?? '',
+                    $row['adjustment_type'],
+                    $row['quantity'],
+                    $row['reason'],
+                    $row['notes'] ?? '',
+                    $row['qr_codes_text'] ?? '',
+                    $row['status'],
+                    $row['requested_by_name'] ?? '',
+                    $row['approved_by_name'] ?? '',
+                    $row['approved_at'] ?? '',
                 ]);
             }
             fputcsv($out, []);

@@ -743,6 +743,16 @@
                                         </label>
                                     </div>
                                 </div>
+                                <?php if (hasPermission('stock_adjustments', 'view')): ?>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input wh-export-mod-cb" type="checkbox" name="modules[]" value="adjustments" id="whModAdjustments" checked>
+                                        <label class="form-check-label small fw-semibold" for="whModAdjustments">
+                                            <i class="bi bi-sliders text-warning me-1"></i> Stock Adjustments &amp; QR Codes
+                                        </label>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>

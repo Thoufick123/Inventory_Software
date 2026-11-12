@@ -1,9 +1,6 @@
 <?php
 $warehouse = $warehouse ?? [
-    'name'    => 'Central Warehouses Network',
-    'code'    => 'WH-ALL',
-    'phone'   => '+91 98765 43210',
-    'address' => 'Central Hub & Distribution Facility',
+    'name' => 'All Warehouses',
 ];
 $company = $company ?? [];
 $summary = $data['summary'] ?? [];
@@ -338,7 +335,7 @@ $selectedModules = $selectedModules ?? [];
                     <td class="fw-bold"><?= htmlspecialchars($row['product_name'] ?? '-') ?></td>
                     <td><?= htmlspecialchars($row['product_code'] ?? '-') ?></td>
                     <td><?= htmlspecialchars($row['catalog_code'] ?? '-') ?></td>
-                    <td><span class="badge badge-secondary"><?= htmlspecialchars($row['hsn_code'] ?? '6109') ?></span></td>
+                    <td><span class="badge badge-secondary"><?= htmlspecialchars($row['hsn_code'] ?? '') ?></span></td>
                     <td><?= htmlspecialchars($row['category_name'] ?? '-') ?></td>
                     <td><code><?= htmlspecialchars($row['sku'] ?? '-') ?></code></td>
                     <td><?= htmlspecialchars($row['size_name'] ?? '-') ?> / <?= htmlspecialchars($row['color_name'] ?? '-') ?></td>
@@ -383,7 +380,7 @@ $selectedModules = $selectedModules ?? [];
                     <td class="fw-bold"><?= htmlspecialchars($row['name'] ?? '-') ?></td>
                     <td><?= htmlspecialchars($row['code'] ?? '-') ?></td>
                     <td><?= htmlspecialchars($row['catalog_code'] ?? '-') ?></td>
-                    <td><span class="badge badge-secondary"><?= htmlspecialchars($row['hsn_code'] ?? '6109') ?></span></td>
+                    <td><span class="badge badge-secondary"><?= htmlspecialchars($row['hsn_code'] ?? '') ?></span></td>
                     <td><?= htmlspecialchars($row['category_name'] ?? '-') ?></td>
                     <td><?= htmlspecialchars($row['brand_name'] ?? '-') ?></td>
                     <td><?= htmlspecialchars($row['gender'] ?? '-') ?></td>
@@ -716,6 +713,50 @@ $selectedModules = $selectedModules ?? [];
                     <td class="right"><?= number_format((float)($row['mrp'] ?? 0), 2) ?></td>
                     <td class="right"><?= number_format((float)($row['selling_price'] ?? 0), 2) ?></td>
                     <td class="right fw-bold">₹<?= number_format((float)($row['potential_revenue'] ?? 0), 2) ?></td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </section>
+    <?php endif; ?>
+
+    <!-- MODULE 12: STOCK ADJUSTMENTS -->
+    <?php if (in_array('adjustments', $selectedModules, true) && !empty($data['adjustments'])): ?>
+    <section class="section">
+        <div class="section-header">
+            <h2 class="section-title">12. Warehouse Stock Adjustments</h2>
+            <span class="section-count"><?= count($data['adjustments']) ?> Records</span>
+        </div>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Adjustment #</th>
+                    <th>Created</th>
+                    <th>Warehouse</th>
+                    <th>Product / SKU</th>
+                    <th>Type</th>
+                    <th class="right">Quantity</th>
+                    <th>QR Codes</th>
+                    <th>Status</th>
+                    <th>Requested / Approved By</th>
+                    <th>Approved At</th>
+                    <th>Reason / Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($data['adjustments'] as $row): ?>
+                <tr>
+                    <td class="fw-bold"><?= htmlspecialchars($row['adjustment_number'] ?? '') ?></td>
+                    <td><?= htmlspecialchars($row['created_at'] ?? '') ?></td>
+                    <td><?= htmlspecialchars($row['warehouse_name'] ?? '') ?></td>
+                    <td><?= htmlspecialchars($row['product_name'] ?? '') ?><br><code><?= htmlspecialchars($row['sku'] ?? '') ?></code></td>
+                    <td><?= htmlspecialchars($row['adjustment_type'] ?? '') ?></td>
+                    <td class="right"><?= number_format((float)($row['quantity'] ?? 0)) ?></td>
+                    <td><?= htmlspecialchars($row['qr_codes_text'] ?? '') ?></td>
+                    <td><?= htmlspecialchars($row['status'] ?? '') ?></td>
+                    <td><?= htmlspecialchars($row['requested_by_name'] ?? '') ?> / <?= htmlspecialchars($row['approved_by_name'] ?? '') ?></td>
+                    <td><?= htmlspecialchars($row['approved_at'] ?? '') ?></td>
+                    <td><?= htmlspecialchars(trim(($row['reason'] ?? '') . ' ' . ($row['notes'] ?? ''))) ?></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>

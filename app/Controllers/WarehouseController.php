@@ -131,6 +131,9 @@ class WarehouseController {
         }
 
         $allModules = ['inward', 'stock', 'catalog', 'suppliers', 'purchases', 'allocations', 'outward', 'damages', 'returns', 'expenses', 'complementary'];
+        if (hasPermission('stock_adjustments', 'view')) {
+            $allModules[] = 'adjustments';
+        }
         $selectedModules = !empty($_REQUEST['modules']) && is_array($_REQUEST['modules'])
             ? array_values(array_intersect($_REQUEST['modules'], $allModules))
             : $allModules;
@@ -140,23 +143,29 @@ class WarehouseController {
         }
 
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
-        if (!empty($_REQUEST['warehouse_id']) && is_numeric($_REQUEST['warehouse_id'])) {
-            $warehouseId = (int)$_REQUEST['warehouse_id'];
-        } else {
+        $warehouseIdRaw = $_REQUEST['warehouse_id'] ?? '';
+        if ($scopedWarehouseId !== null) {
             $warehouseId = $scopedWarehouseId;
+        } elseif ($warehouseIdRaw !== '' && !is_scalar($warehouseIdRaw)) {
+            Response::redirect(url('warehouse/dashboard'), 'error', 'Select a valid warehouse for the report.');
+            return;
+        } elseif ($warehouseIdRaw !== '' && is_scalar($warehouseIdRaw)) {
+            $validatedWarehouseId = filter_var($warehouseIdRaw, FILTER_VALIDATE_INT);
+            if ($validatedWarehouseId === false || $validatedWarehouseId <= 0) {
+                Response::redirect(url('warehouse/dashboard'), 'error', 'Select a valid warehouse for the report.');
+                return;
+            }
+            $warehouseId = $validatedWarehouseId;
+        } else {
+            $warehouseId = null;
         }
 
-        $activeWarehouse = null;
-        if ($warehouseId) {
-            $activeWarehouse = Database::fetchOne("SELECT * FROM warehouses WHERE id = ?", [$warehouseId]);
-        }
+        $activeWarehouse = $warehouseId !== null
+            ? Database::fetchOne("SELECT * FROM warehouses WHERE id = ?", [$warehouseId])
+            : ['name' => 'All Warehouses'];
         if (!$activeWarehouse) {
-            $activeWarehouse = [
-                'name'    => 'Central Warehouses Network',
-                'code'    => 'WH-ALL',
-                'phone'   => '+91 98765 43210',
-                'address' => 'Central Hub & Outlets Distribution Center',
-            ];
+            Response::redirect(url('warehouse/dashboard'), 'error', 'Selected warehouse was not found.');
+            return;
         }
 
         $data = \App\Services\WarehouseReportService::getReportData($startDate, $endDate, $selectedModules, $warehouseId);
@@ -1160,13 +1169,29 @@ class WarehouseController {
 
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
-        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
-
-        if ($scopedWarehouseId) {
-            $selectedWarehouseId = $scopedWarehouseId;
-        } else {
-            $selectedWarehouseId = !empty($warehouseId) ? (int)$warehouseId : ($warehouses[0]['id'] ?? 1);
+        if (empty($warehouses)) {
+            Response::redirect(url('warehouse/dashboard'), 'error', 'No warehouse is available for your account.');
+            return;
         }
+
+        if ($scopedWarehouseId !== null) {
+            $selectedWarehouseId = $scopedWarehouseId;
+        } elseif ($warehouseId !== '' && $warehouseId !== null && !is_scalar($warehouseId)) {
+            Response::redirect(url('warehouse/stock'), 'error', 'Selected warehouse was not found.');
+            return;
+        } elseif (is_scalar($warehouseId) && trim((string)$warehouseId) !== '') {
+            $requestedWarehouseId = filter_var($warehouseId, FILTER_VALIDATE_INT);
+            $allowedWarehouseIds = array_map('intval', array_column($warehouses, 'id'));
+            if ($requestedWarehouseId === false || $requestedWarehouseId <= 0 || !in_array((int)$requestedWarehouseId, $allowedWarehouseIds, true)) {
+                Response::redirect(url('warehouse/stock'), 'error', 'Selected warehouse was not found.');
+                return;
+            }
+            $selectedWarehouseId = (int)$requestedWarehouseId;
+        } else {
+            $selectedWarehouseId = (int)$warehouses[0]['id'];
+        }
+
+        $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
 
         $currentWarehouse = null;
         foreach ($warehouses as $wh) {
@@ -1211,11 +1236,8 @@ class WarehouseController {
                 JOIN warehouses w ON sb.location_id = w.id
                 WHERE sb.location_type = 'WAREHOUSE'";
         $params = [];
-
-        if (!empty($selectedWarehouseId)) {
-            $sql .= " AND sb.location_id = ?";
-            $params[] = $selectedWarehouseId;
-        }
+        $sql .= " AND sb.location_id = ?";
+        $params[] = $selectedWarehouseId;
 
         if (!empty($stockState)) {
             $sql .= " AND sb.stock_state = ?";
@@ -1640,17 +1662,50 @@ class WarehouseController {
 
         if (!$variant) {
             Response::redirect(url('warehouse/stock'), 'error', 'Variant not found.');
+            return;
         }
 
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
-        $selectedWarehouseId = !empty($_GET['warehouse_id']) ? (int)$_GET['warehouse_id'] : ($scopedWarehouseId ? (int)$scopedWarehouseId : null);
+        $requestedWarehouseId = $_GET['warehouse_id'] ?? '';
+        if ($scopedWarehouseId !== null) {
+            $selectedWarehouseId = $scopedWarehouseId;
+        } elseif ($requestedWarehouseId !== '' && $requestedWarehouseId !== null && !is_scalar($requestedWarehouseId)) {
+            Response::redirect(url('warehouse/stock'), 'error', 'Selected warehouse was not found.');
+            return;
+        } elseif (is_scalar($requestedWarehouseId) && trim((string)$requestedWarehouseId) !== '') {
+            $validatedWarehouseId = filter_var($requestedWarehouseId, FILTER_VALIDATE_INT);
+            if ($validatedWarehouseId === false || $validatedWarehouseId <= 0) {
+                Response::redirect(url('warehouse/stock'), 'error', 'Selected warehouse was not found.');
+                return;
+            }
+            $selectedWarehouseId = (int)$validatedWarehouseId;
+        } else {
+            $selectedWarehouseId = null;
+        }
+
         $selectedWarehouse = null;
-        if ($selectedWarehouseId) {
+        if ($selectedWarehouseId !== null) {
             $selectedWarehouse = Database::fetchOne("SELECT * FROM warehouses WHERE id = ?", [$selectedWarehouseId]);
+            if (!$selectedWarehouse) {
+                Response::redirect(url('warehouse/stock'), 'error', 'Selected warehouse was not found.');
+                return;
+            }
+        }
+        if ($scopedWarehouseId !== null) {
+            $hasWarehouseStock = Database::fetchOne(
+                "SELECT 1 FROM stock_balances
+                 WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND location_id = ?
+                 LIMIT 1",
+                [$variantId, $scopedWarehouseId]
+            );
+            if (!$hasWarehouseStock) {
+                Response::redirect(url('warehouse/stock?warehouse_id=' . (int)$scopedWarehouseId), 'error', 'Product variant was not found in your warehouse inventory.');
+                return;
+            }
         }
 
         // Fetch balances across all warehouses (or scoped warehouse if user has hard restriction)
-        $whBalanceClause = $scopedWarehouseId ? " AND sb.location_id = " . (int)$scopedWarehouseId : "";
+        $whBalanceClause = $scopedWarehouseId !== null ? " AND sb.location_id = " . (int)$scopedWarehouseId : "";
         $balances = Database::fetchAll(
             "SELECT sb.*, w.name as warehouse_name, w.code as warehouse_code
              FROM stock_balances sb
@@ -1660,9 +1715,8 @@ class WarehouseController {
             [$variantId]
         );
 
-        $txFilters = ['limit' => 50];
+        $txFilters = ['limit' => 50, 'location_type' => 'WAREHOUSE'];
         if ($selectedWarehouseId) {
-            $txFilters['location_type'] = 'WAREHOUSE';
             $txFilters['location_id'] = $selectedWarehouseId;
         }
         $transactions = StockService::getTransactionHistory($variantId, $txFilters);
@@ -1979,10 +2033,14 @@ class WarehouseController {
         );
 
         // Retrieve actual inwarded tags and ranges from stock_transactions (Stickered Inward, Purchase Inward, etc.)
+        $whStockTxClause = $selectedWarehouseId
+            ? " AND location_id = " . (int)$selectedWarehouseId
+            : "";
         $stInwardRows = Database::fetchAll(
             "SELECT notes, reference_type, quantity, created_at
              FROM stock_transactions 
-             WHERE variant_id = ? AND transaction_type IN ('PURCHASE_INWARD', 'RETURN_INWARD')
+             WHERE variant_id = ? AND location_type = 'WAREHOUSE'$whStockTxClause
+               AND transaction_type IN ('PURCHASE_INWARD', 'RETURN_INWARD')
              ORDER BY id ASC",
             [$variantId]
         );
@@ -2388,7 +2446,9 @@ class WarehouseController {
             unset($piece);
         }
 
-        $warehouses = Database::fetchAll("SELECT * FROM warehouses WHERE is_active = 1 ORDER BY name ASC");
+        $warehouses = function_exists('getScopedWarehouses')
+            ? getScopedWarehouses()
+            : Warehouse::getAll(['is_active' => 1]);
 
         // Fetch batch-wise added stock history specifically for this variant including damage tracking
         $whBatchHistoryClause = $selectedWarehouseId ? " AND (po.warehouse_id = " . (int)$selectedWarehouseId . " OR pb.destination_warehouse_id = " . (int)$selectedWarehouseId . ")" : "";
@@ -2423,6 +2483,9 @@ class WarehouseController {
 
         // Also fetch style-level production batches for parent product visibility
         $productId = (int)$variant['product_id'];
+        $whProductBatchHistoryClause = $selectedWarehouseId
+            ? " AND (po.warehouse_id = " . (int)$selectedWarehouseId . " OR pb.destination_warehouse_id = " . (int)$selectedWarehouseId . ")"
+            : "";
         $productBatchHistory = Database::fetchAll(
             "SELECT pb.id as batch_id, pb.batch_number, pb.status as batch_status, pb.created_at as batch_created_at, pb.box_count, pb.total_qty as batch_total_qty,
                     pp.id as program_id, pp.program_number, pp.name as program_name,
@@ -2439,7 +2502,7 @@ class WarehouseController {
              LEFT JOIN production_units pu ON pp.production_unit_id = pu.id
              LEFT JOIN production_outwards po ON (pb.production_outward_id = po.id OR po.production_batch_id = pb.id)
              LEFT JOIN warehouses w ON po.warehouse_id = w.id
-             WHERE pv.product_id = ?
+             WHERE pv.product_id = ?$whProductBatchHistoryClause
              GROUP BY pb.id, pb.batch_number, pb.status, pb.created_at, pb.box_count, pb.total_qty,
                       pp.id, pp.program_number, pp.name,
                       pu.name, pu.code, pu.manager_name, pu.phone,
@@ -2674,6 +2737,7 @@ class WarehouseController {
             'variantReturns'             => $variantReturns,
             'returnedPieceList'          => $returnedPieceList,
             'warehouses'                 => $warehouses,
+            'warehouseScopeRestricted'   => $scopedWarehouseId !== null,
             'breadcrumb'                 => [
                 ['label' => 'Warehouse', 'url' => url('warehouse/dashboard')],
                 ['label' => 'Stock Ledger', 'url' => url('warehouse/stock' . (!empty($selectedWarehouseId) ? ('?warehouse_id=' . (int)$selectedWarehouseId) : ''))],
@@ -2865,15 +2929,28 @@ class WarehouseController {
         if (!CSRF::validateRequest()) {
             Session::flash('error', 'Invalid security token. Please try again.');
             Response::back();
+            return;
         }
 
         $variantId = (int)$id;
         $variant = Database::fetchOne("SELECT * FROM product_variants WHERE id = ?", [$variantId]);
         if (!$variant) {
             Response::redirect(url('warehouse/stock'), 'error', 'Product variant not found.');
+            return;
         }
 
-        $warehouseId = !empty($_POST['warehouse_id']) ? (int)$_POST['warehouse_id'] : 1;
+        $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+        if ($scopedWarehouseId !== null) {
+            $warehouseId = $scopedWarehouseId;
+        } else {
+            $warehouseRaw = $_POST['warehouse_id'] ?? '';
+            $warehouseId = is_scalar($warehouseRaw) ? filter_var($warehouseRaw, FILTER_VALIDATE_INT) : false;
+        }
+        if ($warehouseId === false || (int)$warehouseId <= 0 || !Database::fetchOne("SELECT id FROM warehouses WHERE id = ?", [(int)$warehouseId])) {
+            Response::redirect(url('warehouse/stock'), 'error', 'Select a valid warehouse before generating QR labels.');
+            return;
+        }
+        $warehouseId = (int)$warehouseId;
         $quantity = max(1, min(500, (int)($_POST['quantity'] ?? 1)));
 
         // Verify available stock in selected warehouse (strict check against missing stock)
