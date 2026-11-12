@@ -2355,6 +2355,12 @@ class ProductionController {
         }
 
         // 4. Check Product Variants by SKU or QR
+        // 4. Check generated production label codes
+        if (!$prodItem) {
+            $prodItem = $this->findDamageProductByLabelCode($scanCode);
+        }
+
+        // 5. Check Product Variants by SKU or QR
         if (!$prodItem) {
             $varItem = Database::fetchOne(
                 "SELECT pv.*,
@@ -2426,6 +2432,44 @@ class ProductionController {
             'success' => false,
             'message' => "QR code {$scanCode} was not found as a fabric roll or finished product in the system.",
         ], 404);
+    }
+
+    private function findDamageProductByLabelCode(string $scanCode): ?array {
+        if (!preg_match('/^([A-Z]{1,4}\d{4})(\d+)$/', strtoupper(trim($scanCode)), $codeParts)) {
+            return null;
+        }
+
+        $labelPrefix = $codeParts[1];
+        $sequence = (int)$codeParts[2];
+        $candidates = Database::fetchAll(
+            "SELECT li.start_code, li.end_code, li.start_seq, li.end_seq,
+                    li.base_price, li.discount_price,
+                    p.id AS product_id, p.name AS product_name,
+                    pv.id AS variant_id, pv.sku, pv.mrp, pv.selling_price, pv.production_cost,
+                    pv.weight AS variant_weight,
+                    COALESCE(li.size_name, sz.name) AS size_name,
+                    COALESCE(li.color_name, cl.name) AS color_name
+             FROM label_items li
+             JOIN product_variants pv ON pv.id = li.variant_id
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN sizes sz ON sz.id = pv.size_id
+             LEFT JOIN colors cl ON cl.id = pv.color_id
+             WHERE li.start_code LIKE ? AND li.end_code LIKE ?
+               AND li.start_seq <= ? AND li.end_seq >= ?
+             ORDER BY li.id DESC",
+            [$labelPrefix . '%', $labelPrefix . '%', $sequence, $sequence]
+        );
+
+        $matches = array_values(array_filter($candidates, static function (array $candidate) use ($labelPrefix): bool {
+            return strcasecmp(substr((string)$candidate['start_code'], 0, strlen($labelPrefix)), $labelPrefix) === 0
+                && strcasecmp(substr((string)$candidate['end_code'], 0, strlen($labelPrefix)), $labelPrefix) === 0;
+        }));
+
+        if (count($matches) !== 1) {
+            return null;
+        }
+
+        return $matches[0];
     }
 
     public function downloadBill(string $id): void {
@@ -3502,6 +3546,10 @@ class ProductionController {
                          WHERE wq.qr_code = ? LIMIT 1",
                         [$qrCode]
                     );
+                }
+
+                if (!$prodItem) {
+                    $prodItem = $this->findDamageProductByLabelCode($qrCode);
                 }
 
                 if (!$prodItem) {
