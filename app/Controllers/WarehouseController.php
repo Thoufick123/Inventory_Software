@@ -3055,7 +3055,7 @@ class WarehouseController {
                 }
 
                 $dpoCheck = Database::fetchOne(
-                    "SELECT po.po_number, COALESCE(c.name, 'Customer') as customer_name
+                    "SELECT po.po_number, pi.variant_id, COALESCE(c.name, 'Customer') as customer_name
                      FROM purchase_items pi
                      JOIN purchase_orders po ON po.id = pi.purchase_order_id
                      LEFT JOIN customers c ON po.customer_id = c.id
@@ -3070,6 +3070,41 @@ class WarehouseController {
                     [trim($pieceTag), trim($pieceTag), '%' . trim($pieceTag) . '%', '%' . trim($pieceTag) . '%']
                 );
                 if ($dpoCheck) {
+                    $dpoVariantId = (int)($dpoCheck['variant_id'] ?? 0);
+                    $itemVariantId = (int)($item['variant_id'] ?? 0);
+                    if ($dpoVariantId > 0 && $itemVariantId === $dpoVariantId) {
+                        $dpoVariant = Database::fetchOne(
+                            "SELECT pv.id, pv.qr_type, pv.pack_quantity, pv.series_start_code,
+                                    GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_comp,
+                                    COALESCE(wc.category_type, 'NORMAL') as category_type
+                             FROM product_variants pv
+                             JOIN products p ON p.id = pv.product_id
+                             LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+                             WHERE pv.id = ?",
+                            [$dpoVariantId]
+                        );
+                        $productType = self::determineAllocationProductType($dpoVariant);
+                        if ($productType === 'SERIES' || $productType === 'COMPLEMENTARY') {
+                            $availableRow = Database::fetchOne(
+                                "SELECT COALESCE(SUM(quantity), 0) as qty
+                                 FROM stock_balances
+                                 WHERE variant_id = ? AND location_type = 'WAREHOUSE'
+                                   AND location_id = ? AND stock_state = 'AVAILABLE'",
+                                [$dpoVariantId, $warehouseId]
+                            );
+                            $availableQty = (float)($availableRow['qty'] ?? 0);
+                            $damageQty = max(1, (float)($item['quantity'] ?? 1));
+                            if ($availableQty >= $damageQty) {
+                                continue;
+                            }
+                            Session::flash(
+                                'error',
+                                "QR code '{$pieceTag}' was already purchased under Direct Purchase #{$dpoCheck['po_number']}. Only {$availableQty} available pack unit(s) remain, but {$damageQty} damage unit(s) were requested."
+                            );
+                            Response::back();
+                            return;
+                        }
+                    }
                     Session::flash('error', "QR code '{$pieceTag}' has ALREADY been purchased by customer '{$dpoCheck['customer_name']}' under Direct Purchase #{$dpoCheck['po_number']}! It cannot be logged as warehouse damage.");
                     Response::back();
                     return;
@@ -5309,7 +5344,7 @@ class WarehouseController {
         $variants = Database::fetchAll(
             "SELECT pv.id, pv.sku, pv.qr_code, pv.qr_type, pv.series_start_code, pv.series_end_code, pv.pack_quantity,
                     COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), NULLIF(cat.hsn_code, ''), NULLIF(c_old.hsn_code, ''), '') as hsn_code,
-                    pv.selling_price, pv.mrp, p.name as product_name, p.code as product_code, p.qr_code_prefix,
+                    pv.selling_price, pv.mrp, pv.purchase_price, pv.production_cost, p.name as product_name, p.code as product_code, p.qr_code_prefix,
                     p.category_code, p.subcategory_code, p.sub_subcategory_code,
                     s.name as size_name, s.code as size_code, c.name as color_name,
                     COALESCE(cat.name, c_old.name, 'General') as category_name,
@@ -5340,11 +5375,15 @@ class WarehouseController {
             $v['is_complementary'] = (!empty($v['is_complementary']) || !empty($v['prod_is_comp']) || !empty($v['var_is_comp']) || $v['category_type'] === 'COMPLEMENTARY') ? 1 : 0;
             $v['is_series'] = ($v['category_type'] === 'SERIES' || ($v['qr_type'] ?? '') === 'SERIES_BATCH' || (int)($v['pack_quantity'] ?? 0) > 1) ? 1 : 0;
 
-            $retailPrice = (float)($v['selling_price'] > 0 ? $v['selling_price'] : $v['mrp']);
-            if ($v['is_complementary']) {
-                $retailPrice = 0.00;
-            }
+            $stockPrice = (float)($v['purchase_price'] ?? 0);
+            if ($stockPrice <= 0) $stockPrice = (float)($v['production_cost'] ?? 0);
+            if ($stockPrice <= 0) $stockPrice = (float)($v['selling_price'] > 0 ? $v['selling_price'] : $v['mrp']);
+            $v['stock_price'] = $stockPrice;
+            $retailPrice = $v['is_complementary']
+                ? $stockPrice
+                : (float)($v['selling_price'] > 0 ? $v['selling_price'] : $v['mrp']);
             $v['selling_price'] = $retailPrice;
+            if ((float)$v['mrp'] <= 0) $v['mrp'] = $retailPrice;
 
             $c1 = !empty($v['category_code']) ? strtoupper($v['category_code'][0]) : (!empty($v['category_name']) ? strtoupper($v['category_name'][0]) : '');
             $c2 = !empty($v['subcategory_code']) ? strtoupper($v['subcategory_code'][0]) : '';
@@ -5393,7 +5432,13 @@ class WarehouseController {
             if (!empty($_POST['variant_id']) && is_array($_POST['variant_id'])) {
                 foreach ($_POST['variant_id'] as $idx => $vId) {
                     $qty = (int)($_POST['quantity'][$idx] ?? 1);
-                    $price = (float)($_POST['unit_price'][$idx] ?? 0.0);
+                    $postedPrice = $_POST['unit_price'][$idx] ?? null;
+                    if ($vId && $qty > 0 && $this->isComplementaryWarehouseVariant((int)$vId)
+                        && (!is_numeric($postedPrice) || (float)$postedPrice <= 0)) {
+                        Response::redirect(url('warehouse/purchases/create'), 'error', 'Complementary products must have a price greater than zero.');
+                        return;
+                    }
+                    $price = (float)($postedPrice ?? 0.0);
                     $mrp = (float)($_POST['mrp'][$idx] ?? $price);
                     if ($mrp <= 0) $mrp = $price;
                     if ($price <= 0 && $mrp > 0) $price = $mrp;
@@ -5610,7 +5655,7 @@ class WarehouseController {
         $variants = Database::fetchAll(
             "SELECT pv.id, pv.sku, pv.qr_code, pv.qr_type, pv.series_start_code, pv.series_end_code, pv.pack_quantity,
                     COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), NULLIF(cat.hsn_code, ''), NULLIF(c_old.hsn_code, ''), '') as hsn_code,
-                    pv.selling_price, pv.mrp, p.name as product_name, p.code as product_code, p.qr_code_prefix,
+                    pv.selling_price, pv.mrp, pv.purchase_price, pv.production_cost, p.name as product_name, p.code as product_code, p.qr_code_prefix,
                     p.category_code, p.subcategory_code, p.sub_subcategory_code,
                     s.name as size_name, s.code as size_code, c.name as color_name,
                     COALESCE(cat.name, c_old.name, 'General') as category_name,
@@ -5641,12 +5686,15 @@ class WarehouseController {
             $v['is_complementary'] = (!empty($v['is_complementary']) || !empty($v['prod_is_comp']) || !empty($v['var_is_comp']) || $v['category_type'] === 'COMPLEMENTARY') ? 1 : 0;
             $v['is_series'] = ($v['category_type'] === 'SERIES' || ($v['qr_type'] ?? '') === 'SERIES_BATCH' || (int)($v['pack_quantity'] ?? 0) > 1) ? 1 : 0;
 
-            $retailPrice = (float)($v['selling_price'] > 0 ? $v['selling_price'] : $v['mrp']);
-            if ($v['is_complementary']) {
-                $retailPrice = 0.00;
-            }
+            $stockPrice = (float)($v['purchase_price'] ?? 0);
+            if ($stockPrice <= 0) $stockPrice = (float)($v['production_cost'] ?? 0);
+            if ($stockPrice <= 0) $stockPrice = (float)($v['selling_price'] > 0 ? $v['selling_price'] : $v['mrp']);
+            $v['stock_price'] = $stockPrice;
+            $retailPrice = $v['is_complementary']
+                ? $stockPrice
+                : (float)($v['selling_price'] > 0 ? $v['selling_price'] : $v['mrp']);
             $v['selling_price'] = $retailPrice;
-            $v['mrp'] = $v['is_complementary'] ? 0.00 : (float)$v['mrp'];
+            if ((float)$v['mrp'] <= 0) $v['mrp'] = $retailPrice;
 
             $c1 = !empty($v['category_code']) ? strtoupper($v['category_code'][0]) : (!empty($v['category_name']) ? strtoupper($v['category_name'][0]) : '');
             $c2 = !empty($v['subcategory_code']) ? strtoupper($v['subcategory_code'][0]) : '';
@@ -5707,7 +5755,13 @@ class WarehouseController {
             if (!$productsLocked && !empty($_POST['variant_id']) && is_array($_POST['variant_id'])) {
                 foreach ($_POST['variant_id'] as $idx => $vId) {
                     $qty = (int)($_POST['quantity'][$idx] ?? 1);
-                    $price = (float)($_POST['unit_price'][$idx] ?? 0.0);
+                    $postedPrice = $_POST['unit_price'][$idx] ?? null;
+                    if ($vId && $qty > 0 && $this->isComplementaryWarehouseVariant((int)$vId)
+                        && (!is_numeric($postedPrice) || (float)$postedPrice <= 0)) {
+                        Response::redirect(url('warehouse/purchases/edit/' . $poId), 'error', 'Complementary products must have a price greater than zero.');
+                        return;
+                    }
+                    $price = (float)($postedPrice ?? 0.0);
                     $mrp = (float)($_POST['mrp'][$idx] ?? $price);
                     if ($mrp <= 0) $mrp = $price;
                     if ($price <= 0 && $mrp > 0) $price = $mrp;
@@ -6363,7 +6417,14 @@ class WarehouseController {
         $isComp = (!empty($variant['is_complementary']) || !empty($variant['prod_is_comp']) || ($variant['category_type'] ?? '') === 'COMPLEMENTARY') ? 1 : 0;
         $isSeries = (($variant['category_type'] ?? '') === 'SERIES' || ($variant['qr_type'] ?? '') === 'SERIES_BATCH' || (int)($variant['pack_quantity'] ?? 0) > 1) ? 1 : 0;
         $isPackOrSeries = ($isSeries || $isComp);
-        $retailPrice = $isComp ? 0.00 : (float)($variant['selling_price'] > 0 ? $variant['selling_price'] : $variant['mrp']);
+        $stockPrice = (float)($variant['purchase_price'] ?? 0);
+        if ($stockPrice <= 0) $stockPrice = (float)($variant['production_cost'] ?? 0);
+        if ($stockPrice <= 0) $stockPrice = (float)($variant['selling_price'] > 0 ? $variant['selling_price'] : $variant['mrp']);
+        $retailPrice = $isComp
+            ? $stockPrice
+            : (float)($variant['selling_price'] > 0 ? $variant['selling_price'] : $variant['mrp']);
+        $mrpPrice = (float)($variant['mrp'] ?? 0);
+        if ($mrpPrice <= 0) $mrpPrice = $retailPrice;
 
         if ($isAdjustmentScan === false) {
             // Check if the resolved variant is marked with active unresolved damage in this warehouse
@@ -6540,8 +6601,9 @@ class WarehouseController {
                 'hsn_code'          => $variant['resolved_hsn_code'] ?? $variant['hsn_code'] ?? '',
                 'resolved_hsn_code' => $variant['resolved_hsn_code'] ?? $variant['hsn_code'] ?? '',
                 'selling_price'    => $retailPrice,
-                'mrp'              => $isComp ? 0.0 : (float)($variant['mrp'] ?? $retailPrice),
-                'gst_rate'         => $isComp ? 0.0 : (float)($variant['gst_rate'] ?? 5.0),
+                'mrp'              => $mrpPrice,
+                'stock_price'      => $stockPrice,
+                'gst_rate'         => (float)($variant['gst_rate'] ?? 5.0),
                 'available_stock'  => $availableStock
             ]
         ]);
@@ -7833,6 +7895,21 @@ class WarehouseController {
         }
 
         return 'NORMAL';
+    }
+
+    private function isComplementaryWarehouseVariant(int $variantId): bool {
+        $variant = Database::fetchOne(
+            "SELECT GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_comp,
+                    COALESCE(wc.category_type, 'NORMAL') as category_type
+             FROM product_variants pv
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+             WHERE pv.id = ?",
+            [$variantId]
+        );
+
+        return !empty($variant['is_comp'])
+            || strtoupper((string)($variant['category_type'] ?? '')) === 'COMPLEMENTARY';
     }
 
     private function isAllocationVariantIdentifier(array $variant, string $code): bool {
