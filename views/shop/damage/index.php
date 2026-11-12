@@ -152,12 +152,13 @@ $activeSource = $filters['source_type'] ?? '';
                     <th class="text-center">Qty</th>
                     <th class="text-end">Est. Loss</th>
                     <th class="text-center">Status</th>
+                    <th class="text-end">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($damages)): ?>
                     <tr>
-                        <td colspan="7" class="text-center py-5">
+                        <td colspan="8" class="text-center py-5">
                             <div class="py-4">
                                 <div class="bg-danger bg-opacity-10 text-danger rounded-circle p-4 d-inline-flex mb-3 shadow-xs">
                                     <i class="bi bi-check-circle-fill fs-1 text-success"></i>
@@ -174,7 +175,9 @@ $activeSource = $filters['source_type'] ?? '';
                     </tr>
                 <?php else: ?>
                     <?php foreach ($damages as $d): 
-                        $status = $d['status'] ?? 'LOGGED';
+                        $status = !empty($d['has_outward_return']) ? 'RETURN_TO_WH' : ($d['status'] ?? 'LOGGED');
+                        $canDeleteDamage = in_array($status, ['LOGGED', 'INSPECTED', 'RETURN_TO_WH'], true)
+                            || !empty($d['has_outward_return']);
                         $statusBadgeClass = match($status) {
                             'LOGGED'       => 'bg-danger text-white',
                             'INSPECTED'    => 'bg-info-subtle text-info-emphasis border border-info-subtle',
@@ -252,8 +255,30 @@ $activeSource = $filters['source_type'] ?? '';
                             </td>
                             <td class="text-center">
                                 <span class="badge <?= $statusBadgeClass ?> px-2.5 py-1.5 shadow-2xs">
-                                    <?= e($d['status']) ?>
+                                    <?= e($status) ?>
                                 </span>
+                                <?php if (!empty($d['has_outward_return'])): ?>
+                                    <div class="small text-muted mt-1">
+                                        Returned<?= !empty($d['outward_return_number']) ? ' - ' . e($d['outward_return_number']) : '' ?>
+                                    </div>
+                                <?php endif; ?>
+                            </td>
+                            <td class="text-end text-nowrap">
+                                <div class="d-flex justify-content-end gap-1">
+                                    <?php if (hasPermission('shop_damage', 'view') || hasPermission('shop', 'view')): ?>
+                                        <a href="<?= url('shop/damage/view/' . (int)$d['id']) ?>" class="btn btn-sm btn-outline-primary" title="View damage details">
+                                            <i class="bi bi-eye"></i>
+                                        </a>
+                                    <?php endif; ?>
+                                    <?php if (hasPermission('shop_damage', 'delete') && $canDeleteDamage): ?>
+                                        <form method="POST" action="<?= url('shop/damage/delete/' . (int)$d['id']) ?>" onsubmit="return confirm('Delete this damage record? Stock already returned to the warehouse will not be restored again.');">
+                                            <?= csrf_field() ?>
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete damage record">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
+                                </div>
                             </td>
                         </tr>
                     <?php endforeach; ?>

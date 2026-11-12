@@ -74,9 +74,9 @@
 </style>
 <div class="inward-wrapper">
 <?php
-$canVerify = hasPermission('inward', 'verify') || hasPermission('inward', 'create') || hasPermission('inward', 'edit');
-$canEdit = hasPermission('inward', 'edit') || hasPermission('inward', 'verify') || hasPermission('warehouse', 'edit') || hasPermission('inward', 'create');
-$canDelete = hasPermission('inward', 'delete') || hasPermission('inward', 'verify') || hasPermission('warehouse', 'delete') || hasPermission('warehouse', 'manage');
+$canVerify = hasPermission('inward', 'create');
+$canEdit = hasPermission('inward', 'edit');
+$canDelete = hasPermission('inward', 'delete');
 ?>
     <!-- Page Header -->
     <div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">

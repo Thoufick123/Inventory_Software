@@ -606,35 +606,34 @@ if ($metrics['total_spend'] >= 10000) {
                     <!-- VIEW 1: THERMAL POS RECEIPT SLIP -->
                     <div id="billThermalView" class="d-flex justify-content-center">
                         <div class="thermal-receipt-card shadow-sm">
-                            <!-- GRM Stylized Logo -->
-                            <div class="text-center mb-2">
-                                <div class="thermal-logo-box">
-                                    <svg viewBox="0 0 150 75" width="120" height="55" xmlns="http://www.w3.org/2000/svg">
-                                        <defs>
-                                            <pattern id="stippleThermal" width="3" height="3" patternUnits="userSpaceOnUse">
-                                                <circle cx="1.5" cy="1.5" r="0.6" fill="#000" />
-                                            </pattern>
-                                        </defs>
-                                        <rect width="150" height="75" fill="url(#stippleThermal)" opacity="0.3" />
-                                        <rect width="150" height="75" fill="none" stroke="#000" stroke-width="1.5" />
-                                        <text x="75" y="52" font-family="'Times New Roman', Georgia, serif" font-size="50" font-weight="900" text-anchor="middle" fill="#000" letter-spacing="-2">GRM</text>
-                                    </svg>
+                            <div class="thermal-store-header">
+                                <div class="thermal-logo-container">
+                                    <div class="thermal-logo-box">
+                                        <img id="thShopLogo" alt="Shop logo" style="display:none;">
+                                        <svg id="thShopLogoFallback" viewBox="0 0 150 75" width="66" height="42" xmlns="http://www.w3.org/2000/svg">
+                                            <defs>
+                                                <pattern id="stippleThermal" width="3" height="3" patternUnits="userSpaceOnUse">
+                                                    <circle cx="1.5" cy="1.5" r="0.6" fill="#000" />
+                                                </pattern>
+                                            </defs>
+                                            <rect width="150" height="75" fill="url(#stippleThermal)" opacity="0.3" />
+                                            <rect width="150" height="75" fill="none" stroke="#000" stroke-width="1.5" />
+                                            <text x="75" y="52" font-family="'Times New Roman', Georgia, serif" font-size="50" font-weight="900" text-anchor="middle" fill="#000" letter-spacing="-2">GRM</text>
+                                        </svg>
+                                    </div>
                                 </div>
-                            </div>
 
-                            <!-- Store Header -->
-                            <div class="thermal-title" id="thShopName">GRM SHOP</div>
-                            <div class="thermal-address" id="thShopAddress">
-                                SULUR KMCH HOSPITAL<br>
-                                OPPOSITE, TRICHY<br>
-                                ROAD, SULUR, COIMBATORE
-                            </div>
-                            <div class="thermal-contact">
-                                Phone No: <span id="thShopPhone">8807144175, 8610612625</span><br>
-                                <span id="thShopEmailLine" style="display: none;">EMail: <span id="thShopEmail"></span></span>
-                            </div>
-                            <div class="thermal-gst">
-                                GST NO: <span id="thShopGst">33BFQPQ7507C1ZX</span>
+                                <div class="thermal-store-details">
+                                    <div class="thermal-title" id="thShopName">GRM SHOP</div>
+                                    <div class="thermal-address" id="thShopAddress"></div>
+                                    <div class="thermal-contact" id="thShopContact">
+                                        <div id="thShopPhoneLine" style="display:none;">Phone: <span id="thShopPhone"></span></div>
+                                        <div id="thShopEmailLine" style="display:none;">Email: <span id="thShopEmail"></span></div>
+                                    </div>
+                                    <div class="thermal-gst" id="thShopGstLine" style="display:none;">
+                                        GST NO: <span id="thShopGst"></span>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="thermal-divider-dashed"></div>
@@ -645,7 +644,7 @@ if ($metrics['total_spend'] >= 10000) {
                                 <span>Date: <strong id="thBillDate">--</strong></span>
                             </div>
                             <div class="thermal-meta-row">
-                                <span>BID: <strong id="thBillId">--</strong></span>
+                                <span>Bill ID: <strong id="thBillId">--</strong></span>
                                 <span>Staff: <strong id="thStaffName">Cashier</strong></span>
                             </div>
 
@@ -680,34 +679,53 @@ if ($metrics['total_spend'] >= 10000) {
                                 <tbody id="thItemsBody">
                                     <!-- Populated via JavaScript -->
                                 </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td colspan="5" id="thTotalQty">Total Qty: 0</td>
+                                    </tr>
+                                </tfoot>
                             </table>
 
                             <div class="thermal-divider-dashed"></div>
 
                             <!-- Financial Totals -->
                             <div class="thermal-totals-row">
-                                <span>Sub Total (Taxable):</span>
-                                <span id="thSubtotal">₹0.00</span>
+                                <span>Total Discount:</span>
+                                <span id="thDiscount" class="text-danger">0.00</span>
                             </div>
                             <div class="thermal-totals-row">
-                                <span>Total GST:</span>
-                                <span id="thTotalGst">+₹0.00</span>
+                                <span>Taxable Base:</span>
+                                <span id="thSubtotal">0.00</span>
                             </div>
-                            <div class="thermal-totals-row" id="thDiscRow">
-                                <span>Gross Discount:</span>
-                                <span id="thDiscount" class="text-danger">-₹0.00</span>
+                            <div class="thermal-totals-row">
+                                <span>GST Amount (Incl.):</span>
+                                <span id="thTotalGst">0.00</span>
                             </div>
-                            <div class="thermal-totals-row" id="thRoundOffRow" style="display: none;">
+                            <div class="thermal-totals-row thermal-totals-row-left" id="thIgstRow" style="display:none;">
+                                <span>IGST:</span>
+                                <span id="thIgst">0.00</span>
+                            </div>
+                            <div class="thermal-totals-row" id="thCgstRow" style="display:none;">
+                                <span>CGST: <span id="thCgst">0.00</span></span>
+                            </div>
+                            <div class="thermal-totals-row" id="thSgstRow" style="display:none;">
+                                <span>SGST: <span id="thSgst">0.00</span></span>
+                            </div>
+                            <div class="thermal-totals-row" id="thExemptRow" style="display:none;">
+                                <span>GST Type:</span>
+                                <span>Exemption</span>
+                            </div>
+                            <div class="thermal-totals-row" id="thRoundOffRow">
                                 <span>Round Off:</span>
-                                <span id="thRoundOff">₹0.00</span>
+                                <span id="thRoundOff">0.00</span>
                             </div>
 
                             <div class="thermal-divider-solid"></div>
 
                             <!-- Net Total -->
                             <div class="thermal-net-row">
-                                <span>NET AMOUNT:</span>
-                                <span id="thNetTotal">₹0.00</span>
+                                <span>Net Amount</span>
+                                <span id="thNetTotal">0.00</span>
                             </div>
 
                             <div class="thermal-divider-double"></div>
@@ -851,34 +869,61 @@ if ($metrics['total_spend'] >= 10000) {
 .thermal-logo-box {
     display: inline-block;
     border: 1.5px solid #000;
-    padding: 4px 10px;
+    padding: 3px;
     background: #fff;
+    max-width: 100%;
+}
+.thermal-store-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+.thermal-logo-container {
+    flex: 0 0 74px;
+    text-align: center;
+}
+.thermal-logo-box img {
+    width: 66px;
+    height: 42px;
+    object-fit: contain;
+}
+.thermal-store-details {
+    flex: 1;
+    min-width: 0;
 }
 .thermal-title {
-    text-align: center;
-    font-size: 13px;
+    text-align: left;
+    font-size: 11px;
     font-weight: 800;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-top: 4px;
+    letter-spacing: 0.2px;
 }
 .thermal-address {
-    text-align: center;
-    font-size: 10.5px;
+    text-align: left;
+    font-size: 9px;
     font-weight: 600;
     text-transform: uppercase;
     line-height: 1.3;
     margin-top: 2px;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
 }
 .thermal-contact, .thermal-gst {
-    text-align: center;
-    font-size: 10.5px;
+    text-align: left;
+    font-size: 9px;
     font-weight: 600;
     margin-top: 2px;
+    overflow-wrap: anywhere;
 }
 .thermal-gst {
     font-weight: 800;
-    font-size: 11px;
+    font-size: 9px;
+}
+.thermal-items-table tfoot td {
+    text-align: right;
+    padding-top: 3px;
+    border-top: 1px dashed #000;
 }
 .thermal-divider-dashed {
     border-top: 1px dashed #000;
@@ -931,6 +976,10 @@ if ($metrics['total_spend'] >= 10000) {
     font-size: 11px;
     font-weight: 600;
     margin: 2px 0;
+}
+.thermal-totals-row-left {
+    justify-content: flex-start;
+    gap: 4px;
 }
 .thermal-net-row {
     display: flex;
@@ -1028,19 +1077,44 @@ function populateExactBillModal(sale) {
     const totalGst = cgst + sgst + igst;
     const discount = parseFloat(sale.discount_amount || 0);
     const netTotal = parseFloat(sale.total_amount || 0);
-    const roundOff = parseFloat(sale.round_off || (netTotal - (subtotal + totalGst - discount)));
+    const items = sale.items || [];
+    const unroundedTotal = items.reduce((sum, item) => sum + parseFloat(item.total_amount || 0), 0);
+    const roundOff = netTotal - unroundedTotal;
 
     // 1. POPULATE THERMAL VIEW
     document.getElementById('thShopName').textContent = sale.shop_name || 'GRM SHOP';
-    if (sale.shop_address && sale.shop_address.length > 10) {
-        document.getElementById('thShopAddress').innerHTML = sale.shop_address.replace(/\n/g, '<br>');
+    const shopAddress = document.getElementById('thShopAddress');
+    shopAddress.textContent = sale.shop_address || '';
+    shopAddress.style.display = sale.shop_address ? '' : 'none';
+
+    const shopLogo = document.getElementById('thShopLogo');
+    const shopLogoFallback = document.getElementById('thShopLogoFallback');
+    shopLogo.onerror = () => {
+        shopLogo.style.display = 'none';
+        shopLogoFallback.style.display = '';
+    };
+    if (sale.shop_logo_url) {
+        shopLogo.src = sale.shop_logo_url;
+        shopLogo.alt = (sale.shop_name || 'Shop') + ' logo';
+        shopLogo.style.display = 'block';
+        shopLogoFallback.style.display = 'none';
+    } else {
+        shopLogo.removeAttribute('src');
+        shopLogo.style.display = 'none';
+        shopLogoFallback.style.display = '';
     }
-    if (sale.shop_phone) {
-        document.getElementById('thShopPhone').textContent = sale.shop_phone;
-    }
-    if (sale.shop_gstin) {
-        document.getElementById('thShopGst').textContent = sale.shop_gstin;
-    }
+
+    const shopPhoneLine = document.getElementById('thShopPhoneLine');
+    const shopEmailLine = document.getElementById('thShopEmailLine');
+    const shopContact = document.getElementById('thShopContact');
+    document.getElementById('thShopPhone').textContent = sale.shop_phone || '';
+    document.getElementById('thShopEmail').textContent = sale.shop_email || '';
+    shopPhoneLine.style.display = sale.shop_phone ? '' : 'none';
+    shopEmailLine.style.display = sale.shop_email ? '' : 'none';
+    shopContact.style.display = sale.shop_phone || sale.shop_email ? '' : 'none';
+
+    document.getElementById('thShopGst').textContent = sale.shop_gstin || '';
+    document.getElementById('thShopGstLine').style.display = sale.shop_gstin ? '' : 'none';
 
     let billNo = sale.invoice_number || ('INV-' + sale.id);
     const matchNo = billNo.match(/(\d+)$/);
@@ -1072,8 +1146,6 @@ function populateExactBillModal(sale) {
     // Render Thermal Item Rows
     const thBody = document.getElementById('thItemsBody');
     thBody.innerHTML = '';
-    const items = sale.items || [];
-
     items.forEach(it => {
         const qty = parseInt(it.quantity) || 1;
         const price = parseFloat(it.unit_price || 0);
@@ -1103,18 +1175,21 @@ function populateExactBillModal(sale) {
         thBody.appendChild(trData);
     });
 
-    document.getElementById('thSubtotal').textContent = '₹' + subtotal.toFixed(2);
-    document.getElementById('thTotalGst').textContent = '+₹' + totalGst.toFixed(2);
-    document.getElementById('thDiscount').textContent = discount > 0 ? '-₹' + discount.toFixed(2) : '₹0.00';
-    document.getElementById('thNetTotal').textContent = '₹' + netTotal.toFixed(2);
+    document.getElementById('thTotalQty').textContent = 'Total Qty: ' + items.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0);
+    document.getElementById('thSubtotal').textContent = subtotal.toFixed(2);
+    document.getElementById('thTotalGst').textContent = totalGst.toFixed(2);
+    document.getElementById('thDiscount').textContent = (discount > 0 ? '-' : '') + discount.toFixed(2);
+    document.getElementById('thNetTotal').textContent = netTotal.toFixed(2);
+    document.getElementById('thRoundOff').textContent = roundOff.toFixed(2);
 
-    const roundRow = document.getElementById('thRoundOffRow');
-    if (Math.abs(roundOff) > 0.009) {
-        roundRow.style.display = 'flex';
-        document.getElementById('thRoundOff').textContent = (roundOff > 0 ? '+' : '') + '₹' + roundOff.toFixed(2);
-    } else {
-        roundRow.style.display = 'none';
-    }
+    const gstType = (sale.gst_type || 'CGST_SGST').toUpperCase();
+    document.getElementById('thIgstRow').style.display = gstType === 'IGST' ? 'flex' : 'none';
+    document.getElementById('thCgstRow').style.display = gstType === 'IGST' || gstType === 'EXEMPT' ? 'none' : 'flex';
+    document.getElementById('thSgstRow').style.display = gstType === 'IGST' || gstType === 'EXEMPT' ? 'none' : 'flex';
+    document.getElementById('thExemptRow').style.display = gstType === 'EXEMPT' ? 'flex' : 'none';
+    document.getElementById('thIgst').textContent = igst.toFixed(2);
+    document.getElementById('thCgst').textContent = cgst.toFixed(2);
+    document.getElementById('thSgst').textContent = sgst.toFixed(2);
 
     // 2. POPULATE DETAILED AUDIT VIEW
     document.getElementById('detInvNum').textContent = CURRENT_ACTIVE_INVOICE_NUM;

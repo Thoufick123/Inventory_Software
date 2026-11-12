@@ -1,6 +1,8 @@
 <?php
 // views/whatsapp_orders/damage/index.php — WhatsApp Channel Damage Management
 $canCreateDamage = hasPermission('whatsapp_damage', 'create');
+$canEditDamage = hasPermission('whatsapp_damage', 'edit');
+$canDeleteDamage = hasPermission('whatsapp_damage', 'delete');
 ?>
 <div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
     <div>
@@ -281,6 +283,19 @@ $canCreateDamage = hasPermission('whatsapp_damage', 'create');
                                     <a href="<?= url('warehouse/whatsapp-orders/damage/view/' . $d['id']) ?>" class="btn btn-sm btn-outline-primary rounded-pill px-2" title="View Full Damage Details">
                                         <i class="bi bi-eye-fill"></i>
                                     </a>
+                                    <?php if ($canEditDamage && !empty($d['has_quarantine_movement']) && in_array($d['status'], ['LOGGED', 'INSPECTED'], true) && empty($d['outward_batch_id']) && $d['source_type'] !== 'INWARD_TRANSIT'): ?>
+                                        <a href="<?= url('warehouse/whatsapp-orders/damage/edit/' . (int)$d['id']) ?>" class="btn btn-sm btn-outline-warning rounded-pill px-2" title="Edit quarantined damage">
+                                            <i class="bi bi-pencil-fill"></i>
+                                        </a>
+                                    <?php endif; ?>
+                                    <?php if ($canDeleteDamage && (in_array($d['status'], ['LOGGED', 'INSPECTED'], true) || !empty($d['outward_batch_id']) || $d['source_type'] === 'INWARD_TRANSIT')): ?>
+                                        <form method="POST" action="<?= url('warehouse/whatsapp-orders/damage/delete/' . (int)$d['id']) ?>" onsubmit="return confirm('Delete this damage record? Stock already dispatched to the warehouse will not be restored again.');">
+                                            <?= csrf_field() ?>
+                                            <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill px-2" title="Delete damage record">
+                                                <i class="bi bi-trash-fill"></i>
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
                                 </div>
                             </td>
                         </tr>

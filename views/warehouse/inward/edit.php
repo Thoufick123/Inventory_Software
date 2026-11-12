@@ -5,7 +5,7 @@
  * Automatically reconciles warehouse stock deltas and logs full audit trails.
  */
 
-$canDelete = hasPermission('inward', 'delete') || hasPermission('inward', 'verify') || hasPermission('warehouse', 'delete') || hasPermission('warehouse', 'manage');
+$canDelete = hasPermission('inward', 'delete');
 $displayRec = (int)($totalReceived ?? ($batch['received_qty'] ?? 0));
 $displayDmg = (int)($totalDamaged ?? ($batch['damaged_qty'] ?? 0));
 $displayMis = (int)($totalMissing ?? ($batch['missing_qty'] ?? 0));
