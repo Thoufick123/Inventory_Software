@@ -7280,6 +7280,113 @@ class WarehouseController {
         ]);
     }
 
+    public function ajaxAdjustmentDetails(string $id): void {
+        if (!hasPermission('stock', 'view')) {
+            Response::json(['success' => false, 'message' => 'Access denied.'], 403);
+            return;
+        }
+
+        $adjustment = StockAdjustment::find((int)$id);
+        if (!$adjustment) {
+            Response::json(['success' => false, 'message' => 'Stock adjustment not found.'], 404);
+            return;
+        }
+        $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+        if ($scopedWarehouseId !== null && (int)$adjustment['warehouse_id'] !== (int)$scopedWarehouseId) {
+            Response::json(['success' => false, 'message' => 'Stock adjustment not found.'], 404);
+            return;
+        }
+
+        $qrCodes = StockAdjustment::getAdjustmentQrCodes($adjustment);
+        Response::json([
+            'success' => true,
+            'adjustment' => [
+                'id' => (int)$adjustment['id'],
+                'adjustment_number' => $adjustment['adjustment_number'],
+                'warehouse_name' => $adjustment['warehouse_name'],
+                'product_name' => $adjustment['product_name'],
+                'product_type' => WarehouseService::getAdjustmentProductType($adjustment),
+                'sku' => $adjustment['sku'],
+                'size_name' => $adjustment['size_name'] ?? 'Free',
+                'color_name' => $adjustment['color_name'] ?? 'Std',
+                'adjustment_type' => $adjustment['adjustment_type'],
+                'quantity' => (float)$adjustment['quantity'],
+                'reason' => $adjustment['reason'],
+                'notes' => $adjustment['notes'] ?? '',
+                'status' => $adjustment['status'],
+                'requested_by_name' => $adjustment['requested_by_name'] ?? 'Staff',
+                'approved_by_name' => $adjustment['approved_by_name'] ?? '',
+                'created_at' => $adjustment['created_at'],
+                'approved_at' => $adjustment['approved_at'] ?? null,
+                'qr_codes' => $qrCodes,
+            ],
+        ]);
+    }
+
+    public function updateAdjustmentMetadata(string $id): void {
+        if (!hasPermission('stock', 'adjust')) {
+            Response::redirect(url('warehouse/adjustments'), 'error', 'Access denied.');
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            Response::redirect(url('warehouse/adjustments'), 'error', 'Security token expired. Refresh and try again.');
+            return;
+        }
+
+        $returnType = $_POST['return_adjustment_type'] ?? '';
+        $returnType = is_string($returnType) && in_array(strtoupper($returnType), ['INCREASE', 'DECREASE'], true)
+            ? strtoupper($returnType)
+            : '';
+        $returnUrl = url('warehouse/adjustments' . ($returnType !== '' ? '?adjustment_type=' . $returnType : ''));
+        $adjustment = StockAdjustment::find((int)$id);
+        if (!$adjustment) {
+            Response::redirect($returnUrl, 'error', 'Stock adjustment not found.');
+            return;
+        }
+        $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+        if ($scopedWarehouseId !== null && (int)$adjustment['warehouse_id'] !== (int)$scopedWarehouseId) {
+            Response::redirect($returnUrl, 'error', 'Stock adjustment not found.');
+            return;
+        }
+
+        $reason = $_POST['reason'] ?? null;
+        $notes = $_POST['notes'] ?? '';
+        if (!is_string($reason) || trim($reason) === '' || !is_string($notes)) {
+            Response::redirect($returnUrl, 'error', 'Enter a reason and valid notes before saving.');
+            return;
+        }
+        $reason = trim($reason);
+        $notes = trim($notes);
+        $oldMetadata = [
+            'reason' => (string)$adjustment['reason'],
+            'notes' => (string)($adjustment['notes'] ?? ''),
+        ];
+        $newMetadata = ['reason' => $reason, 'notes' => $notes];
+        if ($oldMetadata === $newMetadata) {
+            Response::redirect($returnUrl, 'success', 'No adjustment details were changed.');
+            return;
+        }
+
+        Database::beginTransaction();
+        try {
+            StockAdjustment::updateMetadata((int)$id, $reason, $notes);
+            AuditService::log(
+                'warehouse',
+                'update_adjustment_metadata',
+                'stock_adjustments',
+                (int)$id,
+                $oldMetadata,
+                $newMetadata
+            );
+            Database::commit();
+            Response::redirect($returnUrl, 'success', 'Adjustment reason and notes updated. Stock and QR codes were not changed.');
+        } catch (Throwable $e) {
+            Database::rollback();
+            error_log('Stock adjustment metadata update failed: ' . $e->getMessage());
+            Response::redirect($returnUrl, 'error', 'Unable to update adjustment details. Please try again.');
+        }
+    }
+
     public function ajaxLookupAdjustmentProduct(): void {
         if (!hasPermission('stock', 'adjust')) {
             Response::json(['success' => false, 'message' => 'Access denied.'], 403);
@@ -7414,12 +7521,8 @@ class WarehouseController {
 
         $sourceType = strtoupper((string)($variant['source_type'] ?? 'OWN_PRODUCTION'));
         $sourceLabel = $sourceType === 'EXTERNAL_PURCHASE' ? 'Third-party stock' : 'Production stock';
-        $isSeriesOrComplementary = in_array(strtoupper((string)($variant['qr_type'] ?? '')), ['SERIES', 'SERIES_BATCH'], true)
-            || in_array(strtoupper((string)($variant['category_type'] ?? '')), ['SERIES', 'COMPLEMENTARY'], true)
-            || !empty($variant['series_start_code'])
-            || !empty($variant['is_complementary'])
-            || !empty($variant['product_is_complementary'])
-            || (int)($variant['pack_quantity'] ?? 1) > 1;
+        $productType = WarehouseService::getAdjustmentProductType($variant);
+        $isSeriesOrComplementary = $productType !== 'NORMAL';
         $quantityPerTag = $isSeriesOrComplementary ? max(1, (int)($variant['pack_quantity'] ?? 1)) : 1;
 
         $mode = $_GET['mode'] ?? 'product';
@@ -7450,6 +7553,7 @@ class WarehouseController {
                 'source_type' => $sourceType,
                 'source_label' => $sourceLabel,
                 'supplier_name' => $variant['supplier_name'],
+                'product_type' => $productType,
                 'qr_type' => $variant['qr_type'] ?? 'INDIVIDUAL',
                 'pack_quantity' => $quantityPerTag,
                 'is_series_or_complementary' => $isSeriesOrComplementary,

@@ -12,20 +12,16 @@
     const productScanButton = document.getElementById('adjustmentProductScanButton');
     const productScanMessage = document.getElementById('adjustmentProductScanMessage');
     const productDetails = document.getElementById('adjustmentProductDetails');
+    const quantityMessage = document.getElementById('adjustmentQuantityMessage');
     const increaseControls = document.getElementById('adjustmentIncreaseControls');
     const generateQrControls = document.getElementById('adjustmentGenerateQrControls');
     const countOnlyNotice = document.getElementById('adjustmentCountOnlyNotice');
-    const decreaseControls = document.getElementById('adjustmentDecreaseControls');
-    const decreaseScanInput = document.getElementById('adjustmentDecreaseScanInput');
-    const decreaseScanButton = document.getElementById('adjustmentDecreaseScanButton');
-    const decreaseMessage = document.getElementById('adjustmentDecreaseMessage');
-    const decreaseList = document.getElementById('adjustmentDecreaseList');
+    const decreaseCountNotice = document.getElementById('adjustmentDecreaseCountNotice');
     const previewButton = document.getElementById('adjustmentPreviewButton');
     const previewMessage = document.getElementById('adjustmentPreviewMessage');
     const preview = document.getElementById('adjustmentQrPreview');
     const previewList = document.getElementById('adjustmentQrPreviewList');
     const previewSummary = document.getElementById('adjustmentPreviewSummary');
-    const scannedTags = [];
     let currentProduct = null;
     let previewedCodes = [];
 
@@ -38,39 +34,12 @@
         return warehouseSelect.value || form.querySelector('input[name="warehouse_id"]')?.value || '';
     }
 
-    function renderScannedTags() {
-        decreaseList.replaceChildren();
-        scannedTags.forEach((entry, index) => {
-            const badge = document.createElement('span');
-            badge.className = 'badge bg-dark font-monospace d-inline-flex align-items-center gap-1';
-            const label = document.createElement('span');
-            label.textContent = `${entry.tag} (${entry.quantity} pcs)`;
-            const remove = document.createElement('button');
-            remove.type = 'button';
-            remove.className = 'btn-close btn-close-white';
-            remove.setAttribute('aria-label', `Remove QR ${entry.tag}`);
-            remove.addEventListener('click', () => {
-                scannedTags.splice(index, 1);
-                updateQrState();
-            });
-            badge.append(label, remove);
-            decreaseList.appendChild(badge);
-        });
-        qrCodesInput.value = JSON.stringify(scannedTags.map(entry => entry.tag));
-        quantityInput.value = scannedTags.reduce((total, entry) => total + entry.quantity, 0) || '';
-    }
-
-    function updateQrState() {
-        renderScannedTags();
-        showMessage(decreaseMessage, scannedTags.length ? `${scannedTags.length} QR code(s) scanned.` : '');
-    }
-
     function clearPreview() {
         previewedCodes = [];
         preview.classList.add('d-none');
         previewList.replaceChildren();
         previewSummary.textContent = '';
-        if (typeSelect.value === 'INCREASE') qrCodesInput.value = '[]';
+        qrCodesInput.value = '[]';
     }
 
     function updateIncreaseMode() {
@@ -84,12 +53,11 @@
         const isDecrease = typeSelect.value === 'DECREASE';
         typeValue.value = typeSelect.value;
         increaseControls.classList.toggle('d-none', isDecrease);
-        decreaseControls.classList.toggle('d-none', !isDecrease);
+        decreaseCountNotice.classList.toggle('d-none', !isDecrease);
         updateIncreaseMode();
-        quantityInput.readOnly = isDecrease;
-        quantityInput.title = isDecrease ? 'Quantity is set by the scanned QR code(s).' : '';
-        scannedTags.splice(0, scannedTags.length);
-        updateQrState();
+        quantityInput.readOnly = false;
+        quantityInput.title = '';
+        quantityMessage.textContent = '';
         clearPreview();
         quantityInput.value = '';
     }
@@ -135,18 +103,19 @@
             supplierRow.classList.toggle('d-none', !currentProduct.supplier_name);
             document.getElementById('adjustmentSupplier').textContent = currentProduct.supplier_name || '';
             productScanInput.value = '';
-            scannedTags.splice(0, scannedTags.length);
-            updateQrState();
             clearPreview();
             quantityInput.value = '';
+            quantityMessage.textContent = '';
             showMessage(productScanMessage, 'Product found. Confirm the type and quantity below.');
-            if (typeSelect.value === 'DECREASE') decreaseScanInput.focus();
-            else quantityInput.focus();
+            quantityInput.focus();
         } catch (error) {
             currentProduct = null;
             updateIncreaseMode();
             variantIdInput.value = '';
             productDetails.classList.add('d-none');
+            clearPreview();
+            quantityInput.value = '';
+            quantityMessage.textContent = '';
             showMessage(productScanMessage, error.message || 'Product lookup failed.', true);
         } finally {
             productScanButton.disabled = false;
@@ -166,50 +135,19 @@
         updateIncreaseMode();
         variantIdInput.value = '';
         productDetails.classList.add('d-none');
-        scannedTags.splice(0, scannedTags.length);
-        updateQrState();
         clearPreview();
         quantityInput.value = '';
+        quantityMessage.textContent = '';
         showMessage(productScanMessage, 'Warehouse changed. Scan the product again.');
     });
 
     typeSelect.addEventListener('change', setTypeState);
-    quantityInput.addEventListener('input', clearPreview);
-
-    async function addScannedQr() {
-        const code = decreaseScanInput.value.trim();
-        if (!code) return;
-        decreaseScanButton.disabled = true;
-        showMessage(decreaseMessage, 'Checking QR code and warehouse stock...');
-        try {
-            if (!currentProduct) throw new Error('Scan the product first.');
-            const result = await lookupProduct(code, 'decrease');
-            const variant = result.variant;
-            const tag = String(result.tag_code || '').trim().toUpperCase();
-            if (Number(variant.id) !== Number(currentProduct.id)) throw new Error('The scanned QR belongs to a different product variant.');
-            if (scannedTags.some(entry => entry.tag === tag)) throw new Error(`QR code ${tag} is already in this request.`);
-            const tagQuantity = Math.max(1, Number(variant.quantity_per_tag) || 1);
-            const availableStock = Number(variant.available_stock) || 0;
-            const currentQuantity = scannedTags.reduce((total, entry) => total + entry.quantity, 0);
-            if (currentQuantity + tagQuantity > availableStock) {
-                throw new Error(`Only ${availableStock} available pcs remain; this QR would exceed the available stock.`);
-            }
-            scannedTags.push({ tag, quantity: tagQuantity });
-            decreaseScanInput.value = '';
-            updateQrState();
-            decreaseScanInput.focus();
-        } catch (error) {
-            showMessage(decreaseMessage, error.message || 'QR scan failed.', true);
-        } finally {
-            decreaseScanButton.disabled = false;
-        }
-    }
-
-    decreaseScanButton.addEventListener('click', addScannedQr);
-    decreaseScanInput.addEventListener('keydown', event => {
-        if (event.key === 'Enter') {
-            event.preventDefault();
-            addScannedQr();
+    quantityInput.addEventListener('input', () => {
+        clearPreview();
+        quantityMessage.textContent = '';
+        if (typeSelect.value !== 'DECREASE' || !currentProduct || !quantityInput.value) return;
+        if (Number(quantityInput.value) > Number(currentProduct.available_stock)) {
+            showMessage(quantityMessage, `Only ${Number(currentProduct.available_stock)} pcs are available in this warehouse.`, true);
         }
     });
 
@@ -294,21 +232,27 @@
             productScanInput.focus();
             return;
         }
+        const quantity = Number(quantityInput.value);
+        if (!Number.isInteger(quantity) || quantity <= 0) {
+            event.preventDefault();
+            showMessage(quantityMessage, 'Enter a positive whole-number quantity.', true);
+            quantityInput.focus();
+            return;
+        }
+        if (typeSelect.value === 'DECREASE' && quantity > Number(currentProduct.available_stock)) {
+            event.preventDefault();
+            showMessage(quantityMessage, `Only ${Number(currentProduct.available_stock)} pcs are available in this warehouse.`, true);
+            quantityInput.focus();
+            return;
+        }
         if (typeSelect.value === 'INCREASE' && !currentProduct.is_series_or_complementary && !previewedCodes.length) {
             event.preventDefault();
             showMessage(previewMessage, 'Generate the QR preview before saving a stock increase.', true);
             previewButton.focus();
-            return;
-        }
-        if (typeSelect.value === 'DECREASE' && scannedTags.length === 0) {
-            event.preventDefault();
-            showMessage(decreaseMessage, 'Scan at least one existing product QR code before saving a decrease.', true);
-            decreaseScanInput.focus();
         }
     });
 
     document.getElementById('newAdjustmentModal').addEventListener('hidden.bs.modal', () => {
-        scannedTags.splice(0, scannedTags.length);
         currentProduct = null;
         variantIdInput.value = '';
         productScanInput.value = '';
@@ -316,10 +260,9 @@
         typeSelect.value = form.querySelector('input[name="return_adjustment_type"]').value || 'INCREASE';
         setTypeState();
         qrCodesInput.value = '[]';
-        decreaseList.replaceChildren();
         previewList.replaceChildren();
         productScanMessage.textContent = '';
-        decreaseMessage.textContent = '';
+        quantityMessage.textContent = '';
         previewMessage.textContent = '';
     });
 

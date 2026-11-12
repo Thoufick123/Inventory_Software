@@ -68,8 +68,11 @@ class StockAdjustment {
         return Database::fetchOne(
             "SELECT sa.*, 
                     w.name as warehouse_name, w.code as warehouse_code,
-                    pv.sku, pv.qr_code, pv.selling_price,
+                   pv.sku, pv.qr_code, pv.selling_price, pv.qr_type, pv.series_start_code,
+                   pv.pack_quantity, pv.is_complementary,
                     p.name as product_name, p.code as product_code,
+                   p.is_complementary as product_is_complementary,
+                   COALESCE(wc.category_type, 'NORMAL') as category_type,
                     s.name as size_name, c.name as color_name,
                     u_req.full_name as requested_by_name,
                     u_app.full_name as approved_by_name
@@ -77,6 +80,7 @@ class StockAdjustment {
              JOIN warehouses w ON sa.warehouse_id = w.id
              JOIN product_variants pv ON sa.variant_id = pv.id
              JOIN products p ON pv.product_id = p.id
+             LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
              LEFT JOIN sizes s ON pv.size_id = s.id
              LEFT JOIN colors c ON pv.color_id = c.id
              LEFT JOIN users u_req ON sa.requested_by = u_req.id
@@ -86,6 +90,76 @@ class StockAdjustment {
         );
     }
 
+    public static function getAdjustmentQrCodes(array $adjustment): array {
+        $codes = json_decode((string)($adjustment['qr_codes'] ?? '[]'), true);
+        $codes = is_array($codes)
+            ? array_values(array_filter($codes, static fn($code): bool => is_scalar($code) && trim((string)$code) !== ''))
+            : [];
+        if ($codes || strtoupper((string)($adjustment['adjustment_type'] ?? '')) !== 'INCREASE') {
+            return array_map('strval', $codes);
+        }
+
+        $adjustmentNumber = trim((string)($adjustment['adjustment_number'] ?? ''));
+        if ($adjustmentNumber === '') {
+            return [];
+        }
+
+        $transaction = Database::fetchOne(
+            "SELECT notes
+             FROM stock_transactions
+             WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND location_id = ?
+               AND transaction_type = 'ADJUSTMENT_INCREASE' AND notes LIKE ?
+             ORDER BY id DESC
+             LIMIT 1",
+            [
+                (int)($adjustment['variant_id'] ?? 0),
+                (int)($adjustment['warehouse_id'] ?? 0),
+                '%Audit Ref: ' . $adjustmentNumber . '%',
+            ]
+        );
+        $notes = (string)($transaction['notes'] ?? '');
+        $marker = 'Added QR codes: ';
+        $markerPosition = strrpos($notes, $marker);
+        if ($markerPosition !== false) {
+            $codes = array_map('trim', explode(',', substr($notes, $markerPosition + strlen($marker))));
+            $codes = array_values(array_filter(
+                $codes,
+                static fn(string $code): bool => preg_match('/^[A-Z0-9_-]+$/i', $code) === 1
+            ));
+            if ($codes) {
+                return $codes;
+            }
+        }
+
+        $createdAt = (string)($adjustment['created_at'] ?? '');
+        if ($createdAt === '') {
+            return [];
+        }
+
+        $warehouseQrCodes = Database::fetchAll(
+            "SELECT qr_code
+             FROM warehouse_qr_codes
+             WHERE variant_id = ? AND warehouse_id = ? AND created_by = ?
+               AND is_extra = 1 AND extra_reason LIKE 'Stock Adjustment Increase (%'
+               AND created_at = ?
+             ORDER BY id ASC",
+            [
+                (int)($adjustment['variant_id'] ?? 0),
+                (int)($adjustment['warehouse_id'] ?? 0),
+                (int)($adjustment['requested_by'] ?? 0),
+                $createdAt,
+            ]
+        );
+        if (count($warehouseQrCodes) !== (int)($adjustment['quantity'] ?? 0)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(
+            static fn(array $row): string => trim((string)($row['qr_code'] ?? '')),
+            $warehouseQrCodes
+        ), static fn(string $code): bool => $code !== ''));
+    }
+
     /**
      * Get all adjustments with filters.
      */
@@ -93,8 +167,10 @@ class StockAdjustment {
         self::ensureQrCodesColumn();
         $sql = "SELECT sa.*, 
                        w.name as warehouse_name,
-                       pv.sku,
+                       pv.sku, pv.qr_type, pv.series_start_code, pv.pack_quantity, pv.is_complementary,
                        p.name as product_name,
+                       p.is_complementary as product_is_complementary,
+                       COALESCE(wc.category_type, 'NORMAL') as category_type,
                        s.name as size_name, c.name as color_name,
                        u_req.full_name as requested_by_name,
                        u_app.full_name as approved_by_name
@@ -102,6 +178,7 @@ class StockAdjustment {
                 JOIN warehouses w ON sa.warehouse_id = w.id
                 JOIN product_variants pv ON sa.variant_id = pv.id
                 JOIN products p ON pv.product_id = p.id
+                LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
                 LEFT JOIN sizes s ON pv.size_id = s.id
                 LEFT JOIN colors c ON pv.color_id = c.id
                 LEFT JOIN users u_req ON sa.requested_by = u_req.id
@@ -175,5 +252,14 @@ class StockAdjustment {
              WHERE id = ?",
             [$status, $approvedBy, $id]
         ) > 0;
+    }
+
+    public static function updateMetadata(int $id, string $reason, string $notes): void {
+        Database::execute(
+            "UPDATE stock_adjustments
+             SET reason = ?, notes = ?, updated_at = NOW()
+             WHERE id = ?",
+            [$reason, $notes !== '' ? $notes : null, $id]
+        );
     }
 }
