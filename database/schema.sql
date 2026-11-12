@@ -998,6 +998,7 @@ DROP TABLE IF EXISTS `production_batches`;
 CREATE TABLE `production_batches` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `batch_number` varchar(50) NOT NULL,
+  `production_bill_id` int(10) unsigned DEFAULT NULL,
   `program_id` int(10) unsigned NOT NULL,
   `qc_batch_id` int(10) unsigned DEFAULT NULL,
   `additional_qc_batch_ids` text DEFAULT NULL,
@@ -1024,6 +1025,7 @@ CREATE TABLE `production_batches` (
   `created_by` int(10) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `batch_number` (`batch_number`),
+  KEY `idx_production_batches_bill` (`production_bill_id`),
   KEY `program_id` (`program_id`),
   KEY `qc_batch_id` (`qc_batch_id`),
   KEY `destination_warehouse_id` (`destination_warehouse_id`),

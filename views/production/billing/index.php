@@ -125,19 +125,37 @@
                                 <span class="badge <?= $bill['payment_status'] === 'PAID' ? 'bg-success-subtle text-success' : 'bg-warning-subtle text-warning-emphasis' ?>">
                                     <?= htmlspecialchars($bill['payment_status']) ?>
                                 </span>
+                                <?php if ((int)($bill['linked_batch_count'] ?? 0) > 0): ?>
+                                    <?php if ((int)($bill['preparing_batch_count'] ?? 0) > 0): ?>
+                                        <span class="badge bg-warning-subtle text-warning-emphasis">Batch approval pending</span>
+                                    <?php elseif ((int)($bill['approved_batch_count'] ?? 0) > 0): ?>
+                                        <span class="badge bg-primary-subtle text-primary">Ready for outward</span>
+                                    <?php elseif ((int)($bill['dispatched_batch_count'] ?? 0) > 0): ?>
+                                        <span class="badge bg-info-subtle text-info-emphasis">Dispatched</span>
+                                    <?php elseif ((int)($bill['received_batch_count'] ?? 0) === (int)$bill['linked_batch_count']): ?>
+                                        <span class="badge bg-success-subtle text-success">Received</span>
+                                    <?php endif; ?>
+                                <?php endif; ?>
                             </td>
                             <td class="text-end text-nowrap">
                                 <div class="action-btns-group justify-content-end">
+                                    <?php if (isAdmin() && ($bill['payment_status'] ?? '') === 'PAID' && (int)($bill['linked_batch_count'] ?? 0) === 0): ?>
+                                        <a class="btn btn-outline-success btn-action-icon" title="Move paid bill items to batch dispatch" href="<?= url('production/billing/move-to-batch/' . (int)$bill['id']) ?>"><i class="bi bi-box-seam"></i></a>
+                                    <?php elseif (isAdmin() && (int)($bill['preparing_batch_count'] ?? 0) > 0): ?>
+                                        <a class="btn btn-outline-warning btn-action-icon" title="Review linked production batches" href="<?= url('production/batches') ?>"><i class="bi bi-box-seam"></i></a>
+                                    <?php elseif (isAdmin() && (int)($bill['approved_batch_count'] ?? 0) > 0): ?>
+                                        <a class="btn btn-outline-primary btn-action-icon" title="Continue to outward dispatch" href="<?= url('production/outward') ?>"><i class="bi bi-truck"></i></a>
+                                    <?php endif; ?>
                                     <?php if (hasPermission('production_billing', 'view')): ?>
                                         <a class="btn btn-outline-info btn-action-icon" title="View" href="<?= url('production/billing/view/' . (int)$bill['id']) ?>"><i class="bi bi-eye"></i></a>
                                     <?php endif; ?>
-                                    <?php if (hasPermission('production_billing', 'edit')): ?>
+                                    <?php if (hasPermission('production_billing', 'edit') && (int)($bill['linked_batch_count'] ?? 0) === 0): ?>
                                         <a class="btn btn-outline-primary btn-action-icon" title="Edit" href="<?= url('production/billing/edit/' . (int)$bill['id']) ?>"><i class="bi bi-pencil"></i></a>
                                     <?php endif; ?>
                                     <?php if (hasPermission('production_billing', 'print')): ?>
                                         <a class="btn btn-outline-success btn-action-icon" title="Print" target="_blank" href="<?= url('production/billing/print/' . (int)$bill['id']) ?>"><i class="bi bi-printer"></i></a>
                                     <?php endif; ?>
-                                    <?php if (hasPermission('production_billing', 'delete')): ?>
+                                    <?php if (hasPermission('production_billing', 'delete') && (int)($bill['linked_batch_count'] ?? 0) === 0): ?>
                                         <form class="d-inline" method="POST" action="<?= url('production/billing/delete/' . (int)$bill['id']) ?>" onsubmit="return confirm('Delete this bill? Its billed QR pieces will become available again.')">
                                             <?= CSRF::input() ?>
                                             <button class="btn btn-outline-danger btn-action-icon" title="Delete"><i class="bi bi-trash"></i></button>

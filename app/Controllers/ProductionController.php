@@ -10567,6 +10567,15 @@ class ProductionController {
             $userId = !empty($user['id']) ? (int)$user['id'] : (int)(Database::fetchOne("SELECT id FROM users LIMIT 1")['id'] ?? 2);
             ProductionService::approveProductionBatch((int)$id, $userId);
             Session::flash('success', 'Production batch approved for outward dispatch.');
+            $batch = Database::fetchOne("SELECT production_bill_id FROM production_batches WHERE id = ?", [(int)$id]);
+            if (!empty($batch['production_bill_id'])) {
+                $pendingBillBatches = (int)(Database::fetchOne(
+                    "SELECT COUNT(*) AS total FROM production_batches WHERE production_bill_id = ? AND status = 'PREPARING'",
+                    [(int)$batch['production_bill_id']]
+                )['total'] ?? 0);
+                Response::redirect(url($pendingBillBatches > 0 ? 'production/batches' : 'production/outward'));
+                return;
+            }
         } catch (Exception $e) {
             Session::flash('error', $e->getMessage());
         }

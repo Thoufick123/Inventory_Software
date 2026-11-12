@@ -6,7 +6,12 @@ class ProductionBillingController
     {
         $bills = Database::fetchAll(
             "SELECT pb.*,
-                    (SELECT COUNT(*) FROM production_bill_items pbi WHERE pbi.bill_id = pb.id) AS line_count
+                    (SELECT COUNT(*) FROM production_bill_items pbi WHERE pbi.bill_id = pb.id) AS line_count,
+                    (SELECT COUNT(*) FROM production_batches pbat WHERE pbat.production_bill_id = pb.id) AS linked_batch_count,
+                    (SELECT COUNT(*) FROM production_batches pbat WHERE pbat.production_bill_id = pb.id AND pbat.status = 'PREPARING') AS preparing_batch_count,
+                    (SELECT COUNT(*) FROM production_batches pbat WHERE pbat.production_bill_id = pb.id AND pbat.status = 'APPROVED') AS approved_batch_count,
+                    (SELECT COUNT(*) FROM production_batches pbat WHERE pbat.production_bill_id = pb.id AND pbat.status = 'DISPATCHED') AS dispatched_batch_count,
+                    (SELECT COUNT(*) FROM production_batches pbat WHERE pbat.production_bill_id = pb.id AND pbat.status = 'RECEIVED') AS received_batch_count
              FROM production_bills pb
              ORDER BY pb.bill_date DESC, pb.id DESC"
         );
@@ -60,8 +65,203 @@ class ProductionBillingController
             Response::redirect('production/billing', 'error', 'Bill not found.');
             return;
         }
+        $linkedBatchCount = (int)(Database::fetchOne("SELECT COUNT(*) AS total FROM production_batches WHERE production_bill_id = ?", [(int)$bill['id']])['total'] ?? 0);
+        if ($linkedBatchCount > 0) {
+            Response::redirect('production/billing', 'error', 'This bill cannot be edited because linked batch fulfillment has started.');
+            return;
+        }
 
         $this->renderForm($bill);
+    }
+
+    public function moveBillToBatchForm(string $id): void
+    {
+        if (!isAdmin()) {
+            Response::error(403, 'Only an administrator can move a billed order to production batches.');
+            return;
+        }
+        $bill = $this->findBill((int)$id);
+        if (!$bill) {
+            Response::redirect('production/billing', 'error', 'Bill not found.');
+            return;
+        }
+        if (($bill['payment_status'] ?? '') !== 'PAID') {
+            Response::redirect('production/billing', 'error', 'Only paid bills can move to batch dispatch.');
+            return;
+        }
+        $linkedBatchCount = (int)(Database::fetchOne("SELECT COUNT(*) AS total FROM production_batches WHERE production_bill_id = ?", [(int)$bill['id']])['total'] ?? 0);
+        if ($linkedBatchCount > 0) {
+            Response::redirect('production/billing', 'error', 'This bill has already been moved to a production batch.');
+            return;
+        }
+
+        $items = $this->loadBillItems((int)$bill['id']);
+        $warehouses = Database::fetchAll("SELECT id, name, code FROM warehouses WHERE is_active = 1 ORDER BY name ASC");
+        Response::view('production.billing.move_to_batch', [
+            'pageTitle' => 'Move Bill to Batch',
+            'activeModule' => 'production',
+            'activeMenu' => 'prod-billing',
+            'bill' => $bill,
+            'billItems' => $items,
+            'warehouses' => $warehouses,
+        ]);
+    }
+
+    public function createBillDispatchBatch(string $id): void
+    {
+        if (!isAdmin()) {
+            Response::error(403, 'Only an administrator can move a billed order to production batches.');
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            Response::redirect('production/billing', 'error', 'Invalid security token.');
+            return;
+        }
+
+        $bill = $this->findBill((int)$id);
+        if (!$bill || ($bill['payment_status'] ?? '') !== 'PAID') {
+            Response::redirect('production/billing', 'error', 'A valid paid bill is required for batch dispatch.');
+            return;
+        }
+        $linkedBatchCount = (int)(Database::fetchOne("SELECT COUNT(*) AS total FROM production_batches WHERE production_bill_id = ?", [(int)$bill['id']])['total'] ?? 0);
+        if ($linkedBatchCount > 0) {
+            Response::redirect('production/billing', 'error', 'This bill has already been moved to a production batch.');
+            return;
+        }
+
+        $warehouseId = (int)($_POST['destination_warehouse_id'] ?? 0);
+        $boxCount = filter_var($_POST['box_count'] ?? null, FILTER_VALIDATE_INT);
+        $warehouse = $warehouseId > 0
+            ? Database::fetchOne("SELECT id FROM warehouses WHERE id = ? AND is_active = 1", [$warehouseId])
+            : null;
+        if (!$warehouse || $boxCount === false || $boxCount < 1 || $boxCount > 10000) {
+            Response::redirect('production/billing/move-to-batch/' . (int)$bill['id'], 'error', 'Select an active warehouse and enter a valid box count.');
+            return;
+        }
+
+        $sourceRows = Database::fetchAll(
+            "SELECT pbi.id AS bill_item_id, pbi.qc_item_id, pbi.variant_id, pbi.quantity,
+                    qi.qc_batch_id, qb.program_id
+             FROM production_bill_items pbi
+             JOIN qc_items qi ON qi.id = pbi.qc_item_id
+             JOIN qc_batches qb ON qb.id = qi.qc_batch_id
+             WHERE pbi.bill_id = ?
+             ORDER BY qb.program_id, qb.id, pbi.id",
+            [(int)$bill['id']]
+        );
+        if (!$sourceRows) {
+            Response::redirect('production/billing', 'error', 'This bill has no QC-linked items to pack.');
+            return;
+        }
+
+        $billTags = Database::fetchAll(
+            "SELECT bill_item_id, tag_code FROM production_bill_item_tags WHERE bill_id = ? ORDER BY id",
+            [(int)$bill['id']]
+        );
+        $tagsByBillItem = [];
+        foreach ($billTags as $tagRow) {
+            $tagsByBillItem[(int)$tagRow['bill_item_id']][] = trim((string)$tagRow['tag_code']);
+        }
+
+        $groups = [];
+        foreach ($sourceRows as $row) {
+            $billItemId = (int)$row['bill_item_id'];
+            $qcItemId = (int)$row['qc_item_id'];
+            $qcBatchId = (int)$row['qc_batch_id'];
+            $programId = (int)$row['program_id'];
+            $variantId = (int)($row['variant_id'] ?? 0);
+            $tags = array_values(array_unique(array_filter($tagsByBillItem[$billItemId] ?? [])));
+            if ($variantId <= 0 || count($tags) !== (int)$row['quantity']) {
+                Response::redirect('production/billing', 'error', 'A billed item is missing its variant or complete QR tag list.');
+                return;
+            }
+            $groupKey = (string)$programId;
+            $groups[$groupKey]['program_id'] = $programId;
+            $groups[$groupKey]['qc_ids'][$qcBatchId] = $qcBatchId;
+            $groups[$groupKey]['items'][] = [
+                'qc_item_id' => $qcItemId,
+                'variant_id' => $variantId,
+                'quantity' => (int)$row['quantity'],
+                'piece_tags' => $tags,
+                'qc_batch_id' => $qcBatchId,
+            ];
+        }
+
+        $allTags = [];
+        foreach ($groups as $group) {
+            foreach ($group['items'] as $item) {
+                foreach ($item['piece_tags'] as $tag) {
+                    $normalized = strtoupper(trim($tag));
+                    if ($normalized === '' || isset($allTags[$normalized])) {
+                        Response::redirect('production/billing', 'error', 'Bill QR tags are empty or duplicated.');
+                        return;
+                    }
+                    $allTags[$normalized] = true;
+                }
+            }
+        }
+
+        $warehouseRows = Database::fetchAll("SELECT qr_code FROM warehouse_qr_codes");
+        $warehouseTags = array_fill_keys(array_map(static fn(array $row): string => strtoupper(trim((string)$row['qr_code'])), $warehouseRows), true);
+        $approvedTagsByQc = [];
+        foreach ($groups as $group) {
+            foreach ($group['items'] as $item) {
+                $qcBatchId = (int)$item['qc_batch_id'];
+                if (!isset($approvedTagsByQc[$qcBatchId])) {
+                    $approvedTagsByQc[$qcBatchId] = ProductionService::getAvailableQCPieceTags($qcBatchId);
+                }
+                $availableTags = array_fill_keys(array_map('strtoupper', $approvedTagsByQc[$qcBatchId][(int)$item['qc_item_id']] ?? []), true);
+                foreach ($item['piece_tags'] as $tag) {
+                    $normalized = strtoupper(trim($tag));
+                    if (empty($availableTags[$normalized]) || isset($warehouseTags[$normalized])) {
+                        Response::redirect('production/billing', 'error', "QR {$tag} is no longer available for dispatch or is already in warehouse stock.");
+                        return;
+                    }
+                }
+            }
+        }
+
+        $userId = (int)(Auth::id() ?? Session::userId() ?? 0);
+        if ($userId <= 0) {
+            Response::redirect('production/billing', 'error', 'Unable to identify the administrator creating these batches.');
+            return;
+        }
+
+        Database::beginTransaction();
+        try {
+            Database::fetchOne("SELECT id FROM production_bills WHERE id = ? FOR UPDATE", [(int)$bill['id']]);
+            $lockedBatchCount = (int)(Database::fetchOne("SELECT COUNT(*) AS total FROM production_batches WHERE production_bill_id = ?", [(int)$bill['id']])['total'] ?? 0);
+            if ($lockedBatchCount > 0) {
+                Database::rollback();
+                Response::redirect('production/billing', 'error', 'This bill has already been moved to a production batch.');
+                return;
+            }
+            foreach ($groups as $group) {
+                $qcIds = array_values($group['qc_ids']);
+                $primaryQcId = array_shift($qcIds);
+                $batchItems = array_map(static function (array $item): array {
+                    unset($item['qc_batch_id']);
+                    return $item;
+                }, $group['items']);
+                ProductionService::createProductionBatch([
+                    'production_bill_id' => (int)$bill['id'],
+                    'program_id' => (int)$group['program_id'],
+                    'qc_batch_id' => $primaryQcId,
+                    'additional_qc_batch_ids' => $qcIds,
+                    'is_multi_qc' => !empty($qcIds) ? 1 : 0,
+                    'destination_warehouse_id' => $warehouseId,
+                    'box_count' => (int)$boxCount,
+                    'status' => 'PREPARING',
+                    'notes' => 'Customer dispatch for production bill ' . $bill['bill_number'],
+                ], $batchItems, $userId);
+            }
+            Database::commit();
+            Response::redirect('production/batches', 'success', 'Bill QR items are packed into linked batches. Approve the batches to continue to outward dispatch.');
+        } catch (Throwable $e) {
+            Database::rollback();
+            error_log('ProductionBillingController::createBillDispatchBatch failed: ' . $e->getMessage());
+            Response::redirect('production/billing/move-to-batch/' . (int)$bill['id'], 'error', 'Unable to create dispatch batches. Refresh and verify that the bill QR items are still available.');
+        }
     }
 
     public function viewBill(string $id): void
@@ -303,12 +503,22 @@ class ProductionBillingController
             Response::redirect('production/billing', 'error', 'Bill not found.');
             return;
         }
+        $linkedBatchCount = (int)(Database::fetchOne("SELECT COUNT(*) AS total FROM production_batches WHERE production_bill_id = ?", [$billId])['total'] ?? 0);
+        if ($linkedBatchCount > 0) {
+            Response::redirect('production/billing', 'error', 'This bill cannot be edited because linked batch fulfillment has started.');
+            return;
+        }
         $this->persistBill($billId);
     }
 
     public function deleteBill(string $id): void
     {
         $billId = (int)$id;
+        $linkedBatches = (int)(Database::fetchOne("SELECT COUNT(*) AS total FROM production_batches WHERE production_bill_id = ?", [$billId])['total'] ?? 0);
+        if ($linkedBatches > 0) {
+            Response::redirect('production/billing', 'error', 'This bill cannot be deleted because it has linked batch or outward records.');
+            return;
+        }
         try {
             Database::execute("DELETE FROM production_bills WHERE id = ?", [$billId]);
             Response::redirect('production/billing', 'success', 'Production bill deleted.');
