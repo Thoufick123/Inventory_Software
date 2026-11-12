@@ -540,6 +540,9 @@ class Router {
         $this->post('warehouse/inward/store', 'WarehouseController', 'storeInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'create']]);
         $this->get('warehouse/inward/view/{id}', 'WarehouseController', 'viewInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'view']]);
         $this->post('warehouse/inward/verify/{id}', 'WarehouseController', 'verifyInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'verify']]);
+        $this->get('warehouse/inward/edit/{id}', 'WarehouseController', 'editInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'view']]);
+        $this->post('warehouse/inward/update/{id}', 'WarehouseController', 'updateInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'view']]);
+        $this->post('warehouse/inward/delete/{id}', 'WarehouseController', 'deleteInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'view']]);
         $this->get('warehouse/inward/label/{id}', 'WarehouseController', 'printBatchQRLabel', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'print']]);
         $this->post('api/warehouse/inward/scan', 'WarehouseController', 'ajaxScanInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'create']]);
         $this->post('api/warehouse/inward/crosscheck-scan', 'WarehouseController', 'ajaxCrossCheckScan', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'verify']]);

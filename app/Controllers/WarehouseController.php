@@ -501,6 +501,190 @@ class WarehouseController {
         }
     }
 
+    /**
+     * Show Edit Form for an Inward Shipment.
+     */
+    public function editInward(string $id): void {
+        if (!hasPermission('inward', 'edit') && !hasPermission('inward', 'verify') && !hasPermission('warehouse', 'edit') && !hasPermission('inward', 'create')) {
+            Session::flash('error', 'Access denied: You do not have permission to edit inward shipments.');
+            Response::redirect(url('warehouse/inward/view/' . $id));
+            return;
+        }
+
+        $batchId = (int)$id;
+        $batch = ProductionBatch::find($batchId);
+        if (!$batch) {
+            Session::flash('error', 'Production batch not found.');
+            Response::redirect(url('warehouse/inward'));
+            return;
+        }
+
+        $outward = ProductionOutward::findByBatchId($batchId);
+        $items = ProductionBatch::getItems($batchId);
+        $damages = WarehouseDamage::getByBatchId($batchId);
+        $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
+
+        $totalExpected = 0;
+        $totalReceived = 0;
+        $totalDamaged = 0;
+        $totalMissing = 0;
+        foreach ($items as &$item) {
+            $exp = (int)($item['quantity'] ?? 0);
+            $rec = (int)($item['received_qty'] ?? 0);
+            $dmg = (int)($item['damaged_qty'] ?? 0);
+            $mis = isset($item['missing_qty']) ? (int)$item['missing_qty'] : max(0, $exp - ($rec + $dmg));
+
+            if ($batch['status'] === 'RECEIVED' && $rec === 0 && $dmg === 0 && $mis === 0) {
+                $rec = $exp;
+                $mis = 0;
+                $item['received_qty'] = $rec;
+                $item['missing_qty'] = 0;
+            }
+
+            $totalExpected += $exp;
+            $totalReceived += $rec;
+            $totalDamaged += $dmg;
+            $totalMissing += $mis;
+        }
+        unset($item);
+
+        Response::view('warehouse.inward.edit', [
+            'pageTitle'     => 'Edit Inward GRN #' . $batch['batch_number'],
+            'activeModule'  => 'warehouse',
+            'activeMenu'    => 'wh-inward',
+            'batch'         => $batch,
+            'outward'       => $outward,
+            'items'         => $items,
+            'damages'       => $damages,
+            'warehouses'    => $warehouses,
+            'totalExpected' => $totalExpected,
+            'totalReceived' => $totalReceived,
+            'totalDamaged'  => $totalDamaged,
+            'totalMissing'  => $totalMissing,
+            'breadcrumb'    => [
+                ['label' => 'Warehouse', 'url' => url('warehouse/dashboard')],
+                ['label' => 'Inward / GRN', 'url' => url('warehouse/inward')],
+                ['label' => 'Batch #' . $batch['batch_number'], 'url' => url('warehouse/inward/view/' . $batchId)],
+                ['label' => 'Edit Inward'],
+            ],
+        ]);
+    }
+
+    /**
+     * Update an Inward Shipment with stock deltas and audit logging.
+     */
+    public function updateInward(string $id): void {
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token or session expired. Please try again.');
+            Response::redirect(url('warehouse/inward/edit/' . $id));
+            return;
+        }
+
+        if (!hasPermission('inward', 'edit') && !hasPermission('inward', 'verify') && !hasPermission('warehouse', 'edit') && !hasPermission('inward', 'create')) {
+            Session::flash('error', 'Access denied: You do not have permission to edit inward shipments.');
+            Response::redirect(url('warehouse/inward/view/' . $id));
+            return;
+        }
+
+        $batchId = (int)$id;
+        $editReason = trim($_POST['edit_reason'] ?? '');
+        if (empty($editReason)) {
+            Session::flash('error', 'A mandatory reason for modifying the inward shipment is required.');
+            Response::redirect(url('warehouse/inward/edit/' . $batchId));
+            return;
+        }
+
+        $notes = trim($_POST['notes'] ?? '');
+        $boxCount = !empty($_POST['box_count']) ? (int)$_POST['box_count'] : null;
+
+        $receivedItems = [];
+        if (!empty($_POST['items']) && is_array($_POST['items'])) {
+            foreach ($_POST['items'] as $varId => $data) {
+                $receivedItems[(int)$varId] = [
+                    'received_qty' => (float)($data['received_qty'] ?? 0),
+                    'damaged_qty'  => (float)($data['damaged_qty'] ?? 0),
+                    'notes'        => trim($data['notes'] ?? ''),
+                ];
+            }
+        }
+
+        try {
+            $userId = Session::userId() ?? 1;
+            WarehouseService::updateInwardBatch($batchId, $userId, $receivedItems, $notes, $editReason, $boxCount);
+
+            $batch = ProductionBatch::find($batchId);
+            $batchNum = $batch['batch_number'] ?? "#$batchId";
+            Session::flash('success', "Inward record for Batch $batchNum updated successfully! Stock balances reconciled and audit trail logged.");
+            Response::redirect(url('warehouse/inward/view/' . $batchId));
+        } catch (Exception $e) {
+            Session::flash('error', "Failed to update inward shipment: " . $e->getMessage());
+            Response::redirect(url('warehouse/inward/edit/' . $batchId));
+        }
+    }
+
+    /**
+     * Delete an Inward GRN receipt with mandatory reason and stock reversal.
+     */
+    public function deleteInward(string $id): void {
+        if (!CSRF::validateRequest()) {
+            if (Request::isAjax()) {
+                Response::jsonError('Invalid security token or session expired.');
+                return;
+            }
+            Session::flash('error', 'Invalid security token or session expired.');
+            Response::redirect(url('warehouse/inward'));
+            return;
+        }
+
+        if (!hasPermission('inward', 'delete') && !hasPermission('inward', 'verify') && !hasPermission('warehouse', 'delete') && !hasPermission('warehouse', 'manage')) {
+            if (Request::isAjax()) {
+                Response::jsonError('Access denied: You do not have permission to delete inward shipments.', [], 403);
+                return;
+            }
+            Session::flash('error', 'Access denied: You do not have permission to delete inward shipments.');
+            Response::redirect(url('warehouse/inward'));
+            return;
+        }
+
+        $batchId = (int)$id;
+        $reason = trim($_POST['reason'] ?? '');
+        if (empty($reason)) {
+            if (Request::isAjax()) {
+                Response::jsonError('Please provide a mandatory reason for deleting this inward shipment.');
+                return;
+            }
+            Session::flash('error', 'Please provide a valid mandatory reason for deleting this inward shipment.');
+            Response::redirect(url('warehouse/inward'));
+            return;
+        }
+
+        $returnToProduction = !empty($_POST['return_to_production']) && $_POST['return_to_production'] == '1';
+
+        try {
+            $userId = Session::userId() ?? 1;
+            $batch = ProductionBatch::find($batchId);
+            $batchNum = $batch['batch_number'] ?? "#$batchId";
+
+            WarehouseService::deleteInwardBatch($batchId, $userId, $reason, $returnToProduction);
+
+            $msg = "Inward receipt for Batch $batchNum deleted successfully! Credited inventory has been safely reversed and audit log recorded.";
+            if (Request::isAjax()) {
+                Response::jsonSuccess($msg, ['batch_id' => $batchId, 'batch_number' => $batchNum]);
+                return;
+            }
+            Session::flash('success', $msg);
+            Response::redirect(url('warehouse/inward'));
+        } catch (Exception $e) {
+            $errMsg = "Error deleting inward shipment: " . $e->getMessage();
+            if (Request::isAjax()) {
+                Response::jsonError($errMsg);
+                return;
+            }
+            Session::flash('error', $errMsg);
+            Response::redirect(url('warehouse/inward'));
+        }
+    }
+
     public function printBatchQRLabel(string $id): void {
         if (!hasPermission('inward', 'print') && !hasPermission('inward', 'view') && !hasPermission('wh_labels', 'print') && !hasPermission('warehouse', 'view')) {
             Session::flash('error', 'Access denied: You do not have permission to print batch labels.');
