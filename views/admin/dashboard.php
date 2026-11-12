@@ -294,7 +294,8 @@
                                     <td class="text-end pe-3">
                                         <div class="action-btns-group justify-content-end">
                                             <button type="button" class="btn btn-action-icon btn-outline-info" title="View Unit Details"
-                                                    onclick="viewFacilityDetails('unit', <?= htmlspecialchars(json_encode($unit), ENT_QUOTES, 'UTF-8') ?>)">
+                                                    data-facility-type="unit"
+                                                    data-facility-details="<?= htmlspecialchars(json_encode($unit, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_HEX_TAG | JSON_INVALID_UTF8_SUBSTITUTE), ENT_QUOTES, 'UTF-8') ?>">
                                                 <i class="bi bi-eye"></i>
                                             </button>
                                             <?php if ($canEditUnit): ?>
@@ -370,7 +371,8 @@
                                     <td class="text-end pe-3">
                                         <div class="action-btns-group justify-content-end">
                                             <button type="button" class="btn btn-action-icon btn-outline-info" title="View Warehouse Details"
-                                                    onclick="viewFacilityDetails('warehouse', <?= htmlspecialchars(json_encode($wh), ENT_QUOTES, 'UTF-8') ?>)">
+                                                    data-facility-type="warehouse"
+                                                    data-facility-details="<?= htmlspecialchars(json_encode($wh, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_HEX_TAG | JSON_INVALID_UTF8_SUBSTITUTE), ENT_QUOTES, 'UTF-8') ?>">
                                                 <i class="bi bi-eye"></i>
                                             </button>
                                             <?php if ($canEditWarehouse): ?>
@@ -446,7 +448,8 @@
                                     <td class="text-end pe-3">
                                         <div class="action-btns-group justify-content-end">
                                             <button type="button" class="btn btn-action-icon btn-outline-info" title="View Shop Details"
-                                                    onclick="viewFacilityDetails('shop', <?= htmlspecialchars(json_encode($shop), ENT_QUOTES, 'UTF-8') ?>)">
+                                                    data-facility-type="shop"
+                                                    data-facility-details="<?= htmlspecialchars(json_encode($shop, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_HEX_TAG | JSON_INVALID_UTF8_SUBSTITUTE), ENT_QUOTES, 'UTF-8') ?>">
                                                 <i class="bi bi-eye"></i>
                                             </button>
                                             <?php if ($canEditShop): ?>
@@ -519,7 +522,8 @@
                                     <td class="text-end pe-3">
                                         <div class="action-btns-group justify-content-end">
                                             <button type="button" class="btn btn-action-icon btn-outline-info" title="View Channel Details"
-                                                    onclick="viewFacilityDetails('whatsapp', <?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
+                                                    data-facility-type="whatsapp"
+                                                    data-facility-details="<?= htmlspecialchars(json_encode($chan, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_HEX_TAG | JSON_INVALID_UTF8_SUBSTITUTE), ENT_QUOTES, 'UTF-8') ?>">
                                                 <i class="bi bi-eye"></i>
                                             </button>
                                             <?php if ($canEditChannel): ?>
@@ -586,7 +590,8 @@
                                     <td class="text-end pe-3">
                                         <div class="action-btns-group justify-content-end">
                                             <button type="button" class="btn btn-action-icon btn-outline-info" title="View Channel Details"
-                                                    onclick="viewFacilityDetails('website', <?= htmlspecialchars(json_encode($chan), ENT_QUOTES, 'UTF-8') ?>)">
+                                                    data-facility-type="website"
+                                                    data-facility-details="<?= htmlspecialchars(json_encode($chan, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_HEX_TAG | JSON_INVALID_UTF8_SUBSTITUTE), ENT_QUOTES, 'UTF-8') ?>">
                                                 <i class="bi bi-eye"></i>
                                             </button>
                                             <?php if ($canEditChannel): ?>
@@ -1091,6 +1096,16 @@
 <!-- ========================================================================= -->
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('click', function(event) {
+        const target = event.target instanceof Element
+            ? event.target.closest('[data-facility-details]')
+            : null;
+        if (!target) return;
+
+        const data = JSON.parse(target.dataset.facilityDetails);
+        viewFacilityDetails(target.dataset.facilityType, data);
+    });
+
     // Bootstrap Inline Validation
     const forms = document.querySelectorAll('.needs-validation');
     Array.prototype.slice.call(forms).forEach(function(form) {
@@ -1767,8 +1782,7 @@ function viewFacilityDetails(type, data) {
         `;
     }
 
-    const modal = new bootstrap.Modal(document.getElementById('modalFacilityDetails'));
-    modal.show();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalFacilityDetails')).show();
 }
 
 function confirmDeleteFacility(type, id, name, actionUrl) {

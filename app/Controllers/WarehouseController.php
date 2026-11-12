@@ -6004,6 +6004,8 @@ class WarehouseController {
     public function ajaxScanPurchaseQr(): void {
         $isAdjustmentScan = ($_REQUEST['purpose'] ?? '') === 'stock_adjustment';
         $isReturnEditScan = ($_REQUEST['purpose'] ?? '') === 'purchase_return_edit';
+        $isSameProductExchangeScan = ($_REQUEST['same_product_exchange_scan'] ?? '') === '1';
+        $returnEditId = $isReturnEditScan ? (int)($_REQUEST['return_id'] ?? 0) : 0;
         $hasScanPermission = $isAdjustmentScan
             ? hasPermission('stock', 'adjust')
             : ($isReturnEditScan
@@ -6064,17 +6066,26 @@ class WarehouseController {
         }
 
         $candidateCodes = array_values(array_unique(array_filter($candidateCodes)));
+        $exchangedReplacement = null;
+        $exchangedReplacementTag = '';
         foreach (array_unique(array_merge([$extractedTag], $candidateCodes)) as $scannedPieceTag) {
-            $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag((string)$scannedPieceTag);
+            $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag(
+                (string)$scannedPieceTag,
+                $isSameProductExchangeScan ? $returnEditId : null
+            );
             if ($exchangedReplacement) {
-                echo json_encode([
-                    'success' => false,
-                    'is_exchanged_out' => true,
-                    'message' => "QR code '{$scannedPieceTag}' was already issued to a customer as an exchange replacement ("
-                        . ($exchangedReplacement['exchange_number'] ?? 'exchange')
-                        . "). It is no longer available in warehouse stock."
-                ]);
-                exit;
+                if (!$isSameProductExchangeScan) {
+                    echo json_encode([
+                        'success' => false,
+                        'is_exchanged_out' => true,
+                        'message' => "QR code '{$scannedPieceTag}' was already issued to a customer as an exchange replacement ("
+                            . ($exchangedReplacement['exchange_number'] ?? 'exchange')
+                            . "). It is no longer available in warehouse stock."
+                    ]);
+                    exit;
+                }
+                $exchangedReplacementTag = (string)$scannedPieceTag;
+                break;
             }
         }
 
@@ -6437,6 +6448,16 @@ class WarehouseController {
         }
 
         if (!$variant) {
+            if ($exchangedReplacement) {
+                echo json_encode([
+                    'success' => false,
+                    'is_exchanged_out' => true,
+                    'message' => "QR code '{$exchangedReplacementTag}' was already issued to a customer as an exchange replacement ("
+                        . ($exchangedReplacement['exchange_number'] ?? 'exchange')
+                        . "). It is no longer available in warehouse stock."
+                ]);
+                exit;
+            }
             echo json_encode([
                 'success' => false,
                 'message' => 'No matching product variant found for scanned code "' . htmlspecialchars($rawCode) . '"'
@@ -6459,6 +6480,55 @@ class WarehouseController {
             );
         }
         $availableStock = (int)($avail['qty'] ?? 0);
+
+        $isCurrentReturnedPiece = false;
+        $isSameProductReturnVariant = false;
+        if ($isSameProductExchangeScan) {
+            $purchaseOrderId = (int)($_REQUEST['purchase_order_id'] ?? 0);
+            $returnItemIds = json_decode((string)($_REQUEST['same_exchange_item_ids'] ?? '[]'), true);
+            $returnItemIds = is_array($returnItemIds)
+                ? array_values(array_unique(array_filter(array_map('intval', $returnItemIds), static fn($id) => $id > 0)))
+                : [];
+            if ($purchaseOrderId > 0 && $returnItemIds) {
+                $placeholders = implode(',', array_fill(0, count($returnItemIds), '?'));
+                $returningItems = Database::fetchAll(
+                    "SELECT pi.batch_lot_no, pi.notes, pv.qr_code
+                     FROM purchase_items pi
+                     JOIN product_variants pv ON pv.id = pi.variant_id
+                     WHERE pi.purchase_order_id = ? AND pi.variant_id = ? AND pi.id IN ($placeholders)",
+                    array_merge([$purchaseOrderId, (int)$variant['id']], $returnItemIds)
+                );
+                $isSameProductReturnVariant = !empty($returningItems);
+                $scannedCode = strtoupper(trim((string)$extractedTag));
+                foreach ($returningItems as $returningItem) {
+                    foreach (['batch_lot_no', 'notes', 'qr_code'] as $field) {
+                        $source = (string)($returningItem[$field] ?? '');
+                        if ($field === 'notes' && preg_match('/\bQR:\s*(.*)$/is', $source, $matches)) {
+                            $source = $matches[1];
+                        }
+                        foreach (preg_split('/[,;|\r\n]+/', $source) ?: [] as $pieceTag) {
+                            if (strtoupper(trim($pieceTag)) === $scannedCode) {
+                                $isCurrentReturnedPiece = true;
+                                break 3;
+                            }
+                        }
+                    }
+                    if ($exchangedReplacement && !(
+                        $isCurrentReturnedPiece
+                        && strtoupper(trim($exchangedReplacementTag)) === strtoupper(trim((string)$extractedTag))
+                    )) {
+                        echo json_encode([
+                            'success' => false,
+                            'is_exchanged_out' => true,
+                            'message' => "QR code '{$exchangedReplacementTag}' was already issued to a customer as an exchange replacement ("
+                                . ($exchangedReplacement['exchange_number'] ?? 'exchange')
+                                . "). It is no longer available in warehouse stock."
+                        ]);
+                        exit;
+                    }
+                }
+            }
+        }
 
         $isComp = (!empty($variant['is_complementary']) || !empty($variant['prod_is_comp']) || ($variant['category_type'] ?? '') === 'COMPLEMENTARY') ? 1 : 0;
         $isSeries = (($variant['category_type'] ?? '') === 'SERIES' || ($variant['qr_type'] ?? '') === 'SERIES_BATCH' || (int)($variant['pack_quantity'] ?? 0) > 1) ? 1 : 0;
@@ -6507,7 +6577,7 @@ class WarehouseController {
         }
 
         // 1. Warehouse Available Stock Check
-        if ($availableStock <= 0 && !$isAdjustmentScan) {
+        if ($availableStock <= 0 && !$isAdjustmentScan && !$isCurrentReturnedPiece && !$isSameProductReturnVariant) {
             $whLabel = 'Warehouse';
             if ($warehouseId > 0) {
                 $whRow = Database::fetchOne("SELECT name, code FROM warehouses WHERE id = ?", [$warehouseId]);
@@ -6597,7 +6667,7 @@ class WarehouseController {
                      ORDER BY r.id DESC LIMIT 1",
                     [$variant['id'], '%' . $extractedTag . '%']
                 );
-                if (!$isRestocked) {
+                if (!$isRestocked && !$isCurrentReturnedPiece) {
                     echo json_encode([
                         'success' => false,
                         'message' => "🚫 Piece Already Sold: Tag '{$extractedTag}' was already sold in Direct Purchase #{$isPurchased['po_number']} ({$isPurchased['status']}). Cannot scan an already sold piece!"
@@ -6631,6 +6701,7 @@ class WarehouseController {
             'extracted_tag' => $extractedTag,
             'variant'       => [
                 'id'               => (int)$variant['id'],
+                'product_id'       => (int)$variant['product_id'],
                 'sku'              => $variant['sku'],
                 'qr_code'          => !empty($variant['qr_code']) ? $variant['qr_code'] : $extractedTag,
                 'piece_tag'        => $extractedTag,
