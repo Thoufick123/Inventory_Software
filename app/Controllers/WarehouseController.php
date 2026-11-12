@@ -12437,9 +12437,13 @@ class WarehouseController {
     }
 
     public function deleteWarehouseQrAjax(): void {
-        $canDelete = hasPermission('wh_labels', 'create') || hasPermission('wh_labels', 'edit') || hasPermission('wh_labels', 'view') || hasPermission('stock', 'view') || hasPermission('warehouse', 'view');
+        $canDelete = hasPermission('wh_labels', 'create') || hasPermission('wh_labels', 'edit') || isAdmin();
         if (!$canDelete) {
             Response::json(['success' => false, 'message' => 'Access denied.'], 403);
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            Response::json(['success' => false, 'message' => 'Invalid security token. Refresh the page and try again.'], 403);
             return;
         }
 
@@ -12468,6 +12472,12 @@ class WarehouseController {
             return;
         }
 
+        $reason = trim((string)($_POST['reason'] ?? ''));
+        if ($reason === '' || strlen($reason) > 500) {
+            Response::json(['success' => false, 'message' => 'Enter a deletion reason (up to 500 characters).'], 422);
+            return;
+        }
+
         $sessionUserId = Session::get('user_id');
         $userId = is_numeric($sessionUserId) && (int)$sessionUserId > 0 ? (int)$sessionUserId : null;
         $variantId = !empty($_POST['variant_id']) ? (int)$_POST['variant_id'] : null;
@@ -12476,12 +12486,15 @@ class WarehouseController {
         $deletedCodes = [];
         $skippedInwarded = [];
 
-        Database::beginTransaction();
         try {
+            Database::beginTransaction();
             foreach ($codes as $code) {
-                // Check if already inwarded into warehouse inventory
+                // Lock the label row so inwarding cannot race with deletion.
                 $existing = Database::fetchOne(
-                    "SELECT id, variant_id, inwarded_at FROM warehouse_qr_codes WHERE qr_code = ?",
+                    "SELECT id, variant_id, inwarded_at, pack_quantity, series_end_code
+                     FROM warehouse_qr_codes
+                     WHERE UPPER(qr_code) = ?
+                     LIMIT 1 FOR UPDATE",
                     [$code]
                 );
 
@@ -12492,15 +12505,49 @@ class WarehouseController {
 
                 $varId = $existing ? (int)$existing['variant_id'] : $variantId;
 
-                // 1. Delete from warehouse_qr_codes
-                Database::execute("DELETE FROM warehouse_qr_codes WHERE qr_code = ? AND inwarded_at IS NULL", [$code]);
+                if ($existing) {
+                    Database::execute(
+                        "DELETE FROM warehouse_qr_codes WHERE id = ? AND inwarded_at IS NULL",
+                        [(int)$existing['id']]
+                    );
+                }
 
-                // 2. Track in warehouse_deleted_label_codes
                 Database::execute(
                     "INSERT INTO warehouse_deleted_label_codes (code, variant_id, created_by)
                      VALUES (?, ?, ?)
-                     ON DUPLICATE KEY UPDATE variant_id = VALUES(variant_id)",
+                     ON DUPLICATE KEY UPDATE variant_id = VALUES(variant_id), created_by = VALUES(created_by)",
                     [$code, $varId, $userId]
+                );
+
+                $previousValue = json_encode([
+                    'qr_code' => $code,
+                    'variant_id' => $varId,
+                    'qr_record_id' => $existing ? (int)$existing['id'] : null,
+                    'pack_quantity' => $existing ? (int)$existing['pack_quantity'] : null,
+                    'series_end_code' => $existing['series_end_code'] ?? null,
+                    'inwarded_at' => $existing['inwarded_at'] ?? null,
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                $newValue = json_encode([
+                    'deleted' => true,
+                    'reason' => $reason,
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                if ($previousValue === false || $newValue === false) {
+                    throw new RuntimeException('Unable to prepare QR deletion audit data.');
+                }
+
+                Database::execute(
+                    "INSERT INTO audit_logs (
+                        user_id, module, action, reference_type, reference_id,
+                        previous_value, new_value, ip_address, user_agent, created_at
+                     ) VALUES (?, 'warehouse', 'DELETE', 'warehouse_qr_codes', ?, ?, ?, ?, ?, NOW())",
+                    [
+                        $userId,
+                        $existing ? (int)$existing['id'] : null,
+                        $previousValue,
+                        $newValue,
+                        $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
+                        substr($_SERVER['HTTP_USER_AGENT'] ?? 'CLI/System', 0, 500),
+                    ]
                 );
 
                 $deletedCodes[] = $code;
@@ -12514,10 +12561,12 @@ class WarehouseController {
                 'deleted_count'    => $deletedCount,
                 'deleted_codes'    => $deletedCodes,
                 'skipped_inwarded' => $skippedInwarded,
-                'message'          => $deletedCount . ' QR code(s) deleted permanently.',
+                'message'          => $deletedCount . ' QR label(s) deleted and recorded in the audit log.',
             ]);
         } catch (Throwable $e) {
-            Database::rollback();
+            if (Database::inTransaction()) {
+                Database::rollback();
+            }
             Response::json(['success' => false, 'message' => 'Database error deleting QR code: ' . $e->getMessage()], 500);
         }
     }

@@ -28,6 +28,9 @@ $inwardedVariantIds= $inwardedVariantIds ?? [];
 $viewParam         = $_GET['view'] ?? '';
 $isViewingExisting = $viewParam === 'existing';
 $isGeneratingView  = in_array($viewParam, ['generate', 'existing'], true) || (!empty($selectedCatalogCode) && $viewParam !== 'batches') || (!empty($selectedVariantId) && $viewParam !== 'batches');
+$canDeleteWarehouseQr = hasPermission('wh_labels', 'create')
+    || hasPermission('wh_labels', 'edit')
+    || isAdmin();
 
 // Build items to generate labels for
 $activeVar = null;
@@ -2193,7 +2196,7 @@ foreach ($qrBatches as $batch) {
     <div class="alert alert-info py-2 mb-3 no-print">
         <i class="bi bi-info-circle me-1"></i>
         <?php if (hasPermission('wh_labels', 'create')): ?>
-            Saved QR labels are shown below. Use <strong>Edit Pack</strong> on a master QR to add units. Already-inwarded packs credit added units to stock when your account has inward permission.
+            Saved QR labels are shown below. Use <strong>Edit Pack</strong> on a master QR to add units. Delete non-inwarded labels with a required audit reason; inwarded labels are protected.
         <?php else: ?>
             Viewing previously generated QR labels. This page is read-only for your account.
         <?php endif; ?>
@@ -2662,9 +2665,11 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                         <button type="button" class="btn btn-sm btn-outline-success fw-bold bg-white shadow-2xs" onclick="produceNewAdjustmentQR()" title="Add QR labels or extend the selected master pack">
                             <i class="bi bi-plus-circle-fill text-success me-1"></i> Add QR / Units
                         </button>
-                        <button type="button" class="btn btn-sm btn-outline-danger fw-bold bg-white shadow-2xs" id="btnDeleteSelectedQrs" onclick="deleteSelectedQrs()" disabled title="Permanently delete selected QR code(s) so they will not appear again">
-                            <i class="bi bi-trash3 me-1"></i>Delete Selected QR(s)
-                        </button>
+                        <?php if ($canDeleteWarehouseQr): ?>
+                            <button type="button" class="btn btn-sm btn-outline-danger fw-bold bg-white shadow-2xs" id="btnDeleteSelectedQrs" onclick="deleteSelectedQrs()" disabled title="Delete selected QR labels and record the reason">
+                                <i class="bi bi-trash3 me-1"></i>Delete Selected QR(s)
+                            </button>
+                        <?php endif; ?>
                         <button type="button" class="btn btn-sm btn-outline-success fw-bold bg-white shadow-2xs" id="btnQuickInwardSelected" onclick="confirmStickeredInwardAction(event)" title="Inward stickered product(s) to warehouse inventory stock">
                             <i class="bi bi-box-arrow-in-down-right me-1"></i>Inward to Stock
                         </button>
@@ -2796,6 +2801,14 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                                         <i class="bi bi-pencil-square"></i> Edit Pack
                                     </button>
                                 <?php endif; ?>
+                                <?php if ($canDeleteWarehouseQr && empty($item['is_inwarded'])): ?>
+                                    <button type="button"
+                                            class="btn btn-xs btn-outline-danger flex-fill fw-semibold py-1.5"
+                                            onclick="deleteSingleQr(<?= $index ?>)"
+                                            title="Delete this QR label">
+                                        <i class="bi bi-trash3"></i> Delete
+                                    </button>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -2805,6 +2818,38 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
         <?php endif; ?>
     </div>
 </div>
+
+<?php if ($canDeleteWarehouseQr): ?>
+<div class="modal fade" id="deleteQrConfirmModal" tabindex="-1" aria-labelledby="deleteQrConfirmTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title fw-bold" id="deleteQrConfirmTitle">
+                    <i class="bi bi-trash3 me-2"></i>Delete QR Labels
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="alert alert-warning py-2">
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                    Confirm deletion of <strong id="deleteQrSelectedCount">0</strong> QR label(s).
+                    Inwarded labels are protected and cannot be deleted.
+                </div>
+                <label for="deleteQrReason" class="form-label fw-semibold">Reason for deletion <span class="text-danger">*</span></label>
+                <textarea id="deleteQrReason" class="form-control" rows="3" maxlength="500" required
+                          placeholder="Explain why these QR labels should be deleted."></textarea>
+                <div class="form-text">The reason and affected QR codes will be stored in the audit log.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light border fw-semibold" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger fw-bold" id="confirmDeleteQrButton" onclick="confirmDeleteSelectedQrs()">
+                    <i class="bi bi-trash3 me-1"></i>Confirm Delete
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <?php if (in_array($currentSourceType, ['po', 'tp_purchase']) && !empty($selectedSourceId) && !empty($poInfo) && empty($selectedVariantId)): 
     $isPoDraft = ($poInfo['status'] === 'DRAFT' || $poInfo['status'] === 'PENDING');
@@ -3411,6 +3456,7 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
 
 <script>
 const GENERATED_ITEMS = <?= json_encode($generatedItems ?? []) ?>;
+const CAN_DELETE_WAREHOUSE_QR = <?= $canDeleteWarehouseQr ? 'true' : 'false' ?>;
 let currentPreviewIndex = 0;
 
 /**
@@ -4809,29 +4855,87 @@ function printSelectedStickers() {
     printLabel(batchLabels);
 }
 
+let pendingQrDeleteIndices = [];
+
 function deleteSelectedQrs() {
-    const selectedIndices = Array.from(selectedStickerIndices)
-        .filter(idx => GENERATED_ITEMS[idx] && !GENERATED_ITEMS[idx].is_deleted);
-    if (selectedIndices.length === 0) {
-        showPrintToast('Select at least one QR sticker to delete.', 'warning');
+    const indices = Array.from(selectedStickerIndices)
+        .filter(index => GENERATED_ITEMS[index] && !GENERATED_ITEMS[index].is_deleted);
+    openQrDeleteConfirmation(indices);
+}
+
+function deleteSingleQr(index) {
+    const item = GENERATED_ITEMS[index];
+    if (!item || item.is_deleted || item.is_inwarded) {
+        showPrintToast('Only QR labels that have not been inwarded can be deleted.', 'warning');
+        return;
+    }
+    openQrDeleteConfirmation([index]);
+}
+
+function openQrDeleteConfirmation(indices) {
+    if (!CAN_DELETE_WAREHOUSE_QR) {
+        showPrintToast('You do not have permission to delete QR labels.', 'danger');
         return;
     }
 
-    const codesToDelete = selectedIndices.map(idx => GENERATED_ITEMS[idx].tag_code).filter(Boolean);
-
-    if (!confirm(`Permanently delete ${codesToDelete.length} selected QR sticker(s)? They will be removed from the database and will not appear again after page refresh.`)) {
+    pendingQrDeleteIndices = indices.filter(index =>
+        GENERATED_ITEMS[index] &&
+        !GENERATED_ITEMS[index].is_deleted &&
+        !GENERATED_ITEMS[index].is_inwarded &&
+        GENERATED_ITEMS[index].tag_code
+    );
+    if (pendingQrDeleteIndices.length === 0) {
+        showPrintToast('Select at least one QR label that has not been inwarded.', 'warning');
         return;
     }
 
-    const btnDelete = document.getElementById('btnDeleteSelectedQrs');
-    const origHtml = btnDelete ? btnDelete.innerHTML : '';
-    if (btnDelete) {
-        btnDelete.disabled = true;
-        btnDelete.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Deleting...';
+    const modalElement = document.getElementById('deleteQrConfirmModal');
+    const reasonInput = document.getElementById('deleteQrReason');
+    const countElement = document.getElementById('deleteQrSelectedCount');
+    if (!modalElement || !window.bootstrap || !bootstrap.Modal) {
+        showPrintToast('The QR deletion confirmation dialog is unavailable. Refresh the page and try again.', 'danger');
+        return;
+    }
+
+    if (countElement) countElement.textContent = String(pendingQrDeleteIndices.length);
+    if (reasonInput) {
+        reasonInput.value = '';
+        reasonInput.setCustomValidity('');
+    }
+    bootstrap.Modal.getOrCreateInstance(modalElement).show();
+    setTimeout(() => reasonInput?.focus(), 150);
+}
+
+function confirmDeleteSelectedQrs() {
+    const reasonInput = document.getElementById('deleteQrReason');
+    const reason = (reasonInput?.value || '').trim();
+    if (!reason) {
+        reasonInput?.setCustomValidity('Enter a reason for deleting these QR labels.');
+        reasonInput?.reportValidity();
+        return;
+    }
+    reasonInput?.setCustomValidity('');
+
+    const selectedIndices = pendingQrDeleteIndices.filter(index =>
+        GENERATED_ITEMS[index] && !GENERATED_ITEMS[index].is_deleted
+    );
+    const codesToDelete = selectedIndices.map(index => GENERATED_ITEMS[index].tag_code).filter(Boolean);
+    if (codesToDelete.length === 0) {
+        showPrintToast('No active QR labels are selected for deletion.', 'warning');
+        return;
+    }
+
+    const confirmButton = document.getElementById('confirmDeleteQrButton');
+    const originalButtonHtml = confirmButton ? confirmButton.innerHTML : '';
+    if (confirmButton) {
+        confirmButton.disabled = true;
+        confirmButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Deleting...';
     }
 
     const formData = new FormData();
     codesToDelete.forEach(code => formData.append('codes[]', code));
+    formData.append('reason', reason);
+    formData.append('_csrf_token', '<?= CSRF::token() ?>');
     const variantId = GENERATED_ITEMS[selectedIndices[0]]?.variant_id || '<?= $activeVar['id'] ?? '' ?>';
     if (variantId) formData.append('variant_id', variantId);
 
@@ -4843,23 +4947,20 @@ function deleteSelectedQrs() {
             'Accept': 'application/json'
         }
     })
-    .then(r => r.json())
+    .then(response => response.json())
     .then(res => {
-        if (btnDelete) {
-            btnDelete.disabled = false;
-            btnDelete.innerHTML = origHtml;
-        }
         if (!res.success) {
-            showPrintToast(res.message || 'Error deleting QR stickers.', 'danger');
+            showPrintToast(res.message || 'Error deleting QR labels.', 'danger');
             return;
         }
 
-        selectedIndices.forEach(idx => {
-            const item = GENERATED_ITEMS[idx];
-            if (item) item.is_deleted = true;
-            const card = document.getElementById(`col-piece-${idx}`);
-            if (card) card.remove();
-            selectedStickerIndices.delete(idx);
+        const deletedCodes = new Set((res.deleted_codes || []).map(code => String(code).toUpperCase()));
+        selectedIndices.forEach(index => {
+            const item = GENERATED_ITEMS[index];
+            if (!item || !deletedCodes.has(String(item.tag_code).toUpperCase())) return;
+            item.is_deleted = true;
+            document.getElementById(`col-piece-${index}`)?.remove();
+            selectedStickerIndices.delete(index);
         });
 
         const activeItems = GENERATED_ITEMS.filter(item => item && !item.is_deleted);
@@ -4869,6 +4970,12 @@ function deleteSelectedQrs() {
         if (totalBadge) totalBadge.textContent = `${activeItems.length} Available Pieces`;
         if (totalSelectable) totalSelectable.textContent = activeItems.length;
         if (inwardCount) inwardCount.textContent = activeItems.length;
+        const summaryBadge = document.getElementById('masterPackTotalBadge');
+        if (summaryBadge) {
+            const aggregateItems = activeItems.filter(item => item.is_series || item.is_complementary);
+            const totalPackQty = aggregateItems.reduce((total, item) => total + Number(item.pack_quantity || 1), 0);
+            summaryBadge.textContent = `${aggregateItems.length} Master QR${aggregateItems.length === 1 ? '' : 's'} (${totalPackQty} Total Pcs)`;
+        }
 
         const emptyMessage = document.getElementById('emptyGeneratedQrMessage');
         if (activeItems.length === 0 && !emptyMessage) {
@@ -4892,14 +4999,22 @@ function deleteSelectedQrs() {
         }
 
         updateSelectionCounter();
-        showPrintToast(res.message || `Deleted ${codesToDelete.length} QR sticker(s) permanently.`, 'success');
+        pendingQrDeleteIndices = [];
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('deleteQrConfirmModal')).hide();
+        const skippedCount = (res.skipped_inwarded || []).length;
+        const toastMessage = skippedCount > 0
+            ? `${res.message} ${skippedCount} inwarded QR label(s) were protected.`
+            : res.message;
+        showPrintToast(toastMessage || `Deleted ${deletedCodes.size} QR label(s) and recorded the reason.`, 'success');
     })
-    .catch(err => {
-        if (btnDelete) {
-            btnDelete.disabled = false;
-            btnDelete.innerHTML = origHtml;
+    .catch(() => {
+        showPrintToast('Network error while deleting QR labels. Please try again.', 'danger');
+    })
+    .finally(() => {
+        if (confirmButton) {
+            confirmButton.disabled = false;
+            confirmButton.innerHTML = originalButtonHtml;
         }
-        showPrintToast('Network error while deleting QR sticker(s).', 'danger');
     });
 }
 
@@ -5204,6 +5319,7 @@ function renderNewStickerCard(newItem, newIndex) {
                     <button type="button" class="btn btn-xs btn-outline-dark flex-fill fw-semibold py-1.5" onclick="printSinglePieceSticker(${newIndex})" title="Print Thermal Sticker">
                         <i class="bi bi-printer"></i> Print
                     </button>
+                    ${CAN_DELETE_WAREHOUSE_QR && !newItem.is_inwarded ? `<button type="button" class="btn btn-xs btn-outline-danger flex-fill fw-semibold py-1.5" onclick="deleteSingleQr(${newIndex})" title="Delete this QR label"><i class="bi bi-trash3"></i> Delete</button>` : ''}
                 </div>
             </div>
         `;
@@ -5252,6 +5368,7 @@ function renderNewStickerCard(newItem, newIndex) {
                     <button type="button" class="btn btn-xs btn-outline-dark flex-fill fw-semibold py-1.5" onclick="printSinglePieceSticker(${newIndex})" title="Print Thermal Sticker">
                         <i class="bi bi-printer"></i> Print
                     </button>
+                    ${CAN_DELETE_WAREHOUSE_QR && !newItem.is_inwarded ? `<button type="button" class="btn btn-xs btn-outline-danger flex-fill fw-semibold py-1.5" onclick="deleteSingleQr(${newIndex})" title="Delete this QR label"><i class="bi bi-trash3"></i> Delete</button>` : ''}
                 </div>
             </div>
         `;
