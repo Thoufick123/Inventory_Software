@@ -220,6 +220,22 @@ $totalInwardQty = (int)array_sum(array_map(fn($r) => max(1, (int)($r['quantity']
                                     <a class="btn btn-sm btn-dark py-1 px-2 fw-semibold" href="<?= url('production/purchases/roll-qr/' . $purchase['id']) ?>" target="_blank" rel="noopener" title="Print Roll QR Labels (Select &amp; Print)">
                                         <i class="bi bi-qr-code text-warning"></i>
                                     </a>
+                                    <?php
+                                    $pHasSupplies = false;
+                                    if (!empty($purchase['items'])) {
+                                        foreach ($purchase['items'] as $pi) {
+                                            if (($pi['item_type'] ?? '') === 'GENERAL_SUPPLY') {
+                                                $pHasSupplies = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    ?>
+                                    <?php if ($pHasSupplies): ?>
+                                        <a class="btn btn-sm btn-success py-1 px-2 fw-semibold text-white" href="<?= url('production/purchases/supply-qr/' . $purchase['id']) ?>" target="_blank" rel="noopener" title="Print Other Garment Supplies QR Labels">
+                                            <i class="bi bi-tags-fill"></i>
+                                        </a>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                                 <?php if (hasPermission('production_purchases', 'edit') || hasPermission('sellers', 'edit')): ?>
                                     <a class="btn btn-sm btn-outline-primary py-1 px-2" href="<?= url('production/purchases/edit/' . $purchase['id']) ?>" title="Edit Purchase">

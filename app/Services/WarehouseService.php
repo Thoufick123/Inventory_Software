@@ -545,6 +545,469 @@ class WarehouseService {
         }
     }
 
+    /**
+     * Update / Modify an Inward GRN receipt.
+     * Reconciles stock balance deltas, adjusts warehouse_damages quarantine entries,
+     * updates batch and item counts, and records a full audit log with edit reason.
+     *
+     * @param int $batchId
+     * @param int $userId
+     * @param array $receivedItems Map of [variant_id => ['received_qty' => float, 'damaged_qty' => float, 'notes' => string]]
+     * @param string|null $batchNotes General notes
+     * @param string $editReason Mandatory reason for modifying the inward record
+     * @param int|null $boxCount Updated box/carton count
+     * @return bool
+     * @throws Exception
+     */
+    public static function updateInwardBatch(
+        int $batchId,
+        int $userId,
+        array $receivedItems,
+        ?string $batchNotes = null,
+        string $editReason = '',
+        ?int $boxCount = null
+    ): bool {
+        $editReason = trim($editReason);
+        if (empty($editReason)) {
+            throw new Exception("A valid mandatory reason for modifying the inward shipment must be provided.");
+        }
+
+        Database::beginTransaction();
+        try {
+            $batch = ProductionBatch::find($batchId);
+            if (!$batch) {
+                throw new Exception("Production batch #$batchId not found.");
+            }
+
+            $warehouseId = (int)$batch['destination_warehouse_id'];
+            $items = ProductionBatch::getItems($batchId);
+            if (empty($items)) {
+                throw new Exception("No variant items found in batch #$batchId.");
+            }
+
+            $totalAccepted = 0;
+            $totalDamaged = 0;
+            $totalExpected = 0;
+            $previousSnapshot = [
+                'batch_number' => $batch['batch_number'],
+                'status'       => $batch['status'],
+                'received_qty' => $batch['received_qty'],
+                'damaged_qty'  => $batch['damaged_qty'],
+                'missing_qty'  => $batch['missing_qty'],
+                'notes'        => $batch['notes'],
+                'box_count'    => $batch['box_count'],
+                'items'        => [],
+            ];
+            $newSnapshot = [
+                'updated_at'   => date('Y-m-d H:i:s'),
+                'updated_by'   => $userId,
+                'edit_reason'  => $editReason,
+                'items'        => [],
+            ];
+
+            // 1. Validation pass: Check quantities and stock balance safety before mutating
+            foreach ($items as $item) {
+                $vid = (int)$item['variant_id'];
+                $expectedQty = (float)$item['quantity'];
+                $totalExpected += $expectedQty;
+
+                $prevReceivedQty = (float)($item['received_qty'] ?? 0);
+                $prevDamagedQty = (float)($item['damaged_qty'] ?? 0);
+
+                $previousSnapshot['items'][] = [
+                    'item_id'      => $item['id'],
+                    'variant_id'   => $vid,
+                    'sku'          => $item['sku'] ?? '',
+                    'received_qty' => $prevReceivedQty,
+                    'damaged_qty'  => $prevDamagedQty,
+                ];
+
+                if (!isset($receivedItems[$vid])) {
+                    $newAcceptedQty = $prevReceivedQty;
+                    $newDamagedQty = $prevDamagedQty;
+                } else {
+                    $itemData = $receivedItems[$vid];
+                    $newAcceptedQty = (float)($itemData['received_qty'] ?? 0);
+                    $newDamagedQty = (float)($itemData['damaged_qty'] ?? 0);
+                }
+
+                if ($newAcceptedQty < 0 || $newDamagedQty < 0) {
+                    throw new Exception("Inward quantities for SKU {$item['sku']} cannot be negative.");
+                }
+
+                if (($newAcceptedQty + $newDamagedQty) > $expectedQty) {
+                    throw new Exception("Inward quantity for SKU {$item['sku']} ({$newAcceptedQty} good + {$newDamagedQty} dmg) cannot exceed the {$expectedQty} pieces dispatched for this batch.");
+                }
+
+                if (floor($newAcceptedQty) !== $newAcceptedQty || floor($newDamagedQty) !== $newDamagedQty) {
+                    throw new Exception("Inward quantities for SKU {$item['sku']} must be whole pieces.");
+                }
+
+                // If decreasing received quantity, verify available stock is sufficient
+                $deltaAccepted = $newAcceptedQty - $prevReceivedQty;
+                if ($deltaAccepted < 0) {
+                    $needed = abs($deltaAccepted);
+                    $avail = StockService::getBalance($vid, 'WAREHOUSE', $warehouseId, 'AVAILABLE');
+                    if ($avail < $needed) {
+                        throw new Exception("Cannot reduce received quantity for SKU '{$item['sku']}' by {$needed} pcs: warehouse currently has only {$avail} pcs available in stock. The remaining pieces have already been dispatched or allocated.");
+                    }
+                }
+            }
+
+            // 2. Execution pass: Apply stock deltas and update database records
+            foreach ($items as $item) {
+                $vid = (int)$item['variant_id'];
+                $expectedQty = (float)$item['quantity'];
+                $prevReceivedQty = (float)($item['received_qty'] ?? 0);
+                $prevDamagedQty = (float)($item['damaged_qty'] ?? 0);
+
+                if (!isset($receivedItems[$vid])) {
+                    $newAcceptedQty = $prevReceivedQty;
+                    $newDamagedQty = $prevDamagedQty;
+                    $itemNotes = $item['notes'] ?? '';
+                } else {
+                    $itemData = $receivedItems[$vid];
+                    $newAcceptedQty = (float)($itemData['received_qty'] ?? 0);
+                    $newDamagedQty = (float)($itemData['damaged_qty'] ?? 0);
+                    $itemNotes = trim($itemData['notes'] ?? '');
+                }
+
+                $deltaAccepted = $newAcceptedQty - $prevReceivedQty;
+                $deltaDamaged = $newDamagedQty - $prevDamagedQty;
+
+                // Adjust AVAILABLE stock
+                if ($deltaAccepted > 0) {
+                    StockService::increase(
+                        variantId: $vid,
+                        locationType: 'WAREHOUSE',
+                        locationId: $warehouseId,
+                        stockState: 'AVAILABLE',
+                        quantity: $deltaAccepted,
+                        transactionType: 'PRODUCTION_GRN',
+                        referenceType: 'production_batch',
+                        referenceId: $batchId,
+                        userId: $userId,
+                        notes: "Inward adjustment increase (+{$deltaAccepted} pcs) for Batch #{$batch['batch_number']}. Reason: {$editReason}"
+                    );
+                } elseif ($deltaAccepted < 0) {
+                    $decrementQty = abs($deltaAccepted);
+                    StockService::decrease(
+                        variantId: $vid,
+                        locationType: 'WAREHOUSE',
+                        locationId: $warehouseId,
+                        stockState: 'AVAILABLE',
+                        quantity: $decrementQty,
+                        transactionType: 'PRODUCTION_GRN',
+                        referenceType: 'production_batch',
+                        referenceId: $batchId,
+                        userId: $userId,
+                        notes: "Inward adjustment reduction (-{$decrementQty} pcs) for Batch #{$batch['batch_number']}. Reason: {$editReason}"
+                    );
+                }
+
+                // Adjust DAMAGED stock & warehouse_damages table
+                if ($deltaDamaged > 0) {
+                    $costPerUnit = (float)($item['production_cost'] ?: ($item['purchase_price'] ?: ($item['selling_price'] ?: 0)));
+                    $totalLoss = $deltaDamaged * $costPerUnit;
+                    $damageNumber = WarehouseDamage::generateDamageNumber('DMG');
+
+                    $damageId = WarehouseDamage::create([
+                        'damage_number'      => $damageNumber,
+                        'warehouse_id'       => $warehouseId,
+                        'variant_id'         => $vid,
+                        'tag_code'           => '',
+                        'source_type'        => 'PRODUCTION_INWARD',
+                        'reference_id'       => $batchId,
+                        'quantity'           => $deltaDamaged,
+                        'cost_per_unit'      => $costPerUnit,
+                        'total_loss'         => $totalLoss,
+                        'damage_reason'      => 'Transit / Inward Verification Adjustment',
+                        'defect_notes'       => "Quarantined via Inward Edit for Batch #{$batch['batch_number']}. Reason: {$editReason}",
+                        'status'             => 'LOGGED',
+                        'reported_by'        => $userId,
+                        'production_unit_id' => !empty($batch['production_unit_id']) ? (int)$batch['production_unit_id'] : null,
+                    ]);
+
+                    StockService::increase(
+                        variantId: $vid,
+                        locationType: 'WAREHOUSE',
+                        locationId: $warehouseId,
+                        stockState: 'DAMAGED',
+                        quantity: $deltaDamaged,
+                        transactionType: 'PRODUCTION_GRN',
+                        referenceType: 'warehouse_damage',
+                        referenceId: $damageId,
+                        userId: $userId,
+                        notes: "Inward edit: additional damage (+{$deltaDamaged} pcs) for Batch #{$batch['batch_number']}"
+                    );
+                } elseif ($deltaDamaged < 0) {
+                    $decDmg = abs($deltaDamaged);
+                    $dmgBal = StockService::getBalance($vid, 'WAREHOUSE', $warehouseId, 'DAMAGED');
+                    $deductDmg = min($dmgBal, $decDmg);
+                    if ($deductDmg > 0) {
+                        StockService::decrease(
+                            variantId: $vid,
+                            locationType: 'WAREHOUSE',
+                            locationId: $warehouseId,
+                            stockState: 'DAMAGED',
+                            quantity: $deductDmg,
+                            transactionType: 'PRODUCTION_GRN',
+                            referenceType: 'production_batch',
+                            referenceId: $batchId,
+                            userId: $userId,
+                            notes: "Inward edit: reduced damaged stock (-{$deductDmg} pcs) for Batch #{$batch['batch_number']}"
+                        );
+                    }
+
+                    // Update existing damage records for this batch & variant
+                    $existingDamages = Database::fetchAll(
+                        "SELECT id, quantity FROM warehouse_damages 
+                         WHERE reference_id = ? AND variant_id = ? 
+                           AND source_type IN ('PRODUCTION_INWARD', 'INWARD_GRN', 'PRODUCTION_BATCH', 'INWARD_TRANSIT') 
+                           AND status != 'CANCELLED' 
+                         ORDER BY id DESC",
+                        [$batchId, $vid]
+                    );
+                    $toDeduct = $decDmg;
+                    foreach ($existingDamages as $ed) {
+                        if ($toDeduct <= 0) break;
+                        $edQty = (float)$ed['quantity'];
+                        if ($edQty <= $toDeduct) {
+                            Database::execute("UPDATE warehouse_damages SET status = 'CANCELLED', defect_notes = CONCAT(COALESCE(defect_notes, ''), ' [Adjustment: Reduced to 0 by inward edit]') WHERE id = ?", [$ed['id']]);
+                            $toDeduct -= $edQty;
+                        } else {
+                            $newQty = $edQty - $toDeduct;
+                            Database::execute("UPDATE warehouse_damages SET quantity = ?, defect_notes = CONCAT(COALESCE(defect_notes, ''), ' [Adjustment: Reduced by ', ?, ' by inward edit]') WHERE id = ?", [$newQty, $toDeduct, $ed['id']]);
+                            $toDeduct = 0;
+                        }
+                    }
+                }
+
+                $newMissingQty = max(0, (int)($expectedQty - ($newAcceptedQty + $newDamagedQty)));
+                $totalAccepted += $newAcceptedQty;
+                $totalDamaged += $newDamagedQty;
+
+                // Update item row
+                Database::execute(
+                    "UPDATE production_batch_items 
+                     SET received_qty = ?, damaged_qty = ?, missing_qty = ?, notes = ? 
+                     WHERE id = ?",
+                    [(int)$newAcceptedQty, (int)$newDamagedQty, (int)$newMissingQty, $itemNotes ?: null, $item['id']]
+                );
+
+                $newSnapshot['items'][] = [
+                    'item_id'      => $item['id'],
+                    'variant_id'   => $vid,
+                    'sku'          => $item['sku'] ?? '',
+                    'received_qty' => (int)$newAcceptedQty,
+                    'damaged_qty'  => (int)$newDamagedQty,
+                    'missing_qty'  => (int)$newMissingQty,
+                ];
+            }
+
+            $totalMissing = max(0, (int)($totalExpected - ($totalAccepted + $totalDamaged)));
+            $newStatus = ($totalAccepted > 0 || $totalDamaged > 0) ? 'RECEIVED' : 'DISPATCHED';
+
+            $finalNotes = $batchNotes !== null ? trim($batchNotes) : ($batch['notes'] ?? '');
+            $finalBoxCount = ($boxCount !== null && $boxCount > 0) ? $boxCount : ($batch['box_count'] ?? 1);
+
+            Database::execute(
+                "UPDATE production_batches 
+                 SET received_qty = ?, damaged_qty = ?, missing_qty = ?, notes = ?, box_count = ?, status = ? 
+                 WHERE id = ?",
+                [(int)$totalAccepted, (int)$totalDamaged, (int)$totalMissing, $finalNotes, $finalBoxCount, $newStatus, $batchId]
+            );
+
+            $newSnapshot['status'] = $newStatus;
+            $newSnapshot['received_qty'] = (int)$totalAccepted;
+            $newSnapshot['damaged_qty'] = (int)$totalDamaged;
+            $newSnapshot['missing_qty'] = (int)$totalMissing;
+            $newSnapshot['box_count'] = (int)$finalBoxCount;
+            $newSnapshot['notes'] = $finalNotes;
+
+            AuditService::log(
+                'warehouse',
+                'UPDATE',
+                'production_batch',
+                $batchId,
+                $previousSnapshot,
+                $newSnapshot,
+                $userId
+            );
+
+            Database::commit();
+            return true;
+        } catch (Exception $e) {
+            Database::rollback();
+            error_log("WarehouseService::updateInwardBatch failed: " . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * Delete / Revert an Inward GRN receipt.
+     * Safely rolls back warehouse inventory (available & damaged),
+     * cancels associated quarantine damages, resets batch & item counts,
+     * logs mandatory deletion reason and detailed diff in AuditService.
+     *
+     * @param int $batchId
+     * @param int $userId
+     * @param string $reason Mandatory reason for deleting the inward record
+     * @param bool $returnToProduction If true, batch status is reverted to APPROVED; if false, reset to DISPATCHED (awaiting GRN)
+     * @return bool
+     * @throws Exception
+     */
+    public static function deleteInwardBatch(int $batchId, int $userId, string $reason, bool $returnToProduction = false): bool {
+        $reason = trim($reason);
+        if (empty($reason)) {
+            throw new Exception("A valid mandatory reason must be provided to delete this inward shipment.");
+        }
+
+        Database::beginTransaction();
+        try {
+            $batch = ProductionBatch::find($batchId);
+            if (!$batch) {
+                throw new Exception("Production batch #$batchId not found.");
+            }
+
+            $warehouseId = (int)$batch['destination_warehouse_id'];
+            $items = ProductionBatch::getItems($batchId);
+            $totalReceived = (float)($batch['received_qty'] ?? 0);
+            $totalDamaged = (float)($batch['damaged_qty'] ?? 0);
+
+            // If stock was credited, verify warehouse stock availability to prevent negative inventory
+            if ($batch['status'] === 'RECEIVED' || $totalReceived > 0 || $totalDamaged > 0) {
+                foreach ($items as $item) {
+                    $vid = (int)$item['variant_id'];
+                    $recQty = (float)($item['received_qty'] ?? 0);
+                    if ($recQty > 0) {
+                        $currentAvail = StockService::getBalance($vid, 'WAREHOUSE', $warehouseId, 'AVAILABLE');
+                        if ($currentAvail < $recQty) {
+                            $shortage = $recQty - $currentAvail;
+                            throw new Exception("Cannot delete inward shipment: SKU '{$item['sku']}' was credited with {$recQty} pcs, but warehouse currently only has {$currentAvail} pcs available in stock ({$shortage} pcs have already been sold, allocated, or dispatched). Please reverse or adjust those sales/allocations first.");
+                        }
+                    }
+                }
+
+                // Decrement stock balances for each variant
+                foreach ($items as $item) {
+                    $vid = (int)$item['variant_id'];
+                    $recQty = (float)($item['received_qty'] ?? 0);
+                    $dmgQty = (float)($item['damaged_qty'] ?? 0);
+
+                    if ($recQty > 0) {
+                        StockService::decrease(
+                            variantId: $vid,
+                            locationType: 'WAREHOUSE',
+                            locationId: $warehouseId,
+                            stockState: 'AVAILABLE',
+                            quantity: $recQty,
+                            transactionType: 'INWARD_DELETED',
+                            referenceType: 'production_batch',
+                            referenceId: $batchId,
+                            userId: $userId,
+                            notes: "Reversal of inward receipt for Batch #{$batch['batch_number']}. Reason: {$reason}"
+                        );
+                    }
+
+                    if ($dmgQty > 0) {
+                        $dmgBal = StockService::getBalance($vid, 'WAREHOUSE', $warehouseId, 'DAMAGED');
+                        $qtyToDeduct = min($dmgBal, $dmgQty);
+                        if ($qtyToDeduct > 0) {
+                            StockService::decrease(
+                                variantId: $vid,
+                                locationType: 'WAREHOUSE',
+                                locationId: $warehouseId,
+                                stockState: 'DAMAGED',
+                                quantity: $qtyToDeduct,
+                                transactionType: 'INWARD_DELETED',
+                                referenceType: 'production_batch',
+                                referenceId: $batchId,
+                                userId: $userId,
+                                notes: "Reversal of inward damaged stock for Batch #{$batch['batch_number']}. Reason: {$reason}"
+                            );
+                        }
+                    }
+
+                    // Reset variant-level counts in production_batch_items
+                    Database::execute(
+                        "UPDATE production_batch_items 
+                         SET received_qty = 0, damaged_qty = 0, missing_qty = quantity, 
+                             received_qr_codes = NULL, damaged_qr_codes = NULL 
+                         WHERE id = ?",
+                        [$item['id']]
+                    );
+                }
+
+                // Cancel quarantined damage records in warehouse_damages
+                Database::execute(
+                    "UPDATE warehouse_damages 
+                     SET status = 'CANCELLED', defect_notes = CONCAT(COALESCE(defect_notes, ''), ' [CANCELLED: Inward Receipt Deleted - ', ?, ']') 
+                     WHERE reference_id = ? AND source_type IN ('PRODUCTION_INWARD', 'INWARD_GRN', 'PRODUCTION_BATCH', 'INWARD_TRANSIT')",
+                    [$reason, $batchId]
+                );
+            }
+
+            // Determine new status for production_batch
+            $newStatus = $returnToProduction ? 'APPROVED' : 'DISPATCHED';
+            $expectedQty = (int)($batch['total_qty'] ?? $batch['quantity'] ?? 0);
+
+            // Update batch record
+            Database::execute(
+                "UPDATE production_batches 
+                 SET received_qty = 0, damaged_qty = 0, missing_qty = ?, status = ?, 
+                     notes = CONCAT(COALESCE(notes, ''), ' [Inward deleted at ', NOW(), ' - Reason: ', ?, ']') 
+                 WHERE id = ?",
+                [$expectedQty, $newStatus, $reason, $batchId]
+            );
+
+            // Audit Log
+            AuditService::log(
+                'warehouse',
+                'DELETE',
+                'production_batch',
+                $batchId,
+                [
+                    'action'         => 'INWARD_RECEIPT_DELETED',
+                    'batch_number'   => $batch['batch_number'],
+                    'status'         => $batch['status'],
+                    'warehouse_id'   => $warehouseId,
+                    'warehouse_name' => $batch['warehouse_name'] ?? '',
+                    'received_qty'   => $batch['received_qty'],
+                    'damaged_qty'    => $batch['damaged_qty'],
+                    'missing_qty'    => $batch['missing_qty'],
+                    'items_count'    => count($items),
+                    'items'          => array_map(function($it) {
+                        return [
+                            'item_id'      => $it['id'],
+                            'variant_id'   => $it['variant_id'],
+                            'sku'          => $it['sku'] ?? '',
+                            'received_qty' => $it['received_qty'] ?? 0,
+                            'damaged_qty'  => $it['damaged_qty'] ?? 0,
+                        ];
+                    }, $items),
+                ],
+                [
+                    'deleted_at'             => date('Y-m-d H:i:s'),
+                    'deleted_by'             => $userId,
+                    'reason'                 => $reason,
+                    'action'                 => 'INWARD_REVERSED_AND_RESET',
+                    'new_status'             => $newStatus,
+                    'reversed_available_qty' => $totalReceived,
+                    'reversed_damaged_qty'   => $totalDamaged,
+                ],
+                $userId
+            );
+
+            Database::commit();
+            return true;
+        } catch (Exception $e) {
+            Database::rollback();
+            error_log("WarehouseService::deleteInwardBatch failed: " . $e->getMessage());
+            throw $e;
+        }
+    }
+
     // =========================================================================
     // 2. EXTERNAL PURCHASES & SUPPLIER GRN
     // =========================================================================

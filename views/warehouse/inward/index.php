@@ -75,6 +75,8 @@
 <div class="inward-wrapper">
 <?php
 $canVerify = hasPermission('inward', 'verify') || hasPermission('inward', 'create') || hasPermission('inward', 'edit');
+$canEdit = hasPermission('inward', 'edit') || hasPermission('inward', 'verify') || hasPermission('warehouse', 'edit') || hasPermission('inward', 'create');
+$canDelete = hasPermission('inward', 'delete') || hasPermission('inward', 'verify') || hasPermission('warehouse', 'delete') || hasPermission('warehouse', 'manage');
 ?>
     <!-- Page Header -->
     <div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
@@ -387,10 +389,28 @@ $canVerify = hasPermission('inward', 'verify') || hasPermission('inward', 'creat
                                                 <?php endif; ?>
                                             </td>
                                             <td class="text-end">
-                                                <div class="d-inline-flex gap-1">
+                                                <div class="d-inline-flex gap-1 align-items-center">
                                                     <button type="button" class="btn btn-sm btn-outline-info btn-batch-history" data-batch-id="<?= $b['id'] ?>" data-batch-number="<?= e($b['batch_number']) ?>" title="Batch History &amp; Traceability Logs">
                                                         <i class="bi bi-clock-history"></i>
                                                     </button>
+                                                    <?php if ($canEdit): ?>
+                                                        <a href="<?= url('warehouse/inward/edit/' . $b['id']) ?>" class="btn btn-sm btn-outline-warning" title="Edit Inward Shipment">
+                                                            <i class="bi bi-pencil-square"></i>
+                                                        </a>
+                                                    <?php endif; ?>
+                                                    <?php if ($canDelete): ?>
+                                                        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-inward" 
+                                                                data-id="<?= $b['id'] ?>" 
+                                                                data-number="<?= e($b['batch_number']) ?>" 
+                                                                data-product="<?= e($b['product_name']) ?>" 
+                                                                data-warehouse="<?= e($b['warehouse_name']) ?>" 
+                                                                data-received="<?= $bRec ?>" 
+                                                                data-damaged="<?= $bDmg ?>" 
+                                                                data-status="<?= e($b['status']) ?>" 
+                                                                title="Delete / Reverse Inward Receipt">
+                                                            <i class="bi bi-trash3"></i>
+                                                        </button>
+                                                    <?php endif; ?>
                                                     <a href="<?= url('warehouse/inward/view/' . $b['id']) ?>" class="btn btn-sm <?= ($canVerify && ($b['status'] === 'DISPATCHED' || $bIsPartial)) ? ($bIsPartial ? 'btn-warning text-dark fw-bold' : 'btn-primary fw-semibold') : 'btn-outline-primary' ?>">
                                                         <i class="bi <?= ($canVerify && ($b['status'] === 'DISPATCHED' || $bIsPartial)) ? 'bi-qr-code-scan' : 'bi-eye' ?> me-1"></i>
                                                         <?= ($canVerify && $b['status'] === 'DISPATCHED') ? 'Cross-Check &amp; Inward' : (($canVerify && $bIsPartial) ? "Scan Remaining ($bMis)" : 'View Inward') ?>
@@ -583,11 +603,31 @@ $canVerify = hasPermission('inward', 'verify') || hasPermission('inward', 'creat
                                         </div>
 
                                         <!-- Card Footer -->
-                                        <div class="card-footer bg-light py-2 px-3 d-flex justify-content-between align-items-center gap-1">
-                                            <button type="button" class="btn btn-sm btn-outline-info py-1 px-2 btn-batch-history" data-batch-id="<?= $b['id'] ?>" data-batch-number="<?= e($b['batch_number']) ?>" title="Batch History &amp; Traceability Logs">
-                                                <i class="bi bi-clock-history"></i> Logs
-                                            </button>
-                                            <a href="<?= url('warehouse/inward/view/' . $b['id']) ?>" class="btn btn-sm <?= ($canVerify && $misQty > 0) ? 'btn-danger fw-semibold' : 'btn-outline-primary' ?> flex-grow-1 py-1">
+                                        <div class="card-footer bg-light py-2 px-3 d-flex justify-content-between align-items-center gap-1 flex-wrap">
+                                            <div class="d-inline-flex gap-1">
+                                                <button type="button" class="btn btn-sm btn-outline-info py-1 px-2 btn-batch-history" data-batch-id="<?= $b['id'] ?>" data-batch-number="<?= e($b['batch_number']) ?>" title="Batch History &amp; Traceability Logs">
+                                                    <i class="bi bi-clock-history"></i> Logs
+                                                </button>
+                                                <?php if ($canEdit): ?>
+                                                    <a href="<?= url('warehouse/inward/edit/' . $b['id']) ?>" class="btn btn-sm btn-outline-warning py-1 px-2" title="Edit Inward">
+                                                        <i class="bi bi-pencil-square"></i>
+                                                    </a>
+                                                <?php endif; ?>
+                                                <?php if ($canDelete): ?>
+                                                    <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2 btn-delete-inward" 
+                                                            data-id="<?= $b['id'] ?>" 
+                                                            data-number="<?= e($b['batch_number']) ?>" 
+                                                            data-product="<?= e($b['product_name']) ?>" 
+                                                            data-warehouse="<?= e($b['warehouse_name']) ?>" 
+                                                            data-received="<?= $recQty ?>" 
+                                                            data-damaged="<?= $dmgQty ?>" 
+                                                            data-status="<?= e($b['status']) ?>" 
+                                                            title="Delete Inward">
+                                                        <i class="bi bi-trash3"></i>
+                                                    </button>
+                                                <?php endif; ?>
+                                            </div>
+                                            <a href="<?= url('warehouse/inward/view/' . $b['id']) ?>" class="btn btn-sm <?= ($canVerify && $misQty > 0) ? 'btn-danger fw-semibold' : 'btn-outline-primary' ?> py-1 px-3">
                                                 <i class="bi <?= ($canVerify && $misQty > 0) ? 'bi-qr-code-scan' : 'bi-eye' ?> me-1"></i>
                                                 <?= ($canVerify && $misQty > 0) ? 'Cross-Check &amp; Inward' : 'View Inward' ?>
                                             </a>
@@ -611,6 +651,86 @@ $canVerify = hasPermission('inward', 'verify') || hasPermission('inward', 'creat
     </div>
 
 </div> <!-- /.inward-wrapper -->
+
+<!-- ========================================================================= -->
+<!-- MODAL: CONFIRM DELETE INWARD SHIPMENT WITH MANDATORY REASON -->
+<!-- ========================================================================= -->
+<div class="modal fade" id="modalDeleteInward" tabindex="-1" aria-labelledby="modalDeleteInwardLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <form method="POST" id="formDeleteInward" action="" onsubmit="return validateDeleteInwardForm()">
+                <?= CSRF::field() ?>
+                <div class="modal-header bg-danger text-white py-3">
+                    <h5 class="modal-title fw-bold" id="modalDeleteInwardLabel">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>Delete / Reverse Inward Receipt
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="alert alert-danger-subtle border border-danger-subtle text-danger small py-2 px-3 mb-3 d-flex align-items-center gap-2">
+                        <i class="bi bi-shield-x fs-4 flex-shrink-0"></i>
+                        <div>
+                            <strong>Critical Action:</strong> Deleting this inward receipt will safely reverse and deduct all received stock balances from warehouse inventory and cancel quarantined damages.
+                        </div>
+                    </div>
+
+                    <div class="bg-light p-3 rounded border mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="text-muted small">Batch Number:</span>
+                            <span class="fw-bold font-monospace text-dark" id="delInwardNumber">#</span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="text-muted small">Product:</span>
+                            <span class="fw-semibold text-dark text-truncate" style="max-width: 230px;" id="delInwardProduct">-</span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="text-muted small">Warehouse:</span>
+                            <span class="fw-semibold text-dark" id="delInwardWarehouse">-</span>
+                        </div>
+                        <div class="d-flex justify-content-between pt-1 border-top">
+                            <span class="text-muted small">Credited Stock to Reverse:</span>
+                            <span class="fw-bold text-danger font-monospace" id="delInwardCredited">0 pcs</span>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" name="return_to_production" id="delInwardReturnProg" value="1">
+                            <label class="form-check-label small fw-semibold text-dark" for="delInwardReturnProg">
+                                Also return consignment back to Production Facility
+                            </label>
+                        </div>
+                        <div class="form-text text-muted" style="font-size: 0.74rem;">
+                            If checked, the consignment status will be reverted to Approved and removed from Warehouse Inward. If unchecked, it resets to Awaiting GRN.
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-dark mb-1">
+                            Mandatory Reason for Deletion <span class="text-danger">*</span>
+                        </label>
+                        <textarea name="reason" 
+                                  id="delInwardReason" 
+                                  class="form-control" 
+                                  rows="3" 
+                                  required 
+                                  minlength="4" 
+                                  placeholder="Please provide the exact reason why this inward shipment is being deleted/reversed (e.g. Inwarded by mistake, duplicate GRN entry, wrong batch received from production)..."></textarea>
+                        <div class="form-text text-muted" style="font-size: 0.75rem;">
+                            This reason is mandatory and will be logged into the System Audit Log.
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2 px-3 justify-content-between">
+                    <button type="button" class="btn btn-outline-secondary btn-sm px-3" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger btn-sm px-3 fw-bold" id="btnConfirmDeleteInward">
+                        <i class="bi bi-trash3-fill me-1"></i> Confirm & Reverse Inward
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
 <!-- ========================================================================= -->
 <!-- MODAL: BATCH LIFECYCLE HISTORY & TRACEABILITY LOGS -->
@@ -1508,5 +1628,59 @@ document.addEventListener('DOMContentLoaded', function() {
         if (str === null || str === undefined) return '';
         return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
+
+    // Attach click listener for Delete Inward buttons
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.btn-delete-inward');
+        if (!btn) return;
+        e.preventDefault();
+        openDeleteInwardModal({
+            id: btn.getAttribute('data-id'),
+            number: btn.getAttribute('data-number'),
+            product: btn.getAttribute('data-product'),
+            warehouse: btn.getAttribute('data-warehouse'),
+            received: btn.getAttribute('data-received'),
+            damaged: btn.getAttribute('data-damaged'),
+            status: btn.getAttribute('data-status'),
+        });
+    });
 });
+
+function openDeleteInwardModal(data) {
+    if (!data || !data.id) return;
+    const form = document.getElementById('formDeleteInward');
+    if (form) {
+        form.action = '<?= url("warehouse/inward/delete/") ?>' + data.id;
+    }
+    const numEl = document.getElementById('delInwardNumber');
+    if (numEl) numEl.textContent = data.number || ('#' + data.id);
+    const prodEl = document.getElementById('delInwardProduct');
+    if (prodEl) prodEl.textContent = data.product || '-';
+    const whEl = document.getElementById('delInwardWarehouse');
+    if (whEl) whEl.textContent = data.warehouse || '-';
+    
+    const rec = parseInt(data.received, 10) || 0;
+    const dmg = parseInt(data.damaged, 10) || 0;
+    const credEl = document.getElementById('delInwardCredited');
+    if (credEl) credEl.textContent = rec + ' Good / ' + dmg + ' Damaged';
+
+    const reasonEl = document.getElementById('delInwardReason');
+    if (reasonEl) reasonEl.value = '';
+
+    const modalEl = document.getElementById('modalDeleteInward');
+    if (modalEl && typeof bootstrap !== 'undefined') {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+    }
+}
+
+function validateDeleteInwardForm() {
+    const reason = document.getElementById('delInwardReason')?.value?.trim();
+    if (!reason || reason.length < 4) {
+        alert('Please enter a mandatory reason for deleting this inward shipment (at least 4 characters).');
+        document.getElementById('delInwardReason')?.focus();
+        return false;
+    }
+    return confirm('Are you sure you want to delete and reverse this inward shipment? This action cannot be undone.');
+}
 </script>

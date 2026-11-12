@@ -18,33 +18,45 @@
         }
 
         .labels-container {
-            max-width: 1140px;
+            max-width: 1200px;
             margin: 0 auto;
         }
 
         .stickers-grid {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 14px;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
             justify-content: flex-start;
         }
 
-        /* 50x30mm / 2x1 inch standard thermal sticker card */
+        @media (max-width: 1100px) {
+            .stickers-grid {
+                grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            }
+        }
+
+        /* 50x30mm / 2x1 inch standard thermal sticker card matching Image 1 Roll QR Module */
         .fabric-sticker-card {
-            width: 260px;
-            min-height: 148px;
-            background: #fff;
+            width: 100%;
+            min-height: 155px;
+            background: #ffffff;
             border: 1.5px solid #0f172a;
-            border-radius: 6px;
-            padding: 6px 10px 8px 10px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-            page-break-inside: avoid;
-            break-inside: avoid;
+            border-radius: 8px;
+            padding: 10px 12px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
+            justify-content: flex-start;
+            gap: 6px;
             position: relative;
-            transition: all 0.2s ease;
+            break-inside: avoid;
+            page-break-inside: avoid;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .fabric-sticker-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
         }
 
         .fabric-sticker-card.is-selected {
@@ -63,161 +75,114 @@
             background: #fff8f8;
         }
 
-        .fabric-sticker-card.has-damage-report .code-text {
-            color: #dc3545;
+        .label-header {
+            border-bottom: 1px dashed #cbd5e1;
+            padding-bottom: 4px;
+            margin-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
         }
 
-        .damage-warning {
-            color: #b02a37;
-            font-size: 8px;
+        .company-tag {
+            font-size: 8.5px;
             font-weight: 800;
-            line-height: 1;
+            letter-spacing: 0.5px;
+            color: #1e293b;
+            text-transform: uppercase;
+            line-height: 1.2;
+            max-width: 190px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .po-tag {
+            font-size: 8px;
+            font-weight: 700;
+            color: #0284c7;
+            font-family: monospace;
+            background: #e0f2fe;
+            padding: 1px 4px;
+            border-radius: 3px;
+        }
+
+        .label-body {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .qr-box, .qr-canvas-box {
+            width: 76px;
+            height: 76px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            padding: 2px;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+        }
+
+        .qr-box img, .qr-box canvas, .qr-canvas-box img, .qr-canvas-box canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        .label-meta {
+            flex-grow: 1;
+            font-size: 9.5px;
+            line-height: 1.35;
+        }
+
+        .roll-badge-num {
+            font-family: monospace;
+            font-size: 11px;
+            font-weight: 900;
+            color: #0f172a;
+            display: block;
+            margin-bottom: 2px;
+            letter-spacing: 0.5px;
+        }
+
+        .meta-line {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            color: #334155;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .meta-line strong {
+            color: #0f172a;
+        }
+
+        .label-footer {
+            border-top: 1px dashed #cbd5e1;
+            padding-top: 4px;
+            margin-top: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 8px;
+            color: #64748b;
+        }
+
+        .single-print-btn {
+            padding: 1px 6px;
+            font-size: 9px;
+            border-radius: 3px;
+            line-height: 1.3;
         }
 
         @keyframes pulseSuccess {
             0% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.7); }
             70% { box-shadow: 0 0 0 10px rgba(25, 135, 84, 0); }
             100% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0); }
-        }
-
-        .sticker-card-toolbar {
-            background: #f8fafc;
-            border-bottom: 1px dashed #cbd5e1;
-            padding: 2px 4px 4px 4px;
-            margin: -6px -10px 4px -10px;
-            border-top-left-radius: 5px;
-            border-top-right-radius: 5px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            font-size: 11px;
-        }
-
-        .sticker-card-toolbar .btn-single-print {
-            font-size: 10px;
-            padding: 1px 6px;
-            border-radius: 4px;
-            line-height: 1.3;
-        }
-
-        .sticker-card-toolbar .btn-single-delete {
-            font-size: 10px;
-            padding: 1px 5px;
-            border-radius: 4px;
-            line-height: 1.3;
-        }
-
-        .sticker-header {
-            border-bottom: 1px dashed #cbd5e1;
-            padding-bottom: 3px;
-            margin-bottom: 4px;
-        }
-
-        .sticker-title {
-            font-size: 8.5px;
-            font-weight: 800;
-            letter-spacing: 0.5px;
-            color: #0f172a;
-            text-transform: uppercase;
-            line-height: 1.1;
-        }
-
-        .sticker-supplier {
-            font-size: 7.5px;
-            color: #64748b;
-            text-transform: uppercase;
-            font-weight: 600;
-            line-height: 1;
-        }
-
-        .sticker-body {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .qr-wrapper {
-            width: 72px;
-            flex-shrink: 0;
-            text-align: center;
-        }
-
-        .qr-canvas-box {
-            width: 68px;
-            height: 68px;
-            background: #fff;
-            padding: 2px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto;
-            border: 1px solid #e2e8f0;
-            border-radius: 4px;
-        }
-
-        .qr-canvas-box img,
-        .qr-canvas-box canvas {
-            max-width: 100% !important;
-            max-height: 100% !important;
-            display: block;
-        }
-
-        .code-text {
-            font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-            font-weight: 800;
-            font-size: 10px;
-            color: #0f172a;
-            letter-spacing: 0.8px;
-            margin-top: 2px;
-            line-height: 1;
-            text-align: center;
-        }
-
-        .details-col {
-            flex-grow: 1;
-            overflow: hidden;
-            line-height: 1.15;
-        }
-
-        .roll-badge {
-            font-size: 10.5px;
-            font-weight: 800;
-            color: #0f172a;
-            text-transform: uppercase;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .material-text {
-            font-size: 7.5px;
-            color: #475569;
-            font-weight: 600;
-            text-transform: uppercase;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            margin-top: 2px;
-        }
-
-        .spec-row {
-            margin-top: 3px;
-            font-size: 8px;
-            color: #334155;
-            display: flex;
-            flex-direction: column;
-            gap: 1px;
-        }
-
-        .spec-item {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .piece-count-item {
-            font-weight: 700;
-            color: #0f172a;
         }
 
         /* Print Media Styles */
@@ -230,12 +195,12 @@
                 print-color-adjust: exact !important;
             }
 
-            .no-print, .sticker-card-toolbar {
+            .action-bar, .no-print, .sticker-card-toolbar, .label-footer, .sticker-check, .single-print-btn, .print-hidden {
                 display: none !important;
             }
 
             .labels-container {
-                max-width: 100% !important;
+                max-width: none !important;
                 margin: 0 !important;
                 padding: 0 !important;
             }
@@ -246,26 +211,23 @@
             }
 
             .fabric-sticker-card {
+                border: 1.5px solid #000 !important;
                 box-shadow: none !important;
-                border: 1px solid #000 !important;
                 page-break-inside: avoid !important;
                 break-inside: avoid !important;
-                padding: 6px 8px !important;
-                width: 250px !important;
-                min-height: 130px !important;
+                padding: 8px 10px !important;
+                width: 270px !important;
+                min-height: auto !important;
+                height: auto !important;
+                display: flex !important;
+                flex-direction: column !important;
+                justify-content: flex-start !important;
+                gap: 4px !important;
             }
 
             .fabric-sticker-card.has-damage-report {
-                border: 1px solid #000 !important;
+                border: 1.5px solid #000 !important;
                 background: #fff !important;
-            }
-
-            .fabric-sticker-card.has-damage-report .code-text {
-                color: #0f172a !important;
-            }
-
-            .print-hidden {
-                display: none !important;
             }
 
             body.single-print-mode {
@@ -280,8 +242,13 @@
             }
             body.single-print-mode .fabric-sticker-card.print-target {
                 display: flex !important;
+                flex-direction: column !important;
+                justify-content: flex-start !important;
+                gap: 4px !important;
+                min-height: auto !important;
+                height: auto !important;
                 margin: 0 !important;
-                border: 1px solid #000 !important;
+                border: 1.5px solid #000 !important;
                 page-break-inside: avoid !important;
                 break-inside: avoid !important;
             }
@@ -374,59 +341,59 @@
         <button type="button" class="btn-close" onclick="hideToast()"></button>
     </div>
 
+    <!-- Status Bar (Matching Image 1) -->
+    <div class="mb-2 d-flex justify-content-between align-items-center no-print">
+        <span class="text-muted small fw-semibold">
+            <i class="bi bi-layers me-1 text-primary"></i> Displaying <strong><?= count($stickers) ?></strong> thermal fabric roll label stickers (50x30mm standard):
+        </span>
+        <span class="badge bg-secondary-subtle text-secondary border">Check rolls to print only selected labels</span>
+    </div>
+
     <!-- Stickers Grid -->
     <div class="stickers-grid" id="stickersGrid">
         <?php foreach ($stickers as $idx => $stk): ?>
             <div class="fabric-sticker-card<?= !empty($stk['in_damage_module']) ? ' has-damage-report' : '' ?>" id="card_<?= $idx ?>" data-idx="<?= $idx ?>" data-code="<?= e($stk['code']) ?>" data-seq="<?= (int)$stk['seq'] ?>" data-piece="<?= $stk['piece_index'] ?>" data-roll="<?= e($stk['roll_number']) ?>" data-roll-id="<?= (int)($stk['roll_id'] ?? 0) ?>">
-                <!-- Interactive Toolbar (hidden on physical print) -->
-                <div class="sticker-card-toolbar no-print">
-                    <label class="form-check-label d-flex align-items-center gap-1 <?= $canManageLabels ? 'cursor-pointer' : '' ?> mb-0">
-                        <input type="checkbox" class="form-check-input sticker-check" data-idx="<?= $idx ?>" <?= $canManageLabels ? 'onchange="updateSelectedCount()"' : 'disabled style="cursor: not-allowed; opacity: 0.5;" title="Disabled in view access"' ?>>
-                        <span class="fw-semibold text-secondary">#<?= $stk['piece_index'] ?></span>
-                    </label>
+                <!-- Label Header (Exact Image 1 Style: Checkbox + Supplier Name on left, PO badge on right) -->
+                <div class="label-header">
                     <div class="d-flex align-items-center gap-1">
-                        <button type="button" class="btn btn-dark btn-single-print" <?= $canManageLabels ? 'onclick="printSingleSticker(' . $idx . ')"' : 'disabled style="opacity: 0.5; cursor: not-allowed;" title="Printing disabled in view-only access"' ?> title="Print ONLY this label (for reprint / damaged sticker)">
-                            <i class="bi bi-printer-fill me-1"></i> Print This Label
-                        </button>
-                        <?php if ($canDeleteLabels): ?>
-                        <button type="button" class="btn btn-outline-danger btn-single-delete" onclick="deleteSingleSticker(<?= $idx ?>)" title="Delete this label">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                        <?php endif; ?>
+                        <input type="checkbox" class="form-check-input sticker-check roll-select-box no-print" data-idx="<?= $idx ?>" <?= $canManageLabels ? 'onchange="updateSelectedCount()"' : 'disabled' ?> checked style="margin-top: 0; cursor: pointer;">
+                        <div class="company-tag" title="<?= e($stk['supplier_name']) ?>">
+                            <?= e($stk['supplier_name']) ?>
+                        </div>
                     </div>
+                    <div class="po-tag"><?= e($stk['po_number'] ?? ($stk['roll_number'] ?: 'PP-ROLL')) ?></div>
                 </div>
 
-                <!-- Sticker Header -->
-                <div class="sticker-header d-flex justify-content-between align-items-center">
-                    <div class="sticker-title text-truncate" title="GRM RAW MATERIAL">GRM RAW MATERIAL</div>
-                    <div class="sticker-supplier text-truncate" style="max-width: 120px;" title="<?= e($stk['supplier_name']) ?>">
-                        <?= e($stk['supplier_name']) ?>
-                    </div>
-                </div>
+                <!-- Label Body (Exact Image 1 Style: 76x76 QR code on left, roll specs on right) -->
+                <div class="label-body">
+                    <div class="qr-box" id="qr_canvas_<?= $idx ?>"></div>
 
-                <!-- Sticker Body -->
-                <div class="sticker-body">
-                    <div class="qr-wrapper">
-                        <div class="qr-canvas-box" id="qr_canvas_<?= $idx ?>"></div>
-                        <div class="code-text"><?= e($stk['code']) ?></div>
-                    </div>
-                    <div class="details-col">
-                        <div class="roll-badge" title="<?= e($stk['roll_number']) ?>"><?= e($stk['roll_number']) ?></div>
-                        <div class="material-text" title="<?= e($stk['material_type']) ?>"><?= e($stk['material_type']) ?></div>
-                        <div class="spec-row">
-                            <?php if (!empty($stk['color'])): ?>
-                                <div class="spec-item"><strong>Color:</strong> <?= e($stk['color']) ?></div>
-                            <?php endif; ?>
-                            <?php if (!empty($stk['design_name'])): ?>
-                                <div class="spec-item"><strong>Design:</strong> <?= e($stk['design_name']) ?></div>
-                            <?php endif; ?>
-                            <?php if ($stk['weight'] > 0): ?>
-                                <div class="spec-item weight-item"><strong>Piece Weight:</strong> <?= number_format($stk['weight'], 2) ?> kg</div>
-                            <?php endif; ?>
-                            <div class="spec-item piece-count-item">Piece <?= (int)$stk['piece_index'] ?> of <?= (int)$stk['total_qty'] ?></div>
+                    <div class="label-meta">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <span class="roll-badge-num"><?= e($stk['roll_number']) ?> (<?= (int)$stk['piece_index'] ?>/<?= (int)$stk['total_qty'] ?>)</span>
                             <?php if (!empty($stk['in_damage_module'])): ?>
-                                <div class="damage-warning no-print"><i class="bi bi-exclamation-triangle-fill me-1"></i>In damage module</div>
+                                <span class="badge bg-danger text-white py-0 px-1" style="font-size:7.5px">DAMAGED</span>
                             <?php endif; ?>
+                        </div>
+                        <div class="meta-line">
+                            <span>Fabric:</span> <strong><?= e(mb_strimwidth($stk['material_type'] ?? 'STANDARD FABRIC', 0, 16, '...')) ?></strong>
+                        </div>
+                        <div class="meta-line">
+                            <span>Color:</span> <strong><?= e($stk['color'] ?: 'STANDARD') ?></strong>
+                        </div>
+                        <?php if (!empty($stk['design_name'])): ?>
+                        <div class="meta-line">
+                            <span>Design:</span> <strong><?= e(mb_strimwidth($stk['design_name'], 0, 16, '...')) ?></strong>
+                        </div>
+                        <?php endif; ?>
+                        <div class="meta-line">
+                            <span>Weight:</span> <strong style="color:#0284c7"><?= number_format((float)$stk['weight'], 2) ?> kg</strong>
+                            <?php if ($stk['total_qty'] > 1): ?>
+                                <small class="text-muted" style="font-size:8px">(piece)</small>
+                            <?php endif; ?>
+                        </div>
+                        <div class="meta-line">
+                            <span>Code:</span> <strong class="font-monospace" style="font-size: 10.5px; font-weight: 800; color: #0f172a; letter-spacing: 0.3px;"><?= e($stk['code']) ?></strong>
                         </div>
                     </div>
                 </div>
@@ -535,12 +502,19 @@ function renderQRCodeForIndex(idx, text) {
         container.innerHTML = '';
         new QRCode(container, {
             text: text,
-            width: 64,
-            height: 64,
+            width: 72,
+            height: 72,
             colorDark: "#000000",
             colorLight: "#ffffff",
-            correctLevel: QRCode.CorrectLevel.M
+            correctLevel: QRCode.CorrectLevel.L
         });
+        setTimeout(function() {
+            container.removeAttribute('title');
+            container.querySelectorAll('img, canvas').forEach(function(el) {
+                el.removeAttribute('title');
+                el.setAttribute('alt', text);
+            });
+        }, 40);
     }
 }
 

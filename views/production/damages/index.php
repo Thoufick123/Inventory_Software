@@ -399,7 +399,7 @@
                         </div>
 
                         <!-- Damaged Weight (Disabled with clear visibility - Auto-calculated) -->
-                        <div class="col-md-6">
+                        <div class="col-md-6" id="damageWeightSummary">
                             <label class="form-label fw-bold text-dark">
                                 Damaged Weight <span class="badge bg-secondary-subtle text-secondary border ms-1">Auto</span>
                             </label>
@@ -411,9 +411,9 @@
                         </div>
 
                         <!-- Estimated Loss Valuation (Disabled with clear visibility - Auto-calculated) -->
-                        <div class="col-md-6">
+                        <div class="col-md-6" id="damageLossSummary">
                             <label class="form-label fw-bold text-danger">
-                                <i class="bi bi-currency-rupee me-1"></i>Estimated Loss Valuation <span class="badge bg-danger-subtle text-danger border ms-1">Auto</span>
+                                <i class="bi bi-currency-rupee me-1"></i><span id="reportLossLabel">Estimated Loss Valuation</span> <span class="badge bg-danger-subtle text-danger border ms-1">Auto</span>
                             </label>
                             <div class="input-group">
                                 <span class="input-group-text bg-danger-subtle text-danger fw-bold">₹</span>
@@ -873,8 +873,8 @@ function renderDamageScannedLabels() {
 
     let totalWeight = 0;
     let totalLoss = 0;
+    let supplyCount = 0;
     damageScannedLabels.forEach((item, index) => {
-        totalWeight += item.weight;
         totalLoss += item.loss;
 
         const row = document.createElement('div');
@@ -889,11 +889,16 @@ function renderDamageScannedLabels() {
         metadata.className = 'text-muted small mt-0.5';
 
         const isProd = (item.itemType === 'PRODUCT');
+        const isSupply = (item.damageKind === 'SUPPLY');
+        if (!isSupply) totalWeight += item.weight;
+        else supplyCount++;
         const typeBadge = document.createElement('span');
-        typeBadge.className = `badge ${isProd ? 'bg-primary-subtle text-primary' : 'bg-secondary-subtle text-secondary'} border me-1`;
-        typeBadge.textContent = isProd ? 'Product' : 'Roll';
+        typeBadge.className = `badge ${isSupply ? 'bg-info-subtle text-info' : (isProd ? 'bg-primary-subtle text-primary' : 'bg-secondary-subtle text-secondary')} border me-1`;
+        typeBadge.textContent = isSupply ? 'Supply' : (isProd ? 'Product' : 'Roll');
         metadata.append(typeBadge, document.createTextNode(
-            `${item.sellerName} • ${item.rollNumber} • ${item.weight.toFixed(2)} kg • ₹${item.loss.toFixed(2)}`
+            isSupply
+                ? `${item.sellerName} • ${item.rollNumber} • ${item.quantityLabel} • ₹${item.loss.toFixed(2)}`
+                : `${item.sellerName} • ${item.rollNumber} • ${item.weight.toFixed(2)} kg • ₹${item.loss.toFixed(2)}`
         ));
         details.append(code, metadata);
 
@@ -941,8 +946,12 @@ function renderDamageScannedLabels() {
         });
         const addReasonButton = document.createElement('button');
         addReasonButton.type = 'button';
-        addReasonButton.className = 'btn btn-sm btn-outline-primary flex-shrink-0';
-        addReasonButton.textContent = 'New';
+        addReasonButton.className = 'btn btn-sm btn-outline-primary rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0';
+        addReasonButton.style.width = '32px';
+        addReasonButton.style.height = '32px';
+        addReasonButton.title = 'Add damage reason';
+        addReasonButton.setAttribute('aria-label', 'Add damage reason');
+        addReasonButton.innerHTML = '<i class="bi bi-plus" aria-hidden="true"></i>';
         addReasonButton.addEventListener('click', () => addDamageReason(reasonSelect.id));
         reasonControls.append(reasonSelect, addReasonButton);
         reasonColumn.append(reasonLabel, reasonControls);
@@ -972,16 +981,42 @@ function renderDamageScannedLabels() {
         hiddenCode.name = `qr_codes[${index}]`;
         hiddenCode.value = item.code;
         inputs.appendChild(hiddenCode);
+
+        const hiddenSupplyItemId = document.createElement('input');
+        hiddenSupplyItemId.type = 'hidden';
+        hiddenSupplyItemId.name = `damage_supply_item_ids[${index}]`;
+        hiddenSupplyItemId.value = item.supplyItemId || '';
+        inputs.appendChild(hiddenSupplyItemId);
     });
 
     document.getElementById('inputDamagedWeight').value = totalWeight.toFixed(2);
+    const nonSupplyCount = damageScannedLabels.length - supplyCount;
+    const suppliesOnly = supplyCount > 0 && nonSupplyCount === 0;
+    const weightSummary = document.getElementById('damageWeightSummary');
+    const lossSummary = document.getElementById('damageLossSummary');
+    const lossLabel = document.getElementById('reportLossLabel');
+    if (weightSummary) weightSummary.classList.toggle('d-none', suppliesOnly);
+    if (lossSummary) {
+        lossSummary.classList.toggle('col-md-6', !suppliesOnly);
+        lossSummary.classList.toggle('col-12', suppliesOnly);
+    }
+    if (lossLabel) lossLabel.textContent = suppliesOnly ? 'Estimated Supply Loss Amount' : 'Estimated Loss Valuation';
+
     document.getElementById('inputEstimatedLoss').value = totalLoss.toFixed(2);
     const weightHelp = document.getElementById('reportWeightHelp');
-    if (weightHelp) weightHelp.textContent = `${damageScannedLabels.length} scanned item(s)`;
+    if (weightHelp) weightHelp.textContent = supplyCount > 0
+        ? `Weight excludes ${supplyCount} purchased supply label(s)`
+        : `${damageScannedLabels.length} scanned item(s)`;
     const rateBadge = document.getElementById('reportRateBadge');
-    if (rateBadge) rateBadge.textContent = totalWeight > 0 ? `₹${(totalLoss / totalWeight).toFixed(2)} / kg` : '₹0.00 / kg';
+    if (rateBadge) rateBadge.textContent = suppliesOnly
+        ? 'Purchase cost'
+        : (supplyCount > 0 ? 'Mixed items' : (totalWeight > 0 ? `₹${(totalLoss / totalWeight).toFixed(2)} / kg` : '₹0.00 / kg'));
     const lossHelp = document.getElementById('reportLossCalcHelp');
-    if (lossHelp) lossHelp.textContent = `Estimated loss for ${damageScannedLabels.length} scanned item(s): ₹${totalLoss.toFixed(2)}`;
+    if (lossHelp) lossHelp.textContent = suppliesOnly
+        ? `Purchase valuation for ${supplyCount} supply label(s): ₹${totalLoss.toFixed(2)}`
+        : (supplyCount > 0
+            ? `Includes purchase value for ${supplyCount} supply label(s): ₹${totalLoss.toFixed(2)}`
+            : `Estimated loss for ${damageScannedLabels.length} scanned item(s): ₹${totalLoss.toFixed(2)}`);
 }
 
 function scanDamageRollQr() {
@@ -1006,27 +1041,24 @@ function scanDamageRollQr() {
             }
             return data;
         })
-        .then(data => {
-            const isProd = (data.item_type === 'PRODUCT');
-            const pieceWeight = parseFloat(data.piece_weight !== undefined ? data.piece_weight : data.weight) || 0;
-            const loss = parseFloat(data.piece_loss !== undefined ? data.piece_loss : (data.loss !== undefined ? data.loss : data.price)) || 0;
+        .then(async data => {
+            if (data.needs_supply_selection) {
+                const candidate = (data.candidates || [])[0];
+                if (!candidate) {
+                    throw new Error('No matching purchase supply was found for this label.');
+                }
 
-            damageScannedLabels.push({
-                code: data.code,
-                itemType: data.item_type || 'FABRIC_ROLL',
-                sellerName: data.seller_name || 'Own Production',
-                rollNumber: data.roll_number,
-                weight: pieceWeight,
-                loss: loss,
-                damageReason: ''
-            });
-            renderDamageScannedLabels();
-            const badgeType = isProd ? 'Finished Product' : 'Fabric Roll';
-            setDamageRollScanStatus(`Added [${badgeType}] ${data.code} — ${data.roll_number}. Scan another label or submit.`);
-            if (scanInput) {
-                scanInput.value = '';
-                scanInput.focus();
+                setDamageRollScanStatus('Verifying matching purchase supply…');
+                const query = new URLSearchParams({code: data.code, supply_item_id: candidate.id});
+                const response = await fetch('<?= url('api/production/damages/scan-roll') ?>?' + query.toString());
+                const supplyData = await response.json();
+                if (!response.ok || !supplyData.success || supplyData.needs_supply_selection) {
+                    throw new Error(supplyData.message || 'The matching purchase supply could not be verified.');
+                }
+                addScannedDamageItem(supplyData, scanInput);
+                return;
             }
+            addScannedDamageItem(data, scanInput);
         })
         .catch(error => {
             setDamageRollScanStatus(error.message || 'Unable to scan this item.', true);
@@ -1034,6 +1066,32 @@ function scanDamageRollQr() {
         .finally(() => {
             damageScanInProgress = false;
         });
+}
+
+function addScannedDamageItem(data, scanInput) {
+    const isProduct = data.item_type === 'PRODUCT';
+    const pieceWeight = parseFloat(data.piece_weight !== undefined ? data.piece_weight : data.weight) || 0;
+    const loss = parseFloat(data.piece_loss !== undefined ? data.piece_loss : (data.loss !== undefined ? data.loss : data.price)) || 0;
+
+    damageScannedLabels.push({
+        code: data.code,
+        itemType: data.item_type || 'FABRIC_ROLL',
+        damageKind: data.damage_kind || null,
+        sellerName: data.seller_name || 'Own Production',
+        rollNumber: data.roll_number,
+        quantityLabel: data.quantity_label || '',
+        supplyItemId: data.supply_item_id || null,
+        weight: pieceWeight,
+        loss: loss,
+        damageReason: ''
+    });
+    renderDamageScannedLabels();
+    const badgeType = data.damage_kind === 'SUPPLY' ? 'Other Garment Supply' : (isProduct ? 'Finished Product' : 'Fabric Roll');
+    setDamageRollScanStatus(`Added [${badgeType}] ${data.code} — ${data.roll_number}. Scan another label or submit.`);
+    if (scanInput) {
+        scanInput.value = '';
+        scanInput.focus();
+    }
 }
 
 function getRollMetrics(r) {
@@ -1654,6 +1712,13 @@ function initQuickAddHsnModalHandler() {
 
 // Client-side form submit validation
 document.addEventListener('DOMContentLoaded', () => {
+    ['reportDamageModal', 'editDamageModal', 'resolveModal', 'damageQrModal', 'modalConfirmDeleteDamage'].forEach(modalId => {
+        const modalElement = document.getElementById(modalId);
+        if (modalElement && modalElement.parentElement !== document.body) {
+            document.body.appendChild(modalElement);
+        }
+    });
+
     const replBox = document.getElementById('fieldReplacementBox');
     if (replBox) {
         initHsnDropdown(replBox, '#inputReplacementHsn');

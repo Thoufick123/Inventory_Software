@@ -28,6 +28,19 @@ $inwardedVariantIds= $inwardedVariantIds ?? [];
 $viewParam         = $_GET['view'] ?? '';
 $isViewingExisting = $viewParam === 'existing';
 $isGeneratingView  = in_array($viewParam, ['generate', 'existing'], true) || (!empty($selectedCatalogCode) && $viewParam !== 'batches') || (!empty($selectedVariantId) && $viewParam !== 'batches');
+$canEditWarehouseQr = hasPermission('wh_labels', 'create');
+$canInwardQrUnits = hasPermission('inward', 'verify')
+    || hasPermission('inward', 'create')
+    || hasPermission('purchases', 'receive')
+    || hasPermission('returns', 'classify')
+    || hasPermission('returns', 'receive')
+    || hasPermission('returns', 'view')
+    || hasPermission('stock', 'view')
+    || hasPermission('warehouse', 'view')
+    || (function_exists('isAdmin') && isAdmin());
+$canDeleteWarehouseQr = hasPermission('wh_labels', 'create')
+    || hasPermission('wh_labels', 'edit')
+    || isAdmin();
 
 // Build items to generate labels for
 $activeVar = null;
@@ -667,7 +680,7 @@ if ($currentSourceType === 'po' || $currentSourceType === 'tp_purchase') {
 
                     // Load all existing QRs for this variant from warehouse_qr_codes
                     $existingQrs = Database::fetchAll(
-                        "SELECT id, qr_code, pack_quantity, series_end_code, inwarded_at, created_at 
+                        "SELECT id, qr_code, warehouse_id, pack_quantity, series_end_code, inwarded_at, created_at
                          FROM warehouse_qr_codes 
                          WHERE variant_id = ? 
                          ORDER BY id ASC",
@@ -700,6 +713,7 @@ if ($currentSourceType === 'po' || $currentSourceType === 'tp_purchase') {
                                 'piece_no'             => $idx + 1,
                                 'total_count'          => count($existingQrs),
                                 'variant_id'           => (int)$activeVar['id'],
+                                'warehouse_id'         => (int)($eqr['warehouse_id'] ?? $targetWarehouseId),
                                 'qr_prefix'            => $prodPrefix,
                                 'tag_code'             => $startCode,
                                 'product_name'         => $activeVar['product_name'],
@@ -1111,7 +1125,7 @@ if ($isViewingExisting && $selectedVariantId && $activeVar) {
         || strtoupper($activeVar['qr_type'] ?? '') === 'SERIES'
         || $activeCategoryType === 'SERIES';
     $existingQrCodes = Database::fetchAll(
-        "SELECT id, qr_code, series_end_code, pack_quantity, inwarded_at, created_at, is_extra, extra_reason
+        "SELECT id, qr_code, warehouse_id, series_end_code, pack_quantity, inwarded_at, created_at, is_extra, extra_reason
          FROM warehouse_qr_codes
          WHERE variant_id = ?
          ORDER BY id ASC",
@@ -1158,6 +1172,7 @@ if ($isViewingExisting && $selectedVariantId && $activeVar) {
             'piece_no'             => $index + 1,
             'total_count'          => $existingCount,
             'variant_id'           => (int)$selectedVariantId,
+            'warehouse_id'         => (int)($qrCode['warehouse_id'] ?? $targetWarehouseId),
             'qr_prefix'            => '',
             'tag_code'             => $tagCode,
             'product_name'         => $activeVar['product_name'] ?? '',
@@ -1737,7 +1752,7 @@ foreach ($qrBatches as $batch) {
                 <div class="text-center py-5 text-muted">
                     <i class="bi bi-patch-plus fs-1 d-block mb-2 text-secondary opacity-50"></i>
                     <div class="fw-semibold">No extra generated QR stickers recorded yet</div>
-                    <div class="small">Extra sequential packs or single pieces produced via <strong>+ Produce 1 New QR</strong> will automatically appear here.</div>
+                    <div class="small">Extra sequential packs or single pieces created via <strong>Add QR</strong> will automatically appear here.</div>
                 </div>
             <?php else: ?>
                 <div class="d-flex flex-column gap-3">
@@ -2055,6 +2070,9 @@ foreach ($qrBatches as $batch) {
                                                 $typeLabel = $isComp ? 'Complementary Product' : ($isSeries ? 'Series Product' : 'Individual Product');
                                                 $prodSearch = strtolower($sName . ' ' . $cCode . ' ' . ($batch['product_name'] ?? '') . ' ' . ($batch['sku'] ?? '') . ' ' . $typeLabel);
                                                 $loadUrl = url('warehouse/labels?source_type=po&brand_name=' . urlencode($sName) . '&catalog_code=' . urlencode($cCode) . '&variant_id=' . (int)$batch['variant_id'] . '&view=generate' . ($historyTab !== 'warehouse' ? '&history_tab=' . urlencode($historyTab) : ''));
+                                                $existingLabelsUrl = str_replace('view=generate', 'view=existing', $loadUrl);
+                                                $editQrPackUrl = $existingLabelsUrl . '&edit_qr_pack=1';
+                                                $canEditBatchQrPack = $canEditWarehouseQr && (!$isInwarded || $canInwardQrUnits);
                                             ?>
                                                 <tr class="supplier-prod-row" data-search="<?= e($prodSearch) ?>">
                                                     <td class="ps-3">
@@ -2133,19 +2151,20 @@ foreach ($qrBatches as $batch) {
                                                     </td>
                                                     <td class="text-end pe-3">
                                                         <div class="d-flex align-items-center justify-content-end gap-1.5 flex-wrap">
-                                                            <?php if ($isPartial): ?>
-                                                                <?php if (hasPermission('wh_labels', 'create') && (hasPermission('inward', 'create') || hasPermission('inward', 'verify') || hasPermission('purchases', 'receive'))): ?>
+                                                            <?php if ($isPartial && hasPermission('wh_labels', 'create') && (hasPermission('inward', 'create') || hasPermission('inward', 'verify') || hasPermission('purchases', 'receive'))): ?>
                                                                 <a href="<?= $loadUrl ?>" class="btn btn-sm btn-success fw-bold px-2.5 py-1 shadow-2xs" title="Generate remaining QR labels and inward remaining pieces">
                                                                     <i class="bi bi-box-arrow-in-down me-1"></i>Inward Remaining (+<?= (int)$batch['remaining_qty'] ?>)
                                                                 </a>
+                                                            <?php endif; ?>
+                                                            <?php if ($isPartial || $isInwarded): ?>
+                                                                <a href="<?= e($existingLabelsUrl) ?>" class="btn btn-sm btn-outline-primary fw-semibold px-2 py-1" title="View previously generated QR stickers from this batch">
+                                                                    <i class="bi bi-eye me-1"></i>View
+                                                                </a>
+                                                                <?php if (($isSeries || $isComp) && $canEditBatchQrPack): ?>
+                                                                    <a href="<?= e($editQrPackUrl) ?>" class="btn btn-sm btn-outline-success fw-semibold px-2 py-1" title="Edit the existing master QR pack quantity">
+                                                                        <i class="bi bi-pencil-square me-1"></i>Edit Pack
+                                                                    </a>
                                                                 <?php endif; ?>
-                                                                <a href="<?= e(str_replace('view=generate', 'view=existing', $loadUrl)) ?>" class="btn btn-sm btn-outline-primary fw-semibold px-2 py-1" title="View previously generated QR stickers from this batch">
-                                                                    <i class="bi bi-eye me-1"></i>View
-                                                                </a>
-                                                            <?php elseif ($isInwarded): ?>
-                                                                <a href="<?= e(str_replace('view=generate', 'view=existing', $loadUrl)) ?>" class="btn btn-sm btn-outline-primary fw-semibold px-2.5 py-1" title="View previously generated QR stickers from this batch">
-                                                                    <i class="bi bi-eye me-1"></i>View
-                                                                </a>
                                                             <?php else: ?>
                                                                 <?php if (hasPermission('wh_labels', 'create') && (hasPermission('inward', 'create') || hasPermission('inward', 'verify') || hasPermission('purchases', 'receive'))): ?>
                                                                 <a href="<?= $loadUrl ?>" class="btn btn-sm btn-success fw-bold px-2.5 py-1 shadow-2xs" title="Generate QR stickers and inward this product to inventory">
@@ -2183,13 +2202,18 @@ foreach ($qrBatches as $batch) {
             <i class="bi bi-arrow-left me-1"></i> Back to QR Batches History
         </a>
         <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-1.5 font-monospace">
-            <i class="bi bi-qr-code-scan me-1 text-primary"></i><?= $isViewingExisting ? 'Saved QR Labels — View Only' : 'QR Generation Mode Active' ?>
+            <i class="bi bi-qr-code-scan me-1 text-primary"></i><?= $isViewingExisting ? 'Saved QR Labels' : 'QR Generation Mode Active' ?>
         </span>
     </div>
 
 <?php if ($isViewingExisting): ?>
     <div class="alert alert-info py-2 mb-3 no-print">
-        <i class="bi bi-info-circle me-1"></i>Viewing previously generated QR labels. No new QR codes or stock changes will be made from this page.
+        <i class="bi bi-info-circle me-1"></i>
+        <?php if ($canEditWarehouseQr): ?>
+            Saved QR labels are shown below. Use <strong>Edit Pack</strong> on a master QR to add units. Delete non-inwarded labels with a required audit reason; inwarded labels are protected.
+        <?php else: ?>
+            Viewing previously generated QR labels. This page is read-only for your account.
+        <?php endif; ?>
     </div>
 <?php endif; ?>
 
@@ -2421,7 +2445,7 @@ foreach ($qrBatches as $batch) {
                         <div>
                             <h6 class="fw-bold mb-1 text-dark"><i class="bi bi-info-circle-fill text-info me-1"></i>Stock Inwarded - Sequential QR Pack Extension Enabled</h6>
                             <p class="mb-0 small text-secondary">
-                                Product <strong id="lblAlreadyInwardedCode" class="text-dark font-monospace"><?= e($selectedCatalogCode ?: 'Selected Code') ?></strong> has inwarded packs in stock. You can produce additional sequential packs or pieces anytime using <strong>+ Produce 1 New QR</strong> and inward them to warehouse inventory.
+                                Product <strong id="lblAlreadyInwardedCode" class="text-dark font-monospace"><?= e($selectedCatalogCode ?: 'Selected Code') ?></strong> has inwarded packs in stock. You can add additional sequential QR labels anytime using <strong>Add QR</strong> and inward them to warehouse inventory.
                             </p>
                         </div>
                     </div>
@@ -2568,7 +2592,7 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                 <?php if ($hasSeriesGenerated): ?>
                     <i class="bi bi-boxes me-2 text-primary"></i>
                     Master Series Bundle Pack QR Label
-                    <span class="badge bg-purple text-white rounded-pill ms-2" style="background-color: #6f42c1 !important;">
+                    <span class="badge bg-purple text-white rounded-pill ms-2" id="masterPackTotalBadge" style="background-color: #6f42c1 !important;">
                         <?php
                         $mPackCount = count($generatedItems);
                         $mTotalPcs = array_sum(array_column($generatedItems, 'pack_quantity'));
@@ -2651,13 +2675,15 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
 
                     <!-- New QR adjustment control -->
                     <div class="col-lg-5 col-md-12 d-flex align-items-center justify-content-lg-end gap-2 flex-wrap">
-                        <!-- Produce 1 New QR button -->
-                        <button type="button" class="btn btn-sm btn-outline-success fw-bold bg-white shadow-2xs" onclick="produceNewAdjustmentQR()" title="Produce one new QR code sticker with next sequence number for this product">
-                            <i class="bi bi-plus-circle-fill text-success me-1"></i> + Produce 1 New QR
+                        <!-- Add consecutive QR labels or extend an aggregate pack -->
+                        <button type="button" class="btn btn-sm btn-outline-success fw-bold bg-white shadow-2xs" onclick="produceNewAdjustmentQR()" title="Add QR labels or extend the selected master pack">
+                            <i class="bi bi-plus-circle-fill text-success me-1"></i> Add QR / Units
                         </button>
-                        <button type="button" class="btn btn-sm btn-outline-danger fw-bold bg-white shadow-2xs" id="btnDeleteSelectedQrs" onclick="deleteSelectedQrs()" disabled title="Permanently delete selected QR code(s) so they will not appear again">
-                            <i class="bi bi-trash3 me-1"></i>Delete Selected QR(s)
-                        </button>
+                        <?php if ($canDeleteWarehouseQr): ?>
+                            <button type="button" class="btn btn-sm btn-outline-danger fw-bold bg-white shadow-2xs" id="btnDeleteSelectedQrs" onclick="deleteSelectedQrs()" disabled title="Delete selected QR labels and record the reason">
+                                <i class="bi bi-trash3 me-1"></i>Delete Selected QR(s)
+                            </button>
+                        <?php endif; ?>
                         <button type="button" class="btn btn-sm btn-outline-success fw-bold bg-white shadow-2xs" id="btnQuickInwardSelected" onclick="confirmStickeredInwardAction(event)" title="Inward stickered product(s) to warehouse inventory stock">
                             <i class="bi bi-box-arrow-in-down-right me-1"></i>Inward to Stock
                         </button>
@@ -2738,7 +2764,7 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                                     }
                                     ?>
                                     <?php if ($rangeBadge): ?>
-                                    <div class="badge bg-light text-primary border font-monospace mt-1 px-1 py-0.5 w-100" style="font-size: 0.54rem;" title="Piece Sequence Range">Range: <?= $rangeBadge ?></div>
+                                    <div class="badge bg-light text-primary border font-monospace mt-1 px-1 py-0.5 w-100 series-range-badge" style="font-size: 0.54rem;" title="Piece Sequence Range">Range: <?= $rangeBadge ?></div>
                                     <?php endif; ?>
                                 </div>
                                 <!-- Right: Brand, Clean Variant SKU, MRP, Disc (Matching Production Unit Standard) -->
@@ -2770,6 +2796,22 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                                         onclick="printSinglePieceSticker(<?= $index ?>)" title="Print Thermal Sticker">
                                     <i class="bi bi-printer"></i> Print
                                 </button>
+                                <?php if (!empty($item['is_series']) && hasPermission('wh_labels', 'create') && (empty($item['is_inwarded']) || $canInwardQrUnits)): ?>
+                                    <button type="button"
+                                            class="btn btn-xs btn-outline-success flex-fill fw-semibold py-1.5"
+                                            onclick="produceNewAdjustmentQR(<?= $index ?>)"
+                                            title="Edit pack quantity and add units">
+                                        <i class="bi bi-pencil-square"></i> Edit Pack
+                                    </button>
+                                <?php endif; ?>
+                                <?php if ($canDeleteWarehouseQr && empty($item['is_inwarded'])): ?>
+                                    <button type="button"
+                                            class="btn btn-xs btn-outline-danger flex-fill fw-semibold py-1.5"
+                                            onclick="deleteSingleQr(<?= $index ?>)"
+                                            title="Delete this QR label">
+                                        <i class="bi bi-trash3"></i> Delete
+                                    </button>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -2779,6 +2821,38 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
         <?php endif; ?>
     </div>
 </div>
+
+<?php if ($canDeleteWarehouseQr): ?>
+<div class="modal fade" id="deleteQrConfirmModal" tabindex="-1" aria-labelledby="deleteQrConfirmTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title fw-bold" id="deleteQrConfirmTitle">
+                    <i class="bi bi-trash3 me-2"></i>Delete QR Labels
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="alert alert-warning py-2">
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                    Confirm deletion of <strong id="deleteQrSelectedCount">0</strong> QR label(s).
+                    Inwarded labels are protected and cannot be deleted.
+                </div>
+                <label for="deleteQrReason" class="form-label fw-semibold">Reason for deletion <span class="text-danger">*</span></label>
+                <textarea id="deleteQrReason" class="form-control" rows="3" maxlength="500" required
+                          placeholder="Explain why these QR labels should be deleted."></textarea>
+                <div class="form-text">The reason and affected QR codes will be stored in the audit log.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light border fw-semibold" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger fw-bold" id="confirmDeleteQrButton" onclick="confirmDeleteSelectedQrs()">
+                    <i class="bi bi-trash3 me-1"></i>Confirm Delete
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <?php if (in_array($currentSourceType, ['po', 'tp_purchase']) && !empty($selectedSourceId) && !empty($poInfo) && empty($selectedVariantId)): 
     $isPoDraft = ($poInfo['status'] === 'DRAFT' || $poInfo['status'] === 'PENDING');
@@ -2941,10 +3015,35 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                 $actIsSeries = (!empty($generatedItems[0]['is_series']) || strtoupper($activeVar['qr_type'] ?? '') === 'SERIES_BATCH' || strtoupper($activeVar['qr_type'] ?? '') === 'SERIES' || $activeCategoryType === 'SERIES');
                     $isSeriesOrComp = ($actIsComp || $actIsSeries);
 
+                $aggregateTotalQty = 0;
+                $aggregateInwardedQty = 0;
+                $aggregatePendingQty = 0;
+                if ($isSeriesOrComp && $currentSourceType !== 'returns') {
+                    foreach ($generatedItems as $generatedItem) {
+                        if (empty($generatedItem['is_series']) && empty($generatedItem['is_complementary'])) {
+                            continue;
+                        }
+                        $itemPackQty = max(1, (int)($generatedItem['pack_quantity'] ?? 1));
+                        $aggregateTotalQty += $itemPackQty;
+                        if (!empty($generatedItem['is_inwarded'])) {
+                            $aggregateInwardedQty += $itemPackQty;
+                        } else {
+                            $aggregatePendingQty += $itemPackQty;
+                        }
+                    }
+                }
+                if ($aggregateTotalQty > 0) {
+                    $alreadyInwardedQty = $aggregateInwardedQty;
+                    $totalExpectedQty = $aggregateTotalQty;
+                    $remainingQty = $aggregatePendingQty;
+                    $isFullyInwarded = ($aggregatePendingQty === 0);
+                    $isPartiallyInwarded = ($aggregatePendingQty > 0 && $aggregateInwardedQty > 0);
+                }
+
                     // For Series & Complementary products: inward the full pack/remaining count in a single action!
                     // For Normal products: inward 1 piece per sticker (count($generatedItems))
-                    $inwardPieceQty = $isSeriesOrComp 
-                        ? ($remainingQty > 0 ? $remainingQty : (!empty($activeVar['pack_quantity']) && (int)$activeVar['pack_quantity'] > 1 ? (int)$activeVar['pack_quantity'] : $totalExpectedQty))
+                $inwardPieceQty = $isSeriesOrComp
+                    ? ($aggregateTotalQty > 0 ? $aggregatePendingQty : ($remainingQty > 0 ? $remainingQty : (!empty($activeVar['pack_quantity']) && (int)$activeVar['pack_quantity'] > 1 ? (int)$activeVar['pack_quantity'] : $totalExpectedQty)))
                         : ($remainingQty > 0 ? $remainingQty : count($generatedItems));
                 ?>
                 <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
@@ -3106,6 +3205,61 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                     </button>
                 <?php endif; ?>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL: ADD QR LABELS OR EXTEND AN EXISTING MASTER PACK -->
+<!-- ========================================================================= -->
+<div class="modal fade" id="adjustmentQrModal" tabindex="-1" aria-labelledby="adjustmentQrModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+            <div class="modal-header text-white border-0" style="background: linear-gradient(135deg, #0f766e, #2563eb);">
+                <div>
+                    <h5 class="modal-title fw-bold mb-1" id="adjustmentQrModalTitle">
+                        <i class="bi bi-qr-code me-2"></i>Adjust QR Pack
+                    </h5>
+                    <div class="small text-white-50" id="adjustmentQrModalSubtitle">Add labels or units to this product.</div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="adjustmentQrForm" onsubmit="submitAdjustmentQrChange(event)">
+                <?= CSRF::field() ?>
+                <div class="modal-body p-4">
+                    <div class="d-flex align-items-center gap-3 p-3 rounded-3 bg-light border mb-4">
+                        <span class="rounded-circle bg-white border text-primary d-inline-flex align-items-center justify-content-center flex-shrink-0" style="width: 46px; height: 46px;">
+                            <i class="bi bi-box-seam fs-5"></i>
+                        </span>
+                        <div class="min-w-0">
+                            <div class="fw-bold text-dark text-truncate" id="adjustmentQrProductName">Product</div>
+                            <div class="small text-muted">QR: <span class="font-monospace" id="adjustmentQrCode">—</span></div>
+                        </div>
+                        <span class="badge bg-primary-subtle text-primary border ms-auto flex-shrink-0">
+                            Current: <span id="adjustmentQrCurrentQty">1</span>
+                        </span>
+                    </div>
+
+                    <label class="form-label fw-semibold" for="adjustmentQrCount" id="adjustmentQrCountLabel">Quantity to add</label>
+                    <div class="input-group input-group-lg">
+                        <span class="input-group-text bg-white"><i class="bi bi-plus-lg text-success"></i></span>
+                        <input type="number" class="form-control fw-bold text-center" id="adjustmentQrCount" min="1" max="500" step="1" value="1" required>
+                        <span class="input-group-text bg-white">units</span>
+                    </div>
+                    <div class="form-text mt-2">Enter a whole number from 1 to 500.</div>
+
+                    <div class="alert alert-info d-flex gap-2 align-items-start mt-3 mb-0 py-2" role="status">
+                        <i class="bi bi-info-circle-fill mt-1"></i>
+                        <div class="small" id="adjustmentQrStockNote">A new QR label will be generated for each requested unit.</div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 bg-light px-4 py-3">
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success px-4 fw-semibold shadow-sm" id="adjustmentQrSubmit">
+                        <i class="bi bi-check2-circle me-1"></i>Apply
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -3305,6 +3459,9 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
 
 <script>
 const GENERATED_ITEMS = <?= json_encode($generatedItems ?? []) ?>;
+const CAN_EDIT_WAREHOUSE_QR = <?= $canEditWarehouseQr ? 'true' : 'false' ?>;
+const CAN_EDIT_INWARDED_WAREHOUSE_QR = <?= $canInwardQrUnits ? 'true' : 'false' ?>;
+const CAN_DELETE_WAREHOUSE_QR = <?= $canDeleteWarehouseQr ? 'true' : 'false' ?>;
 let currentPreviewIndex = 0;
 
 /**
@@ -4703,29 +4860,87 @@ function printSelectedStickers() {
     printLabel(batchLabels);
 }
 
+let pendingQrDeleteIndices = [];
+
 function deleteSelectedQrs() {
-    const selectedIndices = Array.from(selectedStickerIndices)
-        .filter(idx => GENERATED_ITEMS[idx] && !GENERATED_ITEMS[idx].is_deleted);
-    if (selectedIndices.length === 0) {
-        showPrintToast('Select at least one QR sticker to delete.', 'warning');
+    const indices = Array.from(selectedStickerIndices)
+        .filter(index => GENERATED_ITEMS[index] && !GENERATED_ITEMS[index].is_deleted);
+    openQrDeleteConfirmation(indices);
+}
+
+function deleteSingleQr(index) {
+    const item = GENERATED_ITEMS[index];
+    if (!item || item.is_deleted || item.is_inwarded) {
+        showPrintToast('Only QR labels that have not been inwarded can be deleted.', 'warning');
+        return;
+    }
+    openQrDeleteConfirmation([index]);
+}
+
+function openQrDeleteConfirmation(indices) {
+    if (!CAN_DELETE_WAREHOUSE_QR) {
+        showPrintToast('You do not have permission to delete QR labels.', 'danger');
         return;
     }
 
-    const codesToDelete = selectedIndices.map(idx => GENERATED_ITEMS[idx].tag_code).filter(Boolean);
-
-    if (!confirm(`Permanently delete ${codesToDelete.length} selected QR sticker(s)? They will be removed from the database and will not appear again after page refresh.`)) {
+    pendingQrDeleteIndices = indices.filter(index =>
+        GENERATED_ITEMS[index] &&
+        !GENERATED_ITEMS[index].is_deleted &&
+        !GENERATED_ITEMS[index].is_inwarded &&
+        GENERATED_ITEMS[index].tag_code
+    );
+    if (pendingQrDeleteIndices.length === 0) {
+        showPrintToast('Select at least one QR label that has not been inwarded.', 'warning');
         return;
     }
 
-    const btnDelete = document.getElementById('btnDeleteSelectedQrs');
-    const origHtml = btnDelete ? btnDelete.innerHTML : '';
-    if (btnDelete) {
-        btnDelete.disabled = true;
-        btnDelete.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Deleting...';
+    const modalElement = document.getElementById('deleteQrConfirmModal');
+    const reasonInput = document.getElementById('deleteQrReason');
+    const countElement = document.getElementById('deleteQrSelectedCount');
+    if (!modalElement || !window.bootstrap || !bootstrap.Modal) {
+        showPrintToast('The QR deletion confirmation dialog is unavailable. Refresh the page and try again.', 'danger');
+        return;
+    }
+
+    if (countElement) countElement.textContent = String(pendingQrDeleteIndices.length);
+    if (reasonInput) {
+        reasonInput.value = '';
+        reasonInput.setCustomValidity('');
+    }
+    bootstrap.Modal.getOrCreateInstance(modalElement).show();
+    setTimeout(() => reasonInput?.focus(), 150);
+}
+
+function confirmDeleteSelectedQrs() {
+    const reasonInput = document.getElementById('deleteQrReason');
+    const reason = (reasonInput?.value || '').trim();
+    if (!reason) {
+        reasonInput?.setCustomValidity('Enter a reason for deleting these QR labels.');
+        reasonInput?.reportValidity();
+        return;
+    }
+    reasonInput?.setCustomValidity('');
+
+    const selectedIndices = pendingQrDeleteIndices.filter(index =>
+        GENERATED_ITEMS[index] && !GENERATED_ITEMS[index].is_deleted
+    );
+    const codesToDelete = selectedIndices.map(index => GENERATED_ITEMS[index].tag_code).filter(Boolean);
+    if (codesToDelete.length === 0) {
+        showPrintToast('No active QR labels are selected for deletion.', 'warning');
+        return;
+    }
+
+    const confirmButton = document.getElementById('confirmDeleteQrButton');
+    const originalButtonHtml = confirmButton ? confirmButton.innerHTML : '';
+    if (confirmButton) {
+        confirmButton.disabled = true;
+        confirmButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Deleting...';
     }
 
     const formData = new FormData();
     codesToDelete.forEach(code => formData.append('codes[]', code));
+    formData.append('reason', reason);
+    formData.append('_csrf_token', '<?= CSRF::token() ?>');
     const variantId = GENERATED_ITEMS[selectedIndices[0]]?.variant_id || '<?= $activeVar['id'] ?? '' ?>';
     if (variantId) formData.append('variant_id', variantId);
 
@@ -4737,23 +4952,20 @@ function deleteSelectedQrs() {
             'Accept': 'application/json'
         }
     })
-    .then(r => r.json())
+    .then(response => response.json())
     .then(res => {
-        if (btnDelete) {
-            btnDelete.disabled = false;
-            btnDelete.innerHTML = origHtml;
-        }
         if (!res.success) {
-            showPrintToast(res.message || 'Error deleting QR stickers.', 'danger');
+            showPrintToast(res.message || 'Error deleting QR labels.', 'danger');
             return;
         }
 
-        selectedIndices.forEach(idx => {
-            const item = GENERATED_ITEMS[idx];
-            if (item) item.is_deleted = true;
-            const card = document.getElementById(`col-piece-${idx}`);
-            if (card) card.remove();
-            selectedStickerIndices.delete(idx);
+        const deletedCodes = new Set((res.deleted_codes || []).map(code => String(code).toUpperCase()));
+        selectedIndices.forEach(index => {
+            const item = GENERATED_ITEMS[index];
+            if (!item || !deletedCodes.has(String(item.tag_code).toUpperCase())) return;
+            item.is_deleted = true;
+            document.getElementById(`col-piece-${index}`)?.remove();
+            selectedStickerIndices.delete(index);
         });
 
         const activeItems = GENERATED_ITEMS.filter(item => item && !item.is_deleted);
@@ -4763,6 +4975,12 @@ function deleteSelectedQrs() {
         if (totalBadge) totalBadge.textContent = `${activeItems.length} Available Pieces`;
         if (totalSelectable) totalSelectable.textContent = activeItems.length;
         if (inwardCount) inwardCount.textContent = activeItems.length;
+        const summaryBadge = document.getElementById('masterPackTotalBadge');
+        if (summaryBadge) {
+            const aggregateItems = activeItems.filter(item => item.is_series || item.is_complementary);
+            const totalPackQty = aggregateItems.reduce((total, item) => total + Number(item.pack_quantity || 1), 0);
+            summaryBadge.textContent = `${aggregateItems.length} Master QR${aggregateItems.length === 1 ? '' : 's'} (${totalPackQty} Total Pcs)`;
+        }
 
         const emptyMessage = document.getElementById('emptyGeneratedQrMessage');
         if (activeItems.length === 0 && !emptyMessage) {
@@ -4786,50 +5004,117 @@ function deleteSelectedQrs() {
         }
 
         updateSelectionCounter();
-        showPrintToast(res.message || `Deleted ${codesToDelete.length} QR sticker(s) permanently.`, 'success');
+        pendingQrDeleteIndices = [];
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('deleteQrConfirmModal')).hide();
+        const skippedCount = (res.skipped_inwarded || []).length;
+        const toastMessage = skippedCount > 0
+            ? `${res.message} ${skippedCount} inwarded QR label(s) were protected.`
+            : res.message;
+        showPrintToast(toastMessage || `Deleted ${deletedCodes.size} QR label(s) and recorded the reason.`, 'success');
     })
-    .catch(err => {
-        if (btnDelete) {
-            btnDelete.disabled = false;
-            btnDelete.innerHTML = origHtml;
+    .catch(() => {
+        showPrintToast('Network error while deleting QR labels. Please try again.', 'danger');
+    })
+    .finally(() => {
+        if (confirmButton) {
+            confirmButton.disabled = false;
+            confirmButton.innerHTML = originalButtonHtml;
         }
-        showPrintToast('Network error while deleting QR sticker(s).', 'danger');
     });
 }
 
 /**
- * Produce 1 New QR Sticker on the fly for Stock Adjustment
+ * Add QR labels or extend a master QR pack from the labels page
  */
-function produceNewAdjustmentQR() {
+let adjustmentQrTargetIndex = null;
+
+function produceNewAdjustmentQR(itemIndex = null) {
     if (!GENERATED_ITEMS || GENERATED_ITEMS.length === 0) {
         showPrintToast('Please select a Brand and Generated Code first to produce adjustment QR labels.', 'warning');
         return;
     }
 
-    const activeItems = GENERATED_ITEMS.filter(Boolean);
-    const lastItem = activeItems[activeItems.length - 1];
-    if (!lastItem) {
+    const activeIndices = GENERATED_ITEMS
+        .map((item, index) => item && !item.is_deleted ? index : -1)
+        .filter(index => index >= 0);
+    adjustmentQrTargetIndex = Number.isInteger(itemIndex) ? itemIndex : activeIndices[activeIndices.length - 1];
+    const item = GENERATED_ITEMS[adjustmentQrTargetIndex];
+    if (!item || item.is_deleted) {
         showPrintToast('Cannot create a new QR because this page has no QR details to copy.', 'warning');
         return;
     }
 
-    const variantId = lastItem.variant_id;
-    const warehouseId = document.getElementById('inwardWarehouseId')?.value || document.querySelector('input[name="warehouse_id"]')?.value || '1';
+    const isAggregateQr = !!(item.is_series || item.is_complementary);
+    const modalEl = document.getElementById('adjustmentQrModal');
+    const countInput = document.getElementById('adjustmentQrCount');
+    const displaySku = item.clean_sku || item.sku || '';
+    document.getElementById('adjustmentQrProductName').textContent = item.product_name || displaySku || 'Selected product';
+    document.getElementById('adjustmentQrCode').textContent = item.tag_code || '—';
+    document.getElementById('adjustmentQrCurrentQty').textContent = String(item.pack_quantity || 1);
+    document.getElementById('adjustmentQrModalTitle').innerHTML = isAggregateQr
+        ? '<i class="bi bi-box-seam me-2"></i>Edit Master QR Pack'
+        : '<i class="bi bi-qr-code me-2"></i>Add QR Labels';
+    document.getElementById('adjustmentQrModalSubtitle').textContent = isAggregateQr
+        ? 'Keep the same QR code and add units to its pack.'
+        : 'Generate consecutive QR labels for this product.';
+    document.getElementById('adjustmentQrCountLabel').textContent = isAggregateQr ? 'Additional units to add' : 'Number of QR labels';
+    document.getElementById('adjustmentQrStockNote').textContent = isAggregateQr
+        ? (item.is_inwarded
+            ? 'This pack is already inwarded. Applying the change will add only these new units to warehouse stock.'
+            : 'This pack is not inwarded yet. Added units will be included when you confirm the stock inward.')
+        : 'A new QR label will be generated for each requested unit. This does not inward stock.';
+    if (countInput) countInput.value = '1';
+
+    if (!modalEl || !window.bootstrap || !bootstrap.Modal) {
+        showPrintToast('The QR adjustment dialog is unavailable. Refresh the page and try again.', 'danger');
+        return;
+    }
+    const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+    modal.show();
+    setTimeout(() => countInput?.focus(), 150);
+}
+
+function submitAdjustmentQrChange(event) {
+    event.preventDefault();
+    const countInput = document.getElementById('adjustmentQrCount');
+    const countValue = String(countInput?.value || '').trim();
+    if (!/^[1-9]\d*$/.test(countValue) || Number(countValue) > 500) {
+        showPrintToast('Enter a whole number between 1 and 500.', 'warning');
+        return;
+    }
+    const count = Number(countValue);
+    const targetIndex = adjustmentQrTargetIndex;
+    const item = Number.isInteger(targetIndex) ? GENERATED_ITEMS[targetIndex] : null;
+    if (!item || item.is_deleted) {
+        showPrintToast('The selected QR label is no longer available. Refresh and try again.', 'warning');
+        return;
+    }
+
+    const isAggregateQr = !!(item.is_series || item.is_complementary);
+    const variantId = item.variant_id;
+    const warehouseId = item.warehouse_id || document.getElementById('inwardWarehouseId')?.value || document.querySelector('input[name="warehouse_id"]')?.value || '1';
     const sourceType = document.querySelector('input[name="source_type"]')?.value || 'tp_purchase';
     const sourceId = document.querySelector('input[name="source_id"]')?.value || '0';
 
-    const btnProduce = document.querySelector('button[onclick="produceNewAdjustmentQR()"]');
-    const origHtml = btnProduce ? btnProduce.innerHTML : '';
-    if (btnProduce) {
-        btnProduce.disabled = true;
-        btnProduce.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Producing...';
+    const submitButton = document.getElementById('adjustmentQrSubmit');
+    const originalButtonHtml = submitButton ? submitButton.innerHTML : '';
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Applying...';
     }
 
     const formData = new FormData();
     formData.append('variant_id', variantId);
+    formData.append('count', String(count));
+    if (isAggregateQr) {
+        formData.append('aggregate_extension', '1');
+        formData.append('qr_code', item.tag_code);
+    }
     formData.append('warehouse_id', warehouseId);
     formData.append('source_type', sourceType);
     formData.append('source_id', sourceId);
+    const csrfToken = document.querySelector('#adjustmentQrForm input[name="_csrf_token"]')?.value;
+    if (csrfToken) formData.append('_csrf_token', csrfToken);
 
     fetch('<?= url("warehouse/labels/produce-new-qr") ?>', {
         method: 'POST',
@@ -4839,37 +5124,126 @@ function produceNewAdjustmentQR() {
             'Accept': 'application/json'
         }
     })
-    .then(res => res.json())
-    .then(data => {
-        if (btnProduce) {
-            btnProduce.disabled = false;
-            btnProduce.innerHTML = origHtml;
+    .then(res => res.json().then(data => ({ response: res, data })))
+    .then(({ response, data }) => {
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.innerHTML = originalButtonHtml;
         }
 
-        if (data.success && data.item) {
+        if (data.success && data.aggregate_extension && data.item) {
+            if (GENERATED_ITEMS[targetIndex] !== item) {
+                showPrintToast('The selected QR label changed while the request was running. Refresh and try again.', 'warning');
+                return;
+            }
+            GENERATED_ITEMS[targetIndex] = data.item;
             window.hasStockOrQrChanged = true;
-            const newItem = data.item;
-            const newIndex = GENERATED_ITEMS.length;
-            GENERATED_ITEMS.push(newItem);
+            updateAggregateStickerCard(data.item, targetIndex);
+            const inwardStatusBadge = document.getElementById('inwardStatusBadge');
+            if (data.stock_updated) {
+                const liveWhStock = document.getElementById('liveCurrentWhStock');
+                if (liveWhStock && data.warehouse_stock !== undefined) {
+                    liveWhStock.textContent = `${data.warehouse_stock} pcs`;
+                    liveWhStock.className = 'badge bg-success text-white px-2 py-1 fs-7';
+                }
+                if (inwardStatusBadge) {
+                    inwardStatusBadge.innerHTML = `<i class="bi bi-check-circle-fill me-1"></i> Pack updated; +${count} pcs credited to stock`;
+                }
+            } else if (isAggregateQr && inwardStatusBadge) {
+                inwardStatusBadge.textContent = 'Added units are pending stock inward.';
+            }
+            updateSelectionCounter();
+            const modalEl = document.getElementById('adjustmentQrModal');
+            if (modalEl) (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl)).hide();
+            showPrintToast(data.message || `Updated QR pack quantity to ${data.item.pack_quantity}.`, 'success');
+            return;
+        }
+
+        const items = Array.isArray(data.items) ? data.items : (data.item ? [data.item] : []);
+        if (data.success && items.length > 0) {
+            window.hasStockOrQrChanged = true;
             document.getElementById('emptyGeneratedQrMessage')?.remove();
 
-            renderNewStickerCard(newItem, newIndex);
-
-            selectedStickerIndices.add(newIndex);
+            items.forEach(newItem => {
+                const newIndex = GENERATED_ITEMS.length;
+                GENERATED_ITEMS.push(newItem);
+                renderNewStickerCard(newItem, newIndex);
+                selectedStickerIndices.add(newIndex);
+            });
             updateSelectionCounter();
 
-            showPrintToast(data.message || `Produced 1 New QR: ${newItem.tag_code}!`, 'success');
+            const modalEl = document.getElementById('adjustmentQrModal');
+            if (modalEl) (bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl)).hide();
+            showPrintToast(data.message || `Produced ${items.length} New QR label(s).`, 'success');
         } else {
-            showPrintToast(data.message || 'Failed to produce new QR sticker.', 'danger');
+            showPrintToast(data.message || `Failed to produce QR labels (HTTP ${response.status}).`, 'danger');
         }
     })
     .catch(err => {
-        if (btnProduce) {
-            btnProduce.disabled = false;
-            btnProduce.innerHTML = origHtml;
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.innerHTML = originalButtonHtml;
         }
-        showPrintToast('Network error producing new QR sticker: ' + err.message, 'danger');
+        showPrintToast('Network error updating QR labels: ' + err.message, 'danger');
     });
+}
+
+function updateAggregateStickerCard(item, index) {
+    const col = document.getElementById(`col-piece-${index}`);
+    if (!col) return;
+    const card = document.getElementById(`card-piece-${index}`);
+
+    const packQty = Number(item.pack_quantity || 1);
+    const packBadge = col.querySelector('.piece-label-badge');
+    if (packBadge) {
+        packBadge.innerHTML = `<i class="bi bi-boxes me-1"></i>Master Pack (${packQty} Pcs)`;
+    }
+
+    const displaySku = item.clean_sku || ((item.size_name && item.color_name)
+        ? `${item.size_name}-${item.color_name}`
+        : item.sku);
+    const skuLabel = col.querySelector('.lbl-sku');
+    if (skuLabel) skuLabel.textContent = `${displaySku} (${packQty} Pcs)`;
+
+    const startMatch = String(item.series_start_code || item.tag_code || '').match(/(\d+)$/);
+    const endMatch = String(item.series_end_code || '').match(/(\d+)$/);
+    if (startMatch && endMatch) {
+        const rangeText = `Range: ${parseInt(startMatch[1], 10)} → ${parseInt(endMatch[1], 10)}`;
+        let rangeBadge = col.querySelector('.series-range-badge');
+        if (!rangeBadge) {
+            rangeBadge = document.createElement('div');
+            rangeBadge.className = 'badge bg-light text-primary border font-monospace mt-1 px-1 py-0.5 w-100 series-range-badge';
+            rangeBadge.style.fontSize = '0.54rem';
+            rangeBadge.title = 'Piece Sequence Range';
+            col.querySelector('.label-tag-code')?.after(rangeBadge);
+        }
+        if (rangeBadge) rangeBadge.textContent = rangeText;
+    }
+
+    if (item.is_inwarded && card) {
+        card.classList.remove('selected-piece-card');
+        card.classList.add('inwarded-piece-card');
+        const checkbox = document.getElementById(`chk-piece-${index}`);
+        if (checkbox) {
+            checkbox.checked = false;
+            checkbox.disabled = true;
+            checkbox.title = 'Officially Inwarded to Inventory';
+            selectedStickerIndices.delete(index);
+        }
+        const savedBadge = Array.from(card.querySelectorAll('.badge'))
+            .find(badge => badge.textContent.includes('Saved QR'));
+        if (savedBadge) {
+            savedBadge.className = 'badge bg-success-subtle text-success border border-success-subtle';
+            savedBadge.textContent = 'Inwarded QR';
+        }
+    }
+
+    const summaryBadge = document.getElementById('masterPackTotalBadge');
+    if (summaryBadge) {
+        const aggregateItems = GENERATED_ITEMS.filter(generatedItem => generatedItem && (generatedItem.is_series || generatedItem.is_complementary) && !generatedItem.is_deleted);
+        const totalPackQty = aggregateItems.reduce((total, generatedItem) => total + Number(generatedItem.pack_quantity || 1), 0);
+        summaryBadge.textContent = `${aggregateItems.length} Master QR${aggregateItems.length === 1 ? '' : 's'} (${totalPackQty} Total Pcs)`;
+    }
 }
 
 function renderNewStickerCard(newItem, newIndex) {
@@ -4925,7 +5299,7 @@ function renderNewStickerCard(newItem, newIndex) {
                         <div class="label-tag-code badge bg-dark text-white font-monospace mt-1 px-1 py-0.5 w-100" style="font-size: 0.56rem; letter-spacing: 0.1px;" title="${newItem.tag_code}">
                             ${newItem.tag_code}
                         </div>
-                        ${rangeBadge ? `<div class="badge bg-light text-primary border font-monospace mt-1 px-1 py-0.5 w-100" style="font-size: 0.54rem;" title="Piece Sequence Range">Range: ${rangeBadge}</div>` : ''}
+                        ${rangeBadge ? `<div class="badge bg-light text-primary border font-monospace mt-1 px-1 py-0.5 w-100 series-range-badge" style="font-size: 0.54rem;" title="Piece Sequence Range">Range: ${rangeBadge}</div>` : ''}
                     </div>
                     <div class="overflow-hidden flex-grow-1" style="font-size: 0.76rem; margin-top: 1px;">
                         <div class="lbl-title fw-bold text-uppercase text-dark text-truncate" style="font-size: 0.80rem; letter-spacing: 0.2px;" title="${escapeHtml(newItem.brand_name || 'GRM CLASSIC')}">
@@ -4950,6 +5324,7 @@ function renderNewStickerCard(newItem, newIndex) {
                     <button type="button" class="btn btn-xs btn-outline-dark flex-fill fw-semibold py-1.5" onclick="printSinglePieceSticker(${newIndex})" title="Print Thermal Sticker">
                         <i class="bi bi-printer"></i> Print
                     </button>
+                    ${CAN_DELETE_WAREHOUSE_QR && !newItem.is_inwarded ? `<button type="button" class="btn btn-xs btn-outline-danger flex-fill fw-semibold py-1.5" onclick="deleteSingleQr(${newIndex})" title="Delete this QR label"><i class="bi bi-trash3"></i> Delete</button>` : ''}
                 </div>
             </div>
         `;
@@ -4998,6 +5373,7 @@ function renderNewStickerCard(newItem, newIndex) {
                     <button type="button" class="btn btn-xs btn-outline-dark flex-fill fw-semibold py-1.5" onclick="printSinglePieceSticker(${newIndex})" title="Print Thermal Sticker">
                         <i class="bi bi-printer"></i> Print
                     </button>
+                    ${CAN_DELETE_WAREHOUSE_QR && !newItem.is_inwarded ? `<button type="button" class="btn btn-xs btn-outline-danger flex-fill fw-semibold py-1.5" onclick="deleteSingleQr(${newIndex})" title="Delete this QR label"><i class="bi bi-trash3"></i> Delete</button>` : ''}
                 </div>
             </div>
         `;
@@ -5588,6 +5964,25 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
         });
+    }
+
+    const pageUrl = new URL(window.location.href);
+    if (pageUrl.searchParams.get('edit_qr_pack') === '1') {
+        pageUrl.searchParams.delete('edit_qr_pack');
+        window.history.replaceState(null, '', pageUrl.toString());
+
+        const editIndices = GENERATED_ITEMS
+            .map((item, index) => item && !item.is_deleted && (item.is_series || item.is_complementary) ? index : -1)
+            .filter(index => index >= 0);
+        const editItem = editIndices.length === 1 ? GENERATED_ITEMS[editIndices[0]] : null;
+        if (!CAN_EDIT_WAREHOUSE_QR || editIndices.length === 0 || (editItem && editItem.is_inwarded && !CAN_EDIT_INWARDED_WAREHOUSE_QR)) {
+            showPrintToast('This master QR pack is not available for editing with your current permissions.', 'warning');
+        } else if (editIndices.length > 1) {
+            document.getElementById('stickersCardGrid')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            showPrintToast('Choose the master QR pack you want to edit below.', 'info');
+        } else {
+            setTimeout(() => produceNewAdjustmentQR(editIndices[0]), 150);
+        }
     }
 });
 </script>

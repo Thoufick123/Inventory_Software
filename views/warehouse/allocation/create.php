@@ -597,6 +597,14 @@ function getRowScannedQrs(row) {
     }
 }
 
+function getRowScanAliases(row) {
+    try {
+        return JSON.parse(row?.dataset?.scanAliases || '[]');
+    } catch(e) {
+        return [];
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     const warehouseSelect = document.getElementById('warehouse_select');
     const scanInput = document.getElementById('allocation_qr_input');
@@ -1164,13 +1172,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // 1. DUPLICATE CHECK
-        if (SCANNED_ALLOCATION_TAGS.has(tagCode)) {
+        const rows = document.querySelectorAll('#orderItemsContainer tr.item-row');
+        const hasScannedAlias = Array.from(rows).some(r => getRowScanAliases(r).includes(tagCode));
+        if (SCANNED_ALLOCATION_TAGS.has(tagCode) || hasScannedAlias) {
             // Check if this tag belongs to an existing row that is a series product
             let existingPackRow = null;
-            const rows = document.querySelectorAll('#orderItemsContainer tr.item-row');
             rows.forEach(r => {
                 let scannedQrs = getRowScannedQrs(r);
-                if (scannedQrs.map(s => s.toUpperCase()).includes(tagCode)) {
+                if (scannedQrs.map(s => s.toUpperCase()).includes(tagCode) || getRowScanAliases(r).includes(tagCode)) {
                     const sel = r.querySelector('.variant-select');
                     const vId = sel ? sel.value : null;
                     const vObj = variantsList.find(v => String(v.id) === String(vId));
@@ -1230,8 +1239,8 @@ document.addEventListener('DOMContentLoaded', function() {
             let targetRow = null;
 
             const packQty = parseInt(data.scan_qty || data.pack_quantity || 1);
-            // For series products, allocate 1 piece initially so remainder is retained in warehouse
-            const targetQty = isSeriesOrComp ? (data.is_series ? 1 : packQty) : 1;
+            // Each aggregate QR scan adds one piece; repeated scans increase quantity.
+            const targetQty = 1;
 
             // Refresh the cached stock and category metadata from the scan response.
             let cachedVariant = variantsList.find(v => String(v.id) === String(vId));
@@ -1319,6 +1328,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (targetRow) {
                 targetRow.dataset.scannedQrs = JSON.stringify([resolvedTag]);
+                targetRow.dataset.scanAliases = JSON.stringify(Array.from(new Set([tagCode, resolvedTag])));
                 const qtyInput = targetRow.querySelector('.qty-input');
                 if (qtyInput) {
                     if (parseInt(qtyInput.value) !== targetQty) {

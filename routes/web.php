@@ -366,6 +366,7 @@ class Router {
         $this->post('production/purchases/delete/{id}', 'ProductionController', 'deleteProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'delete']]);
         $this->get('production/purchases/print/{id}', 'ProductionController', 'printProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'view']]);
         $this->get('production/purchases/roll-qr/{id}', 'ProductionController', 'productionPurchaseRollQr', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'view']]);
+        $this->get('production/purchases/supply-qr/{id}', 'ProductionController', 'productionPurchaseSupplyQr', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'view']]);
         $this->get('production/purchases/create', 'ProductionController', 'createProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'create']]);
         $this->post('production/purchases/store', 'ProductionController', 'storeProductionPurchase', ['AuthMiddleware', ['PermissionMiddleware', 'production_purchases', 'create']]);
 
@@ -540,6 +541,9 @@ class Router {
         $this->post('warehouse/inward/store', 'WarehouseController', 'storeInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'create']]);
         $this->get('warehouse/inward/view/{id}', 'WarehouseController', 'viewInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'view']]);
         $this->post('warehouse/inward/verify/{id}', 'WarehouseController', 'verifyInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'verify']]);
+        $this->get('warehouse/inward/edit/{id}', 'WarehouseController', 'editInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'view']]);
+        $this->post('warehouse/inward/update/{id}', 'WarehouseController', 'updateInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'view']]);
+        $this->post('warehouse/inward/delete/{id}', 'WarehouseController', 'deleteInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'view']]);
         $this->get('warehouse/inward/label/{id}', 'WarehouseController', 'printBatchQRLabel', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'print']]);
         $this->post('api/warehouse/inward/scan', 'WarehouseController', 'ajaxScanInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'create']]);
         $this->post('api/warehouse/inward/crosscheck-scan', 'WarehouseController', 'ajaxCrossCheckScan', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'verify']]);
