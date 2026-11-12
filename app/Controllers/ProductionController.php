@@ -5,6 +5,10 @@
  * Cutting, Stitching, Labels, QC, Packing Batches, Outward, and Reports.
  */
 
+if (!defined('BASE_PATH')) {
+    define('BASE_PATH', dirname(__DIR__, 2));
+}
+
 require_once BASE_PATH . '/app/Services/ProductionService.php';
 require_once BASE_PATH . '/app/Services/AuditService.php';
 require_once BASE_PATH . '/app/Services/CloudinaryService.php';
@@ -44,6 +48,18 @@ class ProductionController {
         } catch (\Throwable $e) {
             error_log('Unable to ensure production supplier archive column: ' . $e->getMessage());
         }
+        try {
+            $colInwItems = Database::fetchOne("SHOW COLUMNS FROM production_purchase_items LIKE 'is_inwarded'");
+            if (!$colInwItems) {
+                Database::execute("ALTER TABLE production_purchase_items ADD COLUMN is_inwarded TINYINT(1) DEFAULT 0, ADD COLUMN inwarded_at DATETIME DEFAULT NULL, ADD COLUMN inwarded_by INT UNSIGNED DEFAULT NULL, ADD COLUMN product_id INT UNSIGNED DEFAULT NULL, ADD COLUMN variant_id INT UNSIGNED DEFAULT NULL");
+            }
+        } catch (\Throwable $e) {}
+        try {
+            $colInwPurchases = Database::fetchOne("SHOW COLUMNS FROM production_purchases LIKE 'is_inwarded'");
+            if (!$colInwPurchases) {
+                Database::execute("ALTER TABLE production_purchases ADD COLUMN is_inwarded TINYINT(1) DEFAULT 0, ADD COLUMN inwarded_at DATETIME DEFAULT NULL");
+            }
+        } catch (\Throwable $e) {}
 
         $statusColumn = Database::fetchOne("SHOW COLUMNS FROM roll_damages LIKE 'status'");
         if (!$statusColumn) {
@@ -3944,8 +3960,9 @@ class ProductionController {
         $damagedQty = max(1, (int)($_POST['damaged_quantity'] ?? 1));
 
         $isPurchasedSupplyDamage = (
-            preg_match('/^SP\d+/i', trim((string)($existing['qr_code'] ?? ''))) ||
-            (!empty($existing['item_type']) && $existing['item_type'] === 'PRODUCT' && empty($existing['product_id']) && empty($existing['variant_id']) && empty($existing['seller_roll_id']))
+            empty($existing['seller_roll_id']) ||
+            ($existing['item_type'] ?? '') === 'PRODUCT' ||
+            preg_match('/^SP\d+/i', trim((string)($existing['qr_code'] ?? '')))
         );
 
         if ($damageReason === '') {
@@ -3962,26 +3979,65 @@ class ProductionController {
         if ($isPurchasedSupplyDamage) {
             $photoUrl = $existing['photo_url'];
             if (!empty($_FILES['photo']['name']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
-                $uploaded = CloudinaryService::upload($_FILES['photo'], 'grm_inventory/damages', 'image');
-                if ($uploaded) {
-                    $photoUrl = $uploaded;
+                try {
+                    $uploaded = CloudinaryService::upload($_FILES['photo'], 'grm_inventory/damages', 'image');
+                    if ($uploaded) {
+                        $photoUrl = $uploaded;
+                    }
+                } catch (\Throwable $uploadErr) {
+                    error_log('Damage photo upload error: ' . $uploadErr->getMessage());
                 }
             }
 
+            $lossAmount = isset($_POST['loss_amount']) && is_numeric($_POST['loss_amount'])
+                ? round((float)$_POST['loss_amount'], 2)
+                : (float)($existing['loss_amount'] ?? 0.0);
+
+            $damagedWeight = isset($_POST['damaged_weight']) && is_numeric($_POST['damaged_weight'])
+                ? round((float)$_POST['damaged_weight'], 2)
+                : (float)($existing['damaged_weight'] ?? 0.0);
+
             try {
+                Database::beginTransaction();
+
                 Database::execute(
-                    "UPDATE roll_damages SET damage_reason = ?, defect_notes = ?, photo_url = ?, updated_at = NOW() WHERE id = ?",
-                    [$damageReason, $defectNotes ?: null, $photoUrl, $damageId]
+                    "UPDATE roll_damages SET 
+                        damage_reason = ?, 
+                        defect_notes = ?, 
+                        photo_url = ?, 
+                        damaged_quantity = ?,
+                        damaged_weight = ?,
+                        loss_amount = ?,
+                        updated_at = NOW() 
+                     WHERE id = ?",
+                    [
+                        $damageReason, 
+                        $defectNotes !== '' ? $defectNotes : null, 
+                        $photoUrl, 
+                        $damagedQty,
+                        $damagedWeight,
+                        $lossAmount,
+                        $damageId
+                    ]
                 );
+
                 AuditService::log('production', 'update', 'roll_damages', $damageId, $existing, [
-                    'damage_reason' => $damageReason,
-                    'defect_notes' => $defectNotes,
-                    'photo_url' => $photoUrl,
-                    'loss_amount_preserved' => (float)$existing['loss_amount'],
+                    'damage_reason'  => $damageReason,
+                    'defect_notes'   => $defectNotes,
+                    'photo_url'      => $photoUrl,
+                    'damaged_qty'    => $damagedQty,
+                    'damaged_weight' => $damagedWeight,
+                    'loss_amount'    => $lossAmount,
                 ]);
+
+                Database::commit();
+
                 Session::flash('success', "Damage record #{$existing['damage_number']} updated successfully.");
                 Response::redirect(url('production/damages'));
-            } catch (Exception $e) {
+            } catch (\Throwable $e) {
+                if (Database::inTransaction()) {
+                    Database::rollback();
+                }
                 Session::flash('error', 'Error updating damage record: ' . $e->getMessage());
                 Response::back();
             }
@@ -4055,6 +4111,8 @@ class ProductionController {
         }
 
         try {
+            Database::beginTransaction();
+
             Database::execute(
                 "UPDATE roll_damages SET
                     seller_id = ?,
@@ -4088,9 +4146,14 @@ class ProductionController {
                 'reason' => $damageReason
             ]);
 
+            Database::commit();
+
             Session::flash('success', "Damage record #{$existing['damage_number']} updated successfully.");
             Response::redirect(url('production/damages'));
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
+            if (Database::inTransaction()) {
+                Database::rollback();
+            }
             Session::flash('error', 'Error updating damage record: ' . $e->getMessage());
             Response::back();
         }
@@ -9698,7 +9761,7 @@ class ProductionController {
                     }
 
                     if (!$hasReworkGoods) {
-                        $qcItemsDefects = Database::fetch(
+                        $qcItemsDefects = Database::fetchOne(
                             "SELECT COUNT(*) as cnt FROM qc_items WHERE qc_batch_id = ? AND (defect_reason != '' OR rework_qty > 0)",
                             [(int)$qb['id']]
                         );
@@ -14752,6 +14815,7 @@ class ProductionController {
      * Dedicated QR Barcode Generation & Thermal Printing for Other Garment Supplies in a Purchase.
      */
     public function productionPurchaseSupplyQr(string $id): void {
+        self::ensureDatabaseSchema();
         $purchaseId = (int)$id;
         $purchase = Database::fetchOne(
             "SELECT pp.*, s.name AS supplier_name, s.company AS supplier_company, s.phone AS supplier_phone,
@@ -14877,6 +14941,231 @@ class ProductionController {
             'selectedItemId' => $selectedItemId,
             'rollCount'      => $rollCount,
         ]);
+    }
+
+    /**
+     * Move garment supplies from a Production Purchase to Inward / Inventory.
+     * Automatically registers products, variants, increases warehouse stock balances,
+     * and maps QR codes in warehouse_qr_codes.
+     */
+    public function productionPurchaseSupplyInward(string $id): void {
+        self::ensureDatabaseSchema();
+
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid or expired security token. Please try again.');
+            Response::back();
+            return;
+        }
+
+        $canManageSupplies = hasPermission('production_purchases', 'create') 
+            || hasPermission('production_purchases', 'edit') 
+            || hasPermission('sellers', 'create') 
+            || hasPermission('sellers', 'edit')
+            || (class_exists('Auth') && method_exists('Auth', 'isAdmin') && Auth::isAdmin())
+            || (class_exists('Session') && Session::get('role') === 'admin');
+
+        if (!$canManageSupplies) {
+            Session::flash('error', 'Access denied: You do not have permission to inward purchase supplies.');
+            Response::back();
+            return;
+        }
+
+        $purchaseId = (int)$id;
+        $purchase = Database::fetchOne(
+            "SELECT pp.*, s.name AS supplier_name, s.company AS supplier_company
+             FROM production_purchases pp
+             LEFT JOIN sellers s ON s.id = pp.seller_id
+             WHERE pp.id = ?",
+            [$purchaseId]
+        );
+
+        if (!$purchase) {
+            Session::flash('error', 'Purchase record not found.');
+            Response::redirect(url('production/purchases'));
+            return;
+        }
+
+        $selectedItemId = !empty($_POST['item_id']) ? (int)$_POST['item_id'] : 0;
+        $sql = "SELECT ppi.*
+                FROM production_purchase_items ppi
+                WHERE ppi.purchase_id = ? AND ppi.item_type = 'GENERAL_SUPPLY'";
+        $params = [$purchaseId];
+        if ($selectedItemId > 0) {
+            $sql .= " AND ppi.id = ?";
+            $params[] = $selectedItemId;
+        }
+        $sql .= " ORDER BY ppi.id ASC";
+        $supplies = Database::fetchAll($sql, $params);
+
+        if (empty($supplies)) {
+            Session::flash('error', 'No garment supply items found to inward in this purchase.');
+            Response::redirect(url('production/purchases/supply-qr/' . $purchaseId));
+            return;
+        }
+
+        $userId = Session::userId() ?: (int)(Session::get('user_id') ?? 1);
+
+        // Find primary active warehouse (Central Warehouse)
+        $warehouse = Database::fetchOne("SELECT id, name FROM warehouses WHERE is_active = 1 ORDER BY id ASC LIMIT 1");
+        $warehouseId = $warehouse ? (int)$warehouse['id'] : 1;
+        $whName = $warehouse['name'] ?? ('Warehouse #' . $warehouseId);
+
+        // Find categories for fallback product categorization
+        $defaultCatId = Database::fetchOne("SELECT id FROM categories WHERE is_active = 1 AND (name LIKE '%Supply%' OR name LIKE '%Fabric%' OR name LIKE '%Accessory%' OR name LIKE '%General%') LIMIT 1")['id'] ?? null;
+        if (!$defaultCatId) {
+            $defaultCatId = Database::fetchOne("SELECT id FROM categories WHERE is_active = 1 ORDER BY id ASC LIMIT 1")['id'] ?? null;
+        }
+        $defaultWhCatId = Database::fetchOne("SELECT id FROM warehouse_categories WHERE is_active = 1 AND (name LIKE '%Supply%' OR name LIKE '%Fabric%' OR name LIKE '%Accessory%' OR name LIKE '%General%') LIMIT 1")['id'] ?? null;
+        if (!$defaultWhCatId) {
+            $defaultWhCatId = Database::fetchOne("SELECT id FROM warehouse_categories WHERE is_active = 1 ORDER BY id ASC LIMIT 1")['id'] ?? null;
+        }
+
+        $prefix = 'SP' . date('my', strtotime($purchase['purchase_date']));
+        $globalStickerIndex = 1;
+
+        Database::beginTransaction();
+        try {
+            $totalInwardQty = 0;
+            $inwardedItemNames = [];
+
+            foreach ($supplies as $item) {
+                $rawQty = (float)($item['quantity'] ?? 1);
+                if ($rawQty <= 0) continue;
+
+                $itemName = mb_strtoupper(trim($item['item_name'] ?? 'GARMENT SUPPLY'));
+                $unit = mb_strtoupper(trim($item['unit'] ?? 'PCS'));
+                $unitPrice = (float)($item['unit_price'] ?? 0);
+                $totalPrice = (float)($item['total_price'] ?? ($rawQty * $unitPrice));
+                $hsnCode = !empty($item['hsn_code']) ? trim((string)$item['hsn_code']) : null;
+                $inwardedItemNames[] = $itemName;
+                $totalInwardQty += $rawQty;
+
+                // 1. Check or Create Product in products table
+                $existingProduct = Database::fetchOne(
+                    "SELECT id, code, category_id, warehouse_category_id FROM products WHERE UPPER(TRIM(name)) = ? LIMIT 1",
+                    [$itemName]
+                );
+
+                if ($existingProduct) {
+                    $productId = (int)$existingProduct['id'];
+                    $prodCode = $existingProduct['code'];
+                } else {
+                    $cleanSlug = preg_replace('/[^A-Z0-9]/', '', $itemName);
+                    $baseCode = 'SUP-' . substr($cleanSlug ?: 'ITEM', 0, 8);
+                    $codeMatches = Database::fetchOne("SELECT COUNT(*) AS cnt FROM products WHERE code LIKE ?", [$baseCode . '%'])['cnt'] ?? 0;
+                    $prodCode = $baseCode . '-' . sprintf('%03d', (int)$codeMatches + 1);
+
+                    Database::execute(
+                        "INSERT INTO products
+                            (name, code, category_id, warehouse_category_id, hsn_code, source_type, is_active, created_at, updated_at)
+                         VALUES (?, ?, ?, ?, ?, 'EXTERNAL_PURCHASE', 1, NOW(), NOW())",
+                        [$itemName, $prodCode, $defaultCatId, $defaultWhCatId, $hsnCode]
+                    );
+                    $productId = (int)Database::lastInsertId();
+                }
+
+                // 2. Check or Create Product Variant
+                $existingVariant = Database::fetchOne(
+                    "SELECT id, sku FROM product_variants WHERE product_id = ? LIMIT 1",
+                    [$productId]
+                );
+
+                if ($existingVariant) {
+                    $variantId = (int)$existingVariant['id'];
+                } else {
+                    $sku = $prodCode . '-STD';
+                    Database::execute(
+                        "INSERT INTO product_variants
+                            (product_id, sku, hsn_code, purchase_price, production_cost, selling_price, is_active, created_at, updated_at)
+                         VALUES (?, ?, ?, ?, ?, ?, 1, NOW(), NOW())",
+                        [$productId, $sku, $hsnCode, $unitPrice, $unitPrice, $unitPrice]
+                    );
+                    $variantId = (int)Database::lastInsertId();
+                }
+
+                // 3. Increase Stock in Central Warehouse using StockService
+                if (empty($item['is_inwarded'])) {
+                    StockService::increase(
+                        variantId: $variantId,
+                        locationType: 'WAREHOUSE',
+                        locationId: $warehouseId,
+                        stockState: 'AVAILABLE',
+                        quantity: $rawQty,
+                        transactionType: 'PURCHASE_GRN',
+                        referenceType: 'production_purchases',
+                        referenceId: $purchaseId,
+                        userId: $userId,
+                        notes: "Supply Inward for PO #{$purchase['purchase_number']} ({$itemName}: {$rawQty} {$unit} @ ₹" . number_format($unitPrice, 2) . ")"
+                    );
+                }
+
+                // 4. Register supply QR codes in warehouse_qr_codes for system-wide scanability
+                $isIntQty = (floor($rawQty) === $rawQty);
+                $qtyInt = (int)$rawQty;
+                $pieceCount = ($isIntQty && $qtyInt >= 1 && $qtyInt <= 100) ? $qtyInt : 1;
+                $packQty = ($pieceCount === 1 && $rawQty > 1) ? (int)$rawQty : 1;
+
+                for ($p = 0; $p < $pieceCount; $p++) {
+                    $qrCode = sprintf('%s%02d', $prefix, $globalStickerIndex++);
+                    $existingQr = Database::fetchOne("SELECT id FROM warehouse_qr_codes WHERE qr_code = ?", [$qrCode]);
+                    if (!$existingQr) {
+                        Database::execute(
+                            "INSERT INTO warehouse_qr_codes
+                                (qr_code, variant_id, warehouse_id, created_by, inwarded_at, pack_quantity)
+                             VALUES (?, ?, ?, ?, NOW(), ?)",
+                            [$qrCode, $variantId, $warehouseId, $userId, $packQty]
+                        );
+                    } else {
+                        Database::execute(
+                            "UPDATE warehouse_qr_codes
+                             SET inwarded_at = NOW(), variant_id = ?, warehouse_id = ?
+                             WHERE id = ?",
+                            [$variantId, $warehouseId, (int)$existingQr['id']]
+                        );
+                    }
+                }
+
+                // 5. Update supply purchase item
+                Database::execute(
+                    "UPDATE production_purchase_items
+                     SET is_inwarded = 1, inwarded_at = NOW(), inwarded_by = ?, product_id = ?, variant_id = ?
+                     WHERE id = ?",
+                    [$userId, $productId, $variantId, (int)$item['id']]
+                );
+            }
+
+            // Check if all supplies in this purchase are now inwarded
+            $pendingCount = (int)(Database::fetchOne(
+                "SELECT COUNT(*) AS cnt FROM production_purchase_items
+                 WHERE purchase_id = ? AND item_type = 'GENERAL_SUPPLY' AND (is_inwarded = 0 OR is_inwarded IS NULL)",
+                [$purchaseId]
+            )['cnt'] ?? 0);
+
+            if ($pendingCount === 0) {
+                Database::execute(
+                    "UPDATE production_purchases SET is_inwarded = 1, inwarded_at = NOW() WHERE id = ?",
+                    [$purchaseId]
+                );
+            }
+
+            AuditService::log('production', 'INWARD', 'production_purchases', $purchaseId, null, [
+                'purchase_number' => $purchase['purchase_number'],
+                'items_inwarded'  => implode(', ', array_unique($inwardedItemNames)),
+                'total_qty'       => $totalInwardQty,
+                'warehouse_id'    => $warehouseId,
+                'warehouse_name'  => $whName,
+            ]);
+
+            Database::commit();
+
+            Session::flash('success', "Success! Supply product(s) (" . implode(', ', array_unique($inwardedItemNames)) . ") successfully inwarded and added to inventory (" . number_format($totalInwardQty) . " pcs added to {$whName}).");
+        } catch (\Throwable $e) {
+            Database::rollback();
+            error_log("Failed to inward supply purchase #{$purchaseId}: " . $e->getMessage());
+            Session::flash('error', 'Failed to inward supply products to inventory: ' . $e->getMessage());
+        }
+
+        Response::redirect(url('production/purchases/supply-qr/' . $purchaseId . ($selectedItemId > 0 ? '?item_id=' . $selectedItemId : '')));
     }
 
     /**

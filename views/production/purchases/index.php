@@ -176,6 +176,11 @@ $totalInwardQty = (int)array_sum(array_map(fn($r) => max(1, (int)($r['quantity']
                                     <span class="badge bg-secondary-subtle text-secondary border">
                                         <i class="bi bi-box me-1"></i><?= $supplyCount ?> <?= $supplyCount === 1 ? 'Supply' : 'Supplies' ?>
                                     </span>
+                                    <?php if (!empty($purchase['is_inwarded'])): ?>
+                                        <span class="badge bg-success-subtle text-success border border-success" title="Inwarded to inventory">
+                                            <i class="bi bi-check2-circle me-1"></i>Inwarded
+                                        </span>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                             </div>
                             <?php if ($rollItemCount > 0): 

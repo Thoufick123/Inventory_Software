@@ -311,9 +311,6 @@
                                         <button type="button" class="btn btn-action-icon btn-outline-primary" title="Edit Damage Record" aria-label="Edit Damage Record" onclick='openEditDamageModal(<?= json_encode($d) ?>)'>
                                             <i class="bi bi-pencil"></i>
                                         </button>
-                                        <button type="button" class="btn btn-action-icon btn-outline-success" title="Update Return / Refund / Resolution" aria-label="Update Return / Refund / Resolution" onclick='openResolveModal(<?= json_encode($d) ?>)'>
-                                            <i class="bi bi-patch-check"></i>
-                                        </button>
                                         <?php endif; ?>
                                         <?php if (hasPermission('damages', 'delete')): ?>
                                         <button type="button" class="btn btn-action-icon btn-outline-danger" title="Delete Damage Record" aria-label="Delete Damage Record" onclick="confirmDeleteDamage('<?= url('production/damages/delete/' . $d['id']) ?>', '<?= e(addslashes($d['damage_number'])) ?>')">
@@ -1266,8 +1263,7 @@ async function scanEditDamageRollQr() {
     }
     const scanInput = document.getElementById('editDamageRollQrScan');
     const scannedCode = scanInput ? scanInput.value.trim() : '';
-    const editForm = document.getElementById('editDamageForm');
-    const damageId = parseInt(editForm.dataset.damageId, 10) || 0;
+    const damageId = parseInt(editForm?.dataset?.damageId, 10) || 0;
     if (!scannedCode || editDamageRollScanInProgress) return;
     if (!damageId) {
         setEditDamageRollScanStatus('Open an existing damage record before scanning a roll.', true);
@@ -1865,15 +1861,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const qty = parseInt(document.getElementById('editDamagedQty').value) || 0;
             const photoInput = document.getElementById('editPhotoInput');
 
-            if (!sellerId) {
-                alert('Please choose a Material Supplier / Mill.');
-                e.preventDefault();
-                return false;
-            }
-            if (!rollId) {
-                alert('Please select a Defective Fabric Roll.');
-                e.preventDefault();
-                return false;
+            const isNonRollDamage = editForm.dataset.supplyDamage === '1' || !editForm.dataset.originalRollId || editForm.dataset.originalRollId === '0';
+            if (!isNonRollDamage) {
+                if (!sellerId) {
+                    alert('Please choose a Material Supplier / Mill.');
+                    e.preventDefault();
+                    return false;
+                }
+                if (!rollId) {
+                    alert('Please select a Defective Fabric Roll.');
+                    e.preventDefault();
+                    return false;
+                }
             }
             if (rollId && loadedEditRollsMap[rollId]) {
                 const m = getRollMetrics(loadedEditRollsMap[rollId]);

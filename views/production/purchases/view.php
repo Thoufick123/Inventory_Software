@@ -107,6 +107,9 @@
                     <td><?= $index + 1 ?></td>
                     <td>
                         <span class="badge <?= $item['item_type'] === 'FABRIC_ROLL' ? 'bg-primary-subtle text-primary' : 'bg-secondary-subtle text-secondary' ?>"><?= $item['item_type'] === 'FABRIC_ROLL' ? 'Fabric Roll' : 'Supply' ?></span>
+                        <?php if (!empty($item['is_inwarded'])): ?>
+                            <span class="badge bg-success-subtle text-success border border-success ms-1" title="Inwarded to inventory on <?= !empty($item['inwarded_at']) ? date('d M Y', strtotime($item['inwarded_at'])) : 'Completed' ?>"><i class="bi bi-check2 me-1"></i>Inwarded</span>
+                        <?php endif; ?>
                         <strong class="d-block"><?= e($item['item_name']) ?></strong>
                         <?php if ($item['item_type'] === 'FABRIC_ROLL'): ?>
                             <small class="text-muted"><?= e($item['roll_number'] ?: '—') ?> · <?= e($item['color'] ?: '—') ?> · <?= e($item['design_name'] ?: '—') ?></small>

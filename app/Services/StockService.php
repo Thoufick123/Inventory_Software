@@ -426,6 +426,70 @@ class StockService {
     }
 
     /**
+     * Get available stock balance for a variant at a specific location.
+     */
+    public static function getAvailable(int $variantId, string $locationType, int $locationId): float {
+        return self::getBalance($variantId, $locationType, $locationId, 'AVAILABLE');
+    }
+
+    /**
+     * Move stock between locations and/or stock states.
+     */
+    public static function move(
+        int $variantId,
+        string $fromLocationType,
+        int $fromLocationId,
+        string $fromStockState,
+        string $toLocationType,
+        int $toLocationId,
+        string $toStockState,
+        float $quantity,
+        string $transactionType = 'TRANSFER',
+        ?string $referenceType = null,
+        ?int $referenceId = null,
+        ?int $userId = null,
+        ?string $notes = null
+    ): bool {
+        if ($quantity <= 0) {
+            return true;
+        }
+
+        Database::beginTransaction();
+        try {
+            $fromBal = self::getBalanceLocked($variantId, $fromLocationType, $fromLocationId, $fromStockState);
+            if ($fromBal < $quantity) {
+                $quantity = max(0.0, $fromBal);
+                if ($quantity <= 0.0) {
+                    Database::commit();
+                    return true;
+                }
+            }
+
+            self::upsertBalance($variantId, $fromLocationType, $fromLocationId, $fromStockState, -$quantity);
+            self::upsertBalance($variantId, $toLocationType, $toLocationId, $toStockState, $quantity);
+
+            Database::execute(
+                "INSERT INTO stock_transactions 
+                 (variant_id, from_location_type, from_location_id, to_location_type, to_location_id, 
+                  transaction_type, quantity, reference_type, reference_id, created_by, notes)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    $variantId, $fromLocationType, $fromLocationId, $toLocationType, $toLocationId,
+                    $transactionType, $quantity, $referenceType, $referenceId,
+                    $userId ?? (Session::userId() ?? 1),
+                    $notes ?: "Moved $quantity pcs from $fromStockState to $toStockState"
+                ]
+            );
+
+            Database::commit();
+            return true;
+        } catch (\Throwable $e) {
+            Database::rollback();
+            throw $e;
+        }
+    }
+
+    /**
      * Get all stock balances for a location.
      */
     public static function getStockByLocation(string $locationType, int $locationId, array $filters = []): array {
