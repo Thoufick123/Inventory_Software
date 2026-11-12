@@ -1521,8 +1521,8 @@ class WarehouseService {
         if (!in_array($adjustmentType, ['INCREASE', 'DECREASE'], true)) {
             throw new InvalidArgumentException('Select either Stock Increase or Stock Decrease.');
         }
-        if (!is_array($qrCodes) || empty($qrCodes)) {
-            throw new InvalidArgumentException('QR code list is missing. Scan the required codes and try again.');
+        if (!is_array($qrCodes)) {
+            throw new InvalidArgumentException('The QR code list is invalid.');
         }
         if (trim((string)($data['reason'] ?? '')) === '') {
             throw new InvalidArgumentException('Select a reason for this stock adjustment.');
@@ -1555,41 +1555,54 @@ class WarehouseService {
             }
 
             if ($adjustmentType === 'INCREASE') {
-                $preview = self::buildAdjustmentIncreaseQrPreview($variantId, $warehouseId, $quantity);
-                $expectedQrCodes = array_column($preview['tags'], 'tag_code');
-                if ($normalizedQrCodes !== $expectedQrCodes) {
-                    throw new DomainException('The QR sequence changed after preview. Generate a fresh preview and save again.');
+                $variantQrMode = Database::fetchOne(
+                    "SELECT pv.qr_type, pv.series_start_code, pv.pack_quantity, pv.is_complementary,
+                            p.is_complementary AS product_is_complementary,
+                            COALESCE(wc.category_type, 'NORMAL') AS category_type
+                     FROM product_variants pv
+                     JOIN products p ON p.id = pv.product_id
+                     LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+                     WHERE pv.id = ?",
+                    [$variantId]
+                );
+                if (!$variantQrMode) {
+                    throw new RuntimeException('The selected product variant is unavailable.');
                 }
-
-                foreach ($preview['tags'] as $tag) {
-                    Database::execute(
-                        "INSERT INTO warehouse_qr_codes
-                         (qr_code, variant_id, warehouse_id, pack_quantity, series_end_code, created_by, inwarded_at, is_extra, extra_reason)
-                         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1, ?)",
-                        [
-                            $tag['tag_code'],
-                            $variantId,
-                            $warehouseId,
-                            $tag['pack_quantity'],
-                            $tag['series_end_code'],
-                            $userId > 0 ? $userId : null,
-                            "Stock Adjustment Increase (+{$tag['quantity']} pcs)",
-                        ]
-                    );
-                }
-
-                if ($preview['is_series_or_complementary'] && !empty($preview['tags'])) {
-                    $currentStart = trim((string)($variantLock['series_start_code'] ?? ''));
-                    if ($currentStart === '' || ctype_digit($currentStart)) {
-                        $currentStart = $preview['tags'][0]['tag_code'];
+                if (self::isSeriesOrComplementaryVariant($variantQrMode)) {
+                    if (!empty($normalizedQrCodes)) {
+                        throw new InvalidArgumentException('Series and complementary stock increases do not generate new QR labels.');
                     }
-                    $lastTag = end($preview['tags']);
-                    Database::execute(
-                        "UPDATE product_variants SET series_start_code = ?, series_end_code = ? WHERE id = ?",
-                        [$currentStart, $lastTag['series_end_code'], $variantId]
-                    );
+                } else {
+                    if (empty($normalizedQrCodes)) {
+                        throw new InvalidArgumentException('Generate and confirm the QR preview before increasing normal-product stock.');
+                    }
+                    $preview = self::buildAdjustmentIncreaseQrPreview($variantId, $warehouseId, $quantity);
+                    $expectedQrCodes = array_column($preview['tags'], 'tag_code');
+                    if ($normalizedQrCodes !== $expectedQrCodes) {
+                        throw new DomainException('The QR sequence changed after preview. Generate a fresh preview and save again.');
+                    }
+
+                    foreach ($preview['tags'] as $tag) {
+                        Database::execute(
+                            "INSERT INTO warehouse_qr_codes
+                             (qr_code, variant_id, warehouse_id, pack_quantity, series_end_code, created_by, inwarded_at, is_extra, extra_reason)
+                             VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1, ?)",
+                            [
+                                $tag['tag_code'],
+                                $variantId,
+                                $warehouseId,
+                                $tag['pack_quantity'],
+                                $tag['series_end_code'],
+                                $userId > 0 ? $userId : null,
+                                "Stock Adjustment Increase (+{$tag['quantity']} pcs)",
+                            ]
+                        );
+                    }
                 }
             } else {
+                if (empty($normalizedQrCodes)) {
+                    throw new InvalidArgumentException('Scan the existing QR codes to remove before decreasing stock.');
+                }
                 self::validateAdjustmentQrCodes($variantId, $warehouseId, $normalizedQrCodes, $quantity);
             }
 
@@ -1641,18 +1654,11 @@ class WarehouseService {
             throw new RuntimeException('The selected product variant is unavailable.');
         }
 
-        $categoryType = strtoupper((string)($variant['category_type'] ?? ''));
-        $isComplementary = !empty($variant['is_complementary'])
-            || !empty($variant['product_is_complementary'])
-            || $categoryType === 'COMPLEMENTARY';
-        $isSeries = in_array(strtoupper((string)($variant['qr_type'] ?? '')), ['SERIES', 'SERIES_BATCH'], true)
-            || $categoryType === 'SERIES';
-        $isSeriesOrComplementary = $isSeries || $isComplementary;
-        $packQuantity = $isSeriesOrComplementary ? max(1, (int)($variant['pack_quantity'] ?? 1)) : 1;
-        if ($quantity % $packQuantity !== 0) {
-            throw new InvalidArgumentException("Increase quantity must be a multiple of the product pack size ({$packQuantity} pcs).");
+        if (self::isSeriesOrComplementaryVariant($variant)) {
+            throw new InvalidArgumentException('Series and complementary stock increases change the quantity only; no new QR labels are generated.');
         }
-        $labelCount = (int)($quantity / $packQuantity);
+        $packQuantity = 1;
+        $labelCount = $quantity;
         if ($labelCount > 500) {
             throw new InvalidArgumentException('A maximum of 500 QR labels can be generated per adjustment.');
         }
@@ -1791,10 +1797,19 @@ class WarehouseService {
             'variant_id' => $variantId,
             'warehouse_id' => $warehouseId,
             'quantity' => $quantity,
-            'is_series_or_complementary' => $isSeriesOrComplementary,
+            'is_series_or_complementary' => false,
             'pack_quantity' => $packQuantity,
             'tags' => $tags,
         ];
+    }
+
+    private static function isSeriesOrComplementaryVariant(array $variant): bool {
+        return in_array(strtoupper((string)($variant['qr_type'] ?? '')), ['SERIES', 'SERIES_BATCH'], true)
+            || in_array(strtoupper((string)($variant['category_type'] ?? '')), ['SERIES', 'COMPLEMENTARY'], true)
+            || !empty($variant['series_start_code'])
+            || !empty($variant['is_complementary'])
+            || !empty($variant['product_is_complementary'])
+            || (int)($variant['pack_quantity'] ?? 1) > 1;
     }
 
     /**

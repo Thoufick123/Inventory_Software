@@ -13,6 +13,8 @@
     const productScanMessage = document.getElementById('adjustmentProductScanMessage');
     const productDetails = document.getElementById('adjustmentProductDetails');
     const increaseControls = document.getElementById('adjustmentIncreaseControls');
+    const generateQrControls = document.getElementById('adjustmentGenerateQrControls');
+    const countOnlyNotice = document.getElementById('adjustmentCountOnlyNotice');
     const decreaseControls = document.getElementById('adjustmentDecreaseControls');
     const decreaseScanInput = document.getElementById('adjustmentDecreaseScanInput');
     const decreaseScanButton = document.getElementById('adjustmentDecreaseScanButton');
@@ -71,11 +73,19 @@
         if (typeSelect.value === 'INCREASE') qrCodesInput.value = '[]';
     }
 
+    function updateIncreaseMode() {
+        const countOnly = typeSelect.value === 'INCREASE'
+            && Boolean(currentProduct && currentProduct.is_series_or_complementary);
+        generateQrControls.classList.toggle('d-none', countOnly);
+        countOnlyNotice.classList.toggle('d-none', !countOnly);
+    }
+
     function setTypeState() {
         const isDecrease = typeSelect.value === 'DECREASE';
         typeValue.value = typeSelect.value;
         increaseControls.classList.toggle('d-none', isDecrease);
         decreaseControls.classList.toggle('d-none', !isDecrease);
+        updateIncreaseMode();
         quantityInput.readOnly = isDecrease;
         quantityInput.title = isDecrease ? 'Quantity is set by the scanned QR code(s).' : '';
         scannedTags.splice(0, scannedTags.length);
@@ -104,6 +114,7 @@
         try {
             const result = await lookupProduct(code);
             currentProduct = result.variant;
+            updateIncreaseMode();
             variantIdInput.value = currentProduct.id;
             productDetails.classList.remove('d-none');
             document.getElementById('adjustmentProductName').textContent = currentProduct.product_name;
@@ -133,6 +144,7 @@
             else quantityInput.focus();
         } catch (error) {
             currentProduct = null;
+            updateIncreaseMode();
             variantIdInput.value = '';
             productDetails.classList.add('d-none');
             showMessage(productScanMessage, error.message || 'Product lookup failed.', true);
@@ -151,6 +163,7 @@
 
     warehouseSelect.addEventListener('change', () => {
         currentProduct = null;
+        updateIncreaseMode();
         variantIdInput.value = '';
         productDetails.classList.add('d-none');
         scannedTags.splice(0, scannedTags.length);
@@ -204,6 +217,10 @@
         const quantity = Number(quantityInput.value);
         if (!currentProduct) {
             showMessage(previewMessage, 'Scan a product before generating QR labels.', true);
+            return;
+        }
+        if (currentProduct.is_series_or_complementary) {
+            showMessage(previewMessage, 'Series and complementary stock increases do not generate new QR labels.', true);
             return;
         }
         if (!Number.isInteger(quantity) || quantity <= 0) {
@@ -277,7 +294,7 @@
             productScanInput.focus();
             return;
         }
-        if (typeSelect.value === 'INCREASE' && !previewedCodes.length) {
+        if (typeSelect.value === 'INCREASE' && !currentProduct.is_series_or_complementary && !previewedCodes.length) {
             event.preventDefault();
             showMessage(previewMessage, 'Generate the QR preview before saving a stock increase.', true);
             previewButton.focus();
