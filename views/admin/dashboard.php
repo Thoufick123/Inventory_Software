@@ -1040,7 +1040,6 @@
                 <div class="row g-3 mb-3">
                     <div class="col-md-6">
                         <div class="p-3 bg-light rounded border h-100">
-                            <img id="facilityDetailLogo" class="d-none rounded border bg-white p-1 mb-2" alt="Facility logo" style="width:72px;height:72px;object-fit:contain;">
                             <div class="text-muted small fw-semibold text-uppercase mb-2"><i class="bi bi-card-text me-1"></i>Basic Information</div>
                             <div class="mb-2">
                                 <span class="text-muted small d-block">Facility / Unit Name:</span>
@@ -1644,40 +1643,30 @@ function viewFacilityDetails(type, data) {
     const phone = document.getElementById('facilityDetailPhone');
     const address = document.getElementById('facilityDetailAddress');
     const logoContainer = document.getElementById('facilityDetailLogoContainer');
-    const logoImage = document.getElementById('facilityDetailLogo');
     const metricsTitle = document.getElementById('facilityMetricsTitle');
     const metricsCont = document.getElementById('facilityMetricsContainer');
 
     const logoUrl = typeof data.logo_url === 'string' ? data.logo_url.trim() : '';
-    logoContainer.classList.toggle('d-none', !logoUrl);
-    if (logoUrl) {
-        logoImage.src = logoUrl;
-        logoImage.alt = `${data.name || 'Facility'} logo`;
-    } else {
-        logoImage.removeAttribute('src');
-        logoImage.alt = 'Facility logo';
-    }
-
     name.textContent = data.name || '-';
     code.textContent = data.code || '-';
     gst.textContent = data.gst_number || 'N/A';
     manager.textContent = data.manager_name || 'Unassigned';
     phone.textContent = data.phone || 'N/A';
     address.textContent = data.address || 'No address specified';
-    logo.classList.add('d-none');
     logo.removeAttribute('src');
-    const logoUrl = String(data.logo_url || '').trim();
+    logo.onerror = null;
+    logoContainer.classList.add('d-none');
     if (logoUrl) {
         try {
             const parsedLogoUrl = new URL(logoUrl, window.location.href);
             if (parsedLogoUrl.protocol === 'http:' || parsedLogoUrl.protocol === 'https:') {
                 logo.src = parsedLogoUrl.href;
                 logo.alt = `${data.name || 'Facility'} logo`;
-                logo.classList.remove('d-none');
-                logo.onerror = () => logo.classList.add('d-none');
+                logoContainer.classList.remove('d-none');
+                logo.onerror = () => logoContainer.classList.add('d-none');
             }
         } catch (error) {
-            logo.classList.add('d-none');
+            logoContainer.classList.add('d-none');
         }
     }
 
