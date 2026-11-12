@@ -621,6 +621,7 @@ let HSN_OPTIONS = <?= json_encode(array_values(array_map(function($h) {
 }, $hsnCodes ?? [])), JSON_UNESCAPED_UNICODE) ?>;
 const EXISTING_SUPPLIER_PRODUCTS = <?= json_encode($existingSupplierProducts ?? [], JSON_UNESCAPED_UNICODE) ?>;
 const HAS_ACTIVE_WAREHOUSE = <?= empty($warehouses) ? 'false' : 'true' ?>;
+const SUPPLIER_INDEX_URL = <?= json_encode(url('warehouse/sellers')) ?>;
 
 // Array of active inward products
 let addedProductsList = [];
@@ -2409,6 +2410,7 @@ async function submitFinalProducts() {
     if (addedProductsList.length === 0) {
         updateFinalSaveButtonState();
         showSupplierToast('Saved', 'Supplier product changes saved successfully.', 'success');
+        window.setTimeout(() => window.location.assign(SUPPLIER_INDEX_URL), 800);
         return;
     }
 
