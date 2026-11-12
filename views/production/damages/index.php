@@ -187,9 +187,10 @@
                                 <!-- Roll / Product Details, Photo & QR Code -->
                                 <td>
                                     <?php 
-                                        $isProductDamage = (($d['item_type'] ?? '') === 'PRODUCT' || !empty($d['product_id']) || !empty($d['variant_id']) || empty($d['seller_roll_id']));
+                                        $isSupplyDamage = (bool)preg_match('/^SP\d+/i', (string)($d['qr_code'] ?? ''));
+                                        $isProductDamage = $isSupplyDamage || (($d['item_type'] ?? '') === 'PRODUCT' || !empty($d['product_id']) || !empty($d['variant_id']) || empty($d['seller_roll_id']));
                                         $qrCodeVal = !empty($d['qr_code']) ? $d['qr_code'] : (!empty($d['roll_qr_code']) ? $d['roll_qr_code'] : (!empty($d['roll_start_code']) ? $d['roll_start_code'] : ($d['roll_number'] ?? 'QR')));
-                                        $displayName = $isProductDamage ? (!empty($d['product_name']) ? $d['product_name'] : ($d['catalog_product_name'] ?: 'Garment Product')) : ($d['roll_number'] ?: 'Fabric Roll');
+                                        $displayName = $isProductDamage ? (!empty($d['product_name']) ? $d['product_name'] : ($d['catalog_product_name'] ?: ($isSupplyDamage ? 'Garment Supply' : 'Garment Product'))) : ($d['roll_number'] ?: 'Fabric Roll');
                                         $supplierOrOrigin = !empty($d['seller_company']) ? $d['seller_company'] : (!empty($d['seller_name']) ? $d['seller_name'] : 'Production Floor');
                                     ?>
                                     <div class="d-flex align-items-center gap-2">
@@ -248,8 +249,13 @@
 
                                 <!-- Damaged Qty & Weight -->
                                 <td class="text-end">
-                                    <div class="fw-bold text-danger"><?= number_format($d['damaged_weight'], 2) ?> kg</div>
-                                    <small class="text-muted"><?= (int)$d['damaged_quantity'] ?> <?= $isProductDamage ? 'Pc(s)' : 'Roll(s)' ?></small>
+                                    <?php if ($isSupplyDamage): ?>
+                                        <div class="fw-bold text-dark"><?= (int)$d['damaged_quantity'] ?> Pc(s)</div>
+                                        <small class="text-muted">Supply Item</small>
+                                    <?php else: ?>
+                                        <div class="fw-bold text-danger"><?= number_format($d['damaged_weight'], 2) ?> kg</div>
+                                        <small class="text-muted"><?= (int)$d['damaged_quantity'] ?> <?= $isProductDamage ? 'Pc(s)' : 'Roll(s)' ?></small>
+                                    <?php endif; ?>
                                 </td>
 
                                 <!-- Loss Valuation -->
@@ -399,7 +405,7 @@
                         </div>
 
                         <!-- Damaged Weight (Disabled with clear visibility - Auto-calculated) -->
-                        <div class="col-md-6" id="damageWeightSummary">
+                        <div class="col-md-6">
                             <label class="form-label fw-bold text-dark">
                                 Damaged Weight <span class="badge bg-secondary-subtle text-secondary border ms-1">Auto</span>
                             </label>
@@ -411,9 +417,9 @@
                         </div>
 
                         <!-- Estimated Loss Valuation (Disabled with clear visibility - Auto-calculated) -->
-                        <div class="col-md-6" id="damageLossSummary">
+                        <div class="col-md-6">
                             <label class="form-label fw-bold text-danger">
-                                <i class="bi bi-currency-rupee me-1"></i><span id="reportLossLabel">Estimated Loss Valuation</span> <span class="badge bg-danger-subtle text-danger border ms-1">Auto</span>
+                                <i class="bi bi-currency-rupee me-1"></i>Estimated Loss Valuation <span class="badge bg-danger-subtle text-danger border ms-1">Auto</span>
                             </label>
                             <div class="input-group">
                                 <span class="input-group-text bg-danger-subtle text-danger fw-bold">₹</span>
@@ -474,7 +480,7 @@
                     </div>
 
                     <div class="row g-3">
-                        <div class="col-12">
+                        <div class="col-12" id="editDamageRollScanner">
                             <div class="p-3 bg-light rounded-3 border">
                                 <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
                                     <label for="editDamageRollQrScan" class="form-label fw-bold mb-0">
@@ -560,7 +566,7 @@
                             </div>
                         </div>
 
-                        <div class="col-md-6">
+                        <div class="col-md-6" id="editDamageWeightSummary">
                             <label class="form-label fw-bold text-dark">
                                 Damaged Weight <span class="badge bg-secondary-subtle text-secondary border ms-1">Auto</span>
                             </label>
@@ -571,9 +577,9 @@
                             <small class="text-muted d-block mt-1" id="editWeightHelp">Rate: ₹0.00 / kg</small>
                         </div>
 
-                        <div class="col-md-6">
+                        <div class="col-md-6" id="editDamageLossSummary">
                             <label class="form-label fw-bold text-danger">
-                                <i class="bi bi-currency-rupee me-1"></i>Estimated Loss Valuation <span class="badge bg-danger-subtle text-danger border ms-1">Auto</span>
+                                <i class="bi bi-currency-rupee me-1"></i><span id="editDamageLossLabel">Estimated Loss Valuation</span> <span class="badge bg-danger-subtle text-danger border ms-1">Auto</span>
                             </label>
                             <div class="input-group">
                                 <span class="input-group-text bg-danger-subtle text-danger fw-bold">₹</span>
@@ -873,8 +879,8 @@ function renderDamageScannedLabels() {
 
     let totalWeight = 0;
     let totalLoss = 0;
-    let supplyCount = 0;
     damageScannedLabels.forEach((item, index) => {
+        totalWeight += item.weight;
         totalLoss += item.loss;
 
         const row = document.createElement('div');
@@ -890,8 +896,6 @@ function renderDamageScannedLabels() {
 
         const isProd = (item.itemType === 'PRODUCT');
         const isSupply = (item.damageKind === 'SUPPLY');
-        if (!isSupply) totalWeight += item.weight;
-        else supplyCount++;
         const typeBadge = document.createElement('span');
         typeBadge.className = `badge ${isSupply ? 'bg-info-subtle text-info' : (isProd ? 'bg-primary-subtle text-primary' : 'bg-secondary-subtle text-secondary')} border me-1`;
         typeBadge.textContent = isSupply ? 'Supply' : (isProd ? 'Product' : 'Roll');
@@ -990,33 +994,13 @@ function renderDamageScannedLabels() {
     });
 
     document.getElementById('inputDamagedWeight').value = totalWeight.toFixed(2);
-    const nonSupplyCount = damageScannedLabels.length - supplyCount;
-    const suppliesOnly = supplyCount > 0 && nonSupplyCount === 0;
-    const weightSummary = document.getElementById('damageWeightSummary');
-    const lossSummary = document.getElementById('damageLossSummary');
-    const lossLabel = document.getElementById('reportLossLabel');
-    if (weightSummary) weightSummary.classList.toggle('d-none', suppliesOnly);
-    if (lossSummary) {
-        lossSummary.classList.toggle('col-md-6', !suppliesOnly);
-        lossSummary.classList.toggle('col-12', suppliesOnly);
-    }
-    if (lossLabel) lossLabel.textContent = suppliesOnly ? 'Estimated Supply Loss Amount' : 'Estimated Loss Valuation';
-
     document.getElementById('inputEstimatedLoss').value = totalLoss.toFixed(2);
     const weightHelp = document.getElementById('reportWeightHelp');
-    if (weightHelp) weightHelp.textContent = supplyCount > 0
-        ? `Weight excludes ${supplyCount} purchased supply label(s)`
-        : `${damageScannedLabels.length} scanned item(s)`;
+    if (weightHelp) weightHelp.textContent = `${damageScannedLabels.length} scanned item(s)`;
     const rateBadge = document.getElementById('reportRateBadge');
-    if (rateBadge) rateBadge.textContent = suppliesOnly
-        ? 'Purchase cost'
-        : (supplyCount > 0 ? 'Mixed items' : (totalWeight > 0 ? `₹${(totalLoss / totalWeight).toFixed(2)} / kg` : '₹0.00 / kg'));
+    if (rateBadge) rateBadge.textContent = totalWeight > 0 ? `₹${(totalLoss / totalWeight).toFixed(2)} / kg` : '₹0.00 / kg';
     const lossHelp = document.getElementById('reportLossCalcHelp');
-    if (lossHelp) lossHelp.textContent = suppliesOnly
-        ? `Purchase valuation for ${supplyCount} supply label(s): ₹${totalLoss.toFixed(2)}`
-        : (supplyCount > 0
-            ? `Includes purchase value for ${supplyCount} supply label(s): ₹${totalLoss.toFixed(2)}`
-            : `Estimated loss for ${damageScannedLabels.length} scanned item(s): ₹${totalLoss.toFixed(2)}`);
+    if (lossHelp) lossHelp.textContent = `Estimated loss for ${damageScannedLabels.length} scanned item(s): ₹${totalLoss.toFixed(2)}`;
 }
 
 function scanDamageRollQr() {
@@ -1155,29 +1139,81 @@ function openEditDamageModal(damageData) {
     editDamageRollScanRequestId++;
     editDamageRollScanInProgress = false;
     const editForm = document.getElementById('editDamageForm');
+    const isSupplyDamage = Boolean(
+        (damageData.qr_code && /^SP\d+/i.test(String(damageData.qr_code).trim())) ||
+        (damageData.item_type === 'PRODUCT' && !damageData.seller_roll_id && !damageData.product_id && !damageData.variant_id) ||
+        (damageData.item_type === 'SUPPLY')
+    );
     editForm.action = '<?= url('production/damages/update') ?>/' + damageData.id;
     editForm.dataset.damageId = String(damageData.id);
     editForm.dataset.originalRollId = String(damageData.seller_roll_id || '');
     editForm.dataset.qrLinked = damageData.qr_code ? '1' : '0';
+    editForm.dataset.supplyDamage = isSupplyDamage ? '1' : '0';
+
+    // Show/hide roll scanner and weight based on whether it is a supply
+    const scannerEl = document.getElementById('editDamageRollScanner');
+    if (scannerEl) scannerEl.classList.toggle('d-none', isSupplyDamage);
+
+    const weightEl = document.getElementById('editDamageWeightSummary');
+    if (weightEl) weightEl.classList.toggle('d-none', isSupplyDamage);
+
+    const lossSummary = document.getElementById('editDamageLossSummary');
+    if (lossSummary) {
+        lossSummary.classList.toggle('col-md-6', !isSupplyDamage);
+        lossSummary.classList.toggle('col-12', isSupplyDamage);
+    }
+
+    const lossLabel = document.getElementById('editDamageLossLabel');
+    if (lossLabel) {
+        lossLabel.textContent = isSupplyDamage ? 'Estimated Supply Loss Amount' : 'Estimated Loss Valuation';
+    }
+
     const scanInput = document.getElementById('editDamageRollQrScan');
-    if (scanInput) scanInput.value = '';
+    if (scanInput) {
+        scanInput.value = '';
+        scanInput.disabled = isSupplyDamage;
+    }
+
     setEditDamageRollScanStatus(
-        damageData.qr_code
-            ? 'This QR-linked damage record must remain assigned to its original roll.'
-            : 'Scan a roll QR to select the roll for this existing damage record.'
+        isSupplyDamage
+            ? 'Purchased supply damage record. Its purchase valuation is preserved when editing.'
+            : (damageData.qr_code
+                ? 'This QR-linked damage record must remain assigned to its original roll.'
+                : 'Scan a roll QR to select the roll for this existing damage record.')
     );
+
     document.getElementById('editDamageNo').textContent = damageData.damage_number;
     document.getElementById('editDamageStatus').textContent = damageData.status;
 
-    document.getElementById('editSellerSelect').value = damageData.seller_id;
-    document.getElementById('editReasonSelect').value = damageData.damage_reason;
+    document.getElementById('editSellerSelect').value = damageData.seller_id || '';
+    document.getElementById('editReasonSelect').value = damageData.damage_reason || '';
     document.getElementById('editDamagedQty').value = damageData.damaged_quantity || 1;
     document.getElementById('editDamagedWeight').value = parseFloat(damageData.damaged_weight || 0).toFixed(2);
-    document.getElementById('editEstimatedLoss').value = parseFloat(damageData.loss_amount || 0).toFixed(2);
+    
+    const savedLoss = parseFloat(damageData.loss_amount || 0).toFixed(2);
+    document.getElementById('editEstimatedLoss').value = savedLoss;
     document.getElementById('editDefectNotes').value = damageData.defect_notes || '';
     document.getElementById('editDamageLabelCode').textContent =
         damageData.qr_code || damageData.roll_number || damageData.damage_number || 'Existing damage item';
-    updateEditDamageLabelMeta(damageData.seller_name, damageData.roll_number);
+
+    const rateBadge = document.getElementById('editRateBadge');
+    const lossHelp = document.getElementById('editLossCalcHelp');
+    const weightHelp = document.getElementById('editWeightHelp');
+
+    if (isSupplyDamage) {
+        if (rateBadge) rateBadge.textContent = 'Purchase cost';
+        if (weightHelp) weightHelp.textContent = 'Purchased supply has no weight recorded';
+        if (lossHelp) lossHelp.textContent = `Purchase valuation: ₹${savedLoss}`;
+        const meta = document.getElementById('editDamageLabelMeta');
+        if (meta) {
+            meta.textContent = [damageData.variant_info, damageData.roll_number, '₹' + savedLoss].filter(Boolean).join(' • ');
+        }
+    } else {
+        if (rateBadge) rateBadge.textContent = '₹0.00 / kg';
+        if (weightHelp) weightHelp.textContent = 'Rate: ₹0.00 / kg';
+        if (lossHelp) lossHelp.textContent = 'Calculated from roll rate';
+        updateEditDamageLabelMeta(damageData.seller_name, damageData.roll_number);
+    }
 
     // Photo preview
     const photoBox = document.getElementById('editCurrentPhotoBox');
@@ -1199,14 +1235,17 @@ function openEditDamageModal(damageData) {
         if (photoReqStar) photoReqStar.style.display = '';
     }
 
-    if (scanInput) scanInput.disabled = true;
-    loadSupplierRollsForEdit(damageData.seller_id, damageData.seller_roll_id, damageData.id)
-        .finally(() => {
-            if (scanInput) {
-                scanInput.disabled = false;
-                if (document.getElementById('editDamageModal').classList.contains('show')) scanInput.focus();
-            }
-        });
+    // IMPORTANT: Only load supplier rolls if it is a FABRIC ROLL (never for supplies!)
+    if (!isSupplyDamage && damageData.seller_id) {
+        if (scanInput) scanInput.disabled = true;
+        loadSupplierRollsForEdit(damageData.seller_id, damageData.seller_roll_id, damageData.id)
+            .finally(() => {
+                if (scanInput) {
+                    scanInput.disabled = false;
+                    if (document.getElementById('editDamageModal').classList.contains('show')) scanInput.focus();
+                }
+            });
+    }
 
     const modal = new bootstrap.Modal(document.getElementById('editDamageModal'));
     modal.show();
@@ -1220,6 +1259,11 @@ function setEditDamageRollScanStatus(message, isError = false) {
 }
 
 async function scanEditDamageRollQr() {
+    const editForm = document.getElementById('editDamageForm');
+    if (editForm && editForm.dataset.supplyDamage === '1') {
+        setEditDamageRollScanStatus('This is a purchased supply record; roll scanning is not applicable.', true);
+        return;
+    }
     const scanInput = document.getElementById('editDamageRollQrScan');
     const scannedCode = scanInput ? scanInput.value.trim() : '';
     const editForm = document.getElementById('editDamageForm');
@@ -1712,13 +1756,6 @@ function initQuickAddHsnModalHandler() {
 
 // Client-side form submit validation
 document.addEventListener('DOMContentLoaded', () => {
-    ['reportDamageModal', 'editDamageModal', 'resolveModal', 'damageQrModal', 'modalConfirmDeleteDamage'].forEach(modalId => {
-        const modalElement = document.getElementById(modalId);
-        if (modalElement && modalElement.parentElement !== document.body) {
-            document.body.appendChild(modalElement);
-        }
-    });
-
     const replBox = document.getElementById('fieldReplacementBox');
     if (replBox) {
         initHsnDropdown(replBox, '#inputReplacementHsn');
@@ -1728,7 +1765,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const editRollScanInput = document.getElementById('editDamageRollQrScan');
     if (editRollScanInput) {
         const editModal = document.getElementById('editDamageModal');
-        editModal.addEventListener('shown.bs.modal', () => editRollScanInput.focus());
+        editModal.addEventListener('shown.bs.modal', () => {
+            if (document.getElementById('editDamageForm')?.dataset.supplyDamage !== '1') {
+                editRollScanInput.focus();
+            }
+        });
         editModal.addEventListener('hidden.bs.modal', () => {
             editDamageRollScanRequestId++;
             editDamageRollScanInProgress = false;

@@ -1955,7 +1955,9 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
                 const isReq = attr.is_required == 1;
                 const isSize = /^(SIZE|SIZES)$/i.test(attr.attr_name.trim());
                 const isColor = /^(COLOR|COLORS)$/i.test(attr.attr_name.trim());
-                const cleanAttrName = isSize ? 'SIZE' : (isColor ? 'COLOR' : attr.attr_name.replace(/[^a-zA-Z0-9_]/g, '_'));
+                // Fabric roll colors are tracked per-roll on the roll card, skip rendering COLOR attribute in roll cutting attributes
+                if (isColor) return;
+                const cleanAttrName = isSize ? 'SIZE' : attr.attr_name.replace(/[^a-zA-Z0-9_]/g, '_');
                 const opts = attr.attr_options ? attr.attr_options.split(',').map(s => s.trim()).filter(Boolean) : [];
 
                 // Skip empty select/multi_select attributes with no options
