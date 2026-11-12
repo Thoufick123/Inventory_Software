@@ -285,19 +285,31 @@
                 </a>
 
                 <?php if ($isAllInwarded): ?>
-                    <span class="badge bg-success-subtle text-success border border-success px-2.5 py-1.5 fw-bold d-inline-flex align-items-center gap-1 shadow-xs" title="Supplies inwarded to inventory on <?= !empty($purchase['inwarded_at']) ? date('d M Y, h:i A', strtotime($purchase['inwarded_at'])) : 'Completed' ?>">
-                        <i class="bi bi-check-circle-fill text-success"></i> Inwarded to Inventory
+                    <span class="badge bg-success-subtle text-success border border-success px-2.5 py-1.5 fw-bold d-inline-flex align-items-center gap-1 shadow-xs" title="All <?= count($stickers) ?> supplies inwarded to inventory">
+                        <i class="bi bi-check-circle-fill text-success"></i> Inwarded to Inventory (<?= (int)($inwardedCount ?? count($stickers)) ?>/<?= count($stickers) ?>)
                     </span>
+                    <a href="<?= url('production/inventory') ?>" class="btn btn-outline-success btn-sm fw-bold">
+                        <i class="bi bi-box-seam me-1"></i> View in Inventory
+                    </a>
                 <?php else: ?>
                     <form method="POST" action="<?= url('production/purchases/supply-inward/' . $purchase['id']) ?>" class="d-inline" id="supplyInwardForm" onsubmit="return confirmInwardSupplies(event);">
                         <?= CSRF::field() ?>
                         <?php if ($selectedItemId > 0): ?>
                             <input type="hidden" name="item_id" value="<?= $selectedItemId ?>">
                         <?php endif; ?>
+                        <input type="hidden" name="selected_qr_codes" id="inwardSelectedQrCodes" value="">
                         <button type="submit" class="btn btn-success btn-sm fw-bold shadow-sm d-inline-flex align-items-center gap-1" id="btnMoveToInward" <?= $canManageSupplies ? '' : 'disabled style="opacity: 0.5; cursor: not-allowed;" title="Action disabled in view-only access"' ?>>
-                            <i class="bi bi-box-arrow-in-down"></i> Move to Inward
+                            <i class="bi bi-box-arrow-in-down"></i> <span id="btnMoveToInwardText">Move to Inward (<?= (int)($pendingInwardCount ?? count($stickers)) ?>)</span>
                         </button>
                     </form>
+                    <?php if (($inwardedCount ?? 0) > 0): ?>
+                        <span class="badge bg-success-subtle text-success border border-success px-2 py-1 small fw-semibold" title="<?= (int)$inwardedCount ?> labels already inwarded">
+                            <i class="bi bi-check-circle me-1"></i><?= (int)$inwardedCount ?> Inwarded
+                        </span>
+                        <a href="<?= url('production/inventory') ?>" class="btn btn-outline-primary btn-sm">
+                            <i class="bi bi-box-seam me-1"></i> Inventory
+                        </a>
+                    <?php endif; ?>
                 <?php endif; ?>
 
                 <!-- Mode Switcher: Per Piece vs Master Package -->
@@ -358,15 +370,23 @@
 
         <div class="stickers-wrapper" id="stickersContainer">
             <?php foreach ($stickers as $stk): ?>
-                <div class="supply-label-card" id="card-<?= $stk['index'] ?>">
+                <?php $stkIsInwarded = !empty($stk['is_inwarded']); ?>
+                <div class="supply-label-card <?= $stkIsInwarded ? 'border-success' : '' ?>" id="card-<?= $stk['index'] ?>" style="<?= $stkIsInwarded ? 'background-color: #f8fafc;' : '' ?>">
                     <div class="label-header">
                         <div class="d-flex align-items-center gap-1">
-                            <input type="checkbox" class="form-check-input supply-select-box no-print" id="check-supply-<?= $stk['index'] ?>" data-index="<?= $stk['index'] ?>" checked <?= $canManageSupplies ? 'onchange="updateSelectedCount()" title="Check to print this supply label" style="margin-top: 0; cursor: pointer;"' : 'disabled style="margin-top: 0; cursor: not-allowed; opacity: 0.5;" title="Selection disabled in view-only access"' ?>>
+                            <input type="checkbox" class="form-check-input supply-select-box no-print" id="check-supply-<?= $stk['index'] ?>" data-index="<?= $stk['index'] ?>" data-code="<?= htmlspecialchars($stk['code']) ?>" data-inwarded="<?= $stkIsInwarded ? '1' : '0' ?>" checked <?= $canManageSupplies ? 'onchange="updateSelectedCount()" title="Check to print or inward this supply label" style="margin-top: 0; cursor: pointer;"' : 'disabled style="margin-top: 0; cursor: not-allowed; opacity: 0.5;" title="Selection disabled in view-only access"' ?>>
                             <div class="company-tag" title="<?= htmlspecialchars($stk['supplier_name']) ?>">
                                 <?= htmlspecialchars($stk['supplier_name']) ?>
                             </div>
                         </div>
-                        <div class="po-tag"><?= htmlspecialchars($stk['po_number']) ?></div>
+                        <div class="d-flex align-items-center gap-1">
+                            <?php if ($stkIsInwarded): ?>
+                                <span class="badge bg-success text-white px-1.5 py-0.5 no-print" style="font-size: 8px;" title="Inwarded to inventory on <?= !empty($stk['inwarded_at']) ? date('d M Y, h:i A', strtotime($stk['inwarded_at'])) : 'Done' ?>"><i class="bi bi-check-circle-fill"></i> Inwarded</span>
+                            <?php else: ?>
+                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-1.5 py-0.5 no-print" style="font-size: 8px;"><i class="bi bi-hourglass-split"></i> Pending Inward</span>
+                            <?php endif; ?>
+                            <div class="po-tag"><?= htmlspecialchars($stk['po_number']) ?></div>
+                        </div>
                     </div>
 
                     <div class="label-body">
@@ -442,26 +462,59 @@ function toggleSelectAllSupplies(checked) {
 
 function updateSelectedCount() {
     const boxes = document.querySelectorAll('.supply-select-box');
-    let count = 0;
+    let totalCount = 0;
+    let pendingSelectedCount = 0;
+    const selectedPendingCodes = [];
+
     boxes.forEach(cb => {
         const card = document.getElementById('card-' + cb.dataset.index);
+        const code = cb.getAttribute('data-code');
+        const isInwarded = cb.getAttribute('data-inwarded') === '1';
+
         if (cb.checked) {
-            count++;
+            totalCount++;
             if (card) card.classList.remove('d-print-none', 'unselected-supply');
+            if (!isInwarded && code) {
+                pendingSelectedCount++;
+                selectedPendingCodes.push(code);
+            }
         } else {
             if (card) card.classList.add('d-print-none', 'unselected-supply');
         }
     });
+
     const countEl = document.getElementById('selectedCount');
     const btnCountEl = document.getElementById('btnSelectedCount');
     const selectAll = document.getElementById('selectAllSupplies');
-    if (countEl) countEl.textContent = count;
-    if (btnCountEl) btnCountEl.textContent = count;
-    if (selectAll) selectAll.checked = (count === boxes.length && boxes.length > 0);
+    if (countEl) countEl.textContent = totalCount;
+    if (btnCountEl) btnCountEl.textContent = totalCount;
+    if (selectAll) selectAll.checked = (totalCount === boxes.length && boxes.length > 0);
 
     const printBtn = document.getElementById('printSelectedBtn');
     if (printBtn) {
-        printBtn.disabled = (count === 0);
+        printBtn.disabled = (totalCount === 0);
+    }
+
+    // Update inward form selection
+    const inwardInput = document.getElementById('inwardSelectedQrCodes');
+    if (inwardInput) {
+        inwardInput.value = selectedPendingCodes.join(',');
+    }
+
+    const inwardBtnText = document.getElementById('btnMoveToInwardText');
+    const inwardBtn = document.getElementById('btnMoveToInward');
+    if (inwardBtnText) {
+        const totalPending = <?= (int)($pendingInwardCount ?? count($stickers)) ?>;
+        if (pendingSelectedCount === 0) {
+            inwardBtnText.textContent = 'Move to Inward (0 Selected)';
+            if (inwardBtn) inwardBtn.disabled = true;
+        } else if (pendingSelectedCount === totalPending) {
+            inwardBtnText.textContent = 'Move to Inward (All ' + pendingSelectedCount + ')';
+            if (inwardBtn && canManageSupplies) inwardBtn.disabled = false;
+        } else {
+            inwardBtnText.textContent = 'Move to Inward (' + pendingSelectedCount + ' Selected)';
+            if (inwardBtn && canManageSupplies) inwardBtn.disabled = false;
+        }
     }
 }
 
@@ -534,7 +587,18 @@ function confirmInwardSupplies(event) {
         event.preventDefault();
         return false;
     }
-    if (!confirm("Are you sure you want to Move to Inward?\n\nThis will automatically register these garment supply product(s) into inventory and credit their stock balances.")) {
+
+    const inwardInput = document.getElementById('inwardSelectedQrCodes');
+    const selectedCodes = inwardInput && inwardInput.value ? inwardInput.value.split(',').filter(Boolean) : [];
+
+    let msg = '';
+    if (selectedCodes.length > 0) {
+        msg = "Are you sure you want to Move to Inward " + selectedCodes.length + " selected QR label(s)?\n\nThis will automatically register these garment supply items into inventory and credit their stock balances.";
+    } else {
+        msg = "Are you sure you want to Move to Inward?\n\nThis will automatically register pending garment supply product(s) into inventory and credit their stock balances.";
+    }
+
+    if (!confirm(msg)) {
         event.preventDefault();
         return false;
     }
