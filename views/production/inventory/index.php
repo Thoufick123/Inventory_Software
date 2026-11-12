@@ -261,21 +261,21 @@ $inventoryVariantCount = array_sum(array_map(
                         <?php endif; ?>
                     </td>
                     <td class="text-end">
-                        <div class="d-flex justify-content-end gap-1">
+                        <div class="action-btns-group justify-content-end">
                             <a href="<?= url('production/inventory/batch/' . $batch['qc_batch_id']) ?>"
-                               class="btn btn-sm btn-outline-secondary text-nowrap" title="View Batch Items">
+                               class="btn btn-outline-info btn-action-icon" title="View Batch Items">
                                 <i class="bi bi-eye"></i>
                             </a>
                             <?php if (hasPermission('batches', 'create') && $variant['remaining_qty'] > 0): ?>
                                 <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id']) ?>"
-                                   class="btn btn-sm btn-outline-success text-nowrap" title="Pack into Boxes for Central Warehouse">
-                                    <i class="bi bi-box-seam me-1"></i>Pack (WH)
+                                   class="btn btn-outline-success btn-action-icon" title="Pack into Boxes for Central Warehouse">
+                                    <i class="bi bi-box-seam"></i>
                                 </a>
                             <?php endif; ?>
                             <?php if (hasPermission('batches', 'create') && ($variant['rework_qty'] ?? 0) > 0): ?>
                                 <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id'] . '&include_rework=1') ?>"
-                                   class="btn btn-sm btn-outline-warning text-nowrap" title="Pack Reworked Pieces into Batch for Outward">
-                                    <i class="bi bi-tools me-1"></i>Pack Rework
+                                   class="btn btn-outline-warning btn-action-icon" title="Pack Reworked Pieces into Batch for Outward">
+                                    <i class="bi bi-tools"></i>
                                 </a>
                             <?php endif; ?>
                         </div>

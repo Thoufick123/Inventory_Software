@@ -174,19 +174,19 @@
                                 <span class="badge bg-success-subtle text-success border">In-House</span>
                             </td>
                             <td class="text-center">
-                                <div class="d-inline-flex gap-1">
-                                    <a href="<?= url('production/catalog/view/' . $p['id']) ?>" class="btn btn-sm btn-outline-secondary py-1 px-2" title="View Full Details">
+                                <div class="action-btns-group justify-content-center">
+                                    <a href="<?= url('production/catalog/view/' . $p['id']) ?>" class="btn btn-action-icon btn-outline-info" title="View Full Details">
                                         <i class="bi bi-eye"></i>
                                     </a>
                                     <?php if (hasPermission('catalog', 'edit')): ?>
-                                    <a href="<?= url('production/catalog/edit/' . $p['id']) ?>" class="btn btn-sm btn-outline-primary py-1 px-2" title="Edit Style">
+                                    <a href="<?= url('production/catalog/edit/' . $p['id']) ?>" class="btn btn-action-icon btn-outline-primary" title="Edit Style">
                                         <i class="bi bi-pencil"></i>
                                     </a>
                                     <?php endif; ?>
                                     <?php if (hasPermission('catalog', 'delete')): ?>
                                     <form method="POST" action="<?= url('production/catalog/delete/' . $p['id']) ?>" class="d-inline mb-0" onsubmit="return confirm('Are you sure you want to delete product style &quot;<?= e(addslashes($p['name'])) ?>&quot;?');">
                                         <?= CSRF::field() ?>
-                                        <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2" title="Delete Style">
+                                        <button type="submit" class="btn btn-action-icon btn-outline-danger" title="Delete Style">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </form>

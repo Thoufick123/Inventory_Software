@@ -303,20 +303,20 @@
 
                                 <!-- Actions -->
                                 <td class="text-center text-nowrap">
-                                    <div class="d-flex align-items-center justify-content-center gap-1 flex-nowrap">
-                                        <a href="<?= url('production/damages/view/' . $d['id']) ?>" class="btn btn-sm btn-outline-info d-inline-flex align-items-center justify-content-center flex-shrink-0" style="width: 34px; height: 34px;" title="View Damage Details" aria-label="View Damage Details">
+                                    <div class="action-btns-group justify-content-center">
+                                        <a href="<?= url('production/damages/view/' . $d['id']) ?>" class="btn btn-action-icon btn-outline-info" title="View Damage Details" aria-label="View Damage Details">
                                             <i class="bi bi-eye"></i>
                                         </a>
                                         <?php if (hasPermission('damages', 'edit')): ?>
-                                        <button type="button" class="btn btn-sm btn-outline-warning d-inline-flex align-items-center justify-content-center flex-shrink-0" style="width: 34px; height: 34px;" title="Edit Damage Record" aria-label="Edit Damage Record" onclick='openEditDamageModal(<?= json_encode($d) ?>)'>
-                                            <i class="bi bi-pencil-square"></i>
+                                        <button type="button" class="btn btn-action-icon btn-outline-primary" title="Edit Damage Record" aria-label="Edit Damage Record" onclick='openEditDamageModal(<?= json_encode($d) ?>)'>
+                                            <i class="bi bi-pencil"></i>
                                         </button>
-                                        <button type="button" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center justify-content-center flex-shrink-0" style="width: 34px; height: 34px;" title="Update Return / Refund / Resolution" aria-label="Update Return / Refund / Resolution" onclick='openResolveModal(<?= json_encode($d) ?>)'>
-                                            <i class="bi bi-arrow-repeat"></i>
+                                        <button type="button" class="btn btn-action-icon btn-outline-success" title="Update Return / Refund / Resolution" aria-label="Update Return / Refund / Resolution" onclick='openResolveModal(<?= json_encode($d) ?>)'>
+                                            <i class="bi bi-patch-check"></i>
                                         </button>
                                         <?php endif; ?>
                                         <?php if (hasPermission('damages', 'delete')): ?>
-                                        <button type="button" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center flex-shrink-0" style="width: 34px; height: 34px;" title="Delete Damage Record" aria-label="Delete Damage Record" onclick="confirmDeleteDamage('<?= url('production/damages/delete/' . $d['id']) ?>', '<?= e(addslashes($d['damage_number'])) ?>')">
+                                        <button type="button" class="btn btn-action-icon btn-outline-danger" title="Delete Damage Record" aria-label="Delete Damage Record" onclick="confirmDeleteDamage('<?= url('production/damages/delete/' . $d['id']) ?>', '<?= e(addslashes($d['damage_number'])) ?>')">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                         <?php endif; ?>

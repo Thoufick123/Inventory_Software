@@ -71,17 +71,19 @@
                         </td>
                         
                         <td class="text-end text-nowrap">
-                            <?php if (hasPermission('sellers', 'view')): ?>
-                                <a href="<?= url('production/sellers/view/' . $seller['id']) ?>" class="btn btn-sm btn-outline-secondary" title="View supplier"><i class="bi bi-eye"></i></a>
-                            <?php endif; ?>
-                            <?php if (hasPermission('sellers', 'edit')): ?>
-                                <a href="<?= url('production/sellers/edit/' . $seller['id']) ?>" class="btn btn-sm btn-outline-primary" title="Edit supplier"><i class="bi bi-pencil"></i></a>
-                            <?php endif; ?>
-                            <?php if (hasPermission('sellers', 'delete')): ?>
-                                <a href="<?= url('production/sellers/delete/' . $seller['id']) ?>" class="btn btn-sm btn-outline-danger" title="Delete supplier" onclick="event.preventDefault(); openDeleteSupplierModal(<?= (int)$seller['id'] ?>, '<?= e(addslashes($seller['name'])) ?>', '<?= e(addslashes($seller['company'] ?? '')) ?>', '<?= e(addslashes($seller['phone'] ?? '')) ?>')">
-                                    <i class="bi bi-trash"></i>
-                                </a>
-                            <?php endif; ?>
+                            <div class="action-btns-group justify-content-end">
+                                <?php if (hasPermission('sellers', 'view')): ?>
+                                    <a href="<?= url('production/sellers/view/' . $seller['id']) ?>" class="btn btn-action-icon btn-outline-info" title="View supplier"><i class="bi bi-eye"></i></a>
+                                <?php endif; ?>
+                                <?php if (hasPermission('sellers', 'edit')): ?>
+                                    <a href="<?= url('production/sellers/edit/' . $seller['id']) ?>" class="btn btn-action-icon btn-outline-primary" title="Edit supplier"><i class="bi bi-pencil"></i></a>
+                                <?php endif; ?>
+                                <?php if (hasPermission('sellers', 'delete')): ?>
+                                    <a href="<?= url('production/sellers/delete/' . $seller['id']) ?>" class="btn btn-action-icon btn-outline-danger" title="Delete supplier" onclick="event.preventDefault(); openDeleteSupplierModal(<?= (int)$seller['id'] ?>, '<?= e(addslashes($seller['name'])) ?>', '<?= e(addslashes($seller['company'] ?? '')) ?>', '<?= e(addslashes($seller['phone'] ?? '')) ?>')">
+                                        <i class="bi bi-trash"></i>
+                                    </a>
+                                <?php endif; ?>
+                            </div>
                         </td>
                     </tr>
                 <?php endforeach; endif; ?>

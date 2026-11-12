@@ -97,19 +97,19 @@
                                 <td class="text-danger"><?= number_format($b['damaged_qty']) ?> pcs</td>
                                 <td><span class="badge <?= $statusClass ?>"><?= e($b['status']) ?></span></td>
                                 <td class="text-end">
-                                    <div class="btn-group btn-group-sm">
-                                        <a href="<?= url('production/labels/view/' . $b['id']) ?>" class="btn btn-outline-info" title="View Label Batch">
+                                    <div class="action-btns-group justify-content-end">
+                                        <a href="<?= url('production/labels/view/' . $b['id']) ?>" class="btn btn-outline-info btn-action-icon" title="View Label Batch">
                                             <i class="bi bi-eye"></i>
                                         </a>
                                         <?php if (hasPermission('labels', 'edit')): ?>
-                                        <a href="<?= url('production/labels/edit/' . $b['id']) ?>" class="btn btn-outline-primary" title="Edit">
+                                        <a href="<?= url('production/labels/edit/' . $b['id']) ?>" class="btn btn-outline-primary btn-action-icon" title="Edit">
                                             <i class="bi bi-pencil"></i>
                                         </a>
                                         <?php endif; ?>
                                         <?php if (hasPermission('labels', 'delete')): ?>
                                         <form method="POST" action="<?= url('production/labels/delete/' . $b['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to delete Label Batch <?= e(addslashes($b['batch_number'] ?: ('#' . $b['id']))) ?>? This cannot be undone.');">
                                             <?= CSRF::field() ?>
-                                            <button type="submit" class="btn btn-outline-danger" title="Delete Label Batch">
+                                            <button type="submit" class="btn btn-outline-danger btn-action-icon" title="Delete Label Batch">
                                                 <i class="bi bi-trash"></i>
                                             </button>
                                         </form>

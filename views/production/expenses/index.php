@@ -350,23 +350,23 @@
 
                                     <!-- Actions -->
                                     <td class="text-center">
-                                        <div class="btn-group btn-group-sm">
+                                        <div class="action-btns-group justify-content-center">
                                             <?php if (hasPermission('production_expenses', 'view')): ?>
-                                            <button type="button" class="btn btn-outline-info" title="View Expense Details" onclick='openExpenseNormalView(<?= (int)$e['id'] ?>)'>
+                                            <button type="button" class="btn btn-outline-info btn-action-icon" title="View Expense Details" onclick='openExpenseNormalView(<?= (int)$e['id'] ?>)'>
                                                 <i class="bi bi-eye"></i>
                                             </button>
                                             <?php endif; ?>
 
                                             <!-- Print Voucher Button -->
                                             <?php if (hasPermission('production_expenses', 'print')): ?>
-                                            <button type="button" class="btn btn-outline-secondary" title="Print Expense Voucher" onclick='openExpenseReceipt(<?= (int)$e['id'] ?>)'>
+                                            <button type="button" class="btn btn-outline-success btn-action-icon" title="Print Expense Voucher" onclick='openExpenseReceipt(<?= (int)$e['id'] ?>)'>
                                                 <i class="bi bi-printer"></i>
                                             </button>
                                             <?php endif; ?>
 
                                             <?php if (hasPermission('production_expenses', 'edit')): ?>
                                             <!-- Edit Button -->
-                                            <button type="button" class="btn btn-outline-primary" title="Edit Expense Details" onclick='openEditExpenseModal(<?= json_encode($e) ?>)'>
+                                            <button type="button" class="btn btn-outline-primary btn-action-icon" title="Edit Expense Details" onclick='openEditExpenseModal(<?= json_encode($e) ?>)'>
                                                 <i class="bi bi-pencil"></i>
                                             </button>
                                             <?php endif; ?>
@@ -375,7 +375,7 @@
                                             <!-- Delete Button -->
                                             <form method="POST" action="<?= url('production/expenses/delete/' . $e['id']) ?>" class="d-inline" onsubmit="return confirm('Are you sure you want to delete Expense #<?= e(addslashes($e['expense_number'])) ?> (<?= e(addslashes($e['item_name'])) ?>)?');">
                                                 <?= CSRF::field() ?>
-                                                <button type="submit" class="btn btn-outline-danger" title="Delete Expense Record">
+                                                <button type="submit" class="btn btn-outline-danger btn-action-icon" title="Delete Expense Record">
                                                     <i class="bi bi-trash"></i>
                                                 </button>
                                             </form>
