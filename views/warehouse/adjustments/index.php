@@ -271,7 +271,7 @@ foreach ($variants as $variantOption) {
                             </div>
                         </div>
                         <div class="alert alert-info py-2 small d-none mb-0" id="adjustmentCountOnlyNotice">
-                            <i class="bi bi-info-circle me-1"></i>Series and complementary stock increases update the quantity only. No new QR labels are generated.
+                            <i class="bi bi-info-circle me-1"></i>Enter the additional piece count. Stock will increase without generating a new series/complementary QR label.
                         </div>
                     </div>
                     <div class="mb-3 d-none" id="adjustmentDecreaseControls">
@@ -301,7 +301,7 @@ foreach ($variants as $variantOption) {
                 </div>
 
                 <script src="<?= url('assets/js/qrcode.min.js') ?>"></script>
-                <script src="<?= url('assets/js/warehouse-stock-adjustment.js') ?>"></script>
+                <script src="<?= asset('js/warehouse-stock-adjustment.js') ?>?v=<?= file_exists(BASE_PATH . '/public/assets/js/warehouse-stock-adjustment.js') ? filemtime(BASE_PATH . '/public/assets/js/warehouse-stock-adjustment.js') : '1' ?>"></script>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle me-1"></i> Save & Update Stock</button>
