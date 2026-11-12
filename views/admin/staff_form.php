@@ -1166,22 +1166,13 @@ document.addEventListener('DOMContentLoaded', function () {
     syncRoleAndDepartment(false);
 
     if (isEditMode) {
-        // In edit mode: update counter & switches to reflect saved staff permissions
+        // In edit mode: if staff has custom permissions or role permissions
         updateActiveCounterAndSwitches();
         const roleOption = roleSelect ? roleSelect.options[roleSelect.selectedIndex] : null;
         const roleName = roleOption && roleOption.value ? roleOption.getAttribute('data-name') : 'Assigned Role';
-        const roleId = roleSelect ? roleSelect.value : '';
-        const rolePerms = (rolePermissionsMap[roleId] || []).map(Number).sort();
-        const staffPerms = (initialStaffPerms || []).map(Number).sort();
-        const isCustom = rolePerms.length !== staffPerms.length || !rolePerms.every((v, i) => v === staffPerms[i]);
         if (permSyncBadge) {
-            if (isCustom) {
-                permSyncBadge.className = 'badge bg-warning-subtle text-warning border border-warning-subtle px-2.5 py-1';
-                permSyncBadge.innerHTML = `<i class="bi bi-pencil-square me-1"></i>Custom Permissions: <strong>${roleName}</strong>`;
-            } else {
-                permSyncBadge.className = 'badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1';
-                permSyncBadge.innerHTML = `<i class="bi bi-shield-check me-1"></i>Role Defaults: <strong>${roleName}</strong>`;
-            }
+            permSyncBadge.className = 'badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1';
+            permSyncBadge.innerHTML = `<i class="bi bi-shield-check me-1"></i>Active Permissions: <strong>${roleName}</strong>`;
         }
     } else {
         // In create mode: if role already selected (e.g. from old input), sync permissions

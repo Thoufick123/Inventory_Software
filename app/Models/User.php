@@ -297,20 +297,16 @@ class User {
      */
     public static function getPermissions(int $userId): array {
         self::ensureSchema();
+        // Check if user has explicit custom permissions
+        $customRows = Database::fetchAll(
+            "SELECT CONCAT(p.module, '.', p.action) as permission_key 
+             FROM user_permissions up 
+             JOIN permissions p ON up.permission_id = p.id 
+             WHERE up.user_id = ?",
+            [$userId]
+        );
 
-        // If user has custom overridden permissions, respect them strictly
-        if (self::hasPermissionOverride($userId)) {
-            $customRows = Database::fetchAll(
-                "SELECT CONCAT(p.module, '.', p.action) as permission_key 
-                 FROM user_permissions up 
-                 JOIN permissions p ON up.permission_id = p.id 
-                 WHERE up.user_id = ?",
-                [$userId]
-            );
-            return !empty($customRows) ? array_column($customRows, 'permission_key') : [];
-        }
-
-        // Fallback to role permissions when no explicit custom override is set
+        // Fetch assigned role permissions
         $roleRows = Database::fetchAll(
             "SELECT CONCAT(p.module, '.', p.action) as permission_key 
              FROM users u 
@@ -319,7 +315,21 @@ class User {
              WHERE u.id = ?",
             [$userId]
         );
-        return !empty($roleRows) ? array_column($roleRows, 'permission_key') : [];
+
+        $customKeys = !empty($customRows) ? array_column($customRows, 'permission_key') : [];
+        $roleKeys   = !empty($roleRows)   ? array_column($roleRows, 'permission_key')   : [];
+
+        // Merge both role-inherited permissions and custom individual overrides
+        $mergedKeys = array_values(array_unique(array_merge($roleKeys, $customKeys)));
+        if (!empty($mergedKeys)) {
+            return $mergedKeys;
+        }
+
+        if (self::hasPermissionOverride($userId)) {
+            return [];
+        }
+
+        return [];
     }
 
     /**
@@ -327,17 +337,10 @@ class User {
      */
     public static function getPermissionIds(int $userId): array {
         self::ensureSchema();
-
-        // If user has custom overridden permissions, return them strictly
-        if (self::hasPermissionOverride($userId)) {
-            $customRows = Database::fetchAll(
-                "SELECT permission_id FROM user_permissions WHERE user_id = ?",
-                [$userId]
-            );
-            return !empty($customRows) ? array_map('intval', array_column($customRows, 'permission_id')) : [];
-        }
-
-        // Fallback to role permissions when no explicit custom override is set
+        $customRows = Database::fetchAll(
+            "SELECT permission_id FROM user_permissions WHERE user_id = ?",
+            [$userId]
+        );
         $roleRows = Database::fetchAll(
             "SELECT rp.permission_id 
              FROM users u 
@@ -345,22 +348,27 @@ class User {
              WHERE u.id = ?",
             [$userId]
         );
-        return !empty($roleRows) ? array_map('intval', array_column($roleRows, 'permission_id')) : [];
+
+        $customIds = array_map('intval', array_column($customRows, 'permission_id'));
+        $roleIds   = array_map('intval', array_column($roleRows, 'permission_id'));
+        $mergedIds = array_values(array_unique(array_merge($roleIds, $customIds)));
+
+        if (!empty($mergedIds)) {
+            return $mergedIds;
+        }
+
+        if (self::hasPermissionOverride($userId)) {
+            return [];
+        }
+
+        return [];
     }
 
     private static function hasPermissionOverride(int $userId): bool {
-        $hasOverrideRecord = (bool)Database::fetchOne(
+        return (bool)Database::fetchOne(
             "SELECT user_id FROM user_permission_overrides WHERE user_id = ?",
             [$userId]
         );
-        if ($hasOverrideRecord) {
-            return true;
-        }
-        $hasCustomPerms = (bool)Database::fetchOne(
-            "SELECT user_id FROM user_permissions WHERE user_id = ? LIMIT 1",
-            [$userId]
-        );
-        return $hasCustomPerms;
     }
 
     /**
