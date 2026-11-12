@@ -3332,8 +3332,31 @@ class WarehouseService {
      * Correlates pieces with production QC batches, piece QR codes, and vendor stickered tags.
      */
     public static function getWarehousePieceItems(int $warehouseId, array $filters = []): array {
+        // Keep piece counts consistent with the warehouse ledger when Production Inventory shares a variant.
+        $warehouseQuantityExpression = "(CASE
+                    WHEN EXISTS (
+                        SELECT 1
+                        FROM stock_transactions st_prod_any
+                        WHERE st_prod_any.variant_id = sb.variant_id
+                          AND st_prod_any.location_type = 'WAREHOUSE'
+                          AND st_prod_any.reference_type IN ('production_purchases', 'qc_batches')
+                    )
+                    THEN COALESCE((
+                        SELECT SUM(st_warehouse.quantity)
+                        FROM stock_transactions st_warehouse
+                        WHERE st_warehouse.variant_id = sb.variant_id
+                          AND st_warehouse.location_type = 'WAREHOUSE'
+                          AND st_warehouse.location_id = sb.location_id
+                          AND st_warehouse.stock_state = sb.stock_state
+                          AND (
+                              st_warehouse.reference_type IS NULL
+                              OR st_warehouse.reference_type NOT IN ('production_purchases', 'qc_batches')
+                          )
+                    ), 0)
+                    ELSE sb.quantity
+                END)";
         $sql = "
-            SELECT sb.*, 
+            SELECT sb.*, $warehouseQuantityExpression AS warehouse_quantity,
                    pv.id as variant_id, pv.sku, pv.qr_code as variant_qr_code, pv.qr_type, pv.pack_quantity,
                    pv.selling_price, pv.mrp, pv.purchase_price, pv.production_cost,
                    pv.is_complementary as variant_is_complementary,
@@ -3360,6 +3383,7 @@ class WarehouseService {
             LEFT JOIN warehouse_suppliers sel ON p.warehouse_supplier_id = sel.id
             JOIN warehouses w ON sb.location_id = w.id
             WHERE sb.location_type = 'WAREHOUSE' AND sb.location_id = ?
+              AND $warehouseQuantityExpression > 0
               AND (
                   COALESCE(p.source_type, '') <> 'OWN_PRODUCTION'
                   OR EXISTS (
@@ -3427,6 +3451,7 @@ class WarehouseService {
         $pieceNo = 1;
 
         foreach ($balances as $bal) {
+            $bal['quantity'] = (float)($bal['warehouse_quantity'] ?? $bal['quantity'] ?? 0);
             $qty = (int)$bal['quantity'];
             if ($qty <= 0) continue;
 
