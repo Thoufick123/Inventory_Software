@@ -13,13 +13,13 @@ foreach ($variants as $variantOption) {
 ?>
 <div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
     <div>
-        <h2 class="mb-1"><i class="bi bi-sliders me-2 text-primary"></i><?= $activeAdjustmentType === '' ? 'Stock Adjustments & Audits' : 'Stock ' . e(ucfirst(strtolower($activeAdjustmentType))) ?></h2>
+        <h2 class="mb-1"><i class="bi bi-sliders me-2 text-primary"></i>Stock Adjustments</h2>
         <span class="text-muted">Scan products, preview QR labels for increases, and post stock changes immediately</span>
     </div>
     <div class="d-flex gap-2">
         <?php if (hasPermission('stock', 'adjust')): ?>
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newAdjustmentModal">
-            <i class="bi bi-plus-circle me-1"></i> <?= $activeAdjustmentType === '' ? 'New Adjustment' : 'Stock ' . e(ucfirst(strtolower($activeAdjustmentType))) ?>
+            <i class="bi bi-plus-circle me-1"></i> New Adjustment
         </button>
         <?php endif; ?>
     </div>
@@ -192,10 +192,10 @@ foreach ($variants as $variantOption) {
             <input type="hidden" name="qr_codes" id="adjustmentQrCodes" value="[]">
             <input type="hidden" name="variant_id" id="adjustmentVariantId" value="">
             <input type="hidden" name="adjustment_type" id="adjustmentTypeValue" value="<?= e($activeAdjustmentType ?: 'INCREASE') ?>">
-            <input type="hidden" name="return_adjustment_type" value="<?= e($activeAdjustmentType) ?>">
+            <input type="hidden" name="return_adjustment_type" value="">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title fw-bold" id="newAdjustmentModalLabel"><i class="bi bi-sliders me-2 text-primary"></i><?= $activeAdjustmentType === '' ? 'Stock Adjustment' : 'Stock ' . e(ucfirst(strtolower($activeAdjustmentType))) ?></h5>
+                    <h5 class="modal-title fw-bold" id="newAdjustmentModalLabel"><i class="bi bi-sliders me-2 text-primary"></i>Stock Adjustment</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
@@ -245,7 +245,7 @@ foreach ($variants as $variantOption) {
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label class="form-label small fw-semibold">Adjustment Type <span class="text-danger">*</span></label>
-                            <select id="adjustmentTypeSelect" class="form-select" required <?= $activeAdjustmentType !== '' ? 'disabled' : '' ?>>
+                            <select id="adjustmentTypeSelect" class="form-select" required>
                                 <option value="INCREASE" <?= $activeAdjustmentType === 'INCREASE' || $activeAdjustmentType === '' ? 'selected' : '' ?>>INCREASE (+ Found Stock)</option>
                                 <option value="DECREASE" <?= $activeAdjustmentType === 'DECREASE' ? 'selected' : '' ?>>DECREASE (- Discrepancy / Damage)</option>
                             </select>
@@ -259,14 +259,19 @@ foreach ($variants as $variantOption) {
                         <i class="bi bi-info-circle me-1"></i>Saving this form updates the selected warehouse stock immediately.
                     </div>
                     <div class="mb-3 d-none" id="adjustmentIncreaseControls">
-                        <button type="button" class="btn btn-outline-primary btn-sm" id="adjustmentPreviewButton"><i class="bi bi-qr-code me-1"></i>Generate QR Preview</button>
-                        <div id="adjustmentPreviewMessage" class="small mt-2" role="status"></div>
-                        <div class="d-none mt-3" id="adjustmentQrPreview">
-                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                <span class="fw-semibold small">Live QR label preview</span>
-                                <span class="badge bg-success-subtle text-success-emphasis" id="adjustmentPreviewSummary"></span>
+                        <div id="adjustmentGenerateQrControls">
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="adjustmentPreviewButton"><i class="bi bi-qr-code me-1"></i>Generate QR Preview</button>
+                            <div id="adjustmentPreviewMessage" class="small mt-2" role="status"></div>
+                            <div class="d-none mt-3" id="adjustmentQrPreview">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="fw-semibold small">Live QR label preview</span>
+                                    <span class="badge bg-success-subtle text-success-emphasis" id="adjustmentPreviewSummary"></span>
+                                </div>
+                                <div class="row g-2" id="adjustmentQrPreviewList"></div>
                             </div>
-                            <div class="row g-2" id="adjustmentQrPreviewList"></div>
+                        </div>
+                        <div class="alert alert-info py-2 small d-none mb-0" id="adjustmentCountOnlyNotice">
+                            <i class="bi bi-info-circle me-1"></i>Series and complementary stock increases update the quantity only. No new QR labels are generated.
                         </div>
                     </div>
                     <div class="mb-3 d-none" id="adjustmentDecreaseControls">
