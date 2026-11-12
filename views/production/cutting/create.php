@@ -291,6 +291,7 @@ let availableRolls = <?= json_encode($rolls ?? []) ?>;
 const allCategories = <?= json_encode($categories ?? []) ?>;
 let initialProgramRolls = <?= json_encode($selectedProgramRolls ?? []) ?>;
 let programDataCache = null;
+const deletedVariantKeys = new Set();
 
 function buildRollOptionsHtml(selectedRollId = '', rollData = null) {
     let html = '<option value="">-- Select Fabric Roll --</option>';
@@ -629,6 +630,8 @@ function handleProgramChange(programId) {
     const noAlert = document.getElementById('noProgramAlert');
     const alertTitle = document.getElementById('alertTitle');
     const alertMsg = document.getElementById('alertMessage');
+
+    deletedVariantKeys.clear();
 
     if (!programId) {
         if (progBox) progBox.style.display = 'none';
@@ -1113,14 +1116,22 @@ function regenerateAllRollVariants(cachedData = null) {
             let rollVariantCount = 0;
             if (resItem.variants && resItem.variants.length > 0) {
                 resItem.variants.forEach(v => {
+                    const sName = v.size_name || 'FREE SIZE';
+                    const cName = req.rollColor || v.color_name || 'STANDARD';
+                    const lookupKey = (sName.trim() + '___' + cName.trim()).toUpperCase();
+                    if (deletedVariantKeys.has(lookupKey)) return;
+
                     rollVariantCount++;
-                    appendVariantRow(v.size_name || 'FREE SIZE', req.rollColor || v.color_name || 'STANDARD', v.id || '', v.sku || '', v.planned_quantity || 0, req.rollId, groupKey, req.catId, req.subcatId, req.subSubcatId, req.catalogPath);
+                    appendVariantRow(sName, cName, v.id || '', v.sku || '', v.planned_quantity || 0, req.rollId, groupKey, req.catId, req.subcatId, req.subSubcatId, req.catalogPath);
                 });
             } else {
                 const sizes = resItem.sizes && resItem.sizes.length > 0 ? resItem.sizes : ['M', 'L', 'XL', 'XXL', '3XL'];
                 const colors = req.rollColor ? [req.rollColor] : (resItem.colors && resItem.colors.length > 0 ? resItem.colors : ['STANDARD']);
                 sizes.forEach(sz => {
                     colors.forEach(col => {
+                        const lookupKey = (sz.trim() + '___' + col.trim()).toUpperCase();
+                        if (deletedVariantKeys.has(lookupKey)) return;
+
                         rollVariantCount++;
                         appendVariantRow(sz, col, '', '', 0, req.rollId, groupKey, req.catId, req.subcatId, req.subSubcatId, req.catalogPath);
                     });
@@ -1269,9 +1280,31 @@ function removeVariantRow(id) {
     if (!canDeleteCutting) return;
     const row = document.getElementById('variant_row_' + id);
     if (row) {
+        const sizeInp = row.querySelector('input[name*="[size_name]"]');
+        const colorInp = row.querySelector('input[name*="[color_name]"]');
+        if (sizeInp && colorInp) {
+            const key = (sizeInp.value.trim() + '___' + colorInp.value.trim()).toUpperCase();
+            deletedVariantKeys.add(key);
+        }
         row.remove();
         calculateMetrics();
+        updateRollTabCounts();
     }
+}
+
+function updateRollTabCounts() {
+    document.querySelectorAll('#rollVariantNavTabs .btn').forEach(btn => {
+        const group = btn.getAttribute('data-target-group');
+        const badge = btn.querySelector('.badge');
+        if (!badge) return;
+        if (group === 'all') {
+            const count = document.querySelectorAll('#variantsTableBody tr.roll-variant-item:not(.roll-variant-header)').length;
+            badge.textContent = count;
+        } else {
+            const count = document.querySelectorAll('#variantsTableBody tr.roll-variant-item:not(.roll-variant-header).roll-group-' + group).length;
+            badge.textContent = count;
+        }
+    });
 }
 
 // =========================================================================
