@@ -501,6 +501,7 @@ class Router {
         // Production Inventory (Post-QC Passed Inventory)
         $this->get('production/inventory', 'ProductionController', 'productionInventory', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'view']]);
         $this->get('production/inventory/batch/{id}', 'ProductionController', 'productionInventoryBatch', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'view']]);
+        $this->get('production/inventory/supply/{id}', 'ProductionController', 'productionInventorySupplyBatch', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'view']]);
         $this->post('production/inventory/delete-piece', 'ProductionController', 'deleteProductionInventoryPiece', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'delete']]);
         $this->post('production/inventory/supply/update-stock', 'ProductionController', 'updateProductionInventorySupplyStock', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'edit']]);
         $this->post('production/inventory/supply/delete', 'ProductionController', 'deleteProductionInventorySupplyStock', ['AuthMiddleware', ['PermissionMiddleware', 'inventory', 'delete']]);
