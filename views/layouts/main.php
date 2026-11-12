@@ -196,6 +196,56 @@ if (!empty($authUser['shop_name'])) {
             transform: translateY(-1px);
         }
 
+        /* 0. SECONDARY / VIEW BUTTON (Slate / Grey) */
+        .btn-action-icon.btn-outline-secondary,
+        .btn-action-icon.btn-secondary,
+        .action-btns-group > .btn-outline-secondary,
+        .action-btns-group > .btn-secondary {
+            border-color: #64748b !important;
+            color: #475569 !important;
+            background-color: #ffffff !important;
+        }
+        .btn-action-icon.btn-outline-secondary:visited,
+        .action-btns-group > .btn-outline-secondary:visited,
+        .btn-action-icon.btn-outline-secondary:active,
+        .btn-action-icon.btn-outline-secondary:focus {
+            color: #475569 !important;
+            border-color: #64748b !important;
+            background-color: #ffffff !important;
+        }
+        .btn-action-icon.btn-outline-secondary:hover,
+        .btn-action-icon.btn-secondary:hover,
+        .action-btns-group > .btn-outline-secondary:hover,
+        .action-btns-group > .btn-secondary:hover {
+            background-color: #64748b !important;
+            border-color: #64748b !important;
+            color: #ffffff !important;
+            box-shadow: 0 2px 8px rgba(100, 116, 139, 0.35) !important;
+        }
+
+        /* Enforce visited & active states across all action buttons so icons never turn white/invisible upon click */
+        .btn-action-icon.btn-outline-info:visited { color: #00c0ef !important; border-color: #00c0ef !important; }
+        .btn-action-icon.btn-outline-primary:visited { color: #2563eb !important; border-color: #2563eb !important; }
+        .btn-action-icon.btn-outline-success:visited { color: #10b981 !important; border-color: #10b981 !important; }
+        .btn-action-icon.btn-outline-danger:visited { color: #ef4444 !important; border-color: #ef4444 !important; }
+        .btn-action-icon.btn-outline-warning:visited { color: #f59e0b !important; border-color: #f59e0b !important; }
+        .btn-action-icon.btn-outline-dark:visited { color: #1e293b !important; border-color: #1e293b !important; }
+
+        /* Ensure icon inside action button is always visible, centered, properly sized and inherits color */
+        .btn-action-icon i,
+        .action-btns-group > .btn i,
+        .action-btns-group > form > .btn i {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            font-size: 15px !important;
+            line-height: 1 !important;
+            color: inherit !important;
+            vertical-align: middle !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+        }
+
         /* 1. VIEW / INFO BUTTON (Cyan / Light Blue) */
         .btn-action-icon.btn-outline-info,
         .btn-action-icon.btn-action-view,
