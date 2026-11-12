@@ -3,6 +3,7 @@
 $currentTab = $_GET['tab'] ?? 'all';
 $summary = $summary ?? [];
 $recentReturns = $recentReturns ?? [];
+$canProcessReturns = hasPermission('purchases_returns', 'process') || hasPermission('purchases_returns', 'create');
 ?>
 <div class="container-fluid py-4">
     <!-- Header -->
@@ -507,7 +508,9 @@ $recentReturns = $recentReturns ?? [];
                             <thead style="background:#f8f9fa; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:#6c757d; font-weight:700;">
                                 <tr>
                                     <th class="ps-3" style="width:40px;">
-                                        <input type="checkbox" id="selectAllCheckbox" class="form-check-input" checked onchange="toggleSelectAll(this)">
+                                        <input type="checkbox" id="selectAllCheckbox" class="form-check-input"
+                                               onchange="toggleSelectAll(this)" <?= $canProcessReturns ? '' : 'disabled' ?>
+                                               title="<?= $canProcessReturns ? 'Select all invoice items' : 'Return processing permission is required' ?>">
                                     </th>
                                     <th style="min-width:280px;">Product Item (Purchased)</th>
                                     <th style="width:70px; text-align:center;">Sold</th>
@@ -636,7 +639,7 @@ $recentReturns = $recentReturns ?? [];
             <!-- Modal Footer -->
             <div class="modal-footer bg-white py-3 px-4 border-top">
                 <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
-                <?php if (hasPermission('purchases_returns', 'process') || hasPermission('purchases_returns', 'create')): ?>
+                <?php if ($canProcessReturns): ?>
                     <button type="button" class="btn btn-primary rounded-pill px-5 fw-bold shadow-sm" id="btnConfirmSubmit" onclick="submitReturnProcess()">
                         <span id="submitSpinner" class="spinner-border spinner-border-sm me-1 d-none" role="status"></span>
                         <i class="bi bi-check2-circle me-1"></i> Confirm &amp; Generate Tax Slip
@@ -926,6 +929,11 @@ function renderReturnItemsTable(items) {
     tbody.innerHTML = '';
     pendingReplacementScans.clear();
     rowReplacements = [];
+    const selectAll = document.getElementById('selectAllCheckbox');
+    if (selectAll) {
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
+    }
     Object.keys(rowPieceTags).forEach(k => delete rowPieceTags[k]);
 
     // Update item count badge
@@ -956,8 +964,8 @@ function renderReturnItemsTable(items) {
         tr.dataset.variantQr = it.qr_code || '';
         tr.innerHTML = `
             <td class="ps-3">
-                <input type="checkbox" class="form-check-input item-select-cb" data-idx="${idx}" checked
-                       onchange="this.closest('tr').classList.toggle('row-selected', this.checked); recalculateTotals()">
+                <input type="checkbox" class="form-check-input item-select-cb" data-idx="${idx}"
+                       onchange="handleReturnItemCheckboxChange(this)" <?= $canProcessReturns ? '' : 'disabled' ?>>
             </td>
             <td style="max-width:330px;">
                 <div class="fw-semibold text-dark mb-1">${it.product_name || 'Garment'}</div>
@@ -977,7 +985,7 @@ function renderReturnItemsTable(items) {
                 <input type="number" class="form-control form-control-sm return-qty-input fw-bold text-center"
                        style="width:80px;"
                        data-idx="${idx}" value="${maxQty}" min="1" max="${maxQty}"
-                       oninput="document.querySelector('.item-select-cb[data-idx=\'${idx}\']').checked = true; this.closest('tr').classList.add('row-selected'); validateQty(this, ${maxQty}); recalculateTotals()">
+                       oninput="validateQty(this, ${maxQty}); recalculateTotals()">
             </td>
             <td>
                 <select class="form-select form-select-sm item-condition-select" data-idx="${idx}" style="min-width:130px;">
@@ -993,7 +1001,6 @@ function renderReturnItemsTable(items) {
                 <div id="replacementDisplay_${idx}" class="text-muted small">No replacement scanned.</div>
             </td>
         `;
-        tr.classList.add('row-selected');
         tbody.appendChild(tr);
         renderReplacementProductCell(idx);
     });
@@ -1015,8 +1022,6 @@ function addPieceTag(idx, raw) {
     }
     rowPieceTags[idx].add(tag);
     renderTagBadges(idx);
-    const cb = document.querySelector('.item-select-cb[data-idx="' + idx + '"]');
-    if (cb) { cb.checked = true; cb.closest('tr').classList.add('row-selected'); }
     recalculateTotals();
 }
 
@@ -1055,6 +1060,19 @@ function toggleSelectAll(master) {
         cb.checked = master.checked;
         cb.closest('tr').classList.toggle('row-selected', master.checked);
     });
+    master.indeterminate = false;
+    recalculateTotals();
+}
+
+function handleReturnItemCheckboxChange(checkbox) {
+    checkbox.closest('tr').classList.toggle('row-selected', checkbox.checked);
+    const master = document.getElementById('selectAllCheckbox');
+    const checkboxes = Array.from(document.querySelectorAll('.item-select-cb'));
+    const selectedCount = checkboxes.filter(cb => cb.checked).length;
+    if (master) {
+        master.checked = checkboxes.length > 0 && selectedCount === checkboxes.length;
+        master.indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+    }
     recalculateTotals();
 }
 
@@ -1434,11 +1452,6 @@ async function submitReturnProcess() {
 
         const tags = getRowPieceTags(parseInt(idx));
         const tagsStr = (tags && tags.length > 0) ? tags.join(', ') : (it.batch_lot_no || it.qr_code || (it.notes && it.notes.includes('QR:') ? it.notes.replace(/^QR:\s*/i, '').trim() : '') || '');
-
-        // Auto-check the checkbox if they typed a quantity (fallback to make sure it's caught)
-        if (qty > 0 && !cb.checked) {
-            cb.checked = true;
-        }
 
         items.push({
             selected: 1,
