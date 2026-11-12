@@ -11661,19 +11661,15 @@ class WarehouseController {
         }
 
         $packTransactionStarted = false;
+        $packQuantityDefault = 1;
+        $aggregatePackQuantity = 0;
         try {
         if ($isSeriesOrComp && !$isReturnInward) {
             Database::beginTransaction();
             $packTransactionStarted = true;
             Database::fetchOne("SELECT id FROM product_variants WHERE id = ? FOR UPDATE", [$variantId]);
 
-            $packQuantity = (int)($variant['pack_quantity'] ?? 0);
-            if ($packQuantity <= 0) {
-                $packQuantity = 20;
-            }
-
-            // Each selected QR sticker represents a pack of $packQuantity units
-            $quantity = count($tagCodes) * $packQuantity;
+            $packQuantityDefault = max(1, (int)($variant['pack_quantity'] ?? 20));
         }
 
         $warehouse = Database::fetchOne("SELECT * FROM warehouses WHERE id = ?", [$warehouseId]);
@@ -11709,9 +11705,6 @@ class WarehouseController {
         } else {
             $tagSummary = 'QR Stickers Generated';
         }
-        $typeLabel = $isComp ? "Complementary Product" : ($isSeries ? "Master Series Pack" : "Third-Party Product");
-        $inwardNote = !empty($notes) ? $notes : "Third-Party Stickered QR Inward (+{$quantity} pcs) for {$typeLabel} SKU {$variant['sku']}. Tags: {$tagSummary}";
-
             if (!$packTransactionStarted) {
                 Database::beginTransaction();
                 $packTransactionStarted = true;
@@ -11739,13 +11732,25 @@ class WarehouseController {
                     if (Database::fetchOne("SELECT id FROM product_variants WHERE qr_code = ? LIMIT 1", [$tagCode])) {
                         throw new DomainException("QR code {$tagCode} is already assigned to a product variant.");
                     }
-                    $packQtyToStore = $isSeriesOrComp ? (int)($variant['pack_quantity'] ?? 20) : 1;
+                    $packQtyToStore = $isSeriesOrComp ? $packQuantityDefault : 1;
                     Database::execute(
                         "INSERT INTO warehouse_qr_codes (qr_code, variant_id, warehouse_id, pack_quantity, created_by, inwarded_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
                         [$tagCode, $variantId, $warehouseId, $packQtyToStore, $userId]
                     );
+                    if ($isSeriesOrComp && !$isReturnInward) {
+                        $aggregatePackQuantity += $packQtyToStore;
+                    }
+                }
+                if ($qrRecord && $isSeriesOrComp && !$isReturnInward) {
+                    $aggregatePackQuantity += max(1, (int)($qrRecord['pack_quantity'] ?? $packQuantityDefault));
                 }
             }
+
+            if ($isSeriesOrComp && !$isReturnInward) {
+                $quantity = $aggregatePackQuantity;
+            }
+            $typeLabel = $isComp ? "Complementary Product" : ($isSeries ? "Master Series Pack" : "Third-Party Product");
+            $inwardNote = !empty($notes) ? $notes : "Third-Party Stickered QR Inward (+{$quantity} pcs) for {$typeLabel} SKU {$variant['sku']}. Tags: {$tagSummary}";
 
             if ($isSeriesOrComp) {
                 $allInwarded = Database::fetchAll(
@@ -11842,9 +11847,14 @@ class WarehouseController {
     }
 
     /**
-     * Produce consecutive QR labels for stock adjustment or the next sequential series packs.
+     * Produce consecutive QR labels or extend an existing aggregate QR pack.
      */
     public function produceNewQrAjax(): void {
+        if (!CSRF::validateRequest()) {
+            Response::json(['success' => false, 'message' => 'Security token expired. Refresh the page and try again.'], 403);
+            return;
+        }
+
         $canProduce = hasPermission('wh_labels', 'create') || hasPermission('wh_labels', 'view') || hasPermission('stock', 'view') || hasPermission('warehouse', 'view');
         if (!$canProduce) {
             Response::json(['success' => false, 'message' => 'Access denied.'], 403);
@@ -11956,6 +11966,28 @@ class WarehouseController {
                     throw new DomainException('The selected QR label belongs to a different warehouse.');
                 }
 
+                $wasInwarded = !empty($qrRecord['inwarded_at']);
+                $sourceType = strtolower(trim((string)($_POST['source_type'] ?? 'tp_purchase')));
+                $isReturnInward = $sourceType === 'returns';
+                $canInwardStock = hasPermission('inward', 'verify')
+                    || hasPermission('inward', 'create')
+                    || hasPermission('purchases', 'receive')
+                    || (function_exists('isAdmin') && isAdmin());
+                $canInwardReturn = hasPermission('returns', 'classify')
+                    || hasPermission('returns', 'receive')
+                    || hasPermission('returns', 'view')
+                    || hasPermission('stock', 'view')
+                    || hasPermission('warehouse', 'view')
+                    || $canInwardStock;
+                if ($wasInwarded && ($isReturnInward ? !$canInwardReturn : !$canInwardStock)) {
+                    Database::rollback();
+                    Response::json([
+                        'success' => false,
+                        'message' => 'You do not have permission to inward the added units. Ask a warehouse inward administrator.',
+                    ], 403);
+                    return;
+                }
+
                 $currentPackQty = max(1, (int)($qrRecord['pack_quantity'] ?? $packQty));
                 $newPackQty = $currentPackQty + $count;
                 $startCode = (string)$qrRecord['qr_code'];
@@ -11997,11 +12029,63 @@ class WarehouseController {
                     );
                 }
 
+                $stockUpdate = null;
+                $totalWarehouseStock = null;
+                if ($wasInwarded) {
+                    $stockWarehouseId = (int)($qrRecord['warehouse_id'] ?? 0);
+                    if ($stockWarehouseId <= 0) {
+                        $stockWarehouseId = $warehouseId;
+                    }
+                    $sessionUserId = Session::get('user_id');
+                    $userId = is_numeric($sessionUserId) && (int)$sessionUserId > 0
+                        ? (int)$sessionUserId
+                        : null;
+                    if ($userId !== null && !Database::fetchOne("SELECT id FROM users WHERE id = ?", [$userId])) {
+                        $userId = null;
+                    }
+                    $sourceId = (int)($_POST['source_id'] ?? 0);
+                    $transactionType = $isReturnInward ? 'RETURN_INWARD' : 'PURCHASE_INWARD';
+                    $referenceType = $isReturnInward ? 'warehouse_returns' : 'THIRD_PARTY_STICKERED';
+                    $stockNote = "QR pack {$startCode} extended by {$count} pcs (pack quantity {$newPackQty}).";
+
+                    StockService::increase(
+                        $variantId,
+                        'WAREHOUSE',
+                        $stockWarehouseId,
+                        'AVAILABLE',
+                        $count,
+                        $transactionType,
+                        $referenceType,
+                        $sourceId > 0 ? $sourceId : null,
+                        $userId,
+                        $stockNote
+                    );
+                    $stockUpdate = Database::fetchOne(
+                        "SELECT quantity FROM stock_balances WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND location_id = ? AND stock_state = 'AVAILABLE'",
+                        [$variantId, $stockWarehouseId]
+                    );
+                    $stockUpdate = (float)($stockUpdate['quantity'] ?? 0);
+                    $totalWarehouseStock = Database::fetchOne(
+                        "SELECT COALESCE(SUM(quantity), 0) as total FROM stock_balances WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND stock_state = 'AVAILABLE'",
+                        [$variantId]
+                    );
+                    AuditService::log('warehouse', 'inward', 'stock_balances', $variantId, null, [
+                        'action'       => $isReturnInward ? 'RETURN_INWARD_ADJUSTMENT' : 'THIRD_PARTY_STICKERED_INWARD_ADJUSTMENT',
+                        'variant_id'   => $variantId,
+                        'sku'          => $variant['sku'],
+                        'quantity'     => $count,
+                        'warehouse_id' => $stockWarehouseId,
+                        'new_balance'  => $stockUpdate,
+                        'qr_code'      => $startCode,
+                    ]);
+                }
+
                 Database::commit();
                 $catH = implode(' › ', array_filter([$variant['category_name'] ?? '', $variant['subcategory_name'] ?? '', $variant['sub_subcategory_name'] ?? '']));
                 $itemData = [
                     'id'                   => (int)$qrRecord['id'],
                     'variant_id'           => $variantId,
+                    'warehouse_id'         => (int)($qrRecord['warehouse_id'] ?? $warehouseId),
                     'qr_prefix'            => strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($variant['qr_code_prefix'] ?? ''))),
                     'tag_code'             => $startCode,
                     'product_name'         => $variant['product_name'],
@@ -12018,7 +12102,7 @@ class WarehouseController {
                     'qr_payload'           => $startCode,
                     'is_series'            => true,
                     'is_complementary'     => $isComp,
-                    'is_inwarded'          => !empty($qrRecord['inwarded_at']),
+                    'is_inwarded'          => $wasInwarded,
                     'is_saved_qr'          => true,
                     'series_start_code'    => $startCode,
                     'series_end_code'      => $newEndCode,
@@ -12034,7 +12118,13 @@ class WarehouseController {
                 Response::json([
                     'success' => true,
                     'aggregate_extension' => true,
-                    'message' => "Updated the existing QR {$startCode}: pack quantity increased by {$count} to {$newPackQty}. Warehouse stock was not changed.",
+                    'message' => $wasInwarded
+                        ? "Updated the existing QR {$startCode}: pack quantity is now {$newPackQty}. Added {$count} unit(s) to warehouse stock."
+                        : "Updated the existing QR {$startCode}: pack quantity is now {$newPackQty}. The added units are pending inward.",
+                    'stock_updated' => $wasInwarded,
+                    'inward_qty' => $wasInwarded ? $count : 0,
+                    'warehouse_stock' => $stockUpdate,
+                    'total_warehouse_stock' => is_array($totalWarehouseStock) ? ($totalWarehouseStock['total'] ?? null) : null,
                     'item' => $itemData,
                 ]);
             } catch (DomainException $e) {
