@@ -2162,6 +2162,7 @@ class WarehouseController {
             $adjustmentQrParams[] = $selectedWarehouseId;
         }
         $adjustmentQrSql .= " ORDER BY id ASC";
+        // Add adjustment-generated QR quantity to the batch total without inflating supplier inward counts.
         $adjustmentQrRows = Database::fetchAll(
             $adjustmentQrSql,
             $adjustmentQrParams
@@ -12026,6 +12027,30 @@ class WarehouseController {
             ];
         }
 
+        $adjustmentQrRows = Database::fetchAll(
+            "SELECT variant_id, SUM(pack_quantity) as adjustment_qty
+             FROM warehouse_qr_codes
+             WHERE is_extra = 1 AND extra_reason LIKE 'Stock Adjustment%'
+             GROUP BY variant_id"
+        );
+        $adjustmentQtyMap = [];
+        foreach ($adjustmentQrRows as $row) {
+            $adjustmentQtyMap[(int)$row['variant_id']] = (int)$row['adjustment_qty'];
+        }
+
+        $qrPackExtensionRows = Database::fetchAll(
+            "SELECT variant_id, SUM(quantity) as adjustment_qty
+             FROM stock_transactions
+             WHERE reference_type = 'THIRD_PARTY_STICKERED'
+               AND transaction_type = 'PURCHASE_INWARD_ADJUSTMENT'
+               AND COALESCE(notes, '') LIKE 'QR pack % extended by % pcs (pack quantity %'
+             GROUP BY variant_id"
+        );
+        foreach ($qrPackExtensionRows as $row) {
+            $variantId = (int)$row['variant_id'];
+            $adjustmentQtyMap[$variantId] = ($adjustmentQtyMap[$variantId] ?? 0) + (int)$row['adjustment_qty'];
+        }
+
         $poItemsRows = Database::fetchAll(
             "SELECT variant_id, SUM(quantity) as po_qty FROM purchase_items GROUP BY variant_id"
         );
@@ -12050,7 +12075,8 @@ class WarehouseController {
                 $isSeries = strtoupper($tpv['qr_type'] ?? '') === 'SERIES_BATCH'
                     || strtoupper($tpv['qr_type'] ?? '') === 'SERIES'
                     || strtoupper($tpv['warehouse_category_type'] ?? '') === 'SERIES';
-                $totalQty = max($poQty, (int)($tpv['quantity'] ?? 0), $inwardedQty);
+                $adjustmentQty = $adjustmentQtyMap[$vId] ?? 0;
+                $totalQty = max($poQty, (int)($tpv['quantity'] ?? 0), $inwardedQty) + $adjustmentQty;
                 if ($totalQty <= 0) $totalQty = max(1, $inwardedQty);
                 $remainingQty = max(0, $totalQty - $inwardedQty);
 
