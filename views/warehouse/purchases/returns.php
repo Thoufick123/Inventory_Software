@@ -474,7 +474,7 @@ $recentReturns = $recentReturns ?? [];
                                 <i class="bi bi-upc-scan me-1"></i>Scan Replacement Warehouse Product
                             </span>
                             <span class="text-white-50 small">
-                                Scan any in-stock product QR, barcode, or SKU from this warehouse
+                                Scan any in-stock QR, barcode, or SKU; it goes to the next checked invoice item
                             </span>
                         </div>
                     </div>
@@ -487,34 +487,10 @@ $recentReturns = $recentReturns ?? [];
                                autocomplete="off"
                                onkeydown="if(event.key === 'Enter'){ event.preventDefault(); onModalScanExchangeItem(this.value); }">
                         <button type="button" class="btn btn-success px-4 fw-bold" onclick="onModalScanExchangeItem(document.getElementById('modalExchangeScanInput').value)">
-                            <i class="bi bi-plus-circle me-1"></i> Scan &amp; Match
+                            <i class="bi bi-plus-circle me-1"></i> Scan &amp; Assign
                         </button>
                     </div>
                     <div id="modalScanFeedback" class="mt-2 small d-none alert py-1 px-2.5 mb-0" style="font-size: 0.82rem;"></div>
-                </div>
-
-                <div id="warehouseExchangeItemsBox" class="card border-success border-opacity-25 shadow-sm mb-3 d-none" style="border-radius:12px;">
-                    <div class="card-header bg-success-subtle text-success-emphasis py-2 px-3 d-flex justify-content-between align-items-center">
-                        <span class="fw-bold small"><i class="bi bi-box-seam me-1"></i>Replacement Products from Warehouse</span>
-                        <span id="warehouseExchangeItemCount" class="badge text-bg-success">0 items</span>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="table table-sm align-middle mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Product / SKU</th>
-                                    <th>Scanned QR / Code</th>
-                                    <th class="text-end">Available</th>
-                                    <th style="width:110px;">Qty</th>
-                                    <th class="text-end">Value</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody id="warehouseExchangeItemsTbody">
-                                <tr id="warehouseExchangeEmptyRow"><td colspan="6" class="text-center text-muted py-3 small">Scan replacement products to add them to this exchange.</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
                 </div>
 
                 <!-- Purchased Items Table -->
@@ -539,6 +515,7 @@ $recentReturns = $recentReturns ?? [];
                                     <th style="width:140px;" id="conditionColHeader">Condition</th>
                                     <th style="width:110px; text-align:right;">Unit Rate</th>
                                     <th style="width:120px; text-align:right;" id="lastColHeader">Item Credit</th>
+                                    <th id="replacementProductHeader" class="d-none" style="min-width:300px;">Replacement Product</th>
                                 </tr>
                             </thead>
                             <tbody id="returnItemsTbody">
@@ -726,7 +703,7 @@ let currentPurchaseData = null;
 let invoiceCountTimer = null;
 let invoiceCountRequestId = 0;
 const pendingReplacementScans = new Set();
-let replacementItems = [];
+let rowReplacements = [];
 
 function isPhoneSearch(query) {
     const digits = query.replace(/\D/g, '');
@@ -948,8 +925,7 @@ function renderReturnItemsTable(items) {
     const tbody = document.getElementById('returnItemsTbody');
     tbody.innerHTML = '';
     pendingReplacementScans.clear();
-    replacementItems = [];
-    renderWarehouseExchangeItems();
+    rowReplacements = [];
     Object.keys(rowPieceTags).forEach(k => delete rowPieceTags[k]);
 
     // Update item count badge
@@ -957,7 +933,7 @@ function renderReturnItemsTable(items) {
     if (countBadge) countBadge.textContent = (items ? items.length : 0) + ' Line Item(s)';
 
     if (!items || items.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No items in this purchase order.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">No items in this purchase order.</td></tr>';
         return;
     }
 
@@ -1013,9 +989,13 @@ function renderReturnItemsTable(items) {
             <td>
                 <strong class="text-danger item-refund-val" data-idx="${idx}">₹0.00</strong>
             </td>
+            <td class="replacement-product-cell d-none" data-idx="${idx}" style="min-width:300px;">
+                <div id="replacementDisplay_${idx}" class="text-muted small">No replacement scanned.</div>
+            </td>
         `;
         tr.classList.add('row-selected');
         tbody.appendChild(tr);
+        renderReplacementProductCell(idx);
     });
 
     recalculateTotals();
@@ -1071,22 +1051,27 @@ function validateQty(input, max) {
 
 function toggleSelectAll(master) {
     const cbs = document.querySelectorAll('.item-select-cb');
-    cbs.forEach(cb => cb.checked = master.checked);
+    cbs.forEach(cb => {
+        cb.checked = master.checked;
+        cb.closest('tr').classList.toggle('row-selected', master.checked);
+    });
     recalculateTotals();
 }
 
 function switchActionMode(mode) {
     const lastColHdr = document.getElementById('lastColHeader');
     const scannerBox = document.getElementById('exchangeScannerBox');
-    const exchangeItemsBox = document.getElementById('warehouseExchangeItemsBox');
+    const replacementHeader = document.getElementById('replacementProductHeader');
+    const replacementCells = document.querySelectorAll('.replacement-product-cell');
     const scanInput = document.getElementById('modalExchangeScanInput');
     const isExchange = mode === 'EXCHANGE_DIFFERENT';
 
     if (lastColHdr) lastColHdr.textContent = 'Item Credit';
     if (scannerBox) scannerBox.classList.toggle('d-none', !isExchange);
-    if (exchangeItemsBox) exchangeItemsBox.classList.toggle('d-none', !isExchange);
+    if (replacementHeader) replacementHeader.classList.toggle('d-none', !isExchange);
+    replacementCells.forEach(cell => cell.classList.toggle('d-none', !isExchange));
     if (isExchange) {
-        renderWarehouseExchangeItems();
+        replacementCells.forEach(cell => renderReplacementProductCell(Number(cell.dataset.idx)));
         if (scanInput) setTimeout(() => scanInput.focus(), 150);
     }
 
@@ -1100,58 +1085,61 @@ function escapeExchangeHtml(value) {
     return String(value || '').replace(/[&<>"']/g, character => replacements[character]);
 }
 
-function renderWarehouseExchangeItems() {
-    const tbody = document.getElementById('warehouseExchangeItemsTbody');
-    const count = document.getElementById('warehouseExchangeItemCount');
-    if (!tbody) return;
+function renderReplacementProductCell(idx) {
+    const display = document.getElementById('replacementDisplay_' + idx);
+    if (!display) return;
 
-    if (count) count.textContent = `${replacementItems.length} product${replacementItems.length === 1 ? '' : 's'}`;
-    if (replacementItems.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3 small">Scan replacement products to add them to this exchange.</td></tr>';
+    const item = rowReplacements[idx];
+    if (!item) {
+        display.className = 'text-muted small';
+        display.textContent = 'Scan a product to assign it here.';
         return;
     }
 
-    tbody.innerHTML = replacementItems.map((item, index) => {
-        const scanLabels = [...new Set([...(item.scanned_tags || []), ...(item.scanned_codes || [])])];
-        const price = Number(item.unit_price) || 0;
-        const quantity = Number(item.quantity) || 0;
-        return `<tr>
-            <td>
+    const scanLabels = [...new Set([...(item.scanned_tags || []), ...(item.scanned_codes || [])])];
+    const price = Number(item.unit_price) || 0;
+    const quantity = Number(item.quantity) || 0;
+    display.className = 'border rounded-2 bg-light p-2';
+    display.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start gap-2">
+            <div class="min-w-0">
                 <div class="fw-semibold">${escapeExchangeHtml(item.product_name)}</div>
                 <div class="small text-muted font-monospace">${escapeExchangeHtml(item.sku || item.product_code || '')}</div>
-            </td>
-            <td class="small font-monospace">${scanLabels.map(escapeExchangeHtml).join('<br>')}</td>
-            <td class="text-end">${Number(item.available_stock) || 0}</td>
-            <td><input type="number" class="form-control form-control-sm text-center replacement-qty-input"
-                       data-index="${index}" min="1" max="${Number(item.available_stock) || 0}" value="${quantity}"></td>
-            <td class="text-end fw-semibold">₹${(price * quantity).toFixed(2)}</td>
-            <td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger remove-replacement-item"
-                    data-index="${index}" title="Remove product"><i class="bi bi-trash"></i></button></td>
-        </tr>`;
-    }).join('');
+                <div class="small text-primary font-monospace text-break">${scanLabels.map(escapeExchangeHtml).join(', ')}</div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-danger remove-replacement-item"
+                    title="Remove replacement"><i class="bi bi-trash"></i></button>
+        </div>
+        <div class="d-flex align-items-center justify-content-between gap-2 mt-2">
+            <span class="small text-muted">Available: ${Number(item.available_stock) || 0}</span>
+            <input type="number" class="form-control form-control-sm text-center replacement-qty-input"
+                   style="width:68px;" min="1" max="${Number(item.available_stock) || 0}" value="${quantity}"
+                   aria-label="Replacement quantity">
+            <span class="small fw-bold text-success text-nowrap">₹${(price * quantity).toFixed(2)}</span>
+        </div>
+    `;
 
-    tbody.querySelectorAll('.replacement-qty-input').forEach(input => {
-        input.addEventListener('change', () => {
-            const item = replacementItems[Number(input.dataset.index)];
-            const quantity = Number(input.value);
-            if (!item || !Number.isInteger(quantity) || quantity < 1 || quantity > Number(item.available_stock)) {
-                if (item) input.value = item.quantity;
-                showModalScanFeedback('Replacement quantity must be between 1 and the available warehouse stock.', 'warning');
-                return;
-            }
-            item.quantity = quantity;
-            renderWarehouseExchangeItems();
-            recalculateTotals();
-        });
+    const quantityInput = display.querySelector('.replacement-qty-input');
+    quantityInput.addEventListener('change', () => updateReplacementQuantity(idx, quantityInput.value));
+    display.querySelector('.remove-replacement-item').addEventListener('click', () => {
+        rowReplacements[idx] = null;
+        renderReplacementProductCell(idx);
+        recalculateTotals();
     });
+}
 
-    tbody.querySelectorAll('.remove-replacement-item').forEach(button => {
-        button.addEventListener('click', () => {
-            replacementItems.splice(Number(button.dataset.index), 1);
-            renderWarehouseExchangeItems();
-            recalculateTotals();
-        });
-    });
+function updateReplacementQuantity(idx, value) {
+    const item = rowReplacements[idx];
+    const quantity = Number(value);
+    if (!item || !Number.isInteger(quantity) || quantity < 1 || quantity > Number(item.available_stock)) {
+        showModalScanFeedback('Replacement quantity must be between 1 and the available warehouse stock.', 'warning');
+        renderReplacementProductCell(idx);
+        return;
+    }
+
+    item.quantity = quantity;
+    renderReplacementProductCell(idx);
+    recalculateTotals();
 }
 
 function showModalScanFeedback(message, type = 'danger') {
@@ -1207,7 +1195,7 @@ function onModalScanExchangeItem(code) {
                     .filter(Boolean);
                 const isCatalogCode = catalogCodes.includes(normalizedCode);
                 const normalizedTag = normalizeReplacementScanValue(scannedTag);
-                const tagAlreadyScanned = !isCatalogCode && replacementItems.some(item =>
+                const tagAlreadyScanned = !isCatalogCode && rowReplacements.some(item => item &&
                     (item.scanned_tags || []).some(tag => normalizeReplacementScanValue(tag) === normalizedTag)
                 );
                 if (tagAlreadyScanned) {
@@ -1222,13 +1210,38 @@ function onModalScanExchangeItem(code) {
                     const availableStock = Number(scannedVar.available_stock) || 0;
                     const packQuantity = Math.max(1, Number.parseInt(scannedVar.pack_quantity, 10) || 1);
                     const quantityToAdd = (scannedVar.is_series || scannedVar.is_complementary) ? packQuantity : 1;
-                    let item = replacementItems.find(existing => Number(existing.variant_id) === variantId);
+                    const invoiceItems = currentPurchaseData.items || [];
+                    const checkedIndexes = invoiceItems
+                        .map((item, index) => index)
+                        .filter(index => {
+                            const checkbox = document.querySelector(`.item-select-cb[data-idx="${index}"]`);
+                            return checkbox && checkbox.checked;
+                        });
+                    const existingIndex = rowReplacements.findIndex((item, index) => {
+                        const checkbox = document.querySelector(`.item-select-cb[data-idx="${index}"]`);
+                        return item && Number(item.variant_id) === variantId && checkbox && checkbox.checked;
+                    });
+                    const targetIndex = existingIndex >= 0
+                        ? existingIndex
+                        : checkedIndexes.find(index => !rowReplacements[index]);
 
                     if (!variantId || availableStock <= 0) {
                         showModalScanFeedback('This product has no available stock in the selected warehouse.', 'warning');
-                    } else if ((item ? Number(item.quantity) : 0) + quantityToAdd > availableStock) {
-                        showModalScanFeedback(`Insufficient stock for ${scannedVar.product_name}. Available: ${availableStock} pcs.`, 'warning');
+                    } else if (checkedIndexes.length === 0) {
+                        showModalScanFeedback('Select an invoice item before scanning a replacement product.', 'warning');
+                    } else if (targetIndex === undefined) {
+                        showModalScanFeedback('Every checked invoice item already has a replacement. Remove one or select another item.', 'warning');
                     } else {
+                        let item = rowReplacements[targetIndex];
+                        if (item && (Number(item.quantity) + quantityToAdd > availableStock)) {
+                            showModalScanFeedback(`Insufficient stock for ${scannedVar.product_name}. Available: ${availableStock} pcs.`, 'warning');
+                            return;
+                        }
+                        if (!item && quantityToAdd > availableStock) {
+                            showModalScanFeedback(`Insufficient stock for ${scannedVar.product_name}. Available: ${availableStock} pcs.`, 'warning');
+                            return;
+                        }
+
                         if (!item) {
                             item = {
                                 variant_id: variantId,
@@ -1241,7 +1254,7 @@ function onModalScanExchangeItem(code) {
                                 scanned_tags: [],
                                 scanned_codes: []
                             };
-                            replacementItems.push(item);
+                            rowReplacements[targetIndex] = item;
                         }
                         item.available_stock = availableStock;
                         item.quantity += quantityToAdd;
@@ -1249,9 +1262,10 @@ function onModalScanExchangeItem(code) {
                         if (!isCatalogCode && scannedTag && !item.scanned_tags.includes(scannedTag)) {
                             item.scanned_tags.push(scannedTag);
                         }
-                        renderWarehouseExchangeItems();
+                        renderReplacementProductCell(targetIndex);
                         recalculateTotals();
-                        showModalScanFeedback(`Added ${scannedVar.product_name} — ${quantityToAdd} pc${quantityToAdd === 1 ? '' : 's'} from warehouse stock.`, 'success');
+                        const originalName = invoiceItems[targetIndex].product_name || 'invoice item';
+                        showModalScanFeedback(`Assigned ${scannedVar.product_name} to ${originalName}.`, 'success');
                     }
                 }
             } else {
@@ -1289,14 +1303,12 @@ function recalculateTotals() {
 
         if (cb.checked) {
             totalRefund += lineRefund;
+            if (mode === 'EXCHANGE_DIFFERENT' && rowReplacements[Number(idx)]) {
+                const replacement = rowReplacements[Number(idx)];
+                totalNew += (Number(replacement.unit_price) || 0) * (Number(replacement.quantity) || 0);
+            }
         }
     });
-
-    if (mode === 'EXCHANGE_DIFFERENT') {
-        totalNew = replacementItems.reduce((sum, item) => {
-            return sum + ((Number(item.unit_price) || 0) * (Number(item.quantity) || 0));
-        }, 0);
-    }
 
     document.getElementById('pillTotalRefund').innerText = '₹' + totalRefund.toFixed(2);
     document.getElementById('pillTotalNew').innerText = '₹' + totalNew.toFixed(2);
@@ -1411,6 +1423,8 @@ async function submitReturnProcess() {
         alert('Please select at least one item from the purchase order to return/exchange.');
         return;
     }
+    const selectedReplacementItems = Array.from(checkboxes)
+        .map(cb => rowReplacements[Number(cb.getAttribute('data-idx'))]);
 
     checkboxes.forEach(cb => {
         const idx = cb.getAttribute('data-idx');
@@ -1438,13 +1452,14 @@ async function submitReturnProcess() {
     });
 
     if (mode === 'EXCHANGE_DIFFERENT') {
-        const hasInvalidReplacement = replacementItems.length === 0 || replacementItems.some(item =>
+        const hasMissingReplacement = selectedReplacementItems.some(item => !item);
+        const hasInvalidReplacement = selectedReplacementItems.some(item => item && (
             !Number.isInteger(Number(item.quantity))
             || Number(item.quantity) < 1
             || Number(item.quantity) > Number(item.available_stock)
-        );
-        if (hasInvalidReplacement) {
-            alert('Please scan at least one replacement product and ensure its quantity is within available warehouse stock.');
+        ));
+        if (hasMissingReplacement || hasInvalidReplacement) {
+            alert('Scan one replacement product for every checked invoice item and ensure each quantity is within available warehouse stock.');
             return;
         }
     }
@@ -1493,7 +1508,7 @@ async function submitReturnProcess() {
         reason: document.getElementById('returnReasonSelect').value,
         notes: document.getElementById('returnNotesInput').value.trim(),
         items: items,
-        new_items: mode === 'EXCHANGE_DIFFERENT' ? replacementItems.map(item => ({
+        new_items: mode === 'EXCHANGE_DIFFERENT' ? selectedReplacementItems.map(item => ({
             variant_id: item.variant_id,
             quantity: item.quantity,
             scanned_tags: item.scanned_tags

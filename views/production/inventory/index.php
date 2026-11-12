@@ -225,32 +225,47 @@ $inventoryVariantCount = array_sum(array_map(
                         );
                 ?>
                 <tr class="batch-list-row"
-                    data-batch-id="<?= (int)$batch['qc_batch_id'] ?>"
+                    data-batch-id="<?= e($batch['qc_batch_id']) ?>"
                     data-category-id="<?= (int)($batch['category_id'] ?? 0) ?>"
                     data-search-text="<?= e($variantSearchText) ?>"
                     data-filter-match="true">
                     <td class="text-nowrap">
-                        <div class="fw-semibold">QC Batch #<?= (int)$batch['qc_batch_id'] ?></div>
+                        <?php if (!empty($batch['is_supply'])): ?>
+                            <div class="fw-semibold text-success"><i class="bi bi-box-seam me-1"></i>Supply Inward #<?= (int)($batch['supply_item_id'] ?? 0) ?></div>
+                        <?php else: ?>
+                            <div class="fw-semibold">QC Batch #<?= (int)$batch['qc_batch_id'] ?></div>
+                        <?php endif; ?>
                         <small class="text-muted"><?= (new DateTime($batch['batch_created_at'] ?? 'now'))->format('d M Y, g:i A') ?></small>
                     </td>
                     <td>
-                        <a href="<?= url('production/programs/view/' . $batch['program_id']) ?>" class="text-decoration-none fw-semibold">
-                            <?= e($batch['program_number']) ?>
-                        </a>
+                        <?php if (!empty($batch['is_supply'])): ?>
+                            <a href="<?= url('production/purchases/supply-qr/' . $batch['purchase_id']) ?>" class="text-decoration-none fw-semibold text-primary">
+                                <?= e($batch['program_number']) ?>
+                            </a>
+                        <?php else: ?>
+                            <a href="<?= url('production/programs/view/' . $batch['program_id']) ?>" class="text-decoration-none fw-semibold">
+                                <?= e($batch['program_number']) ?>
+                            </a>
+                        <?php endif; ?>
                     </td>
                     <td>
                         <div class="fw-semibold text-dark"><?= e($batch['product_name']) ?></div>
                         <div class="d-flex flex-wrap gap-1 mt-1">
-                            <span class="badge bg-secondary-subtle text-secondary border">Size: <?= e($variant['size_name']) ?></span>
-                            <span class="badge bg-info-subtle text-info border">Color: <?= e($variant['color_name']) ?></span>
+                            <?php if (!empty($batch['is_supply'])): ?>
+                                <span class="badge bg-success-subtle text-success border">Supply Item</span>
+                                <span class="badge bg-secondary-subtle text-secondary border">Unit: <?= e($variant['size_name']) ?></span>
+                            <?php else: ?>
+                                <span class="badge bg-secondary-subtle text-secondary border">Size: <?= e($variant['size_name']) ?></span>
+                                <span class="badge bg-info-subtle text-info border">Color: <?= e($variant['color_name']) ?></span>
+                            <?php endif; ?>
                         </div>
                         <?php if (!empty($batch['category_name'])): ?>
                             <small class="text-muted d-block mt-1"><?= e($batch['category_name']) ?></small>
                         <?php endif; ?>
                     </td>
-                    <td class="text-center fw-semibold"><?= number_format($variant['passed_qty']) ?> pcs</td>
-                    <td class="text-center fw-semibold text-success"><?= number_format($variant['remaining_qty']) ?> pcs</td>
-                    <td class="text-center fw-semibold text-danger"><?= number_format($variant['outward_qty']) ?> pcs</td>
+                    <td class="text-center fw-semibold"><?= number_format($variant['passed_qty']) ?> <?= !empty($batch['is_supply']) ? e($batch['unit'] ?? 'pcs') : 'pcs' ?></td>
+                    <td class="text-center fw-semibold text-success"><?= number_format($variant['remaining_qty']) ?> <?= !empty($batch['is_supply']) ? e($batch['unit'] ?? 'pcs') : 'pcs' ?></td>
+                    <td class="text-center fw-semibold text-danger"><?= number_format($variant['outward_qty']) ?> <?= !empty($batch['is_supply']) ? e($batch['unit'] ?? 'pcs') : 'pcs' ?></td>
                     <td>
                         <?php if ($variant['remaining_qty'] === 0): ?>
                             <span class="badge bg-secondary-subtle text-secondary border">Fully Outwarded</span>
@@ -262,21 +277,32 @@ $inventoryVariantCount = array_sum(array_map(
                     </td>
                     <td class="text-end">
                         <div class="action-btns-group justify-content-end">
-                            <a href="<?= url('production/inventory/batch/' . $batch['qc_batch_id']) ?>"
-                               class="btn btn-outline-info btn-action-icon" title="View Batch Items">
-                                <i class="bi bi-eye"></i>
-                            </a>
-                            <?php if (hasPermission('batches', 'create') && $variant['remaining_qty'] > 0): ?>
-                                <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id']) ?>"
-                                   class="btn btn-outline-success btn-action-icon" title="Pack into Boxes for Central Warehouse">
-                                    <i class="bi bi-box-seam"></i>
+                            <?php if (!empty($batch['is_supply'])): ?>
+                                <a href="<?= url('production/purchases/supply-qr/' . $batch['purchase_id']) ?>"
+                                   class="btn btn-outline-info btn-action-icon" title="View Supply QR Stickers & Inward Status">
+                                    <i class="bi bi-qr-code"></i>
                                 </a>
-                            <?php endif; ?>
-                            <?php if (hasPermission('batches', 'create') && ($variant['rework_qty'] ?? 0) > 0): ?>
-                                <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id'] . '&include_rework=1') ?>"
-                                   class="btn btn-outline-warning btn-action-icon" title="Pack Reworked Pieces into Batch for Outward">
-                                    <i class="bi bi-tools"></i>
+                                <a href="<?= url('production/purchases/edit/' . $batch['purchase_id']) ?>"
+                                   class="btn btn-outline-primary btn-action-icon" title="View Purchase Order #<?= e($batch['program_number']) ?>">
+                                    <i class="bi bi-file-earmark-text"></i>
                                 </a>
+                            <?php else: ?>
+                                <a href="<?= url('production/inventory/batch/' . $batch['qc_batch_id']) ?>"
+                                   class="btn btn-outline-info btn-action-icon" title="View Batch Items">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                <?php if (hasPermission('batches', 'create') && $variant['remaining_qty'] > 0): ?>
+                                    <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id']) ?>"
+                                       class="btn btn-outline-success btn-action-icon" title="Pack into Boxes for Central Warehouse">
+                                        <i class="bi bi-box-seam"></i>
+                                    </a>
+                                <?php endif; ?>
+                                <?php if (hasPermission('batches', 'create') && ($variant['rework_qty'] ?? 0) > 0): ?>
+                                    <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id'] . '&include_rework=1') ?>"
+                                       class="btn btn-outline-warning btn-action-icon" title="Pack Reworked Pieces into Batch for Outward">
+                                        <i class="bi bi-tools"></i>
+                                    </a>
+                                <?php endif; ?>
                             <?php endif; ?>
                         </div>
                     </td>
@@ -330,9 +356,15 @@ $inventoryVariantCount = array_sum(array_map(
                 <div class="d-flex align-items-start justify-content-between mb-3 batch-list-header">
                     <div>
                         <div class="d-flex align-items-center gap-2 mb-1">
-                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-2 fs-6 fw-bold text-nowrap">
-                                <i class="bi bi-patch-check-fill me-1"></i>QC Batch #<?= $batch['qc_batch_id'] ?>
-                            </span>
+                            <?php if (!empty($batch['is_supply'])): ?>
+                                <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 fs-6 fw-bold text-nowrap">
+                                    <i class="bi bi-box-seam me-1"></i>Supply Inward #<?= (int)($batch['supply_item_id'] ?? 0) ?>
+                                </span>
+                            <?php else: ?>
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-2 fs-6 fw-bold text-nowrap">
+                                    <i class="bi bi-patch-check-fill me-1"></i>QC Batch #<?= $batch['qc_batch_id'] ?>
+                                </span>
+                            <?php endif; ?>
                             <?php if ($stockStatus === 'NO_PASSED_STOCK'): ?>
                                 <span class="badge bg-secondary-subtle text-secondary border small"><i class="bi bi-clipboard-x me-1"></i>No QC-Passed Stock</span>
                             <?php elseif ($stockStatus === 'FULLY_OUTWARDED'): ?>
@@ -359,12 +391,21 @@ $inventoryVariantCount = array_sum(array_map(
                     <?php if (!empty($batch['category_name'])): ?>
                         <span class="badge bg-primary-subtle text-primary border border-primary-subtle fs-7"><?= e($batch['category_name']) ?></span>
                     <?php endif; ?>
-                    <div class="small text-muted mt-1">
-                        <i class="bi bi-diagram-3 me-1"></i>Program: 
-                        <a href="<?= url('production/programs/view/' . $batch['program_id']) ?>" class="text-decoration-none fw-semibold">
-                            <?= e($batch['program_number']) ?>
-                        </a>
-                    </div>
+                    <?php if (!empty($batch['is_supply'])): ?>
+                        <div class="small text-muted mt-1">
+                            <i class="bi bi-receipt me-1 text-success"></i>PO: 
+                            <a href="<?= url('production/purchases/supply-qr/' . $batch['purchase_id']) ?>" class="text-decoration-none fw-semibold">
+                                <?= e($batch['program_number']) ?>
+                            </a>
+                        </div>
+                    <?php else: ?>
+                        <div class="small text-muted mt-1">
+                            <i class="bi bi-diagram-3 me-1"></i>Program: 
+                            <a href="<?= url('production/programs/view/' . $batch['program_id']) ?>" class="text-decoration-none fw-semibold">
+                                <?= e($batch['program_number']) ?>
+                            </a>
+                        </div>
+                    <?php endif; ?>
                 </div>
 
                 <!-- Variants Preview -->
@@ -452,21 +493,32 @@ $inventoryVariantCount = array_sum(array_map(
 
                 <!-- Actions (Both Option A & Option B) -->
                 <div class="d-flex gap-1.5 batch-list-actions flex-wrap">
-                    <a href="<?= url('production/inventory/batch/' . $batch['qc_batch_id']) ?>" 
-                       class="btn btn-outline-secondary btn-sm flex-grow-1 fw-semibold">
-                        <i class="bi bi-eye me-1"></i> View Items
-                    </a>
-                    <?php if (hasPermission('batches', 'create') && $batch['remaining_pieces'] > 0): ?>
-                    <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id']) ?>" 
-                       class="btn btn-outline-success btn-sm fw-semibold" title="Pack Remaining Stock into Box Batch for Warehouse">
-                        <i class="bi bi-box-seam me-1"></i>Pack (WH)
-                    </a>
-                    <?php endif; ?>
-                    <?php if (hasPermission('batches', 'create') && ($batch['total_rework_pieces'] ?? 0) > 0): ?>
-                    <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id'] . '&include_rework=1') ?>" 
-                       class="btn btn-outline-warning btn-sm fw-semibold" title="Pack Reworked Pieces into Batch for Outward">
-                        <i class="bi bi-tools me-1"></i>Pack Rework
-                    </a>
+                    <?php if (!empty($batch['is_supply'])): ?>
+                        <a href="<?= url('production/purchases/supply-qr/' . $batch['purchase_id']) ?>" 
+                           class="btn btn-outline-info btn-sm flex-grow-1 fw-semibold">
+                            <i class="bi bi-qr-code me-1"></i> View Supply QR
+                        </a>
+                        <a href="<?= url('production/purchases/edit/' . $batch['purchase_id']) ?>" 
+                           class="btn btn-outline-primary btn-sm fw-semibold" title="View Purchase Order #<?= e($batch['program_number']) ?>">
+                            <i class="bi bi-file-earmark-text me-1"></i> View PO
+                        </a>
+                    <?php else: ?>
+                        <a href="<?= url('production/inventory/batch/' . $batch['qc_batch_id']) ?>" 
+                           class="btn btn-outline-secondary btn-sm flex-grow-1 fw-semibold">
+                            <i class="bi bi-eye me-1"></i> View Items
+                        </a>
+                        <?php if (hasPermission('batches', 'create') && $batch['remaining_pieces'] > 0): ?>
+                        <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id']) ?>" 
+                           class="btn btn-outline-success btn-sm fw-semibold" title="Pack Remaining Stock into Box Batch for Warehouse">
+                            <i class="bi bi-box-seam me-1"></i>Pack (WH)
+                        </a>
+                        <?php endif; ?>
+                        <?php if (hasPermission('batches', 'create') && ($batch['total_rework_pieces'] ?? 0) > 0): ?>
+                        <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id'] . '&include_rework=1') ?>" 
+                           class="btn btn-outline-warning btn-sm fw-semibold" title="Pack Reworked Pieces into Batch for Outward">
+                            <i class="bi bi-tools me-1"></i>Pack Rework
+                        </a>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </div>
             </div>
