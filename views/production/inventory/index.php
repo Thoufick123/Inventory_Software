@@ -278,6 +278,10 @@ $inventoryVariantCount = array_sum(array_map(
                     <td class="text-end">
                         <div class="action-btns-group justify-content-end">
                             <?php if (!empty($batch['is_supply'])): ?>
+                                <a href="<?= url('production/purchases/view/' . $batch['purchase_id']) ?>"
+                                   class="btn btn-outline-secondary btn-action-icon" title="View Purchase Details">
+                                    <i class="bi bi-eye"></i>
+                                </a>
                                 <a href="<?= url('production/purchases/supply-qr/' . $batch['purchase_id'] . '?item_id=' . $batch['supply_item_id'] . '&inwarded_only=1') ?>"
                                    class="btn btn-outline-info btn-action-icon" title="View Inwarded QR Labels">
                                     <i class="bi bi-qr-code"></i>
@@ -297,11 +301,36 @@ $inventoryVariantCount = array_sum(array_map(
                                         onclick="confirmDeleteSupplyStock(<?= (int)$batch['supply_item_id'] ?>, '<?= e(addslashes($batch['product_name'])) ?>')">
                                     <i class="bi bi-trash"></i>
                                 </button>
+                                <a href="<?= url('production/purchases/supply-qr/' . $batch['purchase_id'] . '?mode=package&item_id=' . $batch['supply_item_id'] . '&inwarded_only=1') ?>"
+                                   class="btn btn-outline-success btn-action-icon" title="Master Batch Box Package QR Labels">
+                                    <i class="bi bi-box-seam"></i>
+                                </a>
                             <?php else: ?>
                                 <a href="<?= url('production/inventory/batch/' . $batch['qc_batch_id']) ?>"
-                                   class="btn btn-outline-info btn-action-icon" title="View Batch Items">
+                                   class="btn btn-outline-secondary btn-action-icon" title="View Batch Items">
                                     <i class="bi bi-eye"></i>
                                 </a>
+                                <a href="<?= url('production/inventory/batch/' . $batch['qc_batch_id'] . '#qrSection') ?>"
+                                   class="btn btn-outline-info btn-action-icon" title="View Garment QR Labels">
+                                    <i class="bi bi-qr-code"></i>
+                                </a>
+                                <button type="button" class="btn btn-outline-primary btn-action-icon" title="Edit In-Stock Quantity"
+                                        onclick='openEditQcStockModal(<?= json_encode([
+                                            'qc_batch_id'    => (int)$batch['qc_batch_id'],
+                                            'variant_id'     => (int)($variant['variant_id'] ?? 0),
+                                            'program_id'     => (int)($batch['program_id'] ?? 0),
+                                            'batch_name'     => 'QC Batch #' . $batch['qc_batch_id'],
+                                            'program_number' => (string)$batch['program_number'],
+                                            'product_name'   => (string)$batch['product_name'] . (!empty($variant['size_name']) ? ' (' . $variant['size_name'] . ' / ' . $variant['color_name'] . ')' : ''),
+                                            'unit'           => 'pcs',
+                                            'remaining_qty'  => (int)$variant['remaining_qty'],
+                                        ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)'>
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-danger btn-action-icon" title="Delete Stock from Inventory"
+                                        onclick="confirmDeleteQcStock(<?= (int)$batch['qc_batch_id'] ?>, <?= (int)($variant['variant_id'] ?? 0) ?>, 'QC Batch #<?= (int)$batch['qc_batch_id'] ?> - <?= e(addslashes($batch['product_name'])) ?>')">
+                                    <i class="bi bi-trash"></i>
+                                </button>
                                 <?php if (hasPermission('batches', 'create') && $variant['remaining_qty'] > 0): ?>
                                     <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id']) ?>"
                                        class="btn btn-outline-success btn-action-icon" title="Pack into Boxes for Central Warehouse">
@@ -505,9 +534,13 @@ $inventoryVariantCount = array_sum(array_map(
                 <!-- Actions (Both Option A & Option B) -->
                 <div class="d-flex gap-1.5 batch-list-actions flex-wrap">
                     <?php if (!empty($batch['is_supply'])): ?>
+                        <a href="<?= url('production/purchases/view/' . $batch['purchase_id']) ?>" 
+                           class="btn btn-outline-secondary btn-sm fw-semibold" title="View Purchase Details">
+                            <i class="bi bi-eye me-1"></i> View
+                        </a>
                         <a href="<?= url('production/purchases/supply-qr/' . $batch['purchase_id'] . '?item_id=' . $batch['supply_item_id'] . '&inwarded_only=1') ?>" 
-                           class="btn btn-outline-info btn-sm flex-grow-1 fw-semibold" title="View Inwarded QR Labels">
-                            <i class="bi bi-qr-code me-1"></i> QR Labels
+                           class="btn btn-outline-info btn-sm fw-semibold" title="View Inwarded QR Labels">
+                            <i class="bi bi-qr-code me-1"></i> QR
                         </a>
                         <button type="button" class="btn btn-outline-primary btn-sm fw-semibold" title="Edit In-Stock Quantity"
                                 onclick='openEditSupplyStockModal(<?= json_encode([
@@ -524,21 +557,47 @@ $inventoryVariantCount = array_sum(array_map(
                                 onclick="confirmDeleteSupplyStock(<?= (int)$batch['supply_item_id'] ?>, '<?= e(addslashes($batch['product_name'])) ?>')">
                             <i class="bi bi-trash"></i>
                         </button>
+                        <a href="<?= url('production/purchases/supply-qr/' . $batch['purchase_id'] . '?mode=package&item_id=' . $batch['supply_item_id'] . '&inwarded_only=1') ?>" 
+                           class="btn btn-outline-success btn-sm fw-semibold" title="Master Batch Box Package QR Labels">
+                            <i class="bi bi-box-seam me-1"></i> Batch (WH)
+                        </a>
                     <?php else: ?>
                         <a href="<?= url('production/inventory/batch/' . $batch['qc_batch_id']) ?>" 
-                           class="btn btn-outline-secondary btn-sm flex-grow-1 fw-semibold">
-                            <i class="bi bi-eye me-1"></i> View Items
+                           class="btn btn-outline-secondary btn-sm fw-semibold" title="View Batch Items">
+                            <i class="bi bi-eye me-1"></i> View
                         </a>
+                        <a href="<?= url('production/inventory/batch/' . $batch['qc_batch_id'] . '#qrSection') ?>" 
+                           class="btn btn-outline-info btn-sm fw-semibold" title="View Garment QR Labels">
+                            <i class="bi bi-qr-code me-1"></i> QR
+                        </a>
+                        <?php $firstVariant = !empty($batch['variants']) ? $batch['variants'][0] : null; ?>
+                        <button type="button" class="btn btn-outline-primary btn-sm fw-semibold" title="Edit In-Stock Quantity"
+                                onclick='openEditQcStockModal(<?= json_encode([
+                                    'qc_batch_id'    => (int)$batch['qc_batch_id'],
+                                    'variant_id'     => (int)($firstVariant['variant_id'] ?? 0),
+                                    'program_id'     => (int)($batch['program_id'] ?? 0),
+                                    'batch_name'     => 'QC Batch #' . $batch['qc_batch_id'],
+                                    'program_number' => (string)$batch['program_number'],
+                                    'product_name'   => (string)$batch['product_name'],
+                                    'unit'           => 'pcs',
+                                    'remaining_qty'  => (int)$batch['remaining_pieces'],
+                                ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)'>
+                            <i class="bi bi-pencil me-1"></i> Edit Stock
+                        </button>
+                        <button type="button" class="btn btn-outline-danger btn-sm fw-semibold" title="Delete Stock from Inventory"
+                                onclick="confirmDeleteQcStock(<?= (int)$batch['qc_batch_id'] ?>, <?= (int)($firstVariant['variant_id'] ?? 0) ?>, 'QC Batch #<?= (int)$batch['qc_batch_id'] ?> - <?= e(addslashes($batch['product_name'])) ?>')">
+                            <i class="bi bi-trash"></i>
+                        </button>
                         <?php if (hasPermission('batches', 'create') && $batch['remaining_pieces'] > 0): ?>
                         <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id']) ?>" 
                            class="btn btn-outline-success btn-sm fw-semibold" title="Pack Remaining Stock into Box Batch for Warehouse">
-                            <i class="bi bi-box-seam me-1"></i>Pack (WH)
+                            <i class="bi bi-box-seam me-1"></i> Pack (WH)
                         </a>
                         <?php endif; ?>
                         <?php if (hasPermission('batches', 'create') && ($batch['total_rework_pieces'] ?? 0) > 0): ?>
                         <a href="<?= url('production/batches/create?qc_batch_id=' . $batch['qc_batch_id'] . '&include_rework=1') ?>" 
                            class="btn btn-outline-warning btn-sm fw-semibold" title="Pack Reworked Pieces into Batch for Outward">
-                            <i class="bi bi-tools me-1"></i>Pack Rework
+                            <i class="bi bi-tools me-1"></i> Pack Rework
                         </a>
                         <?php endif; ?>
                     <?php endif; ?>
@@ -911,6 +970,39 @@ function confirmDeleteSupplyStock(supplyItemId, productName) {
         form.submit();
     }
 }
+
+function openEditQcStockModal(data) {
+    if (!data) return;
+    document.getElementById('editQcModalBatchId').value = data.qc_batch_id || '';
+    document.getElementById('editQcModalVariantId').value = data.variant_id || '';
+    document.getElementById('editQcModalBatchName').value = data.batch_name || '';
+    document.getElementById('editQcModalProgramNo').value = data.program_number || '';
+    document.getElementById('editQcModalProductName').value = data.product_name || '';
+    document.getElementById('editQcModalCurrentQty').value = data.remaining_qty !== undefined ? data.remaining_qty : 0;
+    document.getElementById('editQcModalNewQty').value = data.remaining_qty !== undefined ? data.remaining_qty : 0;
+    document.querySelectorAll('.editQcModalUnit').forEach(el => el.textContent = data.unit || 'pcs');
+
+    const modalEl = document.getElementById('editQcStockModal');
+    if (modalEl && typeof bootstrap !== 'undefined') {
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+    }
+}
+
+function confirmDeleteQcStock(qcBatchId, variantId, batchName) {
+    const msg = "Are you sure you want to delete stock for \"" + batchName + "\" from Inventory?\n\nThis will remove the remaining available stock for this batch from Production Inventory.";
+    if (!confirm(msg)) {
+        return false;
+    }
+    const batchInput = document.getElementById('deleteQcModalBatchId');
+    const variantInput = document.getElementById('deleteQcModalVariantId');
+    const form = document.getElementById('deleteQcStockForm');
+    if (batchInput && form) {
+        batchInput.value = qcBatchId;
+        if (variantInput) variantInput.value = variantId || 0;
+        form.submit();
+    }
+}
 </script>
 
 <!-- Modal: Edit Supply Stock -->
@@ -922,7 +1014,7 @@ function confirmDeleteSupplyStock(supplyItemId, productName) {
                 <input type="hidden" name="supply_item_id" id="editModalSupplyItemId" value="">
                 <div class="modal-header bg-primary text-white py-3">
                     <h5 class="modal-title fw-bold" id="editSupplyStockModalLabel">
-                        <i class="bi bi-pencil-square me-2"></i>Edit Inventory Stock
+                        <i class="bi bi-pencil-square me-2"></i>Edit Supply Inventory Stock
                     </h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
@@ -967,8 +1059,74 @@ function confirmDeleteSupplyStock(supplyItemId, productName) {
     </div>
 </div>
 
+<!-- Modal: Edit QC Batch Stock -->
+<div class="modal fade" id="editQcStockModal" tabindex="-1" aria-labelledby="editQcStockModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <form method="POST" action="<?= url('production/inventory/qc/update-stock') ?>" id="editQcStockForm">
+                <?= CSRF::field() ?>
+                <input type="hidden" name="qc_batch_id" id="editQcModalBatchId" value="">
+                <input type="hidden" name="variant_id" id="editQcModalVariantId" value="">
+                <div class="modal-header bg-primary text-white py-3">
+                    <h5 class="modal-title fw-bold" id="editQcStockModalLabel">
+                        <i class="bi bi-pencil-square me-2"></i>Edit QC Batch Stock
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label small text-muted mb-1">QC Batch</label>
+                        <input type="text" class="form-control bg-light font-monospace small" id="editQcModalBatchName" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small text-muted mb-1">Production Program</label>
+                        <input type="text" class="form-control bg-light font-monospace small" id="editQcModalProgramNo" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small text-muted mb-1">Product &amp; Variant</label>
+                        <input type="text" class="form-control bg-light fw-bold" id="editQcModalProductName" readonly>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small text-muted mb-1">Current In-Stock</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control bg-light text-end fw-bold" id="editQcModalCurrentQty" readonly>
+                                <span class="input-group-text bg-light text-muted editQcModalUnit">pcs</span>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold text-primary mb-1">New In-Stock Qty *</label>
+                            <div class="input-group">
+                                <input type="number" step="1" min="0" name="new_quantity" class="form-control text-end fw-bold border-primary text-primary" id="editQcModalNewQty" required>
+                                <span class="input-group-text bg-primary-subtle text-primary fw-semibold editQcModalUnit">pcs</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small text-muted mb-1">Adjustment Reason / Notes</label>
+                        <input type="text" name="adjustment_reason" class="form-control" id="editQcModalReason" placeholder="e.g. Physical inventory adjustment, count correction" value="QC stock update">
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-2 px-4 border-top">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary btn-sm fw-bold px-3">
+                        <i class="bi bi-check2-circle me-1"></i> Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Hidden Delete Form for Supply Stock -->
 <form method="POST" action="<?= url('production/inventory/supply/delete') ?>" id="deleteSupplyStockForm" style="display: none;">
     <?= CSRF::field() ?>
     <input type="hidden" name="supply_item_id" id="deleteModalSupplyItemId" value="">
+</form>
+
+<!-- Hidden Delete Form for QC Batch Stock -->
+<form method="POST" action="<?= url('production/inventory/qc/delete') ?>" id="deleteQcStockForm" style="display: none;">
+    <?= CSRF::field() ?>
+    <input type="hidden" name="qc_batch_id" id="deleteQcModalBatchId" value="">
+    <input type="hidden" name="variant_id" id="deleteQcModalVariantId" value="">
 </form>
