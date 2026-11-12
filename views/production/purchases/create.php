@@ -93,6 +93,9 @@
                             </button>
                         </div>
                     </div>
+                    <div id="documentImagePreview" class="d-none mt-2">
+                        <img id="docPreviewImage" class="img-thumbnail" alt="Selected invoice image preview" style="max-width:100%;max-height:220px;object-fit:contain;">
+                    </div>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label" for="purchaseNotes">Purchase Notes</label>
@@ -1528,6 +1531,8 @@
     const docInput = document.getElementById('purchaseDocument');
     const docPreviewContainer = document.getElementById('documentFilePreviewContainer');
     const docFilenameSpan = document.getElementById('docPreviewFilename');
+    const docImagePreview = document.getElementById('documentImagePreview');
+    const docPreviewImage = document.getElementById('docPreviewImage');
 
     if (docInput) {
         docInput.addEventListener('change', function() {
@@ -1539,11 +1544,21 @@
             if (file) {
                 selectedDocBlobUrl = URL.createObjectURL(file);
                 if (docFilenameSpan) docFilenameSpan.textContent = file.name;
+                const isImage = /^image\/(jpeg|png|webp)$/i.test(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name);
+                if (docImagePreview && docPreviewImage && isImage) {
+                    docPreviewImage.src = selectedDocBlobUrl;
+                    docImagePreview.classList.remove('d-none');
+                } else if (docImagePreview && docPreviewImage) {
+                    docPreviewImage.removeAttribute('src');
+                    docImagePreview.classList.add('d-none');
+                }
                 if (docPreviewContainer) {
                     docPreviewContainer.classList.remove('d-none');
                     docPreviewContainer.classList.add('d-inline-flex');
                 }
             } else {
+                if (docPreviewImage) docPreviewImage.removeAttribute('src');
+                if (docImagePreview) docImagePreview.classList.add('d-none');
                 if (docPreviewContainer) {
                     docPreviewContainer.classList.add('d-none');
                     docPreviewContainer.classList.remove('d-inline-flex');
@@ -1564,6 +1579,8 @@
             URL.revokeObjectURL(selectedDocBlobUrl);
             selectedDocBlobUrl = null;
         }
+        if (docPreviewImage) docPreviewImage.removeAttribute('src');
+        if (docImagePreview) docImagePreview.classList.add('d-none');
         if (docPreviewContainer) {
             docPreviewContainer.classList.add('d-none');
             docPreviewContainer.classList.remove('d-inline-flex');
