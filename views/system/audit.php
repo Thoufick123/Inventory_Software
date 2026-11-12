@@ -650,23 +650,58 @@ $viewMode = $_GET['view'] ?? ($selectedUserId ? 'detail' : 'profiles');
     </div>
 </div>
 <?php endif; ?>
+<script>
 document.addEventListener('DOMContentLoaded', function() {
     const diffModalEl = document.getElementById('diffModal');
     if (!diffModalEl) return;
     const diffModal = new bootstrap.Modal(diffModalEl);
     
     function formatValue(val) {
-        if (val === undefined || val === null || val === '') return '<span class="text-muted fst-italic">None</span>';
+        if (val === undefined || val === null || val === '') {
+            const emptyValue = document.createElement('span');
+            emptyValue.className = 'text-muted fst-italic';
+            emptyValue.textContent = 'None';
+            return emptyValue;
+        }
         if (typeof val === 'boolean') {
-            return val ? '<span class="badge bg-success">Yes / Active</span>' : '<span class="badge bg-danger">No / Inactive</span>';
+            const badge = document.createElement('span');
+            badge.className = val ? 'badge bg-success' : 'badge bg-danger';
+            badge.textContent = val ? 'Yes / Active' : 'No / Inactive';
+            return badge;
         }
         if (typeof val === 'object') {
             if (Array.isArray(val)) {
-                return `<div class="d-flex flex-wrap gap-1">${val.map(item => `<span class="badge bg-light text-dark border">${typeof item === 'object' ? JSON.stringify(item) : item}</span>`).join('')}</div>`;
+                const list = document.createElement('div');
+                list.className = 'd-flex flex-wrap gap-1';
+                val.forEach(item => {
+                    const badge = document.createElement('span');
+                    badge.className = 'badge bg-light text-dark border';
+                    badge.textContent = item !== null && typeof item === 'object'
+                        ? JSON.stringify(item)
+                        : String(item);
+                    list.appendChild(badge);
+                });
+                return list;
             }
-            return `<pre class="mb-0 bg-light p-2 rounded small">${JSON.stringify(val, null, 2)}</pre>`;
+            const pre = document.createElement('pre');
+            pre.className = 'mb-0 bg-light p-2 rounded small';
+            pre.textContent = JSON.stringify(val, null, 2);
+            return pre;
         }
-        return String(val);
+        return document.createTextNode(String(val));
+    }
+
+    function parseSnapshot(raw) {
+        if (raw === null || raw === '') return {};
+        try {
+            const parsed = JSON.parse(raw);
+            if (parsed !== null && typeof parsed === 'object') {
+                return Array.isArray(parsed) ? {Value: parsed} : parsed;
+            }
+        } catch (error) {
+            return {Value: raw};
+        }
+        return {Value: raw};
     }
 
     document.querySelectorAll('.btn-diff-view').forEach(btn => {
@@ -676,24 +711,27 @@ document.addEventListener('DOMContentLoaded', function() {
             const module = this.getAttribute('data-module');
             const time = this.getAttribute('data-time');
             
-            document.getElementById('diffHeaderMeta').innerHTML = `Staff Profile: <strong>${user}</strong> &bull; Action: <span class="badge bg-primary text-uppercase">${action}</span> in <strong>${module}</strong> on ${time}`;
+            document.getElementById('diffHeaderMeta').textContent =
+                `Staff Profile: ${user} • Action: ${action} in ${module} on ${time}`;
             
-            let prevRaw = this.getAttribute('data-prev');
-            let newRaw = this.getAttribute('data-new');
-            
-            let prevObj = {}, newObj = {};
-            try { if (prevRaw) prevObj = typeof prevRaw === 'object' ? prevRaw : JSON.parse(prevRaw); } catch(e){}
-            try { if (newRaw) newObj = typeof newRaw === 'object' ? newRaw : JSON.parse(newRaw); } catch(e){}
+            const prevObj = parseSnapshot(this.getAttribute('data-prev'));
+            const newObj = parseSnapshot(this.getAttribute('data-new'));
 
-            const ignoredKeys = ['csrf_token', '_token', 'confirm_password'];
+            const ignoredKeys = new Set(['csrf_token', '_token', 'confirm_password']);
             let allKeys = Array.from(new Set([...Object.keys(prevObj), ...Object.keys(newObj)]))
-                .filter(k => !ignoredKeys.includes(k));
+                .filter(key => !ignoredKeys.has(key.toLowerCase()));
             
             let tbody = document.getElementById('diffTableBody');
-            tbody.innerHTML = '';
+            tbody.replaceChildren();
 
             if (allKeys.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="3" class="text-center text-muted py-3">No specific field property diff recorded.</td></tr>`;
+                const row = document.createElement('tr');
+                const cell = document.createElement('td');
+                cell.colSpan = 3;
+                cell.className = 'text-center text-muted py-3';
+                cell.textContent = 'No specific field property diff recorded.';
+                row.appendChild(cell);
+                tbody.appendChild(row);
             } else {
                 allKeys.forEach(key => {
                     let oldVal = prevObj[key];
@@ -704,15 +742,27 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     let tr = document.createElement('tr');
                     if (rowClass) tr.className = rowClass;
-                    
-                    tr.innerHTML = `
-                        <td class="fw-bold text-dark">
-                            ${key}
-                            ${isChanged ? '<span class="badge bg-warning text-dark ms-1" style="font-size:0.6rem;">MODIFIED</span>' : ''}
-                        </td>
-                        <td class="text-danger bg-danger bg-opacity-10 text-break">${formatValue(oldVal)}</td>
-                        <td class="text-success bg-success bg-opacity-10 text-break">${formatValue(newVal)}</td>
-                    `;
+
+                    const keyCell = document.createElement('td');
+                    keyCell.className = 'fw-bold text-dark';
+                    keyCell.textContent = key;
+                    if (isChanged) {
+                        const badge = document.createElement('span');
+                        badge.className = 'badge bg-warning text-dark ms-1';
+                        badge.style.fontSize = '0.6rem';
+                        badge.textContent = 'MODIFIED';
+                        keyCell.appendChild(badge);
+                    }
+
+                    const oldCell = document.createElement('td');
+                    oldCell.className = 'text-danger bg-danger bg-opacity-10 text-break';
+                    oldCell.appendChild(formatValue(oldVal));
+
+                    const newCell = document.createElement('td');
+                    newCell.className = 'text-success bg-success bg-opacity-10 text-break';
+                    newCell.appendChild(formatValue(newVal));
+
+                    tr.append(keyCell, oldCell, newCell);
                     tbody.appendChild(tr);
                 });
             }

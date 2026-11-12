@@ -1,7 +1,7 @@
 <div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4 no-print">
     <div>
         <h2 class="mb-1"><i class="bi bi-receipt me-2 text-success"></i>Customer Purchase Tax Invoice #<?= e($po['po_number']) ?></h2>
-        <span class="text-muted">Official direct customer sales invoice, itemized tax ledger &amp; dispatch slip</span>
+        <span class="text-muted"><?= !empty($isOfficeCopy) ? 'Office soft-copy for purchase records' : 'Official direct customer sales invoice, itemized tax ledger &amp; dispatch slip' ?></span>
     </div>
     <div class="d-flex align-items-center gap-2 flex-wrap">
         <!-- Toggle to Hide/Show Amounts for Customer Delivery Slip -->
@@ -14,6 +14,11 @@
         <button onclick="window.print()" class="btn btn-success shadow-sm">
             <i class="bi bi-printer me-1"></i> Print Tax Invoice
         </button>
+        <?php if (!empty($isOfficeCopy)): ?>
+            <a href="<?= url('warehouse/purchases/receive/' . $po['id']) ?>" class="btn btn-outline-success">
+                <i class="bi bi-receipt me-1"></i> Customer Handover Bill
+            </a>
+        <?php endif; ?>
         <a href="<?= url('warehouse/purchases') ?>" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i> Back to Direct Purchases
         </a>
@@ -65,6 +70,11 @@
             <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2 fs-6 fw-bold mb-2 d-inline-block" id="invoiceTypeBadge">
                 TAX INVOICE / DIRECT SALE
             </span>
+            <?php if (!empty($isOfficeCopy)): ?>
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-2 fs-6 fw-bold mb-2 d-inline-block">
+                    OFFICE COPY - KEEP FOR RECORDS
+                </span>
+            <?php endif; ?>
             <div class="font-monospace fw-bold fs-5 text-primary">#<?= e($po['po_number']) ?></div>
             <?php
             $rawTimestamp = !empty($po['created_at']) && $po['created_at'] !== '0000-00-00 00:00:00' 

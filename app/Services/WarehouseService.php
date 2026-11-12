@@ -2284,7 +2284,7 @@ class WarehouseService {
     /**
      * Look up Direct Purchase Order for Customer Returns / Exchanges.
      */
-    public static function lookupPurchaseForReturn(string $query, int $warehouseId = 1): ?array {
+    public static function lookupPurchaseForReturn(string $query, int $warehouseId = 1, ?int $excludeReturnId = null): ?array {
         $query = trim($query);
         if (empty($query)) return null;
 
@@ -2312,10 +2312,14 @@ class WarehouseService {
         if (!$po) return null;
 
         // Validation: If this invoice/PO has already been scanned and processed for return/exchange, block scanning it again
-        $existingReturn = Database::fetchOne(
-            "SELECT return_number, created_at FROM returns WHERE purchase_order_id = ? ORDER BY id DESC LIMIT 1",
-            [$po['id']]
-        );
+        $existingReturnSql = "SELECT return_number, created_at FROM returns WHERE purchase_order_id = ? AND source_type = 'WAREHOUSE_PURCHASE'";
+        $existingReturnParams = [$po['id']];
+        if ($excludeReturnId !== null) {
+            $existingReturnSql .= " AND id != ?";
+            $existingReturnParams[] = $excludeReturnId;
+        }
+        $existingReturnSql .= " ORDER BY id DESC LIMIT 1";
+        $existingReturn = Database::fetchOne($existingReturnSql, $existingReturnParams);
         if ($existingReturn) {
             throw new \InvalidArgumentException("This Invoice/PO ({$po['po_number']}) has already been processed for Return/Exchange ({$existingReturn['return_number']}). This invoice cannot be scanned again.");
         }
@@ -2323,14 +2327,17 @@ class WarehouseService {
         $targetWarehouseId = (int)($po['warehouse_id'] ?? $warehouseId);
 
         $items = PurchaseItem::getByPurchaseOrder((int)$po['id']);
-        $returnedQuantities = Database::fetchAll(
-            "SELECT ri.variant_id, COALESCE(SUM(ri.quantity), 0) AS already_returned_qty
-             FROM return_items ri
-             JOIN returns r ON ri.return_id = r.id
-             WHERE r.purchase_order_id = ?
-             GROUP BY ri.variant_id",
-            [$po['id']]
-        );
+        $returnedQuantitiesSql = "SELECT ri.variant_id, COALESCE(SUM(ri.quantity), 0) AS already_returned_qty
+                                  FROM return_items ri
+                                  JOIN returns r ON ri.return_id = r.id
+                                  WHERE r.purchase_order_id = ? AND r.source_type = 'WAREHOUSE_PURCHASE'";
+        $returnedQuantitiesParams = [$po['id']];
+        if ($excludeReturnId !== null) {
+            $returnedQuantitiesSql .= " AND r.id != ?";
+            $returnedQuantitiesParams[] = $excludeReturnId;
+        }
+        $returnedQuantitiesSql .= " GROUP BY ri.variant_id";
+        $returnedQuantities = Database::fetchAll($returnedQuantitiesSql, $returnedQuantitiesParams);
         $returnedByVariant = [];
         foreach ($returnedQuantities as $returnedQuantity) {
             $returnedByVariant[(int)$returnedQuantity['variant_id']] = (int)$returnedQuantity['already_returned_qty'];
@@ -2402,11 +2409,80 @@ class WarehouseService {
     public static function processPurchaseReturn(array $payload, int $userId): array {
         $poId = (int)($payload['purchase_order_id'] ?? $payload['po_id'] ?? 0);
         $warehouseId = (int)($payload['warehouse_id'] ?? 1);
+        $editReturnId = (int)($payload['return_id'] ?? 0);
         $items = $payload['items'] ?? [];
+        $newItemsPayload = $payload['new_items'] ?? [];
         $actionType = $payload['action_type'] ?? 'RETURN'; // 'RETURN', 'EXCHANGE_SAME', 'EXCHANGE_DIFFERENT', 'CREDIT_NOTE'
+        if (!in_array($actionType, ['RETURN', 'EXCHANGE_SAME', 'EXCHANGE_DIFFERENT', 'CREDIT_NOTE'], true)) {
+            throw new InvalidArgumentException("Select a valid return or exchange action.");
+        }
         $reason = $payload['reason'] ?? 'Customer Return / Exchange';
         $refundMode = $payload['refund_mode'] ?? $payload['settlement_mode'] ?? 'CASH';
         $settlementMode = $payload['settlement_mode'] ?? $refundMode ?? 'CASH';
+        $allowedRefundModes = ['CASH', 'UPI', 'CARD', 'ONLINE', 'BANK_TRANSFER', 'SPLIT', 'CREDIT_NOTE'];
+        if (!in_array($refundMode, $allowedRefundModes, true)) {
+            throw new InvalidArgumentException("Select a valid refund or settlement mode.");
+        }
+        $splitCashAmount = $payload['split_cash_amount'] ?? 0;
+        $splitUpiAmount = $payload['split_upi_amount'] ?? 0;
+        if ($refundMode === 'SPLIT' && (
+            !is_numeric($splitCashAmount) || (float)$splitCashAmount < 0
+            || !is_numeric($splitUpiAmount) || (float)$splitUpiAmount < 0
+        )) {
+            throw new InvalidArgumentException("Split settlement amounts must be valid non-negative amounts.");
+        }
+        $splitCashAmount = round((float)$splitCashAmount, 2);
+        $splitUpiAmount = round((float)$splitUpiAmount, 2);
+
+        if ($actionType !== 'EXCHANGE_DIFFERENT') {
+            $newItemsPayload = [];
+        } elseif (!is_array($newItemsPayload)) {
+            throw new InvalidArgumentException("Invalid replacement product list.");
+        }
+
+        $newItemsByVariant = [];
+        foreach ($newItemsPayload as $newItem) {
+            if (!is_array($newItem)) {
+                throw new InvalidArgumentException("Invalid replacement product.");
+            }
+
+            $newVariantId = (int)($newItem['variant_id'] ?? 0);
+            $rawNewQuantity = $newItem['quantity'] ?? null;
+            if ($newVariantId <= 0 || !is_numeric($rawNewQuantity) || (float)$rawNewQuantity <= 0 || (float)$rawNewQuantity !== (float)(int)$rawNewQuantity) {
+                throw new InvalidArgumentException("Replacement products must have a valid product and whole-number quantity.");
+            }
+
+            $newQuantity = (int)$rawNewQuantity;
+            $rawScannedTags = $newItem['scanned_tags'] ?? [];
+            if (is_string($rawScannedTags)) {
+                $rawScannedTags = explode(',', $rawScannedTags);
+            }
+            if (!is_array($rawScannedTags)) {
+                $rawScannedTags = [];
+            }
+            $scannedTags = array_values(array_unique(array_filter(array_map(
+                static fn($tag) => trim((string)$tag),
+                $rawScannedTags
+            ))));
+
+            if (!isset($newItemsByVariant[$newVariantId])) {
+                $newItemsByVariant[$newVariantId] = [
+                    'variant_id' => $newVariantId,
+                    'quantity' => 0,
+                    'scanned_tags' => [],
+                ];
+            }
+            $newItemsByVariant[$newVariantId]['quantity'] += $newQuantity;
+            $newItemsByVariant[$newVariantId]['scanned_tags'] = array_values(array_unique(array_merge(
+                $newItemsByVariant[$newVariantId]['scanned_tags'],
+                $scannedTags
+            )));
+        }
+        $newItems = array_values($newItemsByVariant);
+
+        if ($actionType === 'EXCHANGE_DIFFERENT' && empty($newItems)) {
+            throw new InvalidArgumentException("Please scan at least one replacement product from warehouse stock.");
+        }
 
         if ($actionType === 'CREDIT_NOTE') {
             $refundMode = 'CREDIT_NOTE';
@@ -2431,33 +2507,143 @@ class WarehouseService {
             throw new InvalidArgumentException("Direct purchase order #$poId not found.");
         }
 
-        $existingReturn = Database::fetchOne(
-            "SELECT return_number FROM returns WHERE purchase_order_id = ? ORDER BY id DESC LIMIT 1",
-            [$poId]
-        );
-        if ($existingReturn) {
-            throw new InvalidArgumentException("This Invoice/PO ({$po['po_number']}) has already been processed for return/exchange ({$existingReturn['return_number']}).");
+        $existingReturn = null;
+        if ($editReturnId > 0) {
+            $existingReturn = Database::fetchOne(
+                "SELECT * FROM returns
+                 WHERE id = ? AND purchase_order_id = ? AND source_type = 'WAREHOUSE_PURCHASE'",
+                [$editReturnId, $poId]
+            );
+            if (!$existingReturn) {
+                throw new InvalidArgumentException("The return/exchange record to edit was not found for this purchase order.");
+            }
         }
 
-        $targetWarehouseId = (int)($po['warehouse_id'] ?: $warehouseId);
+        $otherReturn = Database::fetchOne(
+            "SELECT return_number FROM returns
+             WHERE purchase_order_id = ? AND source_type = 'WAREHOUSE_PURCHASE' AND id != ?
+             ORDER BY id DESC LIMIT 1",
+            [$poId, $editReturnId]
+        );
+        if ($otherReturn) {
+            throw new InvalidArgumentException("This Invoice/PO ({$po['po_number']}) has already been processed for return/exchange ({$otherReturn['return_number']}).");
+        }
+
+        $targetWarehouseId = (int)($existingReturn['warehouse_id'] ?? $po['warehouse_id'] ?? $warehouseId);
 
         Database::beginTransaction();
         try {
-            $today = date('Ymd');
-            $prefix = ($returnType === 'EXCHANGE' ? 'EXC-WH-' : 'RET-WH-') . $today . '-';
-            $lastRet = Database::fetchOne(
-                "SELECT return_number FROM returns WHERE return_number LIKE ? ORDER BY id DESC LIMIT 1",
-                [$prefix . '%']
-            );
-            $seq = 1;
-            if ($lastRet && !empty($lastRet['return_number'])) {
-                $parts = explode('-', $lastRet['return_number']);
-                $seq = (int)end($parts) + 1;
+            $existingExchangeNumber = null;
+            $editSnapshot = null;
+            if ($editReturnId > 0) {
+                $lockedReturn = Database::fetchOne(
+                    "SELECT * FROM returns
+                     WHERE id = ? AND purchase_order_id = ? AND source_type = 'WAREHOUSE_PURCHASE'
+                     FOR UPDATE",
+                    [$editReturnId, $poId]
+                );
+                if (!$lockedReturn) {
+                    throw new InvalidArgumentException("The return/exchange record no longer exists.");
+                }
+
+                $oldReturnItems = Database::fetchAll(
+                    "SELECT * FROM return_items WHERE return_id = ? FOR UPDATE",
+                    [$editReturnId]
+                );
+                $oldExchange = Database::fetchOne(
+                    "SELECT * FROM exchanges WHERE return_id = ? FOR UPDATE",
+                    [$editReturnId]
+                );
+                $oldExchangeItems = $oldExchange
+                    ? Database::fetchAll("SELECT * FROM exchange_items WHERE exchange_id = ? FOR UPDATE", [$oldExchange['id']])
+                    : [];
+                $editSnapshot = [
+                    'return' => $lockedReturn,
+                    'return_items' => $oldReturnItems,
+                    'exchange' => $oldExchange,
+                    'exchange_items' => $oldExchangeItems,
+                ];
+
+                foreach ($oldReturnItems as $oldItem) {
+                    $stockState = ($oldItem['destination'] ?? '') === 'AVAILABLE' ? 'AVAILABLE' : 'DAMAGED';
+                    StockService::decrease(
+                        (int)$oldItem['variant_id'],
+                        'WAREHOUSE',
+                        $targetWarehouseId,
+                        $stockState,
+                        (float)$oldItem['quantity'],
+                        'RETURN_EDIT_REVERSAL',
+                        'returns',
+                        $editReturnId,
+                        $userId,
+                        "Reversing prior return stock for edit {$lockedReturn['return_number']}"
+                    );
+                }
+
+                if ($oldExchange) {
+                    if (($oldExchange['status'] ?? '') !== 'COMPLETED') {
+                        throw new InvalidArgumentException("Only completed exchanges can be edited.");
+                    }
+                    $existingExchangeNumber = $oldExchange['exchange_number'] ?? null;
+                    foreach ($oldExchangeItems as $oldExchangeItem) {
+                        if (($oldExchangeItem['item_type'] ?? '') !== 'NEW') {
+                            continue;
+                        }
+                        StockService::increase(
+                            (int)$oldExchangeItem['variant_id'],
+                            'WAREHOUSE',
+                            $targetWarehouseId,
+                            'AVAILABLE',
+                            (float)$oldExchangeItem['quantity'],
+                            'EXCHANGE_EDIT_REVERSAL',
+                            'returns',
+                            $editReturnId,
+                            $userId,
+                            "Restoring prior exchange replacement stock for edit {$lockedReturn['return_number']}"
+                        );
+                    }
+                }
+
+                $damageRecords = Database::fetchAll(
+                    "SELECT id, status FROM warehouse_damages
+                     WHERE source_type = 'CUSTOMER_RETURN' AND reference_id = ? FOR UPDATE",
+                    [$editReturnId]
+                );
+                foreach ($damageRecords as $damageRecord) {
+                    if (($damageRecord['status'] ?? '') !== 'LOGGED') {
+                        throw new InvalidArgumentException("This return has damage records already handled by the Damage module and cannot be edited.");
+                    }
+                }
+
+                Database::execute(
+                    "DELETE FROM warehouse_damages
+                     WHERE source_type = 'CUSTOMER_RETURN' AND reference_id = ?",
+                    [$editReturnId]
+                );
+                if ($oldExchange) {
+                    Database::execute("DELETE FROM exchange_items WHERE exchange_id = ?", [$oldExchange['id']]);
+                    Database::execute("DELETE FROM exchanges WHERE id = ?", [$oldExchange['id']]);
+                }
+                Database::execute("DELETE FROM return_items WHERE return_id = ?", [$editReturnId]);
+                $returnNumber = (string)$lockedReturn['return_number'];
+            } else {
+                $today = date('Ymd');
+                $prefix = ($returnType === 'EXCHANGE' ? 'EXC-WH-' : 'RET-WH-') . $today . '-';
+                $lastRet = Database::fetchOne(
+                    "SELECT return_number FROM returns WHERE return_number LIKE ? ORDER BY id DESC LIMIT 1",
+                    [$prefix . '%']
+                );
+                $seq = 1;
+                if ($lastRet && !empty($lastRet['return_number'])) {
+                    $parts = explode('-', $lastRet['return_number']);
+                    $seq = (int)end($parts) + 1;
+                }
+                $returnNumber = sprintf('%s%04d', $prefix, $seq);
             }
-            $returnNumber = sprintf('%s%04d', $prefix, $seq);
 
             $totalRefund = 0.0;
             $processedItems = [];
+            $quantityByPurchaseItem = [];
 
             foreach ($items as $it) {
                 if (isset($it['selected']) && empty($it['selected'])) {
@@ -2469,17 +2655,38 @@ class WarehouseService {
 
                 $purchaseItemId = !empty($it['purchase_item_id']) ? (int)$it['purchase_item_id'] : null;
                 $variantId = (int)($it['variant_id'] ?? 0);
+                if ($variantId <= 0) {
+                    throw new InvalidArgumentException("Every return item must reference a valid purchased product.");
+                }
 
                 // Determine accurate unit price (tax-inclusive effective price)
                 $unitPrice = 0.0;
                 if ($purchaseItemId) {
-                    $pi = Database::fetchOne("SELECT unit_price, total_amount, quantity FROM purchase_items WHERE id = ? AND purchase_order_id = ?", [$purchaseItemId, $poId]);
-                    if ($pi) {
-                        if ((int)$pi['quantity'] > 0 && (float)($pi['total_amount'] ?? 0) > 0) {
-                            $unitPrice = round((float)$pi['total_amount'] / (int)$pi['quantity'], 2);
-                        } else {
-                            $unitPrice = (float)$pi['unit_price'];
-                        }
+                    $pi = Database::fetchOne(
+                        "SELECT variant_id, unit_price, total_amount, quantity
+                         FROM purchase_items WHERE id = ? AND purchase_order_id = ?",
+                        [$purchaseItemId, $poId]
+                    );
+                    if (!$pi || (int)$pi['variant_id'] !== $variantId) {
+                        throw new InvalidArgumentException("A selected return item does not belong to this purchase order.");
+                    }
+                    $quantityByPurchaseItem[$purchaseItemId] = ($quantityByPurchaseItem[$purchaseItemId] ?? 0) + $qty;
+                    if ($quantityByPurchaseItem[$purchaseItemId] > (int)$pi['quantity']) {
+                        throw new InvalidArgumentException("Return quantity cannot exceed the purchased quantity for an item.");
+                    }
+                    if ((int)$pi['quantity'] > 0 && (float)($pi['total_amount'] ?? 0) > 0) {
+                        $unitPrice = round((float)$pi['total_amount'] / (int)$pi['quantity'], 2);
+                    } else {
+                        $unitPrice = (float)$pi['unit_price'];
+                    }
+                } else {
+                    $purchasedQuantity = (int)(Database::fetchOne(
+                        "SELECT COALESCE(SUM(quantity), 0) AS quantity
+                         FROM purchase_items WHERE purchase_order_id = ? AND variant_id = ?",
+                        [$poId, $variantId]
+                    )['quantity'] ?? 0);
+                    if ($purchasedQuantity <= 0 || $qty > $purchasedQuantity) {
+                        throw new InvalidArgumentException("Return quantity exceeds the purchased quantity for the selected product.");
                     }
                 }
                 if ($unitPrice <= 0 && !empty($it['unit_price'])) {
@@ -2497,11 +2704,15 @@ class WarehouseService {
                 $replacementPieceTag = trim((string)($it['replacement_piece_tag'] ?? ''));
                 $pieceTags = !empty($it['piece_tags']) && is_array($it['piece_tags']) ? implode(', ', array_filter($it['piece_tags'])) : (is_string($it['piece_tags'] ?? null) ? trim($it['piece_tags']) : '');
 
+                $condition = strtoupper(trim((string)($it['condition'] ?? 'GOOD')));
+                if (!in_array($condition, ['GOOD', 'DAMAGED'], true)) {
+                    throw new InvalidArgumentException("Return condition must be Good or Damaged.");
+                }
                 $processedItems[] = [
                     'purchase_item_id'       => $purchaseItemId,
                     'variant_id'             => $variantId,
                     'quantity'               => $qty,
-                    'condition'              => $it['condition'] ?? 'GOOD',
+                    'condition'              => $condition,
                     'unit_price'             => $unitPrice,
                     'refund_amount'          => $itemRefund,
                     'replacement_variant_id' => $replacementVariantId,
@@ -2513,6 +2724,13 @@ class WarehouseService {
             if (empty($processedItems)) {
                 throw new InvalidArgumentException("Please select at least one valid item to process.");
             }
+            if ($actionType === 'EXCHANGE_SAME') {
+                foreach ($processedItems as $processedItem) {
+                    if (empty($processedItem['replacement_variant_id'])) {
+                        throw new InvalidArgumentException("Assign a replacement product to every returned item before saving this exchange.");
+                    }
+                }
+            }
 
             $notes = "Warehouse Direct Action: " . $actionType;
             if ($actionType === 'EXCHANGE_SAME') {
@@ -2520,28 +2738,66 @@ class WarehouseService {
             } elseif ($actionType === 'EXCHANGE_DIFFERENT') {
                 $notes .= " (Different-product catalog exchange)";
             }
+            $additionalNotes = trim((string)($payload['notes'] ?? ''));
+            $additionalNotes = trim((string)preg_replace('/(?:^|\R)Warehouse Settlement:.*$/m', '', $additionalNotes));
+            if ($additionalNotes !== '') {
+                $notes .= "\n" . $additionalNotes;
+            }
+            if ($refundMode === 'SPLIT') {
+                $settlementDetails = json_encode([
+                    'cash' => $splitCashAmount,
+                    'upi' => $splitUpiAmount,
+                    'upi_ref' => trim((string)($payload['split_upi_ref'] ?? '')),
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                $notes .= "\nWarehouse Settlement: " . $settlementDetails;
+            }
 
-            Database::execute(
-                "INSERT INTO returns (return_number, source_type, purchase_order_id, customer_id, warehouse_id, 
-                                     return_type, reason, inspection_status, refund_amount, total_amount, refund_mode, 
-                                     refund_status, status, inspected_by, approved_by, notes, created_at)
-                 VALUES (?, 'WAREHOUSE_PURCHASE', ?, ?, ?, ?, ?, 'APPROVED', ?, ?, ?, 'COMPLETED', 'APPROVED', ?, ?, ?, NOW())",
-                [
-                    $returnNumber,
-                    $poId,
-                    $po['customer_id'] ?? null,
-                    $targetWarehouseId,
-                    $returnType,
-                    $reason,
-                    $totalRefund,
-                    $totalRefund,
-                    $refundMode,
-                    $userId,
-                    $userId,
-                    $notes,
-                ]
-            );
-            $returnId = (int)Database::lastInsertId();
+            if ($editReturnId > 0) {
+                Database::execute(
+                    "UPDATE returns
+                     SET customer_id = ?, warehouse_id = ?, return_type = ?, reason = ?,
+                         inspection_status = 'APPROVED', refund_amount = ?, total_amount = ?,
+                         refund_mode = ?, refund_status = 'COMPLETED', status = 'APPROVED',
+                         inspected_by = ?, approved_by = ?, notes = ?
+                     WHERE id = ? AND source_type = 'WAREHOUSE_PURCHASE'",
+                    [
+                        $po['customer_id'] ?? null,
+                        $targetWarehouseId,
+                        $returnType,
+                        $reason,
+                        $totalRefund,
+                        $totalRefund,
+                        $refundMode,
+                        $userId,
+                        $userId,
+                        $notes,
+                        $editReturnId,
+                    ]
+                );
+                $returnId = $editReturnId;
+            } else {
+                Database::execute(
+                    "INSERT INTO returns (return_number, source_type, purchase_order_id, customer_id, warehouse_id,
+                                         return_type, reason, inspection_status, refund_amount, total_amount, refund_mode,
+                                         refund_status, status, inspected_by, approved_by, notes, created_at)
+                     VALUES (?, 'WAREHOUSE_PURCHASE', ?, ?, ?, ?, ?, 'APPROVED', ?, ?, ?, 'COMPLETED', 'APPROVED', ?, ?, ?, NOW())",
+                    [
+                        $returnNumber,
+                        $poId,
+                        $po['customer_id'] ?? null,
+                        $targetWarehouseId,
+                        $returnType,
+                        $reason,
+                        $totalRefund,
+                        $totalRefund,
+                        $refundMode,
+                        $userId,
+                        $userId,
+                        $notes,
+                    ]
+                );
+                $returnId = (int)Database::lastInsertId();
+            }
 
             $totalNewExchangeAmount = 0.0;
             $hasSameProductExchange = false;
@@ -2589,25 +2845,23 @@ class WarehouseService {
                     );
 
                     // Log in warehouse_damages table
-                    try {
-                        Database::execute(
-                            "INSERT INTO warehouse_damages (damage_number, warehouse_id, variant_id, source_type, reference_id,
-                                                           quantity, cost_per_unit, total_loss, damage_reason, defect_notes, status, reported_by, created_at)
-                             VALUES (?, ?, ?, 'CUSTOMER_RETURN', ?, ?, ?, ?, ?, ?, 'LOGGED', ?, NOW())",
-                            [
-                                'DAM-WH-' . date('Ymd') . '-' . rand(1000, 9999),
-                                $targetWarehouseId,
-                                $variantId,
-                                $returnId,
-                                $qty,
-                                $it['unit_price'],
-                                $it['refund_amount'],
-                                "Customer Return Defect: $returnNumber",
-                                "Condition: {$condition}",
-                                $userId
-                            ]
-                        );
-                    } catch (Throwable $e) {}
+                    Database::execute(
+                        "INSERT INTO warehouse_damages (damage_number, warehouse_id, variant_id, source_type, reference_id,
+                                                       quantity, cost_per_unit, total_loss, damage_reason, defect_notes, status, reported_by, created_at)
+                         VALUES (?, ?, ?, 'CUSTOMER_RETURN', ?, ?, ?, ?, ?, ?, 'LOGGED', ?, NOW())",
+                        [
+                            'DAM-WH-' . date('Ymd') . '-' . rand(1000, 9999),
+                            $targetWarehouseId,
+                            $variantId,
+                            $returnId,
+                            $qty,
+                            $it['unit_price'],
+                            $it['refund_amount'],
+                            "Customer Return Defect: $returnNumber",
+                            "Condition: {$condition}",
+                            $userId
+                        ]
+                    );
                 }
 
                 // If Same-Product Exchange: deduct replacement variant stock
@@ -2646,7 +2900,6 @@ class WarehouseService {
             }
 
             // If Different Product Exchange with in-place selected new items:
-            $newItems = $payload['new_items'] ?? [];
             $hasDifferentProductExchange = false;
 
             if ($actionType === 'EXCHANGE_DIFFERENT' && !empty($newItems)) {
@@ -2655,11 +2908,15 @@ class WarehouseService {
                     $nQty = (int)($nItem['quantity'] ?? 0);
                     if ($nVarId <= 0 || $nQty <= 0) continue;
 
-                    $nVar = Database::fetchOne("SELECT pv.*, p.name as product_name, sz.name as size_name, cl.name as color_name 
+                    $nVar = Database::fetchOne("SELECT pv.*, p.name as product_name, sz.name as size_name, cl.name as color_name,
+                                                       COALESCE(pv.is_complementary, p.is_complementary, 0) as is_complementary,
+                                                       COALESCE(p.is_complementary, 0) as prod_is_comp,
+                                                       COALESCE(wc.category_type, 'NORMAL') as category_type
                                                FROM product_variants pv 
                                                JOIN products p ON pv.product_id = p.id 
                                                LEFT JOIN sizes sz ON pv.size_id = sz.id 
                                                LEFT JOIN colors cl ON pv.color_id = cl.id 
+                                               LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
                                                WHERE pv.id = ?", [$nVarId]);
                     $availStock = (int)(Database::fetchOne("SELECT COALESCE(SUM(quantity), 0) as stock FROM stock_balances WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND location_id = ? AND stock_state = 'AVAILABLE'", [$nVarId, $targetWarehouseId])['stock'] ?? 0);
                     if ($availStock < $nQty) {
@@ -2668,7 +2925,15 @@ class WarehouseService {
                     }
 
                     $hasDifferentProductExchange = true;
-                    $nPrice = (float)($nVar['selling_price'] ?? 0);
+                    $isComplementary = !empty($nVar['is_complementary'])
+                        || !empty($nVar['prod_is_comp'])
+                        || ($nVar['category_type'] ?? '') === 'COMPLEMENTARY';
+                    $stockPrice = (float)($nVar['purchase_price'] ?? 0);
+                    if ($stockPrice <= 0) $stockPrice = (float)($nVar['production_cost'] ?? 0);
+                    if ($stockPrice <= 0) $stockPrice = (float)(($nVar['selling_price'] ?? 0) > 0 ? $nVar['selling_price'] : ($nVar['mrp'] ?? 0));
+                    $nPrice = $isComplementary
+                        ? $stockPrice
+                        : (float)(($nVar['selling_price'] ?? 0) > 0 ? $nVar['selling_price'] : ($nVar['mrp'] ?? 0));
                     $nLineTotal = $nPrice * $nQty;
                     $totalNewExchangeAmount += $nLineTotal;
 
@@ -2688,6 +2953,13 @@ class WarehouseService {
             }
 
             // If Exchange with replacement items: record in `exchanges` and `exchange_items`
+            if ($refundMode === 'SPLIT') {
+                $expectedSettlement = abs($totalNewExchangeAmount - $totalRefund);
+                if (abs(($splitCashAmount + $splitUpiAmount) - $expectedSettlement) > 0.01) {
+                    throw new InvalidArgumentException("Split settlement total must match the net return / exchange amount.");
+                }
+            }
+
             if (($actionType === 'EXCHANGE_SAME' && $hasSameProductExchange) || ($actionType === 'EXCHANGE_DIFFERENT' && $hasDifferentProductExchange)) {
                 $diffAmount = $totalNewExchangeAmount - $totalRefund;
                 $paymentAction = 'NONE';
@@ -2697,7 +2969,7 @@ class WarehouseService {
                     $paymentAction = 'REFUND';
                 }
 
-                $exchangeNumber = 'EXC-WH-' . date('Ymd') . '-' . sprintf('%04d', rand(1000, 9999));
+                $exchangeNumber = $existingExchangeNumber ?: ('EXC-WH-' . date('Ymd') . '-' . sprintf('%04d', rand(1000, 9999)));
 
                 Database::execute(
                     "INSERT INTO exchanges (exchange_number, return_id, source_type, purchase_order_id, original_amount, 
@@ -2747,8 +3019,23 @@ class WarehouseService {
                         $nVarId = (int)($nItem['variant_id'] ?? 0);
                         $nQty = (int)($nItem['quantity'] ?? 0);
                         if ($nVarId <= 0 || $nQty <= 0) continue;
-                        $nVar = Database::fetchOne("SELECT selling_price, sku FROM product_variants WHERE id = ?", [$nVarId]);
-                        $nPrice = (float)($nVar['selling_price'] ?? 0);
+                        $nVar = Database::fetchOne("SELECT pv.*,
+                                                           COALESCE(pv.is_complementary, p.is_complementary, 0) as is_complementary,
+                                                           COALESCE(p.is_complementary, 0) as prod_is_comp,
+                                                           COALESCE(wc.category_type, 'NORMAL') as category_type
+                                                    FROM product_variants pv
+                                                    JOIN products p ON pv.product_id = p.id
+                                                    LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
+                                                    WHERE pv.id = ?", [$nVarId]);
+                        $isComplementary = !empty($nVar['is_complementary'])
+                            || !empty($nVar['prod_is_comp'])
+                            || ($nVar['category_type'] ?? '') === 'COMPLEMENTARY';
+                        $stockPrice = (float)($nVar['purchase_price'] ?? 0);
+                        if ($stockPrice <= 0) $stockPrice = (float)($nVar['production_cost'] ?? 0);
+                        if ($stockPrice <= 0) $stockPrice = (float)(($nVar['selling_price'] ?? 0) > 0 ? $nVar['selling_price'] : ($nVar['mrp'] ?? 0));
+                        $nPrice = $isComplementary
+                            ? $stockPrice
+                            : (float)(($nVar['selling_price'] ?? 0) > 0 ? $nVar['selling_price'] : ($nVar['mrp'] ?? 0));
                         $rawPieceTags = is_array($nItem['scanned_tags'] ?? null)
                             ? $nItem['scanned_tags']
                             : (is_string($nItem['piece_tag'] ?? null) ? [$nItem['piece_tag']] : (is_string($nItem['qr_code'] ?? null) ? explode(',', $nItem['qr_code']) : []));
@@ -2769,13 +3056,29 @@ class WarehouseService {
                 }
             }
 
-            AuditService::log('warehouse_purchases', 'PROCESS_RETURN', 'returns', $returnId, null, [
+            $newAuditData = [
                 'return_number' => $returnNumber,
                 'po_id'         => $poId,
                 'action_type'   => $actionType,
                 'total_refund'  => $totalRefund,
                 'total_new'     => $totalNewExchangeAmount,
-            ], $userId);
+                'items'         => $processedItems,
+                'new_items'     => $newItems,
+                'reason'        => $reason,
+                'refund_mode'   => $refundMode,
+                'split_cash_amount' => $refundMode === 'SPLIT' ? $splitCashAmount : null,
+                'split_upi_amount' => $refundMode === 'SPLIT' ? $splitUpiAmount : null,
+                'split_upi_ref' => $refundMode === 'SPLIT' ? trim((string)($payload['split_upi_ref'] ?? '')) : null,
+            ];
+            AuditService::log(
+                'warehouse_purchases',
+                $editReturnId > 0 ? 'EDIT_RETURN' : 'PROCESS_RETURN',
+                'returns',
+                $returnId,
+                $editSnapshot,
+                $newAuditData,
+                $userId
+            );
 
             Database::commit();
 

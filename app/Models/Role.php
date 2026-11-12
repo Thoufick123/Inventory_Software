@@ -620,7 +620,7 @@ class Role {
             Database::execute("UPDATE permissions SET slug = CONCAT(module, '.', action) WHERE module = 'allocation_outward' AND (slug IS NULL OR slug = '')");
 
             foreach ($required as $r) {
-                [$mod, $act, $desc, $slug, $syncFromMod] = $r;
+                [$mod, $act, $desc, $slug] = $r;
                 $row = Database::fetchOne("SELECT id FROM permissions WHERE module = ? AND action = ?", [$mod, $act]);
                 if (!$row) {
                     Database::execute(
@@ -628,81 +628,16 @@ class Role {
                         [$mod, $act, $desc, $slug]
                     );
                     $newId = (int)Database::lastInsertId();
-                    if ($syncFromMod && $newId > 0) {
-                        $sourcePerm = Database::fetchOne("SELECT id FROM permissions WHERE module = ? AND action = ?", [$syncFromMod, $act]);
-                        if ($sourcePerm) {
-                            $sourceId = (int)$sourcePerm['id'];
-                            Database::execute(
-                                "INSERT IGNORE INTO role_permissions (role_id, permission_id) 
-                                 SELECT role_id, ? FROM role_permissions WHERE permission_id = ?",
-                                [$newId, $sourceId]
-                            );
-                            Database::execute(
-                                "INSERT IGNORE INTO user_permissions (user_id, permission_id) 
-                                 SELECT user_id, ? FROM user_permissions WHERE permission_id = ?",
-                                [$newId, $sourceId]
-                            );
-                        }
-                    }
-                } else {
-                    // Ensure existing permission has correct slug and role sync
-                    if ($syncFromMod) {
-                        $sourcePerm = Database::fetchOne("SELECT id FROM permissions WHERE module = ? AND action = ?", [$syncFromMod, $act]);
-                        if ($sourcePerm) {
-                            $sourceId = (int)$sourcePerm['id'];
-                            Database::execute(
-                                "INSERT IGNORE INTO role_permissions (role_id, permission_id) 
-                                 SELECT role_id, ? FROM role_permissions WHERE permission_id = ?",
-                                [$row['id'], $sourceId]
-                            );
-                            Database::execute(
-                                "INSERT IGNORE INTO user_permissions (user_id, permission_id) 
-                                 SELECT user_id, ? FROM user_permissions WHERE permission_id = ?",
-                                [$row['id'], $sourceId]
-                            );
-                        }
+                    if ($newId > 0) {
+                        // Grant newly created system permissions ONLY to root Super Admin role
+                        Database::execute(
+                            "INSERT IGNORE INTO role_permissions (role_id, permission_id) 
+                             SELECT id, ? FROM roles WHERE slug IN ('super-admin', 'super_admin')",
+                            [$newId]
+                        );
                     }
                 }
             }
-
-            // Always ensure Super Admin (1) and Admin (2) have all system module permissions
-            Database::execute("
-                INSERT IGNORE INTO role_permissions (role_id, permission_id)
-                SELECT r.id, p.id
-                FROM roles r
-                CROSS JOIN permissions p
-                WHERE r.id IN (1, 2) AND p.module IN (
-                    'allocation_outward', 'shop_inward', 'audit', 'settings', 'backup',
-                    'production', 'sellers', 'damages', 'catalog', 'programs', 'cutting',
-                    'wastage', 'stitching', 'stitching_wastage', 'labels', 'qc', 'inventory',
-                    'production_expenses', 'outward', 'warehouse_rework',
-                    'warehouse', 'inward', 'stock', 'wh_sellers', 'wh_catalog', 'wh_labels',
-                    'purchases', 'purchases_returns', 'allocation', 'damage', 'returns',
-                    'shop_requests', 'warehouse_expenses', 'sales_channels',
-                    'whatsapp_dashboard', 'whatsapp_inward', 'whatsapp_inventory', 'whatsapp_orders',
-                    'whatsapp_damage', 'whatsapp_returns', 'whatsapp_return_to_wh', 'whatsapp_expenses',
-                    'website_dashboard', 'website_inward', 'website_inventory', 'website_orders',
-                    'website_damage', 'website_returns', 'website_return_to_wh', 'website_customers', 'website_expenses',
-                    'shop', 'shop_cash', 'shop_stock', 'shop_damage', 'pos', 'sales',
-                    'customers', 'shop_returns', 'return_to_warehouse',
-                    'asset_scanner', 'asset_transfers', 'asset_maintenance', 'asset_bulk_labels',
-                    'staff', 'roles', 'notifications',
-                    'dashboard', 'batches', 'asset_register', 'asset_dashboard', 'whatsapp_returned_products',
-                    'production_purchases', 'production_billing', 'production_returns', 'production_stock_requests'
-                )
-            ");
-
-            // Sync roles that have shop_inward.receive or shop_inward.verify or inward.create to have shop_inward.create
-            Database::execute("
-                INSERT IGNORE INTO role_permissions (role_id, permission_id)
-                SELECT rp.role_id, p_new.id
-                FROM role_permissions rp
-                JOIN permissions p ON rp.permission_id = p.id
-                CROSS JOIN permissions p_new
-                WHERE p_new.module = 'shop_inward' AND p_new.action = 'create'
-                  AND ((p.module = 'shop_inward' AND p.action IN ('receive', 'verify'))
-                       OR (p.module = 'inward' AND p.action IN ('create', 'verify')))
-            ");
         } catch (\Throwable $e) {
             // Silently ignore if database is temporarily unavailable during boot
         }

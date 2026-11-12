@@ -3,6 +3,10 @@
 $currentTab = $_GET['tab'] ?? 'all';
 $summary = $summary ?? [];
 $recentReturns = $recentReturns ?? [];
+$canProcessReturns = hasPermission('purchases_returns', 'process') || hasPermission('purchases_returns', 'create');
+$canEditReturns = hasPermission('purchases_returns', 'edit');
+$isEditingReturn = !empty($isEditingReturn);
+$editData = $editData ?? null;
 ?>
 <div class="container-fluid py-4">
     <!-- Header -->
@@ -20,6 +24,12 @@ $recentReturns = $recentReturns ?? [];
            
         </div>
     </div>
+    <?php if ($isEditingReturn && !empty($editData['transaction'])): ?>
+        <div class="alert alert-info d-flex align-items-center gap-2 mb-4">
+            <i class="bi bi-info-circle-fill"></i>
+            <span>Editing <?= e($editData['transaction']['return_number']) ?>. Saving will reconcile the related warehouse stock and settlement values.</span>
+        </div>
+    <?php endif; ?>
 
     <!-- 5 QUICK ANALYSIS & FILTER CARDS -->
     <div class="row g-3 mb-4">
@@ -70,7 +80,7 @@ $recentReturns = $recentReturns ?? [];
             </div>
         </div>
 
-        <!-- Card 3: Size & Color Exchanges -->
+        <!-- Card 3: Warehouse Exchanges -->
         <div class="col-sm-6 col-xl">
             <div class="card border-0 shadow-sm border-start border-success border-4 h-100 rounded-4 transition-card cursor-pointer quick-analysis-card <?= $currentTab === 'exchanges' ? 'bg-success bg-opacity-10 border-success' : 'bg-white' ?>"
                  onclick="filterTab('exchanges')" style="cursor: pointer;">
@@ -83,7 +93,7 @@ $recentReturns = $recentReturns ?? [];
                                 <span class="fs-6 fw-normal text-muted">cases</span>
                             </h3>
                             <small class="text-success d-flex align-items-center mt-1" style="font-size: 11px;">
-                                <i class="bi bi-arrow-left-right me-1"></i> Size / Color / Catalog Swaps
+                                <i class="bi bi-arrow-left-right me-1"></i> Warehouse Stock Exchanges
                             </small>
                         </div>
                         <div class="stat-icon bg-success bg-opacity-10 text-success p-3 rounded-circle fs-3 flex-shrink-0">
@@ -179,8 +189,7 @@ $recentReturns = $recentReturns ?? [];
                         </div>
                         <ul class="mb-0 text-secondary small ps-3" style="line-height: 1.5; font-size: 12px;">
                             <li><strong>Direct Refund:</strong> Returns items &amp; logs cash/UPI refund.</li>
-                            <li><strong>Same-Product Swap:</strong> Exchange for other sizes/colors with live warehouse stock.</li>
-                            <li><strong>Catalog Exchange:</strong> Pick alternate products with auto price difference adjustment.</li>
+                            <li><strong>Warehouse Exchange:</strong> Scan any available replacement product and adjust the price difference.</li>
                             <li><strong>Stock Sync:</strong> Good items restock to available; damaged route to defect pool.</li>
                         </ul>
                     </div>
@@ -353,6 +362,11 @@ $recentReturns = $recentReturns ?? [];
                                 <a href="<?= url('warehouse/purchases/returns/view/' . $r['id']) ?>" class="btn btn-outline-secondary" title="View Audit Details">
                                     <i class="bi bi-eye"></i>
                                 </a>
+                                <?php if ($canEditReturns): ?>
+                                    <a href="<?= url('warehouse/purchases/returns/edit/' . $r['id']) ?>" class="btn btn-outline-warning" title="Edit Return / Exchange">
+                                        <i class="bi bi-pencil-square"></i>
+                                    </a>
+                                <?php endif; ?>
                                 <a href="<?= url('warehouse/purchases/returns/invoice/' . $r['id']) ?>" target="_blank" class="btn btn-outline-primary" title="Print Tax Invoice / Exchange Slip">
                                     <i class="bi bi-printer"></i>
                                 </a>
@@ -378,7 +392,7 @@ $recentReturns = $recentReturns ?? [];
             <div class="modal-header px-4 py-3 border-bottom bg-white" style="flex-direction: column; align-items: stretch; gap: 0;">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <h5 class="fw-bold mb-0 text-dark" id="returnExchangeModalLabel" style="font-size: 1.15rem;">
-                        <i class="bi bi-arrow-return-left text-primary me-2"></i>Step 2: Select Items &amp; Transaction Type
+                        <i class="bi bi-arrow-return-left text-primary me-2"></i><?= $isEditingReturn ? 'Edit Return / Exchange Transaction' : 'Step 2: Select Items &amp; Transaction Type' ?>
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
@@ -437,23 +451,23 @@ $recentReturns = $recentReturns ?? [];
                             </div>
                         </div>
 
-                        <!-- Card 2: Exchange Same Product -->
+                        <!-- Card 2: Exchange with Warehouse Stock -->
                         <div class="col-12 col-md-6">
                             <div class="action-type-card card border-2 h-100 p-3 shadow-sm"
-                                 id="card_EXCHANGE_SAME" onclick="selectActionCard('EXCHANGE_SAME')"
+                                 id="card_EXCHANGE_DIFFERENT" onclick="selectActionCard('EXCHANGE_DIFFERENT')"
                                  style="border-radius:12px; cursor:pointer;">
                                 <div class="d-flex align-items-center gap-2 mb-2">
                                     <span class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
                                           style="width:32px;height:32px;background:#f0fdf4;">
                                         <i class="bi bi-arrow-left-right text-success" style="font-size:15px;"></i>
                                     </span>
-                                    <strong class="text-dark" style="font-size:13.5px;">Exchange</strong>
+                                    <strong class="text-dark" style="font-size:13.5px;">Warehouse Exchange</strong>
                                     <span class="ms-auto badge" style="background:#dcfce7;color:#166534;font-size:10px; white-space:nowrap;">
                                         <i class="bi bi-arrow-repeat"></i>
                                     </span>
                                 </div>
                                 <p class="text-muted mb-0" style="font-size:11.5px; line-height:1.4;">
-                                    Swap for different size or color variant of this same product style.
+                                    Exchange the selected invoice items for any available product in this warehouse.
                                 </p>
                             </div>
                         </div>
@@ -464,7 +478,9 @@ $recentReturns = $recentReturns ?? [];
                 <!-- Hidden legacy select for JS compatibility -->
                 <select id="actionTypeSelect" class="d-none" onchange="switchActionMode(this.value)">
                     <option value="RETURN">Direct Return</option>
-                    <option value="EXCHANGE_SAME">Exchange</option>
+                    <option value="EXCHANGE_SAME">Same Product Exchange</option>
+                    <option value="EXCHANGE_DIFFERENT">Warehouse Exchange</option>
+                    <option value="CREDIT_NOTE">Credit Note</option>
                 </select>
 
                 <!-- Dynamic Replacement QR Scanner Box (Shown for Exchange) -->
@@ -472,10 +488,10 @@ $recentReturns = $recentReturns ?? [];
                     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                         <div class="d-flex align-items-center gap-2">
                             <span class="badge bg-success text-white px-2.5 py-1 fw-bold" style="font-size: 0.75rem;">
-                                <i class="bi bi-upc-scan me-1"></i>Scan Replacement Garment QR / Barcode
+                                <i class="bi bi-upc-scan me-1"></i>Scan Replacement Warehouse Product
                             </span>
                             <span class="text-white-50 small">
-                                Scan physical replacement piece QR tag, barcode, or SKU to auto-select replacement &amp; verify stock
+                                Scan any in-stock QR, barcode, or SKU; it goes to the next checked invoice item
                             </span>
                         </div>
                     </div>
@@ -484,11 +500,11 @@ $recentReturns = $recentReturns ?? [];
                             <i class="bi bi-qr-code-scan fs-6"></i>
                         </span>
                         <input type="text" id="modalExchangeScanInput" class="form-control bg-dark text-white border-secondary font-monospace"
-                               placeholder="Scan physical replacement piece QR tag (e.g. HHH102604), Barcode, or SKU..."
+                               placeholder="Scan replacement QR tag, barcode, or SKU..."
                                autocomplete="off"
                                onkeydown="if(event.key === 'Enter'){ event.preventDefault(); onModalScanExchangeItem(this.value); }">
                         <button type="button" class="btn btn-success px-4 fw-bold" onclick="onModalScanExchangeItem(document.getElementById('modalExchangeScanInput').value)">
-                            <i class="bi bi-plus-circle me-1"></i> Scan &amp; Match
+                            <i class="bi bi-plus-circle me-1"></i> Scan &amp; Assign
                         </button>
                     </div>
                     <div id="modalScanFeedback" class="mt-2 small d-none alert py-1 px-2.5 mb-0" style="font-size: 0.82rem;"></div>
@@ -508,7 +524,9 @@ $recentReturns = $recentReturns ?? [];
                             <thead style="background:#f8f9fa; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:#6c757d; font-weight:700;">
                                 <tr>
                                     <th class="ps-3" style="width:40px;">
-                                        <input type="checkbox" id="selectAllCheckbox" class="form-check-input" checked onchange="toggleSelectAll(this)">
+                                        <input type="checkbox" id="selectAllCheckbox" class="form-check-input"
+                                               onchange="toggleSelectAll(this)" <?= ($canProcessReturns || $isEditingReturn) ? '' : 'disabled' ?>
+                                               title="<?= ($canProcessReturns || $isEditingReturn) ? 'Select all invoice items' : 'Return processing permission is required' ?>">
                                     </th>
                                     <th style="min-width:280px;">Product Item (Purchased)</th>
                                     <th style="width:70px; text-align:center;">Sold</th>
@@ -516,7 +534,7 @@ $recentReturns = $recentReturns ?? [];
                                     <th style="width:140px;" id="conditionColHeader">Condition</th>
                                     <th style="width:110px; text-align:right;">Unit Rate</th>
                                     <th style="width:120px; text-align:right;" id="lastColHeader">Item Credit</th>
-                                    <th id="sameExchangeHeader" style="min-width:300px; width:340px;" class="d-none">Replacement (Size/Color)</th>
+                                    <th id="replacementProductHeader" class="d-none" style="min-width:300px;">Replacement Product</th>
                                 </tr>
                             </thead>
                             <tbody id="returnItemsTbody">
@@ -637,10 +655,10 @@ $recentReturns = $recentReturns ?? [];
             <!-- Modal Footer -->
             <div class="modal-footer bg-white py-3 px-4 border-top">
                 <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
-                <?php if (hasPermission('purchases_returns', 'process') || hasPermission('purchases_returns', 'create')): ?>
+                <?php if ($canProcessReturns || $isEditingReturn): ?>
                     <button type="button" class="btn btn-primary rounded-pill px-5 fw-bold shadow-sm" id="btnConfirmSubmit" onclick="submitReturnProcess()">
                         <span id="submitSpinner" class="spinner-border spinner-border-sm me-1 d-none" role="status"></span>
-                        <i class="bi bi-check2-circle me-1"></i> Confirm &amp; Generate Tax Slip
+                        <i class="bi bi-check2-circle me-1"></i> <?= $isEditingReturn ? 'Save Return / Exchange Changes' : 'Confirm &amp; Generate Tax Slip' ?>
                     </button>
                 <?php endif; ?>
             </div>
@@ -667,7 +685,7 @@ $recentReturns = $recentReturns ?? [];
     background: #eff6ff !important;
     box-shadow: 0 0 0 3px rgba(37,99,235,.18) !important;
 }
-#card_EXCHANGE_SAME.selected-action {
+#card_EXCHANGE_DIFFERENT.selected-action {
     border-color: #16a34a !important;
     background: #f0fdf4 !important;
     box-shadow: 0 0 0 3px rgba(22,163,74,.18) !important;
@@ -701,9 +719,12 @@ $recentReturns = $recentReturns ?? [];
 <!-- ========================================================================= -->
 <script>
 let currentPurchaseData = null;
+let currentEditReturnId = 0;
+const currentEditReplacementQuantities = {};
 let invoiceCountTimer = null;
 let invoiceCountRequestId = 0;
 const pendingReplacementScans = new Set();
+let rowReplacements = [];
 
 function isPhoneSearch(query) {
     const digits = query.replace(/\D/g, '');
@@ -879,9 +900,11 @@ async function executeLookup(selectedInvoice = null) {
     }
 }
 
-function openReturnModal(data) {
+function openReturnModal(data, editTransaction = null) {
     const po = data.purchase;
     const items = data.items;
+    currentEditReturnId = editTransaction ? Number(editTransaction.transaction.id) : 0;
+    Object.keys(currentEditReplacementQuantities).forEach(variantId => delete currentEditReplacementQuantities[variantId]);
 
     document.getElementById('modalPoNumber').innerText = po.po_number || ('PO #' + po.id);
     document.getElementById('modalCustomerName').innerText = po.customer_name || 'Direct Customer';
@@ -896,12 +919,141 @@ function openReturnModal(data) {
     const totalEl = document.getElementById('modalOrderTotal');
     if (totalEl) totalEl.innerText = '₹' + parseFloat(po.total_amount || po.grand_total || 0).toLocaleString('en-IN', {minimumFractionDigits: 2});
 
-    // Default to RETURN card
-    selectActionCard('RETURN');
+    const actionType = editTransaction ? getEditActionType(editTransaction.transaction) : 'RETURN';
+    selectActionCard(actionType);
     renderReturnItemsTable(items);
+    switchActionMode(actionType);
+    if (editTransaction) {
+        restoreReturnTransaction(editTransaction);
+    }
 
     const modal = new bootstrap.Modal(document.getElementById('returnExchangeModal'));
     modal.show();
+}
+
+function getEditActionType(transaction) {
+    const match = String(transaction.notes || '').match(/Warehouse Direct Action:\s*(EXCHANGE_SAME|EXCHANGE_DIFFERENT|CREDIT_NOTE|RETURN)/);
+    if (match) return match[1];
+    return transaction.return_type === 'EXCHANGE' ? 'EXCHANGE_DIFFERENT' : 'RETURN';
+}
+
+function restoreReturnTransaction(editTransaction) {
+    const transaction = editTransaction.transaction;
+    const items = currentPurchaseData.items || [];
+    const reasonSelect = document.getElementById('returnReasonSelect');
+    const reason = String(transaction.reason || '');
+    if (reason && !Array.from(reasonSelect.options).some(option => option.value === reason)) {
+        reasonSelect.add(new Option(reason, reason));
+    }
+    reasonSelect.value = reason;
+
+    const mode = getEditActionType(transaction);
+    const settlementMode = mode.startsWith('EXCHANGE_')
+        ? (editTransaction.exchange && editTransaction.exchange.settlement_mode)
+        : transaction.refund_mode;
+    const refundSelect = document.getElementById('refundModeSelect');
+    if (settlementMode && !Array.from(refundSelect.options).some(option => option.value === settlementMode)) {
+        refundSelect.add(new Option(settlementMode, settlementMode));
+    }
+    if (settlementMode) refundSelect.value = settlementMode;
+
+    const noteLines = String(transaction.notes || '').split(/\r?\n/);
+    const settlementLine = noteLines.find(line => line.startsWith('Warehouse Settlement:'));
+    let settlementDetails = null;
+    if (settlementLine) {
+        try {
+            settlementDetails = JSON.parse(settlementLine.slice('Warehouse Settlement:'.length).trim());
+        } catch (error) {
+            console.error('Unable to restore the saved split settlement details.', error);
+        }
+    }
+    document.getElementById('returnNotesInput').value = noteLines.slice(1)
+        .filter(line => !line.startsWith('Warehouse Settlement:'))
+        .join('\n').trim();
+
+    const availableQty = items.map(item => Number(item.returnable_qty || 0));
+    const returnedQtyByRow = items.map(() => 0);
+    (editTransaction.return_items || []).forEach(returnItem => {
+        let remainingQty = Number(returnItem.quantity) || 0;
+        const unitRate = remainingQty > 0 ? Number(returnItem.refund_amount || 0) / remainingQty : 0;
+        const candidates = items.map((item, index) => ({item, index}))
+            .filter(({item, index}) => Number(item.variant_id) === Number(returnItem.variant_id) && availableQty[index] > 0)
+            .sort((a, b) => {
+                const aRate = Math.abs(Number(a.item.unit_price || 0) - unitRate);
+                const bRate = Math.abs(Number(b.item.unit_price || 0) - unitRate);
+                return aRate - bRate;
+            });
+
+        candidates.forEach(({index}) => {
+            if (remainingQty <= 0) return;
+            const quantity = Math.min(remainingQty, availableQty[index]);
+            if (quantity <= 0) return;
+
+            const checkbox = document.querySelector(`.item-select-cb[data-idx="${index}"]`);
+            const quantityInput = document.querySelector(`.return-qty-input[data-idx="${index}"]`);
+            const conditionSelect = document.querySelector(`.item-condition-select[data-idx="${index}"]`);
+            if (checkbox) {
+                checkbox.checked = true;
+                checkbox.closest('tr').classList.add('row-selected');
+            }
+            returnedQtyByRow[index] += quantity;
+            if (quantityInput) quantityInput.value = String(returnedQtyByRow[index]);
+            if (conditionSelect) conditionSelect.value = returnItem.item_condition || 'GOOD';
+
+            const tagsMatch = String(returnItem.reason || '').match(/Piece Tags:\s*(.+)$/);
+            const tags = tagsMatch
+                ? tagsMatch[1].split(',').map(tag => tag.trim()).filter(Boolean)
+                : [];
+            rowPieceTags[index] = new Set(tags);
+            renderTagBadges(index);
+
+            availableQty[index] -= quantity;
+            remainingQty -= quantity;
+        });
+    });
+
+    const checkboxes = Array.from(document.querySelectorAll('.item-select-cb'));
+    const master = document.getElementById('selectAllCheckbox');
+    const selectedCount = checkboxes.filter(checkbox => checkbox.checked).length;
+    if (master) {
+        master.checked = checkboxes.length > 0 && selectedCount === checkboxes.length;
+        master.indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+    }
+
+    const selectedIndexes = checkboxes
+        .map((checkbox, index) => checkbox.checked ? index : -1)
+        .filter(index => index >= 0);
+    (editTransaction.exchange_items || [])
+        .filter(exchangeItem => exchangeItem.item_type === 'NEW')
+        .forEach((exchangeItem, itemIndex) => {
+            const targetIndex = selectedIndexes[itemIndex];
+            if (targetIndex === undefined) return;
+            const variantId = Number(exchangeItem.variant_id);
+            const quantity = Number(exchangeItem.quantity) || 0;
+            currentEditReplacementQuantities[variantId] =
+                (currentEditReplacementQuantities[variantId] || 0) + quantity;
+            rowReplacements[targetIndex] = {
+                variant_id: variantId,
+                product_name: exchangeItem.product_name || 'Product',
+                product_code: exchangeItem.product_code || '',
+                sku: exchangeItem.sku || '',
+                unit_price: Number(exchangeItem.unit_price) || 0,
+                available_stock: Number(exchangeItem.available_stock) || quantity,
+                quantity,
+                scanned_tags: String(exchangeItem.piece_tag || '').split(',').map(tag => tag.trim()).filter(Boolean),
+                scanned_codes: []
+            };
+            renderReplacementProductCell(targetIndex);
+        });
+
+    toggleSplitPaymentUI();
+    if (settlementDetails) {
+        document.getElementById('splitCashInput').value = Number(settlementDetails.cash || 0).toFixed(2);
+        document.getElementById('splitUpiInput').value = Number(settlementDetails.upi || 0).toFixed(2);
+        document.getElementById('splitUpiRefInput').value = settlementDetails.upi_ref || '';
+        calculateSplitPayment();
+    }
+    recalculateTotals();
 }
 
 // Card selector for Action Type (strictly single-select)
@@ -909,7 +1061,8 @@ function selectActionCard(mode) {
     document.querySelectorAll('.action-type-card').forEach(c => {
         c.classList.remove('selected-action');
     });
-    const card = document.getElementById('card_' + mode);
+    const cardId = mode === 'EXCHANGE_SAME' ? 'EXCHANGE_DIFFERENT' : (mode === 'CREDIT_NOTE' ? 'RETURN' : mode);
+    const card = document.getElementById('card_' + cardId);
     if (card) {
         card.classList.add('selected-action');
     }
@@ -925,6 +1078,12 @@ function renderReturnItemsTable(items) {
     const tbody = document.getElementById('returnItemsTbody');
     tbody.innerHTML = '';
     pendingReplacementScans.clear();
+    rowReplacements = [];
+    const selectAll = document.getElementById('selectAllCheckbox');
+    if (selectAll) {
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
+    }
     Object.keys(rowPieceTags).forEach(k => delete rowPieceTags[k]);
 
     // Update item count badge
@@ -950,35 +1109,13 @@ function renderReturnItemsTable(items) {
             rowPieceTags[idx] = new Set([itemQr]);
         }
 
-        let siblingOptions = '<option value="">-- Swap with other size/color --</option>';
-        if (it.sibling_variants && it.sibling_variants.length > 0) {
-            it.sibling_variants.forEach(sib => {
-                const isCurrent = sib.id == it.variant_id;
-                const stock = parseInt(sib.warehouse_stock || 0);
-                const disabled = stock <= 0 && !isCurrent ? 'disabled' : '';
-                const sibQr = sib.qr_code || sib.sku || '';
-                const sibCode = prodCode || '';
-                siblingOptions += `<option value="${sib.id}" 
-                    data-price="${sib.selling_price}" 
-                    data-stock="${stock}" 
-                    data-sku="${sib.sku}" 
-                    data-qr="${sibQr}" 
-                    data-code="${sibCode}" 
-                    data-size="${sib.size_name || ''}" 
-                    data-color="${sib.color_name || ''}" 
-                    ${disabled}>
-                    ${sib.size_name || ''} / ${sib.color_name || ''} (SKU: ${sib.sku}) — ₹${parseFloat(sib.selling_price).toFixed(2)} [Stock: ${stock} pcs]
-                </option>`;
-            });
-        }
-
         const tr = document.createElement('tr');
         tr.id = `itemRow_${idx}`;
         tr.dataset.variantQr = it.qr_code || '';
         tr.innerHTML = `
             <td class="ps-3">
-                <input type="checkbox" class="form-check-input item-select-cb" data-idx="${idx}" checked
-                       onchange="this.closest('tr').classList.toggle('row-selected', this.checked); recalculateTotals()">
+                <input type="checkbox" class="form-check-input item-select-cb" data-idx="${idx}"
+                       onchange="handleReturnItemCheckboxChange(this)" <?= ($canProcessReturns || $isEditingReturn) ? '' : 'disabled' ?>>
             </td>
             <td style="max-width:330px;">
                 <div class="fw-semibold text-dark mb-1">${it.product_name || 'Garment'}</div>
@@ -998,7 +1135,7 @@ function renderReturnItemsTable(items) {
                 <input type="number" class="form-control form-control-sm return-qty-input fw-bold text-center"
                        style="width:80px;"
                        data-idx="${idx}" value="${maxQty}" min="1" max="${maxQty}"
-                       oninput="document.querySelector('.item-select-cb[data-idx=\'${idx}\']').checked = true; this.closest('tr').classList.add('row-selected'); validateQty(this, ${maxQty}); recalculateTotals()">
+                       oninput="validateQty(this, ${maxQty}); recalculateTotals()">
             </td>
             <td>
                 <select class="form-select form-select-sm item-condition-select" data-idx="${idx}" style="min-width:130px;">
@@ -1010,99 +1147,14 @@ function renderReturnItemsTable(items) {
             <td>
                 <strong class="text-danger item-refund-val" data-idx="${idx}">₹0.00</strong>
             </td>
-            <td class="same-product-cell d-none" style="min-width:260px;">
-                <input type="hidden" class="sibling-variant-input" data-idx="${idx}" id="siblingVariantInput_${idx}" value="">
-                <div id="siblingPlaceholder_${idx}" class="text-muted text-center py-2 px-2 border border-dashed rounded-3 bg-light" style="font-size:11px; cursor:pointer;" onclick="document.getElementById('modalExchangeScanInput')?.focus()">
-                    <i class="bi bi-qr-code-scan me-1 text-primary"></i><span>Scan replacement item QR</span>
-                </div>
-                <div id="siblingPreview_${idx}" class="sibling-preview-box small d-none p-2 rounded-3 border bg-white shadow-sm"></div>
+            <td class="replacement-product-cell d-none" data-idx="${idx}" style="min-width:300px;">
+                <div id="replacementDisplay_${idx}" class="text-muted small">No replacement scanned.</div>
             </td>
         `;
-        tr.classList.add('row-selected');
         tbody.appendChild(tr);
+        renderReplacementProductCell(idx);
     });
 
-    recalculateTotals();
-}
-
-function setRowReplacementVariant(idx, v, scannedTag) {
-    const input = document.getElementById('siblingVariantInput_' + idx);
-    const placeholder = document.getElementById('siblingPlaceholder_' + idx);
-    const preview = document.getElementById('siblingPreview_' + idx);
-    if (!input || !preview) return;
-
-    if (!v) {
-        input.value = '';
-        delete input.dataset.scannedCode;
-        delete input.dataset.scannedTag;
-        delete input.dataset.price;
-        delete input.dataset.qr;
-        if (placeholder) placeholder.classList.remove('d-none');
-        preview.classList.add('d-none');
-        preview.innerHTML = '';
-        recalculateTotals();
-        return;
-    }
-
-    input.value = v.id;
-    const finalTag = scannedTag || v.piece_tag || v.qr_code || '';
-    input.dataset.scannedTag = finalTag;
-    input.dataset.price = v.selling_price || 0;
-    input.dataset.qr = v.qr_code || '';
-
-    const price = parseFloat(v.selling_price || 0);
-    const stock = parseInt(v.available_stock !== undefined ? v.available_stock : (v.warehouse_stock || 0));
-    const sku = v.sku || '';
-    const defQr = v.qr_code || '';
-    const size = v.size_name || '';
-    const color = v.color_name || '';
-    const code = v.product_code || v.code || '';
-
-    const origItem = currentPurchaseData.items[idx];
-    const origPrice = parseFloat(origItem.unit_price || 0);
-    const priceDiff = price - origPrice;
-
-    let diffText = '';
-    if (priceDiff > 0.01) {
-        diffText = `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-auto" style="font-size:9.5px;">+₹${priceDiff.toFixed(2)}</span>`;
-    } else if (priceDiff < -0.01) {
-        diffText = `<span class="badge bg-success-subtle text-success border border-success-subtle ms-auto" style="font-size:9.5px;">-₹${Math.abs(priceDiff).toFixed(2)}</span>`;
-    } else {
-        diffText = `<span class="badge bg-light text-muted border ms-auto" style="font-size:9.5px;">Even (₹0.00)</span>`;
-    }
-
-    if (placeholder) placeholder.classList.add('d-none');
-
-    // Build QR Badges: show scanned piece tag and product QR
-    let qrBadgesHtml = '';
-    if (finalTag) {
-        qrBadgesHtml += `<span class="badge" style="background:#1e293b; color:#38bdf8; font-family:monospace; font-size:10px;"><i class="bi bi-qr-code-scan me-1"></i>QR: ${finalTag}</span>`;
-    }
-    if (defQr && defQr !== finalTag && defQr !== sku) {
-        qrBadgesHtml += `<span class="badge bg-primary-subtle text-primary border font-monospace" style="font-size:9.5px;"><i class="bi bi-qr-code me-0.5"></i>${defQr}</span>`;
-    }
-
-    preview.innerHTML = `
-        <div class="d-flex align-items-center justify-content-between gap-1 mb-1">
-            <div class="d-flex flex-wrap gap-1 align-items-center">
-                ${qrBadgesHtml}
-            </div>
-            ${diffText}
-        </div>
-        <div class="d-flex flex-wrap gap-1 align-items-center mb-1">
-            ${code ? `<span class="badge bg-warning-subtle text-warning-emphasis border font-monospace" style="font-size:9.5px;"><i class="bi bi-tag-fill me-0.5"></i>${code}</span>` : ''}
-            <span class="badge bg-light text-dark border font-monospace" style="font-size:9.5px;">SKU: ${sku}</span>
-            <span class="badge bg-secondary-subtle text-secondary" style="font-size:9.5px;">${size} / ${color}</span>
-        </div>
-        <div class="d-flex justify-content-between align-items-center font-monospace" style="font-size:11px;">
-            <span class="text-success fw-bold">₹${price.toFixed(2)}</span>
-            <div class="d-flex align-items-center gap-2">
-                <span class="${stock > 0 ? 'text-muted' : 'text-danger fw-bold'}">Stock: ${stock} pcs</span>
-                <button type="button" class="btn btn-sm btn-link text-danger p-0 text-decoration-none" title="Remove / Re-scan" onclick="setRowReplacementVariant(${idx}, null)"><i class="bi bi-trash"></i></button>
-            </div>
-        </div>
-    `;
-    preview.classList.remove('d-none');
     recalculateTotals();
 }
 
@@ -1120,8 +1172,6 @@ function addPieceTag(idx, raw) {
     }
     rowPieceTags[idx].add(tag);
     renderTagBadges(idx);
-    const cb = document.querySelector('.item-select-cb[data-idx="' + idx + '"]');
-    if (cb) { cb.checked = true; cb.closest('tr').classList.add('row-selected'); }
     recalculateTotals();
 }
 
@@ -1156,32 +1206,107 @@ function validateQty(input, max) {
 
 function toggleSelectAll(master) {
     const cbs = document.querySelectorAll('.item-select-cb');
-    cbs.forEach(cb => cb.checked = master.checked);
+    cbs.forEach(cb => {
+        cb.checked = master.checked;
+        cb.closest('tr').classList.toggle('row-selected', master.checked);
+    });
+    master.indeterminate = false;
+    recalculateTotals();
+}
+
+function handleReturnItemCheckboxChange(checkbox) {
+    checkbox.closest('tr').classList.toggle('row-selected', checkbox.checked);
+    const master = document.getElementById('selectAllCheckbox');
+    const checkboxes = Array.from(document.querySelectorAll('.item-select-cb'));
+    const selectedCount = checkboxes.filter(cb => cb.checked).length;
+    if (master) {
+        master.checked = checkboxes.length > 0 && selectedCount === checkboxes.length;
+        master.indeterminate = selectedCount > 0 && selectedCount < checkboxes.length;
+    }
     recalculateTotals();
 }
 
 function switchActionMode(mode) {
-    const sameCells = document.querySelectorAll('.same-product-cell');
-    const sameHeader = document.getElementById('sameExchangeHeader');
     const lastColHdr = document.getElementById('lastColHeader');
     const scannerBox = document.getElementById('exchangeScannerBox');
+    const replacementHeader = document.getElementById('replacementProductHeader');
+    const replacementCells = document.querySelectorAll('.replacement-product-cell');
     const scanInput = document.getElementById('modalExchangeScanInput');
+    const isExchange = mode === 'EXCHANGE_DIFFERENT' || mode === 'EXCHANGE_SAME';
 
-    if (mode === 'EXCHANGE_SAME') {
-        if (sameHeader) sameHeader.classList.remove('d-none');
-        sameCells.forEach(c => c.classList.remove('d-none'));
-        if (lastColHdr) lastColHdr.textContent = 'Item Credit';
-        if (scannerBox) scannerBox.classList.remove('d-none');
+    if (lastColHdr) lastColHdr.textContent = 'Item Credit';
+    if (scannerBox) scannerBox.classList.toggle('d-none', !isExchange);
+    if (replacementHeader) replacementHeader.classList.toggle('d-none', !isExchange);
+    replacementCells.forEach(cell => cell.classList.toggle('d-none', !isExchange));
+    if (isExchange) {
+        replacementCells.forEach(cell => renderReplacementProductCell(Number(cell.dataset.idx)));
         if (scanInput) setTimeout(() => scanInput.focus(), 150);
-    } else { // RETURN / DIRECT REFUND
-        if (sameHeader) sameHeader.classList.add('d-none');
-        sameCells.forEach(c => c.classList.add('d-none'));
-        if (lastColHdr) lastColHdr.textContent = 'Item Credit';
-        if (scannerBox) scannerBox.classList.add('d-none');
     }
 
     clearModalScanFeedback();
     toggleSplitPaymentUI();
+    recalculateTotals();
+}
+
+function escapeExchangeHtml(value) {
+    const replacements = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'};
+    return String(value || '').replace(/[&<>"']/g, character => replacements[character]);
+}
+
+function renderReplacementProductCell(idx) {
+    const display = document.getElementById('replacementDisplay_' + idx);
+    if (!display) return;
+
+    const item = rowReplacements[idx];
+    if (!item) {
+        display.className = 'text-muted small';
+        display.textContent = 'Scan a product to assign it here.';
+        return;
+    }
+
+    const scanLabels = [...new Set([...(item.scanned_tags || []), ...(item.scanned_codes || [])])];
+    const price = Number(item.unit_price) || 0;
+    const quantity = Number(item.quantity) || 0;
+    display.className = 'border rounded-2 bg-light p-2';
+    display.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start gap-2">
+            <div class="min-w-0">
+                <div class="fw-semibold">${escapeExchangeHtml(item.product_name)}</div>
+                <div class="small text-muted font-monospace">${escapeExchangeHtml(item.sku || item.product_code || '')}</div>
+                <div class="small text-primary font-monospace text-break">${scanLabels.map(escapeExchangeHtml).join(', ')}</div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-danger remove-replacement-item"
+                    title="Remove replacement"><i class="bi bi-trash"></i></button>
+        </div>
+        <div class="d-flex align-items-center justify-content-between gap-2 mt-2">
+            <span class="small text-muted">Available: ${Number(item.available_stock) || 0}</span>
+            <input type="number" class="form-control form-control-sm text-center replacement-qty-input"
+                   style="width:68px;" min="1" max="${Number(item.available_stock) || 0}" value="${quantity}"
+                   aria-label="Replacement quantity">
+            <span class="small fw-bold text-success text-nowrap">₹${(price * quantity).toFixed(2)}</span>
+        </div>
+    `;
+
+    const quantityInput = display.querySelector('.replacement-qty-input');
+    quantityInput.addEventListener('change', () => updateReplacementQuantity(idx, quantityInput.value));
+    display.querySelector('.remove-replacement-item').addEventListener('click', () => {
+        rowReplacements[idx] = null;
+        renderReplacementProductCell(idx);
+        recalculateTotals();
+    });
+}
+
+function updateReplacementQuantity(idx, value) {
+    const item = rowReplacements[idx];
+    const quantity = Number(value);
+    if (!item || !Number.isInteger(quantity) || quantity < 1 || quantity > Number(item.available_stock)) {
+        showModalScanFeedback('Replacement quantity must be between 1 and the available warehouse stock.', 'warning');
+        renderReplacementProductCell(idx);
+        return;
+    }
+
+    item.quantity = quantity;
+    renderReplacementProductCell(idx);
     recalculateTotals();
 }
 
@@ -1190,7 +1315,11 @@ function showModalScanFeedback(message, type = 'danger') {
     if (!el) return;
     el.className = `mt-2 small alert py-1.5 px-3 mb-0 text-${type} bg-${type}-subtle border border-${type}-subtle fw-bold d-flex align-items-center gap-2 rounded-3`;
     const icon = type === 'danger' ? 'bi-exclamation-circle-fill' : (type === 'warning' ? 'bi-exclamation-triangle-fill' : 'bi-check-circle-fill');
-    el.innerHTML = `<i class="bi ${icon} fs-6"></i> <span>${message}</span>`;
+    const iconElement = document.createElement('i');
+    iconElement.className = `bi ${icon} fs-6`;
+    const messageElement = document.createElement('span');
+    messageElement.textContent = message;
+    el.replaceChildren(iconElement, messageElement);
     el.classList.remove('d-none');
     if (type === 'success') {
         setTimeout(() => { el.classList.add('d-none'); }, 5000);
@@ -1206,21 +1335,12 @@ function normalizeReplacementScanValue(value) {
     return String(value || '').trim().toLowerCase();
 }
 
-function hasScannedReplacement(code, tag = '') {
-    const identifiers = [normalizeReplacementScanValue(code), normalizeReplacementScanValue(tag)].filter(Boolean);
-    return [...document.querySelectorAll('.sibling-variant-input')].some(input =>
-        [input.dataset.scannedCode, input.dataset.scannedTag]
-            .map(normalizeReplacementScanValue)
-            .some(identifier => identifier && identifiers.includes(identifier))
-    );
-}
-
 function onModalScanExchangeItem(code) {
     if (!code || !code.trim()) return;
     code = code.trim();
     const normalizedCode = normalizeReplacementScanValue(code);
-    if (hasScannedReplacement(normalizedCode) || pendingReplacementScans.has(normalizedCode)) {
-        showModalScanFeedback('This product has already been scanned for this return/exchange.', 'warning');
+    if (pendingReplacementScans.has(normalizedCode)) {
+        showModalScanFeedback('This scan is already being looked up. Please wait.', 'warning');
         document.getElementById('modalExchangeScanInput').value = '';
         return;
     }
@@ -1232,78 +1352,95 @@ function onModalScanExchangeItem(code) {
     const mode = document.getElementById('actionTypeSelect').value;
     const whId = currentPurchaseData && currentPurchaseData.purchase ? (currentPurchaseData.purchase.warehouse_id || 1) : 1;
 
-    fetch(`<?= url("api/warehouse/purchases/lookup-scan") ?>?warehouse_id=${whId}&code=${encodeURIComponent(code)}`)
+    const scanPurpose = currentEditReturnId > 0 ? '&purpose=purchase_return_edit' : '';
+    fetch(`<?= url("api/warehouse/purchases/lookup-scan") ?>?warehouse_id=${whId}${scanPurpose}&code=${encodeURIComponent(code)}`)
         .then(res => res.json())
         .then(data => {
             if (data.success && data.variant) {
                 const scannedVar = data.variant;
                 const scannedTag = data.extracted_tag || data.tag_code || data.variant.piece_tag || data.variant.qr_code || code;
-                if (hasScannedReplacement(normalizedCode, scannedTag)) {
-                    showModalScanFeedback('This product has already been scanned for this return/exchange.', 'warning');
+                const catalogCodes = [scannedVar.sku, scannedVar.product_code]
+                    .map(normalizeReplacementScanValue)
+                    .filter(Boolean);
+                const isCatalogCode = catalogCodes.includes(normalizedCode);
+                const normalizedTag = normalizeReplacementScanValue(scannedTag);
+                const tagAlreadyScanned = !isCatalogCode && rowReplacements.some(item => item &&
+                    (item.scanned_tags || []).some(tag => normalizeReplacementScanValue(tag) === normalizedTag)
+                );
+                if (tagAlreadyScanned) {
+                    showModalScanFeedback('This QR tag has already been added to the exchange.', 'warning');
                     return;
                 }
 
-                if (mode === 'EXCHANGE_SAME') {
-                    // Smart priority matching for line items on this invoice
-                    let matchedRow = -1;
-                    const items = currentPurchaseData.items || [];
-
-                    // Priority 1: A checked row that hasn't been assigned a replacement yet
-                    for (let idx = 0; idx < items.length; idx++) {
-                        const cb = document.querySelector(`.item-select-cb[data-idx="${idx}"]`);
-                        const input = document.getElementById('siblingVariantInput_' + idx);
-                        if (cb && cb.checked && (!input || !input.value)) {
-                            const sibs = items[idx].sibling_variants || [];
-                            const isMatch = (parseInt(items[idx].variant_id) === parseInt(scannedVar.id)) || sibs.some(s => parseInt(s.id) === parseInt(scannedVar.id));
-                            if (isMatch) {
-                                matchedRow = idx;
-                                break;
-                            }
-                        }
-                    }
-
-                    // Priority 2: Any row where replacement is not assigned yet
-                    if (matchedRow === -1) {
-                        for (let idx = 0; idx < items.length; idx++) {
-                            const input = document.getElementById('siblingVariantInput_' + idx);
-                            if (!input || !input.value) {
-                                const sibs = items[idx].sibling_variants || [];
-                                const isMatch = (parseInt(items[idx].variant_id) === parseInt(scannedVar.id)) || sibs.some(s => parseInt(s.id) === parseInt(scannedVar.id));
-                                if (isMatch) {
-                                    matchedRow = idx;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    // Priority 3: First matching row (replace existing)
-                    if (matchedRow === -1) {
-                        for (let idx = 0; idx < items.length; idx++) {
-                            const sibs = items[idx].sibling_variants || [];
-                            const isMatch = (parseInt(items[idx].variant_id) === parseInt(scannedVar.id)) || sibs.some(s => parseInt(s.id) === parseInt(scannedVar.id));
-                            if (isMatch) {
-                                matchedRow = idx;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (matchedRow !== -1) {
-                        setRowReplacementVariant(matchedRow, scannedVar, scannedTag);
-                        const assignedInput = document.getElementById('siblingVariantInput_' + matchedRow);
-                        if (assignedInput) assignedInput.dataset.scannedCode = normalizedCode;
-
-                        // Check row checkbox
-                        const cb = document.querySelector(`.item-select-cb[data-idx="${matchedRow}"]`);
-                        if (cb) { cb.checked = true; cb.closest('tr').classList.add('row-selected'); }
-
-                        showModalScanFeedback(`✓ Replacement Scanned & Assigned: ${scannedVar.product_name} (${scannedVar.size_name || ''} / ${scannedVar.color_name || ''}) — Scanned QR: ${scannedTag}`, 'success');
-                    } else {
-                        showModalScanFeedback(`Scanned item '${scannedVar.product_name}' (${scannedTag}) is not a size or color variant of a product on this invoice.`, 'warning');
-                    }
+                if (mode !== 'EXCHANGE_DIFFERENT' && mode !== 'EXCHANGE_SAME') {
+                    showModalScanFeedback('Switch to Warehouse Exchange to scan replacement products.', 'warning');
                 } else {
-                    showModalScanFeedback(`Direct Return mode is active. Switch to 'Exchange' action at the top to scan replacement items.`, 'warning');
+                    const variantId = Number(scannedVar.id);
+                    const availableStock = (Number(scannedVar.available_stock) || 0)
+                        + (currentEditReplacementQuantities[variantId] || 0);
+                    const packQuantity = Math.max(1, Number.parseInt(scannedVar.pack_quantity, 10) || 1);
+                    const quantityToAdd = (scannedVar.is_series || scannedVar.is_complementary) ? packQuantity : 1;
+                    const invoiceItems = currentPurchaseData.items || [];
+                    const checkedIndexes = invoiceItems
+                        .map((item, index) => index)
+                        .filter(index => {
+                            const checkbox = document.querySelector(`.item-select-cb[data-idx="${index}"]`);
+                            return checkbox && checkbox.checked;
+                        });
+                    const existingIndex = rowReplacements.findIndex((item, index) => {
+                        const checkbox = document.querySelector(`.item-select-cb[data-idx="${index}"]`);
+                        return item && Number(item.variant_id) === variantId && checkbox && checkbox.checked;
+                    });
+                    const targetIndex = existingIndex >= 0
+                        ? existingIndex
+                        : checkedIndexes.find(index => !rowReplacements[index]);
+
+                    if (!variantId || availableStock <= 0) {
+                        showModalScanFeedback('This product has no available stock in the selected warehouse.', 'warning');
+                    } else if (checkedIndexes.length === 0) {
+                        showModalScanFeedback('Select an invoice item before scanning a replacement product.', 'warning');
+                    } else if (targetIndex === undefined) {
+                        showModalScanFeedback('Every checked invoice item already has a replacement. Remove one or select another item.', 'warning');
+                    } else {
+                        let item = rowReplacements[targetIndex];
+                        if (item && (Number(item.quantity) + quantityToAdd > availableStock)) {
+                            showModalScanFeedback(`Insufficient stock for ${scannedVar.product_name}. Available: ${availableStock} pcs.`, 'warning');
+                            return;
+                        }
+                        if (!item && quantityToAdd > availableStock) {
+                            showModalScanFeedback(`Insufficient stock for ${scannedVar.product_name}. Available: ${availableStock} pcs.`, 'warning');
+                            return;
+                        }
+
+                        if (!item) {
+                            const isComplementary = Boolean(scannedVar.is_complementary)
+                                || scannedVar.category_type === 'COMPLEMENTARY';
+                            const retailPrice = Number(scannedVar.selling_price) || 0;
+                            const stockPrice = Number(scannedVar.stock_price) || retailPrice;
+                            item = {
+                                variant_id: variantId,
+                                product_name: scannedVar.product_name || 'Product',
+                                product_code: scannedVar.product_code || '',
+                                sku: scannedVar.sku || '',
+                                unit_price: isComplementary ? stockPrice : retailPrice,
+                                available_stock: availableStock,
+                                quantity: 0,
+                                scanned_tags: [],
+                                scanned_codes: []
+                            };
+                            rowReplacements[targetIndex] = item;
+                        }
+                        item.available_stock = availableStock;
+                        item.quantity += quantityToAdd;
+                        if (!item.scanned_codes.includes(code)) item.scanned_codes.push(code);
+                        if (!isCatalogCode && scannedTag && !item.scanned_tags.includes(scannedTag)) {
+                            item.scanned_tags.push(scannedTag);
+                        }
+                        renderReplacementProductCell(targetIndex);
+                        recalculateTotals();
+                        const originalName = invoiceItems[targetIndex].product_name || 'invoice item';
+                        showModalScanFeedback(`Assigned ${scannedVar.product_name} to ${originalName}.`, 'success');
+                    }
                 }
             } else {
                 showModalScanFeedback(data.message || `No product found for scanned code: ${code}`, 'danger');
@@ -1340,13 +1477,9 @@ function recalculateTotals() {
 
         if (cb.checked) {
             totalRefund += lineRefund;
-
-            if (mode === 'EXCHANGE_SAME') {
-                const sibInput = document.getElementById(`siblingVariantInput_${idx}`);
-                if (sibInput && sibInput.value) {
-                    const sibPrice = parseFloat(sibInput.dataset.price || unitPrice);
-                    totalNew += (sibPrice * qty);
-                }
+            if ((mode === 'EXCHANGE_DIFFERENT' || mode === 'EXCHANGE_SAME') && rowReplacements[Number(idx)]) {
+                const replacement = rowReplacements[Number(idx)];
+                totalNew += (Number(replacement.unit_price) || 0) * (Number(replacement.quantity) || 0);
             }
         }
     });
@@ -1464,27 +1597,19 @@ async function submitReturnProcess() {
         alert('Please select at least one item from the purchase order to return/exchange.');
         return;
     }
+    const selectedReplacementItems = Array.from(checkboxes)
+        .map(cb => rowReplacements[Number(cb.getAttribute('data-idx'))]);
 
     checkboxes.forEach(cb => {
         const idx = cb.getAttribute('data-idx');
         const it = currentPurchaseData.items[idx];
         const qty = parseInt(document.querySelector(`.return-qty-input[data-idx="${idx}"]`).value) || 1;
         const condition = document.querySelector(`.item-condition-select[data-idx="${idx}"]`).value;
-        const sibInput = document.getElementById(`siblingVariantInput_${idx}`);
-        const repVariantId = (mode === 'EXCHANGE_SAME' && sibInput && sibInput.value) ? sibInput.value : null;
-
-        let repTag = null;
-        if (mode === 'EXCHANGE_SAME' && sibInput && sibInput.value) {
-            repTag = sibInput.dataset.scannedTag || sibInput.dataset.qr || null;
-        }
+        const replacement = rowReplacements[Number(idx)] || null;
 
         const tags = getRowPieceTags(parseInt(idx));
-        const tagsStr = (tags && tags.length > 0) ? tags.join(', ') : (it.batch_lot_no || it.qr_code || (it.notes && it.notes.includes('QR:') ? it.notes.replace(/^QR:\s*/i, '').trim() : '') || '');
-
-        // Auto-check the checkbox if they typed a quantity (fallback to make sure it's caught)
-        if (qty > 0 && !cb.checked) {
-            cb.checked = true;
-        }
+        const originalTags = it.batch_lot_no || it.qr_code || (it.notes && it.notes.includes('QR:') ? it.notes.replace(/^QR:\s*/i, '').trim() : '') || '';
+        const tagsStr = tags.length > 0 ? tags.join(', ') : (currentEditReturnId ? '' : originalTags);
 
         items.push({
             selected: 1,
@@ -1493,16 +1618,25 @@ async function submitReturnProcess() {
             quantity: qty,
             condition: condition,
             unit_price: it.unit_price,
-            replacement_variant_id: repVariantId,
-            replacement_piece_tag: repTag,
-            piece_tags: tagsStr
+            piece_tags: tagsStr,
+            replacement_variant_id: mode === 'EXCHANGE_SAME' && replacement ? replacement.variant_id : null,
+            replacement_piece_tag: mode === 'EXCHANGE_SAME'
+                ? (replacement ? (replacement.scanned_tags || []).join(', ') : '')
+                : ''
         });
     });
 
-    if (mode === 'EXCHANGE_SAME') {
-        const missingSib = items.some(i => !i.replacement_variant_id);
-        if (missingSib) {
-            alert('Please scan a replacement product QR tag for all checked items.');
+    if (mode === 'EXCHANGE_DIFFERENT' || mode === 'EXCHANGE_SAME') {
+        const hasMissingReplacement = currentEditReturnId > 0
+            ? !selectedReplacementItems.some(item => item)
+            : selectedReplacementItems.some(item => !item);
+        const hasInvalidReplacement = selectedReplacementItems.some(item => item && (
+            !Number.isInteger(Number(item.quantity))
+            || Number(item.quantity) < 1
+            || Number(item.quantity) > Number(item.available_stock)
+        ));
+        if (hasMissingReplacement || hasInvalidReplacement) {
+            alert('Scan one replacement product for every checked invoice item and ensure each quantity is within available warehouse stock.');
             return;
         }
     }
@@ -1551,6 +1685,12 @@ async function submitReturnProcess() {
         reason: document.getElementById('returnReasonSelect').value,
         notes: document.getElementById('returnNotesInput').value.trim(),
         items: items,
+        new_items: mode === 'EXCHANGE_DIFFERENT' ? selectedReplacementItems.map(item => ({
+            variant_id: item.variant_id,
+            quantity: item.quantity,
+            scanned_tags: item.scanned_tags
+        })).filter(Boolean) : [],
+        return_id: currentEditReturnId || undefined,
         is_ajax: 1,
         _csrf_token: '<?= CSRF::token() ?>'
     };
@@ -1575,7 +1715,7 @@ async function submitReturnProcess() {
         if (res.success) {
             window.location.href = res.invoice_url;
         } else {
-            alert('Error processing return: ' + (res.message || 'Unknown error'));
+            alert((currentEditReturnId ? 'Error updating return: ' : 'Error processing return: ') + (res.message || 'Unknown error'));
             btn.disabled = false;
             spinner.classList.add('d-none');
         }
@@ -1584,5 +1724,13 @@ async function submitReturnProcess() {
         btn.disabled = false;
         spinner.classList.add('d-none');
     }
+}
+
+const purchaseReturnEditData = <?= $isEditingReturn && is_array($editData) ? json_encode($editData, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) : 'null' ?>;
+if (purchaseReturnEditData) {
+    document.addEventListener('DOMContentLoaded', function() {
+        currentPurchaseData = purchaseReturnEditData.purchase_data;
+        openReturnModal(currentPurchaseData, purchaseReturnEditData);
+    });
 }
 </script>

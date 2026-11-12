@@ -261,7 +261,7 @@ $canDeleteCutting = hasPermission('cutting', 'delete');
                                         </td>
                                         <td class="text-end">
                                             <?php if ($canDeleteCutting): ?>
-                                            <button type="button" class="btn btn-sm text-secondary p-0" disabled style="opacity: 0.45; cursor: not-allowed;" title="Delete disabled for saved cutting details">
+                                            <button type="button" class="btn btn-sm text-danger p-0" onclick="removeVariantRow(<?= $counter ?>)" title="Remove variant">
                                                 <i class="bi bi-trash"></i>
                                             </button>
                                             <?php endif; ?>
@@ -295,6 +295,8 @@ let availableRolls = <?= json_encode($rolls ?? []) ?>;
 const allCategories = <?= json_encode($categories ?? []) ?>;
 let initialBatchRolls = <?= json_encode($batchRolls ?? []) ?>;
 let initialItems = <?= json_encode($items ?? []) ?>;
+const hasInitialSavedItems = (initialItems && Array.isArray(initialItems) && initialItems.length > 0);
+const deletedVariantKeys = new Set();
 
 function buildRollOptionsHtml(selectedRollId = '', rollData = null) {
     let html = '<option value="">-- Select Fabric Roll --</option>';
@@ -850,11 +852,13 @@ function regenerateAllRollVariants() {
     if (initialItems && Array.isArray(initialItems)) {
         initialItems.forEach(it => {
             const key = (String(it.size_name || '').trim() + '___' + String(it.color_name || '').trim()).toUpperCase();
-            existingQuantities[key] = {
-                cut: parseInt(it.cut_qty) || 0,
-                rej: parseInt(it.rejected_qty) || 0,
-                planned: parseInt(it.planned_qty) || 0
-            };
+            if (!deletedVariantKeys.has(key)) {
+                existingQuantities[key] = {
+                    cut: parseInt(it.cut_qty) || 0,
+                    rej: parseInt(it.rejected_qty) || 0,
+                    planned: parseInt(it.planned_qty) || 0
+                };
+            }
         });
     }
 
@@ -866,11 +870,13 @@ function regenerateAllRollVariants() {
         const plannedInp = tr.querySelector('.planned-qty-input');
         if (sizeInp && colorInp && (sizeInp.value || colorInp.value)) {
             const key = (sizeInp.value.trim() + '___' + colorInp.value.trim()).toUpperCase();
-            existingQuantities[key] = {
-                cut: cutInp ? (parseInt(cutInp.value) || 0) : 0,
-                rej: rejInp ? (parseInt(rejInp.value) || 0) : 0,
-                planned: plannedInp ? (parseInt(plannedInp.value) || 0) : 0
-            };
+            if (!deletedVariantKeys.has(key)) {
+                existingQuantities[key] = {
+                    cut: cutInp ? (parseInt(cutInp.value) || 0) : 0,
+                    rej: rejInp ? (parseInt(rejInp.value) || 0) : 0,
+                    planned: plannedInp ? (parseInt(plannedInp.value) || 0) : 0
+                };
+            }
         }
     });
 
@@ -944,10 +950,19 @@ function regenerateAllRollVariants() {
             let rollVariantCount = 0;
             if (resItem.variants && resItem.variants.length > 0) {
                 resItem.variants.forEach(v => {
-                    rollVariantCount++;
                     const sName = v.size_name || 'FREE SIZE';
                     const cName = req.rollColor || v.color_name || 'STANDARD';
                     const lookupKey = (sName.trim() + '___' + cName.trim()).toUpperCase();
+
+                    // If batch was previously saved with specific items, and this variant was NOT saved (or was deleted), DO NOT SHOW ON EDIT PAGE!
+                    if (hasInitialSavedItems && !existingQuantities[lookupKey]) {
+                        return;
+                    }
+                    if (deletedVariantKeys.has(lookupKey)) {
+                        return;
+                    }
+
+                    rollVariantCount++;
                     let pQty = v.planned_quantity || 0;
                     let cQty = pQty;
                     let rQty = 0;
@@ -963,8 +978,17 @@ function regenerateAllRollVariants() {
                 const colors = req.rollColor ? [req.rollColor] : (resItem.colors && resItem.colors.length > 0 ? resItem.colors : ['STANDARD']);
                 sizes.forEach(sz => {
                     colors.forEach(col => {
-                        rollVariantCount++;
                         const lookupKey = (sz.trim() + '___' + col.trim()).toUpperCase();
+
+                        // If batch was previously saved with specific items, and this variant was NOT saved (or was deleted), DO NOT SHOW ON EDIT PAGE!
+                        if (hasInitialSavedItems && !existingQuantities[lookupKey]) {
+                            return;
+                        }
+                        if (deletedVariantKeys.has(lookupKey)) {
+                            return;
+                        }
+
+                        rollVariantCount++;
                         let pQty = 0;
                         let cQty = 0;
                         let rQty = 0;
@@ -1092,7 +1116,7 @@ function appendVariantRow(sizeName, colorName, variantId, sku, plannedQty, rollI
         </td>
         <td class="text-end">
             ${canDeleteCutting ? `
-            <button type="button" class="btn btn-sm text-secondary p-0" disabled style="opacity: 0.45; cursor: not-allowed;" title="Delete disabled for saved cutting details">
+            <button type="button" class="btn btn-sm text-danger p-0" onclick="removeVariantRow(${variantCounter})" title="Remove row">
                 <i class="bi bi-trash"></i>
             </button>
             ` : ''}
@@ -1122,8 +1146,34 @@ function updateRollCatalogBadge(rowIdx) {
 
 function removeVariantRow(id) {
     if (!canDeleteCutting) return;
-    // Deletion is disabled for saved cutting details in edit mode
-    return false;
+    const row = document.getElementById('variant_row_' + id);
+    if (row) {
+        const sizeInp = row.querySelector('input[name*="[size_name]"]');
+        const colorInp = row.querySelector('input[name*="[color_name]"]');
+        if (sizeInp && colorInp) {
+            const key = (sizeInp.value.trim() + '___' + colorInp.value.trim()).toUpperCase();
+            deletedVariantKeys.add(key);
+            delete existingQuantities[key];
+        }
+        row.remove();
+        calculateMetrics();
+        updateRollTabCounts();
+    }
+}
+
+function updateRollTabCounts() {
+    document.querySelectorAll('#rollVariantNavTabs .btn').forEach(btn => {
+        const group = btn.getAttribute('data-target-group');
+        const badge = btn.querySelector('.badge');
+        if (!badge) return;
+        if (group === 'all') {
+            const count = document.querySelectorAll('#variantsTableBody tr.roll-variant-item:not(.roll-variant-header)').length;
+            badge.textContent = count;
+        } else {
+            const count = document.querySelectorAll('#variantsTableBody tr.roll-variant-item:not(.roll-variant-header).roll-group-' + group).length;
+            badge.textContent = count;
+        }
+    });
 }
 
 function calculateMetrics() {

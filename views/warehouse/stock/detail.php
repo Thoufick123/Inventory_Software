@@ -440,7 +440,7 @@
                                     <!-- Left: QR Code + Tag Code Badge -->
                                     <div class="text-center flex-shrink-0" style="width: 80px;">
                                         <div class="piece-qr-box bg-white p-1 rounded border shadow-xs d-flex align-items-center justify-content-center mx-auto" id="qr-box-<?= $index ?>" data-json="<?= htmlspecialchars($qrPayload, ENT_QUOTES, 'UTF-8') ?>" style="width: 72px; height: 72px;"></div>
-                                        <div class="badge bg-dark text-white font-monospace mt-1 px-1 py-0.5 w-100 text-truncate shadow-xs" style="font-size: 0.62rem; letter-spacing: 0.2px;" title="<?= e($pq['tag_code']) ?>">
+                                        <div class="badge bg-white text-dark border font-monospace mt-1 px-1 py-0.5 w-100 text-truncate shadow-xs" style="font-size: 0.62rem; letter-spacing: 0.2px; font-weight: 800; background-color: #ffffff !important; color: #000000 !important;" title="<?= e($pq['tag_code']) ?>">
                                             <?= e($pq['tag_code']) ?>
                                         </div>
                                     </div>
@@ -969,7 +969,7 @@
                                 <div class="overflow-hidden flex-grow-1" style="font-size: 0.76rem;">
                                     <div class="fw-bold text-truncate text-dark"><?= e($sp['customer_name']) ?></div>
                                     <div class="text-muted font-monospace" style="font-size: 0.70rem;">
-                                        <a href="<?= url('warehouse/purchases/receive/' . $sp['purchase_id']) ?>" class="text-decoration-none text-primary">
+                                        <a href="<?= url('warehouse/purchases/receive/' . $sp['purchase_id']) ?>?document=invoice" class="text-decoration-none text-primary">
                                             <?= e($sp['po_number']) ?>
                                         </a>
                                         · <?= !empty($sp['sold_at']) ? date('d M y', strtotime($sp['sold_at'])) : '' ?>
@@ -1006,7 +1006,7 @@
                             <?php foreach ($variantPurchases as $vp): ?>
                                 <tr>
                                     <td class="ps-3 text-nowrap">
-                                        <a href="<?= url('warehouse/purchases/receive/' . $vp['purchase_order_id']) ?>" class="badge bg-primary-subtle text-primary border border-primary-subtle text-decoration-none fw-bold p-1.5">
+                                        <a href="<?= url('warehouse/purchases/receive/' . $vp['purchase_order_id']) ?>?document=invoice" class="badge bg-primary-subtle text-primary border border-primary-subtle text-decoration-none fw-bold p-1.5">
                                             <i class="bi bi-receipt me-1"></i><?= e($vp['po_number']) ?>
                                         </a>
                                     </td>
@@ -1046,7 +1046,7 @@
                                         </span>
                                     </td>
                                     <td class="pe-3 text-end text-nowrap">
-                                        <a href="<?= url('warehouse/purchases/receive/' . $vp['purchase_order_id']) ?>" class="btn btn-xs btn-outline-primary py-1 px-2">
+                                        <a href="<?= url('warehouse/purchases/receive/' . $vp['purchase_order_id']) ?>?document=invoice" class="btn btn-xs btn-outline-primary py-1 px-2">
                                             <i class="bi bi-file-earmark-text me-1"></i>Invoice
                                         </a>
                                     </td>
@@ -1329,7 +1329,7 @@
                     <div class="d-flex align-items-start gap-2.5">
                         <div class="text-center flex-shrink-0">
                             <div id="singleQRCanvas" class="bg-white p-1 rounded border shadow-xs d-flex align-items-center justify-content-center" style="width: 78px; height: 78px;"></div>
-                            <div class="badge bg-dark text-white font-monospace mt-1 px-2 py-1 w-100" id="previewDamageCode" style="font-size: 0.75rem; letter-spacing: 0.5px;">TTS092601</div>
+                            <div class="badge bg-white text-dark border font-monospace mt-1 px-2 py-1 w-100" id="previewDamageCode" style="font-size: 0.75rem; letter-spacing: 0.5px; font-weight: 800; background-color: #ffffff !important; color: #000000 !important;">TTS092601</div>
                         </div>
                         <div class="overflow-hidden ms-1 flex-grow-1" style="margin-top: 2px;">
                             <div class="fw-bold text-uppercase text-dark text-truncate" id="previewBrandName" style="font-size: 0.82rem; letter-spacing: 0.3px;">GRM WAREHOUSE</div>
@@ -1909,7 +1909,10 @@ function previewSingleTag(index) {
 
     const codeBadgeEl = document.getElementById('previewDamageCode');
     codeBadgeEl.textContent = item.tag_code;
-    codeBadgeEl.className = 'badge bg-dark text-white font-monospace mt-1 px-2 py-1 w-100';
+    codeBadgeEl.className = 'badge bg-white text-dark border font-monospace mt-1 px-2 py-1 w-100';
+    codeBadgeEl.style.setProperty('background-color', '#ffffff', 'important');
+    codeBadgeEl.style.setProperty('color', '#000000', 'important');
+    codeBadgeEl.style.fontWeight = '800';
 
     document.getElementById('previewBrandName').textContent = item.brand_name || 'GRM WAREHOUSE';
 

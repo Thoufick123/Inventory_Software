@@ -60,6 +60,12 @@ class ProductionController {
                 Database::execute("ALTER TABLE production_purchases ADD COLUMN is_inwarded TINYINT(1) DEFAULT 0, ADD COLUMN inwarded_at DATETIME DEFAULT NULL");
             }
         } catch (\Throwable $e) {}
+        try {
+            $colInwQty = Database::fetchOne("SHOW COLUMNS FROM production_purchase_items LIKE 'inwarded_qty'");
+            if (!$colInwQty) {
+                Database::execute("ALTER TABLE production_purchase_items ADD COLUMN inwarded_qty DECIMAL(12,3) NOT NULL DEFAULT 0.000 AFTER quantity");
+            }
+        } catch (\Throwable $e) {}
 
         $statusColumn = Database::fetchOne("SHOW COLUMNS FROM roll_damages LIKE 'status'");
         if (!$statusColumn) {
@@ -9174,6 +9180,447 @@ class ProductionController {
         Response::json(['success' => true, 'code' => $code]);
     }
 
+    /**
+     * Update in-stock quantity for a garment supply item in Production Inventory.
+     */
+    public function updateProductionInventorySupplyStock(): void {
+        if (!hasPermission('inventory', 'edit')) {
+            Session::flash('error', 'You do not have permission to edit Production inventory stock.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        $supplyItemId = (int)($_POST['supply_item_id'] ?? 0);
+        $newQty = max(0.0, (float)($_POST['new_quantity'] ?? 0));
+        $reason = trim((string)($_POST['adjustment_reason'] ?? 'Inventory stock update'));
+
+        $item = Database::fetchOne(
+            "SELECT ppi.*, pp.purchase_number, p.name AS catalog_product_name
+             FROM production_purchase_items ppi
+             JOIN production_purchases pp ON ppi.purchase_id = pp.id
+             LEFT JOIN products p ON ppi.product_id = p.id
+             WHERE ppi.id = ? AND ppi.item_type = 'GENERAL_SUPPLY'",
+            [$supplyItemId]
+        );
+
+        if (!$item) {
+            Session::flash('error', 'Supply product record not found.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        $variantId = !empty($item['variant_id']) ? (int)$item['variant_id'] : 0;
+        $currentAvailable = 0.0;
+        if ($variantId > 0) {
+            $currentAvailable = (float)(Database::fetchOne(
+                "SELECT COALESCE(SUM(quantity), 0) AS cnt FROM stock_balances WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                [$variantId]
+            )['cnt'] ?? 0);
+        }
+
+        $userId = Session::userId() ?? 1;
+        $wh = Database::fetchOne("SELECT id, name FROM warehouses WHERE is_active = 1 ORDER BY id ASC LIMIT 1");
+        $warehouseId = (int)($wh['id'] ?? 1);
+
+        try {
+            Database::beginTransaction();
+
+            $diff = $newQty - $currentAvailable;
+            if ($variantId > 0 && abs($diff) > 0.0001) {
+                if ($diff > 0) {
+                    StockService::increase(
+                        variantId: $variantId,
+                        locationType: 'WAREHOUSE',
+                        locationId: $warehouseId,
+                        stockState: 'AVAILABLE',
+                        quantity: $diff,
+                        transactionType: 'PURCHASE_GRN',
+                        referenceType: 'production_purchases',
+                        referenceId: (int)$item['purchase_id'],
+                        userId: $userId,
+                        notes: "Stock adjustment for {$item['item_name']}: +{$diff} {$item['unit']} ({$reason})"
+                    );
+                } else {
+                    StockService::decrease(
+                        variantId: $variantId,
+                        locationType: 'WAREHOUSE',
+                        locationId: $warehouseId,
+                        stockState: 'AVAILABLE',
+                        quantity: abs($diff),
+                        transactionType: 'INVENTORY_ADJUSTMENT',
+                        referenceType: 'production_purchases',
+                        referenceId: (int)$item['purchase_id'],
+                        userId: $userId,
+                        notes: "Stock adjustment for {$item['item_name']}: -{$diff} {$item['unit']} ({$reason})"
+                    );
+                }
+
+                // Ensure exact stock_balances matches $newQty
+                Database::execute(
+                    "UPDATE stock_balances SET quantity = ? WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                    [$newQty, $variantId]
+                );
+            }
+
+            Database::execute(
+                "UPDATE production_purchase_items SET inwarded_qty = ?, is_inwarded = ? WHERE id = ?",
+                [$newQty, ($newQty > 0 ? 1 : 0), $supplyItemId]
+            );
+
+            AuditService::log('production', 'UPDATE_STOCK', 'production_purchase_items', $supplyItemId, $item, [
+                'old_qty' => $currentAvailable,
+                'new_qty' => $newQty,
+                'reason'  => $reason,
+            ]);
+
+            Database::commit();
+
+            $prodTitle = !empty($item['catalog_product_name']) ? $item['catalog_product_name'] : $item['item_name'];
+            Session::flash('success', "In-stock quantity for '{$prodTitle}' updated to " . number_format($newQty) . " {$item['unit']} successfully.");
+        } catch (\Throwable $e) {
+            Database::rollback();
+            Session::flash('error', 'Error updating supply stock: ' . $e->getMessage());
+        }
+
+        Response::redirect(url('production/inventory'));
+    }
+
+    /**
+     * Delete supply stock from Production Inventory and reset it to uninwarded status (Pending Inward) in Purchase module.
+     */
+    public function deleteProductionInventorySupplyStock(): void {
+        if (!hasPermission('inventory', 'delete')) {
+            Session::flash('error', 'You do not have permission to delete Production inventory stock.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        $supplyItemId = (int)($_POST['supply_item_id'] ?? 0);
+        $item = Database::fetchOne(
+            "SELECT ppi.*, pp.purchase_number, pp.id AS po_id, pp.purchase_date, p.name AS catalog_product_name
+             FROM production_purchase_items ppi
+             JOIN production_purchases pp ON ppi.purchase_id = pp.id
+             LEFT JOIN products p ON ppi.product_id = p.id
+             WHERE ppi.id = ? AND ppi.item_type = 'GENERAL_SUPPLY'",
+            [$supplyItemId]
+        );
+
+        if (!$item) {
+            Session::flash('error', 'Supply product record not found.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        $purchaseId = (int)$item['po_id'];
+        $variantId = !empty($item['variant_id']) ? (int)$item['variant_id'] : 0;
+        $userId = Session::userId() ?? 1;
+
+        try {
+            Database::beginTransaction();
+
+            // 1. Remove/reverse stock balance from stock_balances
+            if ($variantId > 0) {
+                $curBal = (float)(Database::fetchOne(
+                    "SELECT COALESCE(SUM(quantity), 0) AS cnt FROM stock_balances WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                    [$variantId]
+                )['cnt'] ?? 0);
+
+                if ($curBal > 0) {
+                    StockService::decrease(
+                        variantId: $variantId,
+                        locationType: 'WAREHOUSE',
+                        locationId: 1,
+                        stockState: 'AVAILABLE',
+                        quantity: $curBal,
+                        transactionType: 'PURCHASE_RETURN',
+                        referenceType: 'production_purchases',
+                        referenceId: $purchaseId,
+                        userId: $userId,
+                        notes: "Stock deleted from Production Inventory (returned to uninwarded)"
+                    );
+                }
+                Database::execute(
+                    "UPDATE stock_balances SET quantity = 0 WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                    [$variantId]
+                );
+            }
+
+            // 2. Reset QR codes for this variant to uninwarded (Pending Inward)
+            if ($variantId > 0) {
+                Database::execute(
+                    "UPDATE warehouse_qr_codes SET inwarded_at = NULL WHERE variant_id = ?",
+                    [$variantId]
+                );
+            }
+            $prefix = 'SP' . date('my', strtotime($item['purchase_date'] ?? 'now'));
+            if ($variantId > 0) {
+                Database::execute(
+                    "UPDATE warehouse_qr_codes SET inwarded_at = NULL WHERE qr_code LIKE ? AND variant_id = ?",
+                    [$prefix . '%', $variantId]
+                );
+            }
+
+            // 3. Mark supply purchase item as uninwarded
+            Database::execute(
+                "UPDATE production_purchase_items
+                 SET is_inwarded = 0, inwarded_at = NULL, inwarded_by = NULL, inwarded_qty = 0.000
+                 WHERE id = ?",
+                [$supplyItemId]
+            );
+
+            // 4. Check if the purchase still has other inwarded supply items
+            $otherInwarded = (int)(Database::fetchOne(
+                "SELECT COUNT(*) AS cnt FROM production_purchase_items
+                 WHERE purchase_id = ? AND item_type = 'GENERAL_SUPPLY' AND is_inwarded = 1",
+                [$purchaseId]
+            )['cnt'] ?? 0);
+
+            if ($otherInwarded === 0) {
+                Database::execute(
+                    "UPDATE production_purchases SET is_inwarded = 0, inwarded_at = NULL WHERE id = ?",
+                    [$purchaseId]
+                );
+            }
+
+            AuditService::log('production', 'DELETE_SUPPLY_STOCK', 'production_purchase_items', $supplyItemId, $item, [
+                'purchase_number' => $item['purchase_number'],
+                'item_name'       => $item['item_name'],
+                'message'         => 'Stock deleted from inventory and returned to uninwarded in purchase module',
+            ]);
+
+            Database::commit();
+
+            $prodTitle = !empty($item['catalog_product_name']) ? $item['catalog_product_name'] : $item['item_name'];
+            Session::flash('success', "Supply stock for '{$prodTitle}' successfully deleted from inventory. The product's QR label(s) are now reset to Pending Inward in Purchase module.");
+        } catch (\Throwable $e) {
+            Database::rollback();
+            Session::flash('error', 'Error deleting supply stock: ' . $e->getMessage());
+        }
+
+        Response::redirect(url('production/inventory'));
+    }
+
+    /**
+     * Update in-stock quantity for a QC Batch variant item in Production Inventory.
+     */
+    public function updateProductionInventoryQcStock(): void {
+        if (!hasPermission('inventory', 'edit')) {
+            Session::flash('error', 'You do not have permission to edit Production inventory stock.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        $qcBatchId = (int)($_POST['qc_batch_id'] ?? 0);
+        $variantId = (int)($_POST['variant_id'] ?? 0);
+        $newQty = max(0.0, (float)($_POST['new_quantity'] ?? 0));
+        $reason = trim((string)($_POST['adjustment_reason'] ?? 'QC inventory stock update'));
+
+        $qcBatch = Database::fetchOne(
+            "SELECT qb.*, pp.program_number, COALESCE(p.name, pp.name) as product_name
+             FROM qc_batches qb
+             JOIN production_programs pp ON qb.program_id = pp.id
+             LEFT JOIN products p ON pp.product_id = p.id
+             WHERE qb.id = ?",
+            [$qcBatchId]
+        );
+
+        if (!$qcBatch) {
+            Session::flash('error', 'QC Batch record not found.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        $currentAvailable = 0.0;
+        if ($variantId > 0) {
+            $currentAvailable = (float)(Database::fetchOne(
+                "SELECT COALESCE(SUM(quantity), 0) AS cnt FROM stock_balances WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                [$variantId]
+            )['cnt'] ?? 0);
+        }
+
+        $userId = Session::userId() ?? 1;
+        $wh = Database::fetchOne("SELECT id, name FROM warehouses WHERE is_active = 1 ORDER BY id ASC LIMIT 1");
+        $warehouseId = (int)($wh['id'] ?? 1);
+
+        try {
+            Database::beginTransaction();
+
+            $diff = $newQty - $currentAvailable;
+            if ($variantId > 0 && abs($diff) > 0.0001) {
+                if ($diff > 0) {
+                    StockService::increase(
+                        variantId: $variantId,
+                        locationType: 'WAREHOUSE',
+                        locationId: $warehouseId,
+                        stockState: 'AVAILABLE',
+                        quantity: $diff,
+                        transactionType: 'INVENTORY_ADJUSTMENT',
+                        referenceType: 'qc_batches',
+                        referenceId: $qcBatchId,
+                        userId: $userId,
+                        notes: "Stock adjustment for QC Batch #{$qcBatchId}: +{$diff} pcs ({$reason})"
+                    );
+                } else {
+                    StockService::decrease(
+                        variantId: $variantId,
+                        locationType: 'WAREHOUSE',
+                        locationId: $warehouseId,
+                        stockState: 'AVAILABLE',
+                        quantity: abs($diff),
+                        transactionType: 'INVENTORY_ADJUSTMENT',
+                        referenceType: 'qc_batches',
+                        referenceId: $qcBatchId,
+                        userId: $userId,
+                        notes: "Stock adjustment for QC Batch #{$qcBatchId}: -{$diff} pcs ({$reason})"
+                    );
+                }
+
+                // Ensure exact stock_balances matches $newQty
+                Database::execute(
+                    "UPDATE stock_balances SET quantity = ? WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                    [$newQty, $variantId]
+                );
+            }
+
+            // Also synchronize qc_items passed_qty if variant matches
+            if ($variantId > 0) {
+                Database::execute(
+                    "UPDATE qc_items SET passed_qty = ? WHERE qc_batch_id = ? AND variant_id = ?",
+                    [(int)$newQty, $qcBatchId, $variantId]
+                );
+            }
+
+            AuditService::log('production', 'UPDATE_QC_STOCK', 'qc_batches', $qcBatchId, $qcBatch, [
+                'old_qty'    => $currentAvailable,
+                'new_qty'    => $newQty,
+                'variant_id' => $variantId,
+                'reason'     => $reason,
+            ]);
+
+            Database::commit();
+
+            Session::flash('success', "In-stock quantity for QC Batch #{$qcBatchId} updated to " . number_format($newQty) . " pcs successfully.");
+        } catch (\Throwable $e) {
+            Database::rollback();
+            Session::flash('error', 'Error updating QC stock: ' . $e->getMessage());
+        }
+
+        Response::redirect(url('production/inventory'));
+    }
+
+    /**
+     * Delete/zero-out stock for a QC batch item in Production Inventory.
+     */
+    public function deleteProductionInventoryQcStock(): void {
+        if (!hasPermission('inventory', 'delete')) {
+            Session::flash('error', 'You do not have permission to delete Production inventory stock.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        $qcBatchId = (int)($_POST['qc_batch_id'] ?? 0);
+        $variantId = (int)($_POST['variant_id'] ?? 0);
+
+        $qcBatch = Database::fetchOne(
+            "SELECT qb.*, pp.program_number, COALESCE(p.name, pp.name) as product_name
+             FROM qc_batches qb
+             JOIN production_programs pp ON qb.program_id = pp.id
+             LEFT JOIN products p ON pp.product_id = p.id
+             WHERE qb.id = ?",
+            [$qcBatchId]
+        );
+
+        if (!$qcBatch) {
+            Session::flash('error', 'QC Batch record not found.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        $userId = Session::userId() ?? 1;
+
+        try {
+            Database::beginTransaction();
+
+            if ($variantId > 0) {
+                $curBal = (float)(Database::fetchOne(
+                    "SELECT COALESCE(SUM(quantity), 0) AS cnt FROM stock_balances WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                    [$variantId]
+                )['cnt'] ?? 0);
+
+                if ($curBal > 0) {
+                    StockService::decrease(
+                        variantId: $variantId,
+                        locationType: 'WAREHOUSE',
+                        locationId: 1,
+                        stockState: 'AVAILABLE',
+                        quantity: $curBal,
+                        transactionType: 'INVENTORY_ADJUSTMENT',
+                        referenceType: 'qc_batches',
+                        referenceId: $qcBatchId,
+                        userId: $userId,
+                        notes: "Stock deleted/removed from Production Inventory for QC Batch #{$qcBatchId}"
+                    );
+                }
+
+                Database::execute(
+                    "UPDATE stock_balances SET quantity = 0 WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                    [$variantId]
+                );
+            }
+
+            // Zero out passed_qty in qc_items for this variant so inventory recognizes 0
+            if ($variantId > 0) {
+                Database::execute(
+                    "UPDATE qc_items SET passed_qty = 0 WHERE qc_batch_id = ? AND variant_id = ?",
+                    [$qcBatchId, $variantId]
+                );
+            } else {
+                Database::execute(
+                    "UPDATE qc_items SET passed_qty = 0 WHERE qc_batch_id = ?",
+                    [$qcBatchId]
+                );
+            }
+
+            AuditService::log('production', 'DELETE_QC_STOCK', 'qc_batches', $qcBatchId, $qcBatch, [
+                'variant_id' => $variantId,
+                'message'    => "Stock for QC Batch #{$qcBatchId} removed from inventory",
+            ]);
+
+            Database::commit();
+
+            Session::flash('success', "Stock for QC Batch #{$qcBatchId} successfully removed from inventory.");
+        } catch (\Throwable $e) {
+            Database::rollback();
+            Session::flash('error', 'Error removing QC batch stock: ' . $e->getMessage());
+        }
+
+        Response::redirect(url('production/inventory'));
+    }
+
     public function createLabel(): void {
         $programId = $_GET['program_id'] ?? null;
         $stitchingBatchId = $_GET['stitching_batch_id'] ?? null;
@@ -11761,11 +12208,12 @@ class ProductionController {
                 if (!isset($batches[$batchId]['variant_indexes'][$variantKey])) {
                     $batches[$batchId]['variant_indexes'][$variantKey] = count($batches[$batchId]['variants']);
                     $batches[$batchId]['variants'][] = [
-                        'size_name'  => $it['size_name'],
-                        'color_name' => $it['color_name'],
-                        'passed_qty' => 0,
+                        'variant_id'  => (int)($it['variant_id'] ?? 0),
+                        'size_name'   => $it['size_name'],
+                        'color_name'  => $it['color_name'],
+                        'passed_qty'  => 0,
                         'outward_qty' => 0,
-                        'qc_items'   => [],
+                        'qc_items'    => [],
                     ];
                 }
                 $variantIndex = $batches[$batchId]['variant_indexes'][$variantKey];
@@ -11858,6 +12306,129 @@ class ProductionController {
         }
         unset($batch);
 
+        // Include Inwarded Garment Supplies from Supply QR / Production Purchases
+        $supplyProductIds = [];
+        try {
+            $supplySql = "SELECT ppi.id AS supply_item_id, ppi.purchase_id, ppi.item_name, ppi.quantity, ppi.inwarded_qty,
+                                 ppi.unit, ppi.unit_price, ppi.total_price, ppi.hsn_code, ppi.product_id, ppi.variant_id,
+                                 ppi.is_inwarded, ppi.inwarded_at,
+                                 pp.purchase_number, pp.purchase_date,
+                                 s.name AS supplier_name, s.company AS supplier_company,
+                                 p.name AS catalog_product_name, p.code AS product_sku, p.category_id,
+                                 c.name AS category_name
+                          FROM production_purchase_items ppi
+                          JOIN production_purchases pp ON ppi.purchase_id = pp.id
+                          LEFT JOIN sellers s ON pp.seller_id = s.id
+                          LEFT JOIN products p ON ppi.product_id = p.id
+                          LEFT JOIN categories c ON p.category_id = c.id
+                          WHERE ppi.item_type = 'GENERAL_SUPPLY'
+                            AND (ppi.is_inwarded = 1 OR ppi.inwarded_qty > 0 OR pp.is_inwarded = 1)";
+            $supplyParams = [];
+
+            if (!empty($search)) {
+                $supplySql .= " AND (
+                    ppi.item_name LIKE ?
+                    OR pp.purchase_number LIKE ?
+                    OR s.name LIKE ?
+                    OR s.company LIKE ?
+                    OR p.name LIKE ?
+                    OR p.code LIKE ?
+                    OR ppi.hsn_code LIKE ?
+                )";
+                $sp = '%' . $search . '%';
+                $supplyParams = array_merge($supplyParams, [$sp, $sp, $sp, $sp, $sp, $sp, $sp]);
+            }
+
+            if ($categoryFilter) {
+                $supplySql .= " AND (p.category_id = ?)";
+                $supplyParams[] = $categoryFilter;
+            }
+
+            $supplySql .= " ORDER BY ppi.inwarded_at DESC, ppi.id DESC";
+
+            $supplyRows = Database::fetchAll($supplySql, $supplyParams);
+
+            foreach ($supplyRows as $sup) {
+                $supplyItemId = (int)$sup['supply_item_id'];
+                $rawInwardQty = (float)($sup['inwarded_qty'] > 0 ? $sup['inwarded_qty'] : ($sup['is_inwarded'] ? $sup['quantity'] : 0));
+                if ($rawInwardQty <= 0 && !empty($sup['variant_id'])) {
+                    $inwardedQrCnt = (int)(Database::fetchOne(
+                        "SELECT COUNT(*) as cnt FROM warehouse_qr_codes WHERE variant_id = ? AND inwarded_at IS NOT NULL",
+                        [(int)$sup['variant_id']]
+                    )['cnt'] ?? 0);
+                    $rawInwardQty = $inwardedQrCnt > 0 ? (float)$inwardedQrCnt : (float)$sup['quantity'];
+                }
+                if ($rawInwardQty <= 0) {
+                    $rawInwardQty = (float)$sup['quantity'];
+                }
+
+                // Query current stock in stock_balances for this variant
+                $currentAvailable = null;
+                if (!empty($sup['variant_id'])) {
+                    $sbRow = Database::fetchOne(
+                        "SELECT COALESCE(SUM(quantity), 0) AS cnt FROM stock_balances WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                        [(int)$sup['variant_id']]
+                    );
+                    if ($sbRow !== null) {
+                        $currentAvailable = (float)$sbRow['cnt'];
+                    }
+                }
+                if ($currentAvailable === null) {
+                    $currentAvailable = $rawInwardQty;
+                }
+
+                $remainingQty = max(0.0, $currentAvailable);
+                $outwardQty = max(0.0, $rawInwardQty - $remainingQty);
+                $unitPrice = (float)($sup['unit_price'] ?? 0);
+                $remainingVal = $remainingQty * $unitPrice;
+                $passedVal = $rawInwardQty * $unitPrice;
+                $unitName = !empty($sup['unit']) ? $sup['unit'] : 'Pcs';
+
+                $batchKey = 'sup_' . $supplyItemId;
+                $batches[$batchKey] = [
+                    'is_supply'             => true,
+                    'supply_item_id'        => $supplyItemId,
+                    'purchase_id'           => (int)$sup['purchase_id'],
+                    'qc_batch_id'           => 'SUP-' . $supplyItemId,
+                    'program_id'            => 0,
+                    'program_number'        => $sup['purchase_number'],
+                    'product_id'            => $sup['product_id'] ?? null,
+                    'product_name'          => !empty($sup['catalog_product_name']) ? $sup['catalog_product_name'] : $sup['item_name'],
+                    'category_name'         => !empty($sup['category_name']) ? $sup['category_name'] : 'Garment Supplies',
+                    'category_id'           => $sup['category_id'] ?? null,
+                    'inspector_name'        => !empty($sup['supplier_name']) ? $sup['supplier_name'] : ($sup['supplier_company'] ?: 'Supplier Inward'),
+                    'batch_created_at'      => $sup['inwarded_at'] ?: $sup['purchase_date'],
+                    'total_passed_pieces'   => (int)round($rawInwardQty),
+                    'total_rework_pieces'   => 0,
+                    'total_rejected_pieces' => 0,
+                    'total_pieces'          => (int)round($rawInwardQty),
+                    'total_value'           => $passedVal,
+                    'total_outward_pieces'  => (int)round($outwardQty),
+                    'remaining_pieces'      => (int)round($remainingQty),
+                    'remaining_value'       => $remainingVal,
+                    'total_passed_value'    => $passedVal,
+                    'outward_history'       => [],
+                    'outward_count'         => 0,
+                    'stock_status'          => ($remainingQty > 0 ? ($outwardQty > 0 ? 'PARTIALLY_OUTWARDED' : 'IN_STOCK') : 'FULLY_OUTWARDED'),
+                    'unit'                  => $unitName,
+                    'variants'              => [
+                        [
+                            'size_name'     => $unitName,
+                            'color_name'    => 'Standard',
+                            'passed_qty'    => (int)round($rawInwardQty),
+                            'outward_qty'   => (int)round($outwardQty),
+                            'remaining_qty' => (int)round($remainingQty),
+                        ]
+                    ],
+                ];
+                if (!empty($sup['product_id'])) {
+                    $supplyProductIds[] = (int)$sup['product_id'];
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log('Error loading supply inventory: ' . $e->getMessage());
+        }
+
         // Overall stats reflecting remaining inventory & outward history
         $stats = [
             'total_remaining_pieces'    => array_sum(array_column($batches, 'remaining_pieces')),
@@ -11869,7 +12440,7 @@ class ProductionController {
             'total_passed_valuation'    => array_sum(array_column($batches, 'total_passed_value')),
             'unique_batches_count'      => count($batches),
             'in_stock_batches_count'    => count(array_filter($batches, fn($b) => ($b['remaining_pieces'] ?? 0) > 0)),
-            'unique_products_count'     => count(array_unique(array_filter(array_column($items, 'product_id')))),
+            'unique_products_count'     => count(array_unique(array_filter(array_merge(array_column($items, 'product_id'), $supplyProductIds)))),
         ];
 
         // Fetch categories for filter dropdown
@@ -11899,7 +12470,14 @@ class ProductionController {
      * Show detailed piece-by-piece inventory for a single QC batch,
      * with real-time remaining stock calculation and full outward dispatch history.
      */
-    public function productionInventoryBatch(int $id): void {
+    public function productionInventoryBatch($id): void {
+        if (is_string($id) && (str_starts_with($id, 'SUP-') || !is_numeric($id))) {
+            $itemId = (int)str_replace('SUP-', '', $id);
+            $this->productionInventorySupplyBatch($itemId);
+            return;
+        }
+
+        $id = (int)$id;
         $sql = "SELECT qi.*, 
                        qb.program_id, 
                        qb.inspector_id,
@@ -12181,6 +12759,231 @@ class ProductionController {
         ]);
     }
 
+    /**
+     * Show detailed piece-by-piece / unit inventory for a single Supply Inward batch,
+     * with real-time remaining stock calculation, QR labels, and outward dispatch history,
+     * exactly formatted like the QC Batch inventory page.
+     */
+    public function productionInventorySupplyBatch($id): void {
+        self::ensureDatabaseSchema();
+        $supplyItemId = (int)$id;
+
+        $supplyItem = Database::fetchOne(
+            "SELECT ppi.*,
+                    pp.purchase_number, pp.purchase_date, pp.invoice_number, pp.total_amount AS purchase_total_amount,
+                    pp.notes AS purchase_notes,
+                    s.name AS supplier_name, s.company AS supplier_company, s.phone AS supplier_phone, s.email AS supplier_email,
+                    s.address AS supplier_address, s.gst_number AS supplier_gst,
+                    p.id AS catalog_product_id, p.name AS catalog_product_name, p.code AS product_sku, p.image_url AS product_image,
+                    c.name AS category_name,
+                    u.full_name AS inwarded_by_name
+             FROM production_purchase_items ppi
+             JOIN production_purchases pp ON ppi.purchase_id = pp.id
+             LEFT JOIN sellers s ON pp.seller_id = s.id
+             LEFT JOIN products p ON ppi.product_id = p.id
+             LEFT JOIN categories c ON p.category_id = c.id
+             LEFT JOIN users u ON ppi.inwarded_by = u.id
+             WHERE ppi.id = ?",
+            [$supplyItemId]
+        );
+
+        if (!$supplyItem) {
+            Session::flash('error', 'Supply inward record #' . $supplyItemId . ' not found.');
+            Response::redirect(url('production/inventory'));
+            return;
+        }
+
+        $purchaseId = (int)$supplyItem['purchase_id'];
+        $rawQty = (float)($supplyItem['quantity'] ?? 1);
+        $inwardedQty = (float)($supplyItem['inwarded_qty'] > 0 ? $supplyItem['inwarded_qty'] : ($supplyItem['is_inwarded'] ? $supplyItem['quantity'] : 0));
+        if ($inwardedQty <= 0 && !empty($supplyItem['variant_id'])) {
+            $inwardedQrCnt = (int)(Database::fetchOne(
+                "SELECT COUNT(*) as cnt FROM warehouse_qr_codes WHERE variant_id = ? AND inwarded_at IS NOT NULL",
+                [(int)$supplyItem['variant_id']]
+            )['cnt'] ?? 0);
+            $inwardedQty = $inwardedQrCnt > 0 ? (float)$inwardedQrCnt : $rawQty;
+        }
+        if ($inwardedQty <= 0) {
+            $inwardedQty = $rawQty;
+        }
+
+        // Query current available stock balance
+        $currentAvailable = null;
+        if (!empty($supplyItem['variant_id'])) {
+            $sbRow = Database::fetchOne(
+                "SELECT COALESCE(SUM(quantity), 0) AS cnt FROM stock_balances WHERE variant_id = ? AND stock_state = 'AVAILABLE'",
+                [(int)$supplyItem['variant_id']]
+            );
+            if ($sbRow !== null) {
+                $currentAvailable = (float)$sbRow['cnt'];
+            }
+        }
+        if ($currentAvailable === null) {
+            $currentAvailable = $inwardedQty;
+        }
+
+        $remainingPieces = (int)round(max(0.0, $currentAvailable));
+        $totalPieces = (int)round($inwardedQty);
+        $totalOutwardPieces = max(0, $totalPieces - $remainingPieces);
+        $unitPrice = (float)($supplyItem['unit_price'] ?? 0);
+        $totalValue = $totalPieces * $unitPrice;
+        $remainingValue = $remainingPieces * $unitPrice;
+
+        $mode = $_GET['mode'] ?? 'piece';
+        $supplierTitle = mb_strtoupper(trim($supplyItem['supplier_company'] ?: ($supplyItem['supplier_name'] ?? 'SUPPLIER')));
+        $prefix = 'SP' . date('my', strtotime($supplyItem['purchase_date']));
+        $itemName = mb_strtoupper(trim($supplyItem['catalog_product_name'] ?: ($supplyItem['item_name'] ?? 'SUPPLY ITEM')));
+        $unit = mb_strtoupper(trim($supplyItem['unit'] ?? 'PCS'));
+        $hsnCode = !empty($supplyItem['hsn_code']) ? trim((string)$supplyItem['hsn_code']) : '—';
+        $isIntQty = (floor($rawQty) === $rawQty);
+        $qtyInt = (int)$rawQty;
+
+        // Query inwarded QR codes for this purchase prefix
+        $inwardedQrs = Database::fetchAll(
+            "SELECT qr_code, inwarded_at FROM warehouse_qr_codes WHERE qr_code LIKE ? AND inwarded_at IS NOT NULL",
+            [$prefix . '%']
+        );
+        $inwardedMap = [];
+        foreach ($inwardedQrs as $iq) {
+            $inwardedMap[$iq['qr_code']] = $iq['inwarded_at'];
+        }
+
+        // Calculate offset if there were earlier items in the same purchase
+        $earlierItems = Database::fetchAll(
+            "SELECT quantity FROM production_purchase_items WHERE purchase_id = ? AND item_type = 'GENERAL_SUPPLY' AND id < ? ORDER BY id ASC",
+            [$purchaseId, $supplyItemId]
+        );
+        $globalStickerIndex = 1;
+        foreach ($earlierItems as $eit) {
+            $eQty = (float)($eit['quantity'] ?? 1);
+            $globalStickerIndex += (floor($eQty) === $eQty && $eQty <= 100) ? (int)$eQty : 1;
+        }
+
+        $pieceItems = [];
+        $stickers = [];
+        if ($mode === 'package' || !$isIntQty || $qtyInt <= 1 || $qtyInt > 100) {
+            $pieceCode = sprintf('%s%02d', $prefix, $globalStickerIndex++);
+            $isDispatched = ($totalOutwardPieces >= $totalPieces && $totalPieces > 0);
+            $pieceItems[] = [
+                'piece_no'        => 1,
+                'piece_seq'       => 1,
+                'tag_code'        => $pieceCode,
+                'code'            => $pieceCode,
+                'qr_payload'      => $pieceCode,
+                'product_name'    => $itemName,
+                'product_sku'     => $supplyItem['product_sku'] ?? ('SUP-' . $supplyItemId),
+                'sku'             => $supplyItem['product_sku'] ?? ('SUP-' . $supplyItemId),
+                'category_name'   => $supplyItem['category_name'] ?: 'Garment Supplies',
+                'size_name'       => number_format($rawQty, $isIntQty ? 0 : 2) . ' ' . $unit,
+                'color_name'      => 'Standard',
+                'base_price'      => $unitPrice * $rawQty,
+                'discount_price'  => $unitPrice * $rawQty,
+                'unit_price'      => $unitPrice,
+                'total_price'     => $unitPrice * $rawQty,
+                'hsn_code'        => $hsnCode,
+                'program_number'  => $supplyItem['purchase_number'],
+                'inspector_name'  => $supplyItem['inwarded_by_name'] ?: ($supplyItem['supplier_company'] ?: $supplyItem['supplier_name']),
+                'batch_created_at'=> $supplyItem['inwarded_at'] ?: $supplyItem['purchase_date'],
+                'is_dispatched'   => $isDispatched,
+                'can_delete'      => false,
+                'unit'            => $unit,
+                'is_package'      => true,
+            ];
+            $stickers[] = [
+                'code'           => $pieceCode,
+                'display_title'  => $itemName . ' (Master Package)',
+                'quantity_label' => number_format($rawQty, $isIntQty ? 0 : 2) . ' ' . $unit,
+                'unit_price'     => $unitPrice,
+                'hsn_code'       => $hsnCode,
+                'supplier_name'  => $supplierTitle,
+                'po_number'      => $supplyItem['purchase_number'],
+            ];
+        } else {
+            for ($p = 0; $p < $qtyInt; $p++) {
+                $pieceCode = sprintf('%s%02d', $prefix, $globalStickerIndex++);
+                $pieceNo = $p + 1;
+                $isDispatched = ($pieceNo <= $totalOutwardPieces);
+                $pieceLabel = $itemName . ' (' . $pieceNo . '/' . $qtyInt . ')';
+                $pieceItems[] = [
+                    'piece_no'        => $pieceNo,
+                    'piece_seq'       => $p,
+                    'tag_code'        => $pieceCode,
+                    'code'            => $pieceCode,
+                    'qr_payload'      => $pieceCode,
+                    'product_name'    => $itemName,
+                    'product_sku'     => $supplyItem['product_sku'] ?? ('SUP-' . $supplyItemId),
+                    'sku'             => $supplyItem['product_sku'] ?? ('SUP-' . $supplyItemId),
+                    'category_name'   => $supplyItem['category_name'] ?: 'Garment Supplies',
+                    'size_name'       => '1 ' . $unit,
+                    'color_name'      => 'Standard',
+                    'base_price'      => $unitPrice,
+                    'discount_price'  => $unitPrice,
+                    'unit_price'      => $unitPrice,
+                    'total_price'     => $unitPrice,
+                    'hsn_code'        => $hsnCode,
+                    'program_number'  => $supplyItem['purchase_number'],
+                    'inspector_name'  => $supplyItem['inwarded_by_name'] ?: ($supplyItem['supplier_company'] ?: $supplyItem['supplier_name']),
+                    'batch_created_at'=> $supplyItem['inwarded_at'] ?: $supplyItem['purchase_date'],
+                    'is_dispatched'   => $isDispatched,
+                    'can_delete'      => false,
+                    'unit'            => $unit,
+                    'is_package'      => false,
+                ];
+                $stickers[] = [
+                    'code'           => $pieceCode,
+                    'display_title'  => $pieceLabel,
+                    'quantity_label' => '1 ' . $unit . ' (of ' . $qtyInt . ')',
+                    'unit_price'     => $unitPrice,
+                    'hsn_code'       => $hsnCode,
+                    'supplier_name'  => $supplierTitle,
+                    'po_number'      => $supplyItem['purchase_number'],
+                ];
+            }
+        }
+
+        // Fetch outward records for this supply variant if outwarded
+        $outwards = [];
+        if (!empty($supplyItem['variant_id'])) {
+            try {
+                $outwards = Database::fetchAll(
+                    "SELECT po.*,
+                            w.name as warehouse_name,
+                            w.code as warehouse_code,
+                            u.full_name as dispatched_by_name
+                     FROM stock_movements sm
+                     JOIN production_outwards po ON sm.reference_id = po.id
+                     LEFT JOIN warehouses w ON po.warehouse_id = w.id
+                     LEFT JOIN users u ON po.created_by = u.id
+                     WHERE sm.variant_id = ? AND sm.movement_type = 'OUTWARD'
+                     ORDER BY po.id DESC",
+                    [(int)$supplyItem['variant_id']]
+                );
+            } catch (\Throwable $e) {}
+        }
+
+        Response::view('production.inventory.supply_batch', [
+            'pageTitle'           => 'Supply Inward #' . $supplyItemId . ' — Inventory Detail',
+            'activeModule'        => 'production',
+            'activeMenu'          => 'prod-inventory',
+            'supplyItemId'        => $supplyItemId,
+            'supplyItem'          => $supplyItem,
+            'pieceItems'          => $pieceItems,
+            'stickers'            => $stickers,
+            'totalPieces'         => $totalPieces,
+            'totalValue'          => $totalValue,
+            'totalOutwardPieces'  => $totalOutwardPieces,
+            'remainingPieces'     => $remainingPieces,
+            'remainingValue'      => $remainingValue,
+            'outwards'            => $outwards,
+            'mode'                => $mode,
+            'breadcrumb'          => [
+                ['label' => 'Production', 'url' => url('production/dashboard')],
+                ['label' => 'Inventory', 'url' => url('production/inventory')],
+                ['label' => 'Supply Inward #' . $supplyItemId],
+            ],
+        ]);
+    }
+
     // =========================================================================
     // PRODUCTION REPORTS & ANALYTICS
     // =========================================================================
@@ -12367,8 +13170,21 @@ class ProductionController {
             return;
         }
 
-        $cuttingBatchId = !empty($_POST['cutting_batch_id']) ? (int)$_POST['cutting_batch_id'] : null;
-        if (!$cuttingBatchId || $cuttingBatchId <= 0) {
+        $cuttingBatchIds = [];
+        if (!empty($_POST['cutting_batch_ids']) && is_array($_POST['cutting_batch_ids'])) {
+            foreach ($_POST['cutting_batch_ids'] as $cid) {
+                $cid = (int)$cid;
+                if ($cid > 0 && !in_array($cid, $cuttingBatchIds, true)) {
+                    $cuttingBatchIds[] = $cid;
+                }
+            }
+        }
+        if (empty($cuttingBatchIds) && !empty($_POST['cutting_batch_id'])) {
+            $cid = (int)$_POST['cutting_batch_id'];
+            if ($cid > 0) $cuttingBatchIds[] = $cid;
+        }
+
+        if (empty($cuttingBatchIds)) {
             Session::flash('error', 'Select Cutting Module Wastage / Scrap Batch is required.');
             Response::back();
             return;
@@ -12417,33 +13233,43 @@ class ProductionController {
             return;
         }
 
-        // Validate cutting batch available wastage balance
-        $cb = Database::fetchOne("SELECT id, batch_number, name, program_id, wastage_weight FROM cutting_batches WHERE id = ?", [$cuttingBatchId]);
-        if (!$cb) {
-            Session::flash('error', 'Selected cutting batch not found.');
+        // Validate selected cutting batches & available balances
+        $batches = [];
+        $totalAvailableWastage = 0.0;
+        foreach ($cuttingBatchIds as $cid) {
+            $cb = Database::fetchOne("SELECT id, batch_number, name, program_id, wastage_weight FROM cutting_batches WHERE id = ?", [$cid]);
+            if (!$cb) continue;
+
+            $soldRow = Database::fetchOne(
+                "SELECT COALESCE(SUM(weight), 0.0) as sold_weight FROM wastage_sales WHERE cutting_batch_id = ?",
+                [$cid]
+            );
+            $alreadySold = (float)($soldRow['sold_weight'] ?? 0.0);
+            $totalWastage = (float)($cb['wastage_weight'] ?? 0.0);
+            $availableWastage = max(0.0, $totalWastage - $alreadySold);
+
+            if ($availableWastage > 0.001) {
+                $cb['available_wastage'] = $availableWastage;
+                $cb['total_wastage'] = $totalWastage;
+                $cb['already_sold'] = $alreadySold;
+                $batches[] = $cb;
+                $totalAvailableWastage += $availableWastage;
+            }
+        }
+
+        if (empty($batches) || $totalAvailableWastage <= 0.001) {
+            Session::flash('error', "Selected cutting batch(es) wastage is ALREADY FULLY SOLD. Please choose an available batch.");
             Response::back();
             return;
         }
 
-        $soldRow = Database::fetchOne(
-            "SELECT COALESCE(SUM(weight), 0.0) as sold_weight FROM wastage_sales WHERE cutting_batch_id = ?",
-            [$cuttingBatchId]
-        );
-        $alreadySold = (float)($soldRow['sold_weight'] ?? 0.0);
-        $totalWastage = (float)($cb['wastage_weight'] ?? 0.0);
-        $availableWastage = max(0.0, $totalWastage - $alreadySold);
-
-        if ($availableWastage <= 0.001) {
-            Session::flash('error', "Cutting Batch [{$cb['batch_number']}] wastage is ALREADY FULLY SOLD ({$alreadySold} kg sold of {$totalWastage} kg total). Cannot record another sale.");
+        if ($weight > $totalAvailableWastage + 0.001) {
+            Session::flash('error', "Entered weight ({$weight} kg) exceeds available wastage balance (" . number_format($totalAvailableWastage, 2) . " kg) for selected batch(es).");
             Response::back();
             return;
         }
 
-        if ($weight > $availableWastage + 0.001) {
-            Session::flash('error', "Entered weight ({$weight} kg) exceeds available wastage balance ({$availableWastage} kg) for Batch [{$cb['batch_number']}].");
-            Response::back();
-            return;
-        }
+        $cuttingBatchId = $batches[0]['id'];
 
         if ($ratePerKg <= 0 && $totalAmountInput <= 0) {
             Session::flash('error', 'Selling Price & Quantity (Manual Entry) is required. Please enter a valid Selling Rate (₹/kg) or Total Sale Price.');
@@ -12513,52 +13339,91 @@ class ProductionController {
             $photoUrl = CloudinaryService::upload($_FILES['photo'], 'grm_inventory/wastage', 'image');
         }
 
-        // Generate sequential sale number e.g. WST-2026-0001
-        $count = Database::fetchOne("SELECT COUNT(*) as cnt FROM wastage_sales");
-        $nextSeq = (int)($count['cnt'] ?? 0) + 1;
-        $saleNumber = 'WST-' . date('Y') . '-' . sprintf("%04d", $nextSeq);
-
         $userId = (int)(Session::get('user_id') ?? 1);
 
         try {
-            Database::execute(
-                "INSERT INTO wastage_sales 
-                    (sale_number, buyer_name, buyer_phone, buyer_company, cutting_batch_id, program_id, wastage_type, weight, rate_per_kg, total_amount, paid_amount, payment_status, payment_method, payment_reference, invoice_number, sale_date, photo_url, notes, created_by, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
-                [
-                    $saleNumber,
-                    $buyerName,
-                    $buyerPhone,
-                    $buyerCompany,
-                    $cuttingBatchId,
-                    $programId,
-                    $wastageType,
-                    $weight,
-                    $ratePerKg,
-                    $totalAmount,
-                    $paidAmount,
-                    $paymentStatus,
-                    $paymentMethod,
-                    $paymentReference ?: null,
-                    $invoiceNumber ?: null,
-                    $saleDate,
-                    $photoUrl,
-                    $notes ?: null,
-                    $userId
-                ]
-            );
-            $saleId = (int)Database::lastInsertId();
+            Database::beginTransaction();
 
-            AuditService::log('production', 'create', 'wastage_sales', $saleId, null, [
-                'sale_number'  => $saleNumber,
-                'buyer_name'   => $buyerName,
-                'weight'       => $weight,
-                'total_amount' => $totalAmount
-            ]);
+            $remainingWeight = $weight;
+            $remainingAmount = $totalAmount;
+            $remainingPaid = $paidAmount;
+            $createdSales = [];
 
-            Session::flash('success', "Wastage sale {$saleNumber} recorded successfully for ₹" . number_format($totalAmount, 2));
+            foreach ($batches as $idx => $b) {
+                $isLast = ($idx === count($batches) - 1);
+                
+                if ($isLast) {
+                    $bWeight = round($remainingWeight, 2);
+                    $bAmount = round($remainingAmount, 2);
+                    $bPaid = round($remainingPaid, 2);
+                } else {
+                    $prop = $b['available_wastage'] / $totalAvailableWastage;
+                    $bWeight = min($b['available_wastage'], round($weight * $prop, 2));
+                    $bAmount = round($totalAmount * ($bWeight / $weight), 2);
+                    $bPaid = round($paidAmount * ($bWeight / $weight), 2);
+                    
+                    $remainingWeight -= $bWeight;
+                    $remainingAmount -= $bAmount;
+                    $remainingPaid -= $bPaid;
+                }
+
+                if ($bWeight <= 0) continue;
+
+                $count = Database::fetchOne("SELECT COUNT(*) as cnt FROM wastage_sales");
+                $nextSeq = (int)($count['cnt'] ?? 0) + 1;
+                $saleNumber = 'WST-' . date('Y') . '-' . sprintf("%04d", $nextSeq);
+
+                $bStatus = ($bPaid >= $bAmount && $bAmount > 0) ? 'PAID' : (($bPaid > 0) ? 'PARTIAL' : 'PENDING');
+                $bProgId = !empty($b['program_id']) ? (int)$b['program_id'] : $programId;
+
+                Database::execute(
+                    "INSERT INTO wastage_sales 
+                        (sale_number, buyer_name, buyer_phone, buyer_company, cutting_batch_id, program_id, wastage_type, weight, rate_per_kg, total_amount, paid_amount, payment_status, payment_method, payment_reference, invoice_number, sale_date, photo_url, notes, created_by, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
+                    [
+                        $saleNumber,
+                        $buyerName,
+                        $buyerPhone,
+                        $buyerCompany,
+                        (int)$b['id'],
+                        $bProgId,
+                        $wastageType,
+                        $bWeight,
+                        $ratePerKg,
+                        $bAmount,
+                        $bPaid,
+                        $bStatus,
+                        $paymentMethod,
+                        $paymentReference ?: null,
+                        $invoiceNumber ?: null,
+                        $saleDate,
+                        $photoUrl,
+                        $notes ? ($notes . (count($batches) > 1 ? " [Batch {$b['batch_number']}]" : "")) : null,
+                        $userId
+                    ]
+                );
+                $saleId = (int)Database::lastInsertId();
+
+                AuditService::log('production', 'create', 'wastage_sales', $saleId, null, [
+                    'sale_number'  => $saleNumber,
+                    'batch_number' => $b['batch_number'],
+                    'buyer_name'   => $buyerName,
+                    'weight'       => $bWeight,
+                    'total_amount' => $bAmount
+                ]);
+                $createdSales[] = $saleNumber;
+            }
+
+            Database::commit();
+
+            if (count($createdSales) > 1) {
+                Session::flash('success', "Wastage sale for " . count($createdSales) . " cutting batches recorded successfully (" . implode(', ', $createdSales) . ") for ₹" . number_format($totalAmount, 2));
+            } else {
+                Session::flash('success', "Wastage sale {$createdSales[0]} recorded successfully for ₹" . number_format($totalAmount, 2));
+            }
             Response::redirect(url('production/wastage'));
         } catch (Exception $e) {
+            Database::rollback();
             Session::flash('error', 'Error recording wastage sale: ' . $e->getMessage());
             Response::back();
         }
@@ -12985,7 +13850,26 @@ class ProductionController {
             return;
         }
 
-        $stitchingBatchId = !empty($_POST['stitching_batch_id']) ? (int)$_POST['stitching_batch_id'] : null;
+        $stitchingBatchIds = [];
+        if (!empty($_POST['stitching_batch_ids']) && is_array($_POST['stitching_batch_ids'])) {
+            foreach ($_POST['stitching_batch_ids'] as $sid) {
+                $sid = (int)$sid;
+                if ($sid > 0 && !in_array($sid, $stitchingBatchIds, true)) {
+                    $stitchingBatchIds[] = $sid;
+                }
+            }
+        }
+        if (empty($stitchingBatchIds) && !empty($_POST['stitching_batch_id'])) {
+            $sid = (int)$_POST['stitching_batch_id'];
+            if ($sid > 0) $stitchingBatchIds[] = $sid;
+        }
+
+        if (empty($stitchingBatchIds)) {
+            Session::flash('error', 'Select Stitching Module Batch / Program is required. Please choose a Stitching Batch.');
+            Response::back();
+            return;
+        }
+
         $buyerName = trim($_POST['buyer_name'] ?? '');
         $buyerPhone = trim($_POST['buyer_phone'] ?? '');
         $buyerCompany = trim($_POST['buyer_company'] ?? '');
@@ -13001,27 +13885,40 @@ class ProductionController {
         $notes = trim($_POST['notes'] ?? '');
         $programId = !empty($_POST['program_id']) ? (int)$_POST['program_id'] : null;
 
-        // 1. Select Stitching Module Batch / Program is required
-        if (empty($stitchingBatchId)) {
+        // Validation: Verify batches and prevent duplicate selling of already sold stitching batches
+        $batches = [];
+        $totalBatchWeight = 0.0;
+        $totalStitchedQty = 0;
+        foreach ($stitchingBatchIds as $sid) {
+            $alreadySold = Database::fetchOne(
+                "SELECT id, sale_number, quantity, unit_type, sale_date 
+                 FROM stitching_wastage_sales 
+                 WHERE stitching_batch_id = ?",
+                [$sid]
+            );
+            $sb = Database::fetchOne("SELECT id, batch_number, name, program_id, total_weight, stitched_qty FROM stitching_batches WHERE id = ?", [$sid]);
+            if (!$sb) continue;
+
+            if ($alreadySold) {
+                $sbNum = $sb['batch_number'] ?? ('#' . $sid);
+                Session::flash('error', "Validation Error: Stitching Batch [{$sbNum}] wastage has already been sold under Sale #{$alreadySold['sale_number']} ({$alreadySold['quantity']} {$alreadySold['unit_type']} on {$alreadySold['sale_date']}). Duplicate sale of the same stitching batch wastage is not allowed.");
+                Response::back();
+                return;
+            }
+            $sb['total_weight'] = (float)($sb['total_weight'] ?? 0.0);
+            $sb['stitched_qty'] = (int)($sb['stitched_qty'] ?? 0);
+            $totalBatchWeight += $sb['total_weight'];
+            $totalStitchedQty += $sb['stitched_qty'];
+            $batches[] = $sb;
+        }
+
+        if (empty($batches)) {
             Session::flash('error', 'Select Stitching Module Batch / Program is required. Please choose a Stitching Batch.');
             Response::back();
             return;
         }
 
-        // Validation: Prevent duplicate selling of already sold stitching batch scrap
-        $alreadySold = Database::fetchOne(
-            "SELECT id, sale_number, quantity, unit_type, sale_date 
-             FROM stitching_wastage_sales 
-             WHERE stitching_batch_id = ?",
-            [$stitchingBatchId]
-        );
-        if ($alreadySold) {
-            $sb = Database::fetchOne("SELECT batch_number, name FROM stitching_batches WHERE id = ?", [$stitchingBatchId]);
-            $sbNum = $sb['batch_number'] ?? ('#' . $stitchingBatchId);
-            Session::flash('error', "Validation Error: Stitching Batch [{$sbNum}] wastage has already been sold under Sale #{$alreadySold['sale_number']} ({$alreadySold['quantity']} {$alreadySold['unit_type']} on {$alreadySold['sale_date']}). Duplicate sale of the same stitching batch wastage is not allowed.");
-            Response::back();
-            return;
-        }
+        $stitchingBatchId = $batches[0]['id'];
 
         // 2. Scrap Buyer / Vendor Name is required
         if (empty($buyerName)) {
@@ -13104,53 +14001,99 @@ class ProductionController {
             $photoUrl = CloudinaryService::upload($_FILES['photo'], 'grm_inventory/stitching_wastage', 'image');
         }
 
-        // Generate sequential sale number e.g. STW-2026-0001
-        $count = Database::fetchOne("SELECT COUNT(*) as cnt FROM stitching_wastage_sales");
-        $nextSeq = (int)($count['cnt'] ?? 0) + 1;
-        $saleNumber = 'STW-' . date('Y') . '-' . sprintf("%04d", $nextSeq);
-
         $userId = (int)(Session::get('user_id') ?? 1);
 
         try {
-            Database::execute(
-                "INSERT INTO stitching_wastage_sales 
-                    (sale_number, buyer_name, buyer_phone, buyer_company, stitching_batch_id, program_id, waste_type, unit_type, quantity, rate_per_unit, total_amount, paid_amount, payment_status, payment_method, payment_reference, invoice_number, sale_date, photo_url, notes, created_by, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
-                [
-                    $saleNumber,
-                    $buyerName,
-                    $buyerPhone ?: null,
-                    $buyerCompany ?: null,
-                    $stitchingBatchId,
-                    $programId,
-                    $wasteType,
-                    $unitType,
-                    $quantity,
-                    $ratePerUnit,
-                    $totalAmount,
-                    $paidAmount,
-                    $paymentStatus,
-                    $paymentMethod,
-                    $paymentReference ?: null,
-                    $invoiceNumber ?: null,
-                    $saleDate,
-                    $photoUrl,
-                    $notes ?: null,
-                    $userId
-                ]
-            );
-            $saleId = (int)Database::lastInsertId();
+            Database::beginTransaction();
 
-            AuditService::log('production', 'create', 'stitching_wastage_sales', $saleId, null, [
-                'sale_number'  => $saleNumber,
-                'buyer_name'   => $buyerName,
-                'quantity'     => $quantity,
-                'total_amount' => $totalAmount
-            ]);
+            $remainingQty = $quantity;
+            $remainingAmount = $totalAmount;
+            $remainingPaid = $paidAmount;
+            $createdSales = [];
 
-            Session::flash('success', "Stitching wastage sale {$saleNumber} recorded successfully for ₹" . number_format($totalAmount, 2));
+            foreach ($batches as $idx => $b) {
+                $isLast = ($idx === count($batches) - 1);
+                
+                if ($isLast) {
+                    $bQty = round($remainingQty, 2);
+                    $bAmount = round($remainingAmount, 2);
+                    $bPaid = round($remainingPaid, 2);
+                } else {
+                    // Proportion based on weight (if KG) or stitched qty (if PCS/BUNDLES) or equal split
+                    if ($unitType === 'KG' && $totalBatchWeight > 0) {
+                        $prop = $b['total_weight'] / $totalBatchWeight;
+                    } elseif ($totalStitchedQty > 0) {
+                        $prop = $b['stitched_qty'] / $totalStitchedQty;
+                    } else {
+                        $prop = 1.0 / count($batches);
+                    }
+                    $bQty = max(0.01, round($quantity * $prop, 2));
+                    $bAmount = round($totalAmount * ($bQty / $quantity), 2);
+                    $bPaid = round($paidAmount * ($bQty / $quantity), 2);
+                    
+                    $remainingQty -= $bQty;
+                    $remainingAmount -= $bAmount;
+                    $remainingPaid -= $bPaid;
+                }
+
+                if ($bQty <= 0) continue;
+
+                $count = Database::fetchOne("SELECT COUNT(*) as cnt FROM stitching_wastage_sales");
+                $nextSeq = (int)($count['cnt'] ?? 0) + 1;
+                $saleNumber = 'STW-' . date('Y') . '-' . sprintf("%04d", $nextSeq);
+
+                $bStatus = ($bPaid >= $bAmount && $bAmount > 0) ? 'PAID' : (($bPaid > 0) ? 'PARTIAL' : 'PENDING');
+                $bProgId = !empty($b['program_id']) ? (int)$b['program_id'] : $programId;
+
+                Database::execute(
+                    "INSERT INTO stitching_wastage_sales 
+                        (sale_number, buyer_name, buyer_phone, buyer_company, stitching_batch_id, program_id, waste_type, unit_type, quantity, rate_per_unit, total_amount, paid_amount, payment_status, payment_method, payment_reference, invoice_number, sale_date, photo_url, notes, created_by, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
+                    [
+                        $saleNumber,
+                        $buyerName,
+                        $buyerPhone ?: null,
+                        $buyerCompany ?: null,
+                        (int)$b['id'],
+                        $bProgId,
+                        $wasteType,
+                        $unitType,
+                        $bQty,
+                        $ratePerUnit,
+                        $bAmount,
+                        $bPaid,
+                        $bStatus,
+                        $paymentMethod,
+                        $paymentReference ?: null,
+                        $invoiceNumber ?: null,
+                        $saleDate,
+                        $photoUrl,
+                        $notes ? ($notes . (count($batches) > 1 ? " [Batch {$b['batch_number']}]" : "")) : null,
+                        $userId
+                    ]
+                );
+                $saleId = (int)Database::lastInsertId();
+
+                AuditService::log('production', 'create', 'stitching_wastage_sales', $saleId, null, [
+                    'sale_number'  => $saleNumber,
+                    'batch_number' => $b['batch_number'],
+                    'buyer_name'   => $buyerName,
+                    'quantity'     => $bQty,
+                    'total_amount' => $bAmount
+                ]);
+                $createdSales[] = $saleNumber;
+            }
+
+            Database::commit();
+
+            if (count($createdSales) > 1) {
+                Session::flash('success', "Stitching wastage sale for " . count($createdSales) . " batches recorded successfully (" . implode(', ', $createdSales) . ") for ₹" . number_format($totalAmount, 2));
+            } else {
+                Session::flash('success', "Stitching wastage sale {$createdSales[0]} recorded successfully for ₹" . number_format($totalAmount, 2));
+            }
             Response::redirect(url('production/stitching-wastage'));
         } catch (Exception $e) {
+            Database::rollback();
             Session::flash('error', 'Error recording stitching wastage sale: ' . $e->getMessage());
             Response::back();
         }
@@ -14931,6 +15874,33 @@ class ProductionController {
             }
         }
 
+        // Query inwarded QR codes for this purchase prefix
+        $inwardedQrs = Database::fetchAll(
+            "SELECT qr_code, inwarded_at FROM warehouse_qr_codes WHERE qr_code LIKE ? AND inwarded_at IS NOT NULL",
+            [$prefix . '%']
+        );
+        $inwardedMap = [];
+        foreach ($inwardedQrs as $iq) {
+            $inwardedMap[$iq['qr_code']] = $iq['inwarded_at'];
+        }
+
+        foreach ($stickers as &$stk) {
+            $isStkInwarded = !empty($inwardedMap[$stk['code']]) || (!empty($purchase['is_inwarded']) && empty($inwardedQrs));
+            $stk['is_inwarded'] = $isStkInwarded;
+            $stk['inwarded_at'] = $inwardedMap[$stk['code']] ?? ($purchase['inwarded_at'] ?? null);
+        }
+        unset($stk);
+
+        $allStickersCount = count($stickers);
+        $inwardedCount = count(array_filter($stickers, fn($s) => !empty($s['is_inwarded'])));
+        $pendingCount = $allStickersCount - $inwardedCount;
+        $isAllInwarded = $allStickersCount > 0 && $pendingCount === 0;
+
+        $inwardedOnly = !empty($_GET['inwarded_only']) || (isset($_GET['filter']) && $_GET['filter'] === 'inwarded');
+        if ($inwardedOnly) {
+            $stickers = array_values(array_filter($stickers, fn($s) => !empty($s['is_inwarded'])));
+        }
+
         // Count rolls in this purchase for quick navigation
         $rollCount = (int)(Database::fetchOne(
             "SELECT COUNT(*) AS cnt FROM production_purchase_items WHERE purchase_id = ? AND item_type = 'FABRIC_ROLL'",
@@ -14938,20 +15908,26 @@ class ProductionController {
         )['cnt'] ?? 0);
 
         Response::viewOnly('production.purchases.supply_qr', [
-            'pageTitle'      => 'Other Garment Supplies QR Labels — ' . $purchase['purchase_number'],
-            'purchase'       => $purchase,
-            'seller'         => $seller,
-            'supplies'       => $supplies,
-            'stickers'       => $stickers,
-            'mode'           => $mode,
-            'selectedItemId' => $selectedItemId,
-            'rollCount'      => $rollCount,
+            'pageTitle'          => 'Other Garment Supplies QR Labels — ' . $purchase['purchase_number'],
+            'purchase'           => $purchase,
+            'seller'             => $seller,
+            'supplies'           => $supplies,
+            'stickers'           => $stickers,
+            'mode'               => $mode,
+            'selectedItemId'     => $selectedItemId,
+            'rollCount'          => $rollCount,
+            'isAllInwarded'      => $isAllInwarded,
+            'inwardedCount'      => $inwardedCount,
+            'pendingInwardCount' => $pendingCount,
+            'inwardedOnly'       => $inwardedOnly,
+            'allStickersCount'   => $allStickersCount,
         ]);
     }
 
     /**
      * Move garment supplies from a Production Purchase to Inward / Inventory.
-     * Automatically registers products, variants, increases warehouse stock balances,
+     * Supports both selection-based inwarding (specific chosen QR codes) and full inwarding.
+     * Automatically registers products, variants, credits warehouse stock balances,
      * and maps QR codes in warehouse_qr_codes.
      */
     public function productionPurchaseSupplyInward(string $id): void {
@@ -14992,6 +15968,13 @@ class ProductionController {
         }
 
         $selectedItemId = !empty($_POST['item_id']) ? (int)$_POST['item_id'] : 0;
+        $selectedQrInput = trim($_POST['selected_qr_codes'] ?? '');
+        $selectedQrCodes = [];
+        if (!empty($selectedQrInput)) {
+            $selectedQrCodes = array_values(array_unique(array_filter(array_map('trim', explode(',', $selectedQrInput)))));
+        }
+        $hasSelection = !empty($selectedQrCodes);
+
         $sql = "SELECT ppi.*
                 FROM production_purchase_items ppi
                 WHERE ppi.purchase_id = ? AND ppi.item_type = 'GENERAL_SUPPLY'";
@@ -15043,8 +16026,45 @@ class ProductionController {
                 $unitPrice = (float)($item['unit_price'] ?? 0);
                 $totalPrice = (float)($item['total_price'] ?? ($rawQty * $unitPrice));
                 $hsnCode = !empty($item['hsn_code']) ? trim((string)$item['hsn_code']) : null;
+
+                $isIntQty = (floor($rawQty) === $rawQty);
+                $qtyInt = (int)$rawQty;
+                $pieceCount = ($isIntQty && $qtyInt >= 1 && $qtyInt <= 100) ? $qtyInt : 1;
+                $packQty = ($pieceCount === 1 && $rawQty > 1) ? (int)$rawQty : 1;
+                $pieceQty = $pieceCount > 0 ? ($rawQty / $pieceCount) : 1.0;
+
+                // Build this item's specific QR codes
+                $thisItemQrs = [];
+                for ($p = 0; $p < $pieceCount; $p++) {
+                    $thisItemQrs[] = sprintf('%s%02d', $prefix, $globalStickerIndex++);
+                }
+
+                // Determine which QR codes to inward
+                $qrsToInward = [];
+                if ($hasSelection) {
+                    $selectedForThisItem = array_intersect($thisItemQrs, $selectedQrCodes);
+                    foreach ($selectedForThisItem as $qrCode) {
+                        $existing = Database::fetchOne("SELECT id, inwarded_at FROM warehouse_qr_codes WHERE qr_code = ?", [$qrCode]);
+                        if (!$existing || empty($existing['inwarded_at'])) {
+                            $qrsToInward[] = $qrCode;
+                        }
+                    }
+                } else {
+                    foreach ($thisItemQrs as $qrCode) {
+                        $existing = Database::fetchOne("SELECT id, inwarded_at FROM warehouse_qr_codes WHERE qr_code = ?", [$qrCode]);
+                        if (!$existing || empty($existing['inwarded_at'])) {
+                            $qrsToInward[] = $qrCode;
+                        }
+                    }
+                }
+
+                if (empty($qrsToInward)) {
+                    continue;
+                }
+
+                $itemInwardQty = count($qrsToInward) * $pieceQty;
                 $inwardedItemNames[] = $itemName;
-                $totalInwardQty += $rawQty;
+                $totalInwardQty += $itemInwardQty;
 
                 // 1. Check or Create Product in products table
                 $existingProduct = Database::fetchOne(
@@ -15090,29 +16110,21 @@ class ProductionController {
                 }
 
                 // 3. Increase Stock in Central Warehouse using StockService
-                if (empty($item['is_inwarded'])) {
-                    StockService::increase(
-                        variantId: $variantId,
-                        locationType: 'WAREHOUSE',
-                        locationId: $warehouseId,
-                        stockState: 'AVAILABLE',
-                        quantity: $rawQty,
-                        transactionType: 'PURCHASE_GRN',
-                        referenceType: 'production_purchases',
-                        referenceId: $purchaseId,
-                        userId: $userId,
-                        notes: "Supply Inward for PO #{$purchase['purchase_number']} ({$itemName}: {$rawQty} {$unit} @ ₹" . number_format($unitPrice, 2) . ")"
-                    );
-                }
+                StockService::increase(
+                    variantId: $variantId,
+                    locationType: 'WAREHOUSE',
+                    locationId: $warehouseId,
+                    stockState: 'AVAILABLE',
+                    quantity: $itemInwardQty,
+                    transactionType: 'PURCHASE_GRN',
+                    referenceType: 'production_purchases',
+                    referenceId: $purchaseId,
+                    userId: $userId,
+                    notes: "Supply Inward for PO #{$purchase['purchase_number']} ({$itemName}: {$itemInwardQty} {$unit} @ ₹" . number_format($unitPrice, 2) . ")"
+                );
 
-                // 4. Register supply QR codes in warehouse_qr_codes for system-wide scanability
-                $isIntQty = (floor($rawQty) === $rawQty);
-                $qtyInt = (int)$rawQty;
-                $pieceCount = ($isIntQty && $qtyInt >= 1 && $qtyInt <= 100) ? $qtyInt : 1;
-                $packQty = ($pieceCount === 1 && $rawQty > 1) ? (int)$rawQty : 1;
-
-                for ($p = 0; $p < $pieceCount; $p++) {
-                    $qrCode = sprintf('%s%02d', $prefix, $globalStickerIndex++);
+                // 4. Register or update supply QR codes in warehouse_qr_codes
+                foreach ($qrsToInward as $qrCode) {
                     $existingQr = Database::fetchOne("SELECT id FROM warehouse_qr_codes WHERE qr_code = ?", [$qrCode]);
                     if (!$existingQr) {
                         Database::execute(
@@ -15124,23 +16136,36 @@ class ProductionController {
                     } else {
                         Database::execute(
                             "UPDATE warehouse_qr_codes
-                             SET inwarded_at = NOW(), variant_id = ?, warehouse_id = ?
+                             SET inwarded_at = NOW(), variant_id = ?, warehouse_id = ?, pack_quantity = ?
                              WHERE id = ?",
-                            [$variantId, $warehouseId, (int)$existingQr['id']]
+                            [$variantId, $warehouseId, $packQty, (int)$existingQr['id']]
                         );
                     }
                 }
 
                 // 5. Update supply purchase item
+                $inwardedQrTotalCount = (int)(Database::fetchOne(
+                    "SELECT COUNT(*) AS cnt FROM warehouse_qr_codes WHERE qr_code IN (" . implode(',', array_fill(0, count($thisItemQrs), '?')) . ") AND inwarded_at IS NOT NULL",
+                    $thisItemQrs
+                )['cnt'] ?? 0);
+                $isAllItemInwarded = ($inwardedQrTotalCount >= count($thisItemQrs));
+
                 Database::execute(
                     "UPDATE production_purchase_items
-                     SET is_inwarded = 1, inwarded_at = NOW(), inwarded_by = ?, product_id = ?, variant_id = ?
+                     SET is_inwarded = ?, inwarded_at = NOW(), inwarded_by = ?, product_id = ?, variant_id = ?, inwarded_qty = inwarded_qty + ?
                      WHERE id = ?",
-                    [$userId, $productId, $variantId, (int)$item['id']]
+                    [$isAllItemInwarded ? 1 : 0, $userId, $productId, $variantId, $itemInwardQty, (int)$item['id']]
                 );
             }
 
-            // Check if all supplies in this purchase are now inwarded
+            if ($totalInwardQty <= 0) {
+                Database::rollback();
+                Session::flash('info', 'All selected QR label(s) were already inwarded to inventory.');
+                Response::redirect(url('production/purchases/supply-qr/' . $purchaseId));
+                return;
+            }
+
+            // Check if all supplies in this purchase are now fully inwarded
             $pendingCount = (int)(Database::fetchOne(
                 "SELECT COUNT(*) AS cnt FROM production_purchase_items
                  WHERE purchase_id = ? AND item_type = 'GENERAL_SUPPLY' AND (is_inwarded = 0 OR is_inwarded IS NULL)",
@@ -15167,8 +16192,7 @@ class ProductionController {
             Session::flash('success', "Success! Supply product(s) (" . implode(', ', array_unique($inwardedItemNames)) . ") successfully inwarded and added to inventory (" . number_format($totalInwardQty) . " pcs added to {$whName}).");
         } catch (\Throwable $e) {
             Database::rollback();
-            error_log("Failed to inward supply purchase #{$purchaseId}: " . $e->getMessage());
-            Session::flash('error', 'Failed to inward supply products to inventory: ' . $e->getMessage());
+            Session::flash('error', 'Error processing supply inward: ' . $e->getMessage());
         }
 
         Response::redirect(url('production/purchases/supply-qr/' . $purchaseId . ($selectedItemId > 0 ? '?item_id=' . $selectedItemId : '')));

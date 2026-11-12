@@ -84,26 +84,7 @@ $canScanOrEdit = $canVerify && ($batch['status'] === 'DISPATCHED' || !$isFullyRe
             <i class="bi bi-arrow-left me-1"></i> Back
         </a>
     </div>
-    <div class="d-flex gap-2 flex-wrap align-items-center">
-        <?php if ($canEdit): ?>
-            <a href="<?= url('warehouse/inward/edit/' . $batch['id']) ?>" class="btn btn-warning fw-semibold shadow-sm">
-                <i class="bi bi-pencil-square me-1"></i> Edit Inward
-            </a>
-        <?php endif; ?>
-        <?php if ($canDelete): ?>
-            <button type="button" class="btn btn-outline-danger shadow-sm" onclick="openDeleteInwardModal(<?= htmlspecialchars(json_encode([
-                'id'        => (int)$batch['id'],
-                'number'    => $batch['batch_number'],
-                'product'   => $batch['product_name'] ?? '',
-                'warehouse' => $batch['warehouse_name'] ?? '',
-                'received'  => $displayRec,
-                'damaged'   => $displayDmg,
-                'status'    => $batch['status']
-            ]), ENT_QUOTES, 'UTF-8') ?>)">
-                <i class="bi bi-trash3 me-1"></i> Delete Inward
-            </button>
-        <?php endif; ?>
-    </div>
+ 
 </div>
 
 <!-- ========================================================================= -->

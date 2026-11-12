@@ -390,59 +390,89 @@
                                     <span>
                                         <i class="bi bi-gear-wide-connected text-warning me-1"></i>Select Stitching Module Batch / Program <span class="text-danger">*</span>
                                     </span>
-                                    <span class="badge bg-warning-subtle text-dark border">Stitching Program Dropdown</span>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="badge bg-warning-subtle text-dark border"><i class="bi bi-check2-square me-1"></i>Multi-Batch Checkbox</span>
+                                    </div>
                                 </label>
                                 <?php 
                                     $availableBatches = array_filter($stitchingBatches, fn($sb) => (float)($sb['sold_quantity'] ?? 0) <= 0 && (int)($sb['sales_count'] ?? 0) <= 0);
-                                    $soldBatches = array_filter($stitchingBatches, fn($sb) => (float)($sb['sold_quantity'] ?? 0) > 0 || (int)($sb['sales_count'] ?? 0) > 0);
                                 ?>
-                                <select name="stitching_batch_id" id="newStwStitchingBatchId" class="form-select form-select-md fw-semibold border-warning" onchange="onNewStitchingBatchChange(this)" required>
-                                    <option value="" data-program-id="0" data-batch-no="" data-program-no="" data-recd-qty="0" data-stitched-qty="0" data-total-weight="0" data-sold-qty="0" data-is-sold="0">-- Select Stitching Module Batch / Program * --</option>
-                                    
-                                    <?php if (!empty($availableBatches)): ?>
-                                        <optgroup label="✓ Available Stitching Batches (Ready to Sell Scrap)">
-                                            <?php foreach ($availableBatches as $sb): ?>
-                                                <option value="<?= $sb['id'] ?>"
-                                                    data-batch-no="<?= e($sb['batch_number']) ?>"
-                                                    data-batch-name="<?= e($sb['name'] ?? '') ?>"
-                                                    data-program-id="<?= (int)($sb['program_id'] ?? 0) ?>"
-                                                    data-program-no="<?= e($sb['program_number'] ?? '') ?>"
-                                                    data-program-name="<?= e($sb['program_name'] ?? '') ?>"
-                                                    data-cutting-batch="<?= e($sb['cutting_batch_number'] ?? '') ?>"
-                                                    data-recd-qty="<?= (int)($sb['received_qty'] ?? 0) ?>"
-                                                    data-stitched-qty="<?= (int)($sb['stitched_qty'] ?? 0) ?>"
-                                                    data-total-weight="<?= (float)($sb['total_weight'] ?? 0) ?>"
-                                                    data-sold-qty="0.00"
-                                                    data-is-sold="0">
-                                                    [<?= e($sb['batch_number']) ?>] <?= e($sb['name'] ?: 'Stitching Batch') ?><?= !empty($sb['program_number']) ? ' • Prog: ' . e($sb['program_number']) . ' (' . e($sb['program_name']) . ')' : '' ?> • Stitched: <?= number_format($sb['stitched_qty'] ?? 0) ?> pcs • Ready to Sell
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </optgroup>
-                                    <?php else: ?>
-                                        <option value="" disabled class="text-danger fw-bold">✗ No stitching batches with unsold wastage currently available</option>
-                                    <?php endif; ?>
 
-                                    <?php if (!empty($soldBatches)): ?>
-                                        <optgroup label="✗ Fully Sold Batches (Unavailable)">
-                                            <?php foreach ($soldBatches as $sb): ?>
-                                                <option value="<?= $sb['id'] ?>" disabled class="text-muted bg-light"
-                                                    data-batch-no="<?= e($sb['batch_number']) ?>"
-                                                    data-batch-name="<?= e($sb['name'] ?? '') ?>"
-                                                    data-program-id="<?= (int)($sb['program_id'] ?? 0) ?>"
-                                                    data-program-no="<?= e($sb['program_number'] ?? '') ?>"
-                                                    data-program-name="<?= e($sb['program_name'] ?? '') ?>"
-                                                    data-cutting-batch="<?= e($sb['cutting_batch_number'] ?? '') ?>"
-                                                    data-recd-qty="<?= (int)($sb['received_qty'] ?? 0) ?>"
-                                                    data-stitched-qty="<?= (int)($sb['stitched_qty'] ?? 0) ?>"
-                                                    data-total-weight="<?= (float)($sb['total_weight'] ?? 0) ?>"
-                                                    data-sold-qty="<?= (float)($sb['sold_quantity'] ?? 0) ?>"
-                                                    data-is-sold="1">
-                                                    [<?= e($sb['batch_number']) ?>] <?= e($sb['name'] ?: 'Stitching Batch') ?><?= !empty($sb['program_number']) ? ' • Prog: ' . e($sb['program_number']) . ' (' . e($sb['program_name']) . ')' : '' ?> • Stitched: <?= number_format($sb['stitched_qty'] ?? 0) ?> pcs [ALREADY SOLD - <?= number_format($sb['sold_quantity'], 2) ?> <?= e($sb['latest_unit_type'] ?? 'kg') ?>]
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </optgroup>
-                                    <?php endif; ?>
-                                </select>
+                                <!-- Custom Multi-Select Checkbox Dropdown for Stitching Batches -->
+                                <div class="dropdown w-100" id="stitchingBatchDropdownGroup">
+                                    <button class="form-select form-select-md fw-semibold border-warning text-start d-flex justify-content-between align-items-center bg-white shadow-xs" 
+                                            type="button" id="stitchingBatchDropdownBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" style="min-height: 42px;">
+                                        <span id="stitchingBatchDropdownBtnText" class="text-truncate">
+                                            -- Select Stitching Module Batch / Program * --
+                                        </span>
+                                        <span class="badge bg-warning text-dark rounded-pill ms-2 d-none" id="stitchingBatchSelectedPill">0 selected</span>
+                                    </button>
+                                    <div class="dropdown-menu w-100 p-2 shadow-lg border-warning" style="max-height: 320px; overflow-y: auto; z-index: 1060;" aria-labelledby="stitchingBatchDropdownBtn">
+                                        <div class="d-flex justify-content-between align-items-center px-2 py-1.5 mb-2 bg-light rounded border small">
+                                            <div class="d-flex align-items-center gap-2 mb-0">
+                                                <input class="form-check-input cursor-pointer flex-shrink-0" type="checkbox" id="selectAllStitchingBatchesCheck" onchange="toggleSelectAllStitchingBatches(this.checked)" style="width: 1.2rem; height: 1.2rem; margin: 0; float: none;">
+                                                <label class="form-check-label fw-bold text-dark cursor-pointer ms-1 mb-0" for="selectAllStitchingBatchesCheck">Select All Batches</label>
+                                            </div>
+                                            <span class="badge bg-warning-subtle text-dark border"><?= count($availableBatches) ?> Ready to Sell</span>
+                                        </div>
+                                        
+                                        <div id="stitchingBatchOptionsList">
+                                            <?php if (!empty($availableBatches)): ?>
+                                                <?php foreach ($availableBatches as $sb): ?>
+                                                    <div class="p-2.5 rounded border-bottom bg-white d-flex align-items-center gap-3 stitching-batch-row" 
+                                                         style="cursor: pointer; transition: background-color 0.15s ease;"
+                                                         onclick="toggleStitchingBatchRow(<?= $sb['id'] ?>, event)">
+                                                        <input type="checkbox" class="form-check-input stitching-batch-checkbox cursor-pointer flex-shrink-0" 
+                                                               name="stitching_batch_ids[]"
+                                                               id="sb_check_<?= $sb['id'] ?>" 
+                                                               value="<?= $sb['id'] ?>"
+                                                               style="width: 1.25rem; height: 1.25rem; margin: 0; float: none; cursor: pointer;"
+                                                               data-id="<?= $sb['id'] ?>"
+                                                               data-batch-no="<?= e($sb['batch_number']) ?>" 
+                                                               data-batch-name="<?= e($sb['name'] ?? '') ?>" 
+                                                               data-program-id="<?= (int)($sb['program_id'] ?? 0) ?>" 
+                                                               data-program-no="<?= e($sb['program_number'] ?? '') ?>" 
+                                                               data-program-name="<?= e($sb['program_name'] ?? '') ?>" 
+                                                               data-cutting-batch="<?= e($sb['cutting_batch_number'] ?? '') ?>" 
+                                                               data-recd-qty="<?= (int)($sb['received_qty'] ?? 0) ?>" 
+                                                               data-stitched-qty="<?= (int)($sb['stitched_qty'] ?? 0) ?>" 
+                                                               data-total-weight="<?= (float)($sb['total_weight'] ?? 0) ?>" 
+                                                               onchange="onStitchingBatchCheckChange()">
+                                                        <label class="w-100 cursor-pointer mb-0" for="sb_check_<?= $sb['id'] ?>" onclick="event.stopPropagation();">
+                                                            <div class="d-flex justify-content-between align-items-center flex-wrap gap-1">
+                                                                <span class="fw-bold text-dark fs-7">[<?= e($sb['batch_number']) ?>] <?= e($sb['name'] ?: 'Stitching Batch') ?></span>
+                                                                <span class="badge bg-warning-subtle text-dark border fw-bold">Stitched: <?= number_format($sb['stitched_qty'] ?? 0) ?> pcs</span>
+                                                            </div>
+                                                            <div class="small text-muted mt-1 d-flex flex-wrap gap-2">
+                                                                <span>Total Wt: <strong><?= number_format($sb['total_weight'], 2) ?> kg</strong></span>
+                                                                <?php if (!empty($sb['program_number'])): ?>
+                                                                    <span>•</span>
+                                                                    <span class="text-primary fw-semibold"><?= e($sb['program_number']) ?></span>
+                                                                <?php endif; ?>
+                                                                <?php if (!empty($sb['cutting_batch_number'])): ?>
+                                                                    <span>•</span>
+                                                                    <span>Cut: <strong><?= e($sb['cutting_batch_number']) ?></strong></span>
+                                                                <?php endif; ?>
+                                                            </div>
+                                                        </label>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            <?php else: ?>
+                                                <div class="p-3 text-center text-muted small">
+                                                    <i class="bi bi-info-circle me-1 text-danger"></i>No stitching batches with unsold wastage currently available
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Hidden input for backward compatibility & required validation -->
+                                <input type="hidden" name="stitching_batch_id" id="newStwStitchingBatchId" value="" required>
+
+                                <!-- Selected Batches Badges Bar -->
+                                <div id="newStwSelectedBatchesContainer" class="mt-2 d-none">
+                                    <div class="d-flex flex-wrap gap-1 align-items-center" id="newStwSelectedBatchesPills"></div>
+                                </div>
 
                                 <!-- Live Stitching Batch & Program Info Card -->
                                 <div id="newStwBatchInfoCard" class="mt-2 p-2 bg-white rounded border small d-none">
@@ -509,8 +539,8 @@
                                     <span class="badge bg-white text-secondary border small">Type Rate or Total Price directly</span>
                                 </div>
                                 <div class="row g-3">
-                                    <!-- Unit Type -->
-                                    <div class="col-md-3">
+                                    <!-- Row 1: Unit Type & Quantity -->
+                                    <div class="col-md-6">
                                         <label class="form-label fw-bold text-dark">Unit Type <span class="text-danger">*</span></label>
                                         <select name="unit_type" id="newStwUnitType" class="form-select fw-semibold" onchange="updateNewStwUnitLabels()" required>
                                             <option value="KG">KG (Kilograms)</option>
@@ -520,8 +550,7 @@
                                         </select>
                                     </div>
 
-                                    <!-- Quantity -->
-                                    <div class="col-md-3">
+                                    <div class="col-md-6">
                                         <label class="form-label fw-bold text-dark">Quantity <span class="text-danger">*</span></label>
                                         <div class="input-group">
                                             <input type="number" step="0.01" min="0.01" name="quantity" id="newStwQuantity" class="form-control fw-bold fs-6" placeholder="0.00" required oninput="onNewStwQuantityChange()">
@@ -529,8 +558,8 @@
                                         </div>
                                     </div>
 
-                                    <!-- Rate per Unit (Manual Entry) -->
-                                    <div class="col-md-3">
+                                    <!-- Row 2: Selling Rate & Total Sale Price (Next Row) -->
+                                    <div class="col-md-6">
                                         <label class="form-label fw-bold text-dark">Selling Rate (<span id="newStwRateLabel">₹ / kg</span>) <span class="text-danger">*</span></label>
                                         <div class="input-group">
                                             <span class="input-group-text bg-white fw-bold">₹</span>
@@ -538,8 +567,7 @@
                                         </div>
                                     </div>
 
-                                    <!-- Total Selling Amount (Editable Manual Entry) -->
-                                    <div class="col-md-3">
+                                    <div class="col-md-6">
                                         <label class="form-label fw-bold text-success">Total Sale Price (₹) <span class="text-danger">*</span> <span class="badge bg-success-subtle text-success border ms-1">Editable</span></label>
                                         <div class="input-group">
                                             <span class="input-group-text bg-success-subtle text-success fw-bold">₹</span>
@@ -688,7 +716,8 @@
                                     <span class="badge bg-white text-secondary border small">Type Rate or Total Price directly</span>
                                 </div>
                                 <div class="row g-3">
-                                    <div class="col-md-3">
+                                    <!-- Row 1: Unit Type & Quantity -->
+                                    <div class="col-md-6">
                                         <label class="form-label fw-bold text-dark">Unit Type <span class="text-danger">*</span></label>
                                         <select name="unit_type" id="editStwUnitType" class="form-select fw-semibold" onchange="updateEditStwUnitLabels()" required>
                                             <option value="KG">KG (Kilograms)</option>
@@ -697,21 +726,22 @@
                                             <option value="PCS">Pcs (Pieces)</option>
                                         </select>
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col-md-6">
                                         <label class="form-label fw-bold text-dark">Quantity <span class="text-danger">*</span></label>
                                         <div class="input-group">
                                             <input type="number" step="0.01" min="0.01" name="quantity" id="editStwQuantity" class="form-control fw-bold fs-6" required oninput="onEditStwQuantityChange()">
                                             <span class="input-group-text bg-white" id="editStwUnitLabel">kg</span>
                                         </div>
                                     </div>
-                                    <div class="col-md-3">
+                                    <!-- Row 2: Selling Rate & Total Sale Price (Next Row) -->
+                                    <div class="col-md-6">
                                         <label class="form-label fw-bold text-dark">Selling Rate (<span id="editStwRateLabel">₹ / kg</span>) <span class="text-danger">*</span></label>
                                         <div class="input-group">
                                             <span class="input-group-text bg-white fw-bold">₹</span>
                                             <input type="number" step="0.01" min="0.01" name="rate_per_unit" id="editStwRatePerUnit" class="form-control fw-bold text-success fs-6" required oninput="onEditStwRateChange()">
                                         </div>
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col-md-6">
                                         <label class="form-label fw-bold text-success">Total Sale Price (₹) <span class="text-danger">*</span> <span class="badge bg-success-subtle text-success border ms-1">Editable</span></label>
                                         <div class="input-group">
                                             <span class="input-group-text bg-success-subtle text-success fw-bold">₹</span>
@@ -883,13 +913,8 @@
                     </div>
                 </div>
             </div>
-            <div class="modal-footer bg-white border-top py-2.5 d-flex justify-content-between">
+            <div class="modal-footer bg-white border-top py-2.5">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
-                <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-outline-dark" id="btnSwitchToPrintReceipt" onclick="openPrintFromDetails()">
-                        <i class="bi bi-printer me-1"></i> Print Receipt Voucher
-                    </button>
-                </div>
             </div>
         </div>
     </div>
@@ -974,55 +999,158 @@
 </div>
 
 <script>
-function onNewStitchingBatchChange(selectEl) {
-    const opt = selectEl.options[selectEl.selectedIndex];
+function toggleStitchingBatchRow(id, event) {
+    if (event && event.target && event.target.tagName && event.target.tagName.toLowerCase() === 'input') {
+        return;
+    }
+    const cb = document.getElementById('sb_check_' + id);
+    if (cb) {
+        cb.checked = !cb.checked;
+        onStitchingBatchCheckChange();
+    }
+}
+
+function toggleSelectAllStitchingBatches(checked) {
+    const checkboxes = document.querySelectorAll('.stitching-batch-checkbox');
+    checkboxes.forEach(cb => cb.checked = checked);
+    onStitchingBatchCheckChange();
+}
+
+function removeStitchingBatch(id) {
+    const cb = document.getElementById('sb_check_' + id);
+    if (cb) {
+        cb.checked = false;
+        onStitchingBatchCheckChange();
+    }
+}
+
+function onStitchingBatchCheckChange() {
+    const checkedBoxes = Array.from(document.querySelectorAll('.stitching-batch-checkbox:checked'));
+    const btnText = document.getElementById('stitchingBatchDropdownBtnText');
+    const pill = document.getElementById('stitchingBatchSelectedPill');
+    const hiddenIdInput = document.getElementById('newStwStitchingBatchId');
     const infoCard = document.getElementById('newStwBatchInfoCard');
     const programIdInput = document.getElementById('newStwProgramId');
+    const qtyInput = document.getElementById('newStwQuantity');
+    const pillsContainer = document.getElementById('newStwSelectedBatchesContainer');
+    const pillsList = document.getElementById('newStwSelectedBatchesPills');
+    const selectAllCheck = document.getElementById('selectAllStitchingBatchesCheck');
+    const allBoxes = document.querySelectorAll('.stitching-batch-checkbox');
 
-    if (!opt || !selectEl.value) {
-        infoCard.classList.add('d-none');
+    if (selectAllCheck) {
+        selectAllCheck.checked = (allBoxes.length > 0 && checkedBoxes.length === allBoxes.length);
+    }
+
+    if (checkedBoxes.length === 0) {
+        btnText.textContent = '-- Select Stitching Module Batch / Program * --';
+        if (pill) pill.classList.add('d-none');
+        hiddenIdInput.value = '';
         programIdInput.value = '';
+        infoCard.classList.add('d-none');
+        if (pillsContainer) pillsContainer.classList.add('d-none');
+        qtyInput.value = '0.00';
+        onNewStwQuantityChange();
         return;
     }
 
-    const batchNo = opt.getAttribute('data-batch-no') || '';
-    const batchName = opt.getAttribute('data-batch-name') || '';
-    const progId = opt.getAttribute('data-program-id') || '';
-    const progNo = opt.getAttribute('data-program-no') || '';
-    const progName = opt.getAttribute('data-program-name') || '';
-    const cuttingBatch = opt.getAttribute('data-cutting-batch') || 'None';
-    const recdQty = opt.getAttribute('data-recd-qty') || '0';
-    const stitchedQty = opt.getAttribute('data-stitched-qty') || '0';
-    const totalWeight = parseFloat(opt.getAttribute('data-total-weight') || 0).toFixed(2);
-    const soldQty = parseFloat(opt.getAttribute('data-sold-qty') || 0).toFixed(2);
-    const isSold = opt.getAttribute('data-is-sold') === '1' || parseFloat(soldQty) > 0;
+    let totalRecd = 0;
+    let totalStitched = 0;
+    let totalWeight = 0;
+    let programIds = [];
+    let programNos = [];
+    let cuttingBatches = [];
+    let pillsHtml = '';
 
-    programIdInput.value = progId;
+    checkedBoxes.forEach(cb => {
+        const id = cb.value;
+        const bNo = cb.getAttribute('data-batch-no') || '';
+        const bName = cb.getAttribute('data-batch-name') || '';
+        const pId = cb.getAttribute('data-program-id') || '';
+        const pNo = cb.getAttribute('data-program-no') || '';
+        const cut = cb.getAttribute('data-cutting-batch') || '';
+        const recd = parseInt(cb.getAttribute('data-recd-qty')) || 0;
+        const stitched = parseInt(cb.getAttribute('data-stitched-qty')) || 0;
+        const wt = parseFloat(cb.getAttribute('data-total-weight')) || 0;
 
-    document.getElementById('newStwInfoBatchName').textContent = `Batch #${batchNo}` + (batchName ? ` (${batchName})` : '');
-    document.getElementById('newStwInfoProg').textContent = progNo ? `• Program: ${progNo}` + (progName ? ` (${progName})` : '') : '• No Program';
-    document.getElementById('newStwInfoCutting').textContent = cuttingBatch || 'None';
-    document.getElementById('newStwInfoRecd').textContent = `${recdQty} pcs`;
-    document.getElementById('newStwInfoStitched').textContent = `${stitchedQty} pcs`;
-    document.getElementById('newStwInfoWeight').textContent = `${totalWeight} kg`;
+        totalRecd += recd;
+        totalStitched += stitched;
+        totalWeight += wt;
 
-    const soldEl = document.getElementById('newStwInfoSold');
-    const soldAlert = document.getElementById('newStwSoldAlert');
-    if (isSold) {
-        if (soldEl) {
-            soldEl.className = 'text-danger fw-bold';
-            soldEl.textContent = `${soldQty} units/kg [ALREADY SOLD]`;
+        if (pId && !programIds.includes(pId)) programIds.push(pId);
+        if (pNo && !programNos.includes(pNo)) programNos.push(pNo);
+        if (cut && !cuttingBatches.includes(cut)) cuttingBatches.push(cut);
+
+        pillsHtml += `<span class="badge bg-light text-dark border px-2 py-1 d-inline-flex align-items-center gap-1 shadow-xs">
+            <strong>${bNo}</strong> (${stitched} pcs / ${wt.toFixed(2)} kg)
+            <i class="bi bi-x-circle text-danger cursor-pointer ms-1" onclick="removeStitchingBatch(${id})" title="Remove batch"></i>
+        </span>`;
+    });
+
+    // Set hidden inputs
+    hiddenIdInput.value = checkedBoxes[0].value;
+    programIdInput.value = programIds[0] || '';
+
+    // Update dropdown button text & pill
+    if (checkedBoxes.length === 1) {
+        const first = checkedBoxes[0];
+        btnText.textContent = `[${first.getAttribute('data-batch-no')}] ${first.getAttribute('data-batch-name') || 'Stitching Batch'} • ${totalStitched} pcs`;
+        if (pill) {
+            pill.textContent = '1 batch';
+            pill.classList.remove('d-none');
         }
-        if (soldAlert) soldAlert.classList.remove('d-none');
     } else {
-        if (soldEl) {
-            soldEl.className = 'text-success fw-bold';
-            soldEl.textContent = `0.00 (Ready to Sell Scrap)`;
+        btnText.textContent = `${checkedBoxes.length} Batches Selected • Stitched: ${totalStitched} pcs (${totalWeight.toFixed(2)} kg)`;
+        if (pill) {
+            pill.textContent = `${checkedBoxes.length} batches`;
+            pill.classList.remove('d-none');
         }
-        if (soldAlert) soldAlert.classList.add('d-none');
     }
 
+    // Pills bar
+    if (pillsContainer && pillsList) {
+        pillsList.innerHTML = `<span class="text-muted small fw-semibold me-1"><i class="bi bi-tags me-1 text-warning"></i>Selected (${checkedBoxes.length}):</span> ` + pillsHtml;
+        pillsContainer.classList.remove('d-none');
+    }
+
+    // Update info card
+    if (checkedBoxes.length === 1) {
+        const first = checkedBoxes[0];
+        document.getElementById('newStwInfoBatchName').textContent = `Batch #${first.getAttribute('data-batch-no')}` + (first.getAttribute('data-batch-name') ? ` (${first.getAttribute('data-batch-name')})` : '');
+        document.getElementById('newStwInfoProg').textContent = first.getAttribute('data-program-no') ? `• Program: ${first.getAttribute('data-program-no')}` : '• No Program';
+        document.getElementById('newStwInfoCutting').textContent = first.getAttribute('data-cutting-batch') || 'None';
+    } else {
+        document.getElementById('newStwInfoBatchName').textContent = `Multiple Stitching Batches (${checkedBoxes.length} Selected)`;
+        document.getElementById('newStwInfoProg').textContent = programNos.length ? `• Programs: ${programNos.join(', ')}` : '• Multiple Programs';
+        document.getElementById('newStwInfoCutting').textContent = cuttingBatches.length ? cuttingBatches.join(', ') : 'None';
+    }
+
+    document.getElementById('newStwInfoRecd').textContent = `${totalRecd} pcs`;
+    document.getElementById('newStwInfoStitched').textContent = `${totalStitched} pcs`;
+    document.getElementById('newStwInfoWeight').textContent = `${totalWeight.toFixed(2)} kg`;
+
+    const soldEl = document.getElementById('newStwInfoSold');
+    if (soldEl) {
+        soldEl.className = 'text-success fw-bold';
+        soldEl.textContent = `0.00 (Ready to Sell Scrap)`;
+    }
+    const soldAlert = document.getElementById('newStwSoldAlert');
+    if (soldAlert) soldAlert.classList.add('d-none');
+
     infoCard.classList.remove('d-none');
+
+    // Auto set quantity based on unit type
+    const unit = document.getElementById('newStwUnitType') ? document.getElementById('newStwUnitType').value : 'KG';
+    if (unit === 'KG') {
+        qtyInput.value = totalWeight > 0 ? totalWeight.toFixed(2) : '1.00';
+    } else {
+        qtyInput.value = totalStitched > 0 ? totalStitched.toFixed(2) : '1.00';
+    }
+
+    onNewStwQuantityChange();
+}
+
+function onNewStitchingBatchChange(selectEl) {
+    onStitchingBatchCheckChange();
 }
 
 function onEditStitchingBatchChange(selectEl) {
@@ -1385,16 +1513,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (!batchId) {
                 e.preventDefault();
-                alert('Select Stitching Module Batch / Program is required. Please choose a Stitching Batch.');
-                document.getElementById('newStwStitchingBatchId').focus();
-                return false;
-            }
-            const cutSelect = document.getElementById('newStwStitchingBatchId');
-            const selectedOpt = cutSelect.options[cutSelect.selectedIndex];
-            if (selectedOpt && (selectedOpt.disabled || selectedOpt.getAttribute('data-is-sold') === '1')) {
-                e.preventDefault();
-                alert('Validation Error: Stitching Wastage for this batch has already been sold. Please choose an available stitching batch.');
-                cutSelect.focus();
+                alert('Select Stitching Module Batch / Program is required. Please check at least one batch from the dropdown.');
+                const btn = document.getElementById('stitchingBatchDropdownBtn');
+                if (btn) btn.focus();
                 return false;
             }
             if (!buyerName) {
@@ -1523,6 +1644,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Sale Date is required.');
                 document.getElementById('editStwSaleDate').focus();
                 return false;
+            }
+        });
+    }
+
+    // Auto-select first batch on Record Stitching Wastage Modal shown if none checked
+    const recordModal = document.getElementById('recordStitchingWastageModal');
+    if (recordModal) {
+        recordModal.addEventListener('shown.bs.modal', function() {
+            const checked = document.querySelectorAll('.stitching-batch-checkbox:checked');
+            const allBoxes = document.querySelectorAll('.stitching-batch-checkbox');
+            if (checked.length === 0 && allBoxes.length > 0) {
+                allBoxes[0].checked = true;
+                onStitchingBatchCheckChange();
             }
         });
     }

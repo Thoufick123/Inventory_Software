@@ -27,6 +27,11 @@ $pAction = $exchange['payment_action'] ?? 'NONE';
             <p class="text-muted small mb-0">Direct Purchase Order #<?= e($return['po_number'] ?? 'PO-Direct') ?> • Logged on <?= date('d M Y, h:i A', strtotime($return['created_at'])) ?></p>
         </div>
         <div class="d-flex gap-2">
+            <?php if (hasPermission('purchases_returns', 'edit')): ?>
+                <a href="<?= url('warehouse/purchases/returns/edit/' . $return['id']) ?>" class="btn btn-outline-warning rounded-pill px-3 shadow-sm fw-semibold">
+                    <i class="bi bi-pencil-square me-1"></i> Edit Transaction
+                </a>
+            <?php endif; ?>
             <a href="<?= url('warehouse/purchases/returns/invoice/' . $return['id']) ?>" target="_blank" class="btn btn-primary rounded-pill px-3 shadow-sm fw-semibold">
                 <i class="bi bi-printer me-1"></i> Print Tax Slip
             </a>

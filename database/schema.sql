@@ -1908,7 +1908,7 @@ CREATE TABLE `returns` (
   `reason` text NOT NULL,
   `inspection_status` enum('PENDING','INSPECTING','APPROVED','REJECTED') DEFAULT 'PENDING',
   `refund_amount` decimal(10,2) DEFAULT 0.00,
-  `refund_mode` enum('CASH','UPI','CARD','ONLINE','CREDIT_NOTE') DEFAULT NULL,
+  `refund_mode` enum('CASH','UPI','CARD','ONLINE','BANK_TRANSFER','SPLIT','CREDIT_NOTE') DEFAULT NULL,
   `refund_status` enum('PENDING','PROCESSED','COMPLETED') DEFAULT 'PENDING',
   `inspected_by` int(10) unsigned DEFAULT NULL,
   `approved_by` int(10) unsigned DEFAULT NULL,
