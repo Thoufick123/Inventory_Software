@@ -267,7 +267,11 @@ input[type=number] {
                 <i class="bi bi-arrow-left"></i>
             </a>
             <div>
+                <?php if (!empty($channel['logo_url'])): ?>
+                    <img src="<?= htmlspecialchars($channel['logo_url'], ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars($channel['name'] ?? 'Website channel', ENT_QUOTES, 'UTF-8') ?> logo" class="mb-1" style="max-width:140px;max-height:48px;object-fit:contain;">
+                <?php endif; ?>
                 <h4 class="fw-bold mb-0 text-dark"><i class="bi bi-globe me-2 text-primary"></i>Website Order Creation</h4>
+                <small class="text-muted d-block"><?= htmlspecialchars($channel['name'] ?? 'Website', ENT_QUOTES, 'UTF-8') ?><?= !empty($channel['code']) ? ' · ' . htmlspecialchars($channel['code'], ENT_QUOTES, 'UTF-8') : '' ?><?= !empty($channel['phone']) ? ' · ' . htmlspecialchars($channel['phone'], ENT_QUOTES, 'UTF-8') : '' ?><?= !empty($channel['gst_number']) ? ' · GSTIN: ' . htmlspecialchars($channel['gst_number'], ENT_QUOTES, 'UTF-8') : '' ?></small>
                 <small class="text-muted"><i class="bi bi-person-check me-1"></i>Biller: <?= htmlspecialchars($defaultBillerName ?? 'System Administrator') ?></small>
             </div>
         </div>

@@ -1,6 +1,11 @@
 <div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
     <div>
         <div class="d-flex align-items-center gap-2">
+            <?php if (!empty($warehouses[0]['logo_url'])): ?>
+                <img id="purchaseWarehouseLogo" src="<?= e($warehouses[0]['logo_url']) ?>" alt="<?= e($warehouses[0]['name'] ?? 'Warehouse') ?> logo" style="max-width:140px;max-height:54px;object-fit:contain;">
+            <?php else: ?>
+                <img id="purchaseWarehouseLogo" src="" alt="Warehouse logo" style="display:none;max-width:140px;max-height:54px;object-fit:contain;">
+            <?php endif; ?>
             <h4 class="mb-0 fw-bold text-dark"><i class="bi bi-cart-plus me-2 text-primary"></i>Create Direct Customer Purchase</h4>
             <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1 small">Warehouse Direct POS</span>
         </div>
@@ -169,7 +174,7 @@
                         <label class="form-label small fw-semibold mb-1 text-secondary">Source Warehouse <span class="text-danger">*</span></label>
                         <select name="warehouse_id" class="form-select form-select-sm" id="warehouseSelect" required onchange="onWarehouseChange()" <?= ((function_exists('currentWarehouseId') && currentWarehouseId() !== null) || count($warehouses) <= 1) ? 'disabled' : '' ?>>
                             <?php foreach ($warehouses as $wh): ?>
-                                <option value="<?= $wh['id'] ?>"><?= e($wh['name']) ?><?= !empty($wh['code']) ? ' (' . e($wh['code']) . ')' : '' ?></option>
+                                <option value="<?= $wh['id'] ?>" data-logo-url="<?= e($wh['logo_url'] ?? '') ?>"><?= e($wh['name']) ?><?= !empty($wh['code']) ? ' (' . e($wh['code']) . ')' : '' ?></option>
                             <?php endforeach; ?>
                         </select>
                         <?php if ((function_exists('currentWarehouseId') && currentWarehouseId() !== null) || count($warehouses) <= 1): ?>
@@ -1153,6 +1158,19 @@ function onWarehouseChange() {
     const whSel = document.getElementById('warehouseSelect');
     if (!whSel) return;
     const whId = whSel.value;
+    const selectedWarehouse = whSel.options[whSel.selectedIndex];
+    const logo = document.getElementById('purchaseWarehouseLogo');
+    if (logo) {
+        const logoUrl = selectedWarehouse ? selectedWarehouse.getAttribute('data-logo-url') : '';
+        if (logoUrl) {
+            logo.src = logoUrl;
+            logo.alt = selectedWarehouse.textContent.trim() + ' logo';
+            logo.style.display = '';
+        } else {
+            logo.removeAttribute('src');
+            logo.style.display = 'none';
+        }
+    }
     
     fetch('<?= url("api/warehouse/warehouse-variant-stock") ?>?warehouse_id=' + encodeURIComponent(whId))
         .then(res => res.json())

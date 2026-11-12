@@ -614,6 +614,7 @@ class SalesController {
         $currentUserId = Session::get('user_id');
         $currentUser = $currentUserId ? Database::fetchOne("SELECT full_name FROM users WHERE id = ?", [$currentUserId]) : null;
         $defaultBillerName = $currentUser['full_name'] ?? 'System Administrator';
+        $channel = SalesChannel::getForType('WEBSITE');
 
         Response::view('sales.website.create', [
             'pageTitle'         => 'Create Website Order',
@@ -628,6 +629,7 @@ class SalesController {
             'variants'          => $variants,
             'defaultBillerName' => $defaultBillerName,
             'currentUserId'     => $currentUserId,
+            'channel'           => $channel,
         ]);
     }
 
@@ -639,6 +641,8 @@ class SalesController {
         }
 
         CSRF::verify();
+        $channel = SalesChannel::getForType('WEBSITE');
+        $channelId = !empty($channel['id']) ? (int)$channel['id'] : null;
 
         $customerId      = (int)($_POST['customer_id'] ?? 0);
         $customerName    = trim($_POST['customer_name'] ?? '');
@@ -838,9 +842,9 @@ class SalesController {
         try {
             Database::beginTransaction();
             Database::execute(
-                "INSERT INTO sales (invoice_number, sale_type, shop_id, customer_id, customer_address, subtotal, discount_amount, taxable_amount, gst_percentage, gst_amount, cgst_amount, sgst_amount, shipping_cost, total_amount, paid_amount, payment_mode, payment_status, status, sales_channel, biller_id, billing_staff_id, employee_name, employee_code, biller_name, notes, created_at)
-                 VALUES (?, 'WEBSITE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DELIVERED', 'WEBSITE', ?, ?, ?, ?, ?, ?, NOW())",
-                [$invoiceNumber, $shopId, $customerId ?: null, $fullAddress, $taxableSubtotal, $discountAmount, $taxableSubtotal, $gstPercentage, $gstAmount, $cgstAmount, $sgstAmount, $shippingCost, $grandTotalAmount, ($paymentStatus === 'PAID' ? $grandTotalAmount : 0.0), $paymentMode, $paymentStatus, $billerId ?: null, $billingStaffId ?: null, $employeeName, $employeeCode, $billerName, $notes]
+                "INSERT INTO sales (invoice_number, sale_type, shop_id, channel_id, customer_id, customer_address, subtotal, discount_amount, taxable_amount, gst_percentage, gst_amount, cgst_amount, sgst_amount, shipping_cost, total_amount, paid_amount, payment_mode, payment_status, status, sales_channel, biller_id, billing_staff_id, employee_name, employee_code, biller_name, notes, created_at)
+                 VALUES (?, 'WEBSITE', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DELIVERED', 'WEBSITE', ?, ?, ?, ?, ?, ?, NOW())",
+                [$invoiceNumber, $shopId, $channelId, $customerId ?: null, $fullAddress, $taxableSubtotal, $discountAmount, $taxableSubtotal, $gstPercentage, $gstAmount, $cgstAmount, $sgstAmount, $shippingCost, $grandTotalAmount, ($paymentStatus === 'PAID' ? $grandTotalAmount : 0.0), $paymentMode, $paymentStatus, $billerId ?: null, $billingStaffId ?: null, $employeeName, $employeeCode, $billerName, $notes]
             );
             $saleId = (int)Database::lastInsertId();
 
@@ -890,6 +894,7 @@ class SalesController {
             return;
         }
 
+        SalesChannel::ensureSchema();
         $sale = Database::fetchOne(
             "SELECT s.*, c.name as customer_name, c.phone as customer_phone, c.address as customer_db_address
              FROM sales s
@@ -903,6 +908,7 @@ class SalesController {
             Response::redirect(url('warehouse/website-orders'));
             return;
         }
+        $channel = SalesChannel::find((int)($sale['channel_id'] ?? 0)) ?: SalesChannel::getForType('WEBSITE');
 
         $items = Database::fetchAll(
             "SELECT si.*, pv.sku, pv.qr_code, p.name as product_name,
@@ -927,6 +933,7 @@ class SalesController {
             ],
             'sale'         => $sale,
             'items'        => $items,
+            'channel'      => $channel,
         ]);
     }
 
@@ -1016,6 +1023,7 @@ class SalesController {
             : null;
         $currentUserId = $currentUser ? (int)$currentUser['id'] : 0;
         $defaultBillerName = $currentUser['full_name'] ?? 'System Administrator';
+        $channel = SalesChannel::getForType('WHATSAPP');
 
         Response::view('sales.whatsapp.create', [
             'pageTitle'         => 'Create WhatsApp Order',
@@ -1030,6 +1038,7 @@ class SalesController {
             'variants'          => $variants,
             'defaultBillerName' => $defaultBillerName,
             'currentUserId'     => $currentUserId,
+            'channel'           => $channel,
         ]);
     }
 
@@ -1078,6 +1087,9 @@ class SalesController {
 
         CSRF::verify();
         ShopService::ensureSaleItemHsnColumn();
+        ShopService::ensureSalesGstTypeColumn();
+        $channel = SalesChannel::getForType('WHATSAPP');
+        $channelId = !empty($channel['id']) ? (int)$channel['id'] : null;
 
         $customerId      = (int)($_POST['customer_id'] ?? 0);
         $customerName    = trim($_POST['customer_name'] ?? '');
@@ -1109,8 +1121,15 @@ class SalesController {
         $shippingCost    = (float)($_POST['shipping_cost'] ?? 0);
         $gstPercentage   = (float)($_POST['gst_percentage'] ?? 0);
         $gstAmount       = (float)($_POST['gst_amount'] ?? 0);
+        $gstType         = strtoupper(trim((string)($_POST['gst_type'] ?? 'CGST_SGST')));
         $notes           = trim($_POST['notes'] ?? 'WhatsApp Order');
         $items           = $_POST['items'] ?? [];
+
+        if (!in_array($gstType, ['CGST_SGST', 'IGST', 'EXEMPT'], true)) {
+            Session::flash('error', 'Please select a valid GST type.');
+            Response::redirect(url('sales/whatsapp/create'));
+            return;
+        }
 
         if (empty($customerName) || empty($customerPhone) || empty($customerAddress)) {
             Session::flash('error', 'Customer Name, Mobile Number, and Customer Address are required.');
@@ -1246,11 +1265,18 @@ class SalesController {
                 $mrp = $isComp ? 0.00 : (float)($itm['mrp'] ?? $price);
                 if (!$isComp && $mrp <= 0) $mrp = $price;
                 $totalMrp += ($qty * $mrp);
-                $itemGstPercentage = $isComp ? 0.0 : (float)($itm['gst_percentage'] ?? 5.0);
+                $rawItemGstPercentage = $itm['gst_percentage'] ?? 5.0;
+                if (!is_numeric($rawItemGstPercentage) || (float)$rawItemGstPercentage < 0 || (float)$rawItemGstPercentage > 100) {
+                    Session::flash('error', 'GST percentage must be between 0 and 100.');
+                    Response::redirect(url('sales/whatsapp/create'));
+                    return;
+                }
+                $itemGstPercentage = ($isComp || $gstType === 'EXEMPT') ? 0.0 : (float)$rawItemGstPercentage;
                 $lineTaxable = $isComp ? 0.0 : round($price / (1 + ($itemGstPercentage / 100)), 2) * $qty;
                 $lineGst = $isComp ? 0.0 : round(($price - round($price / (1 + ($itemGstPercentage / 100)), 2)) * $qty, 2);
-                $lineCgst = round($lineGst / 2, 2);
-                $lineSgst = $lineGst - $lineCgst;
+                $lineCgst = $gstType === 'CGST_SGST' ? round($lineGst / 2, 2) : 0.0;
+                $lineSgst = $gstType === 'CGST_SGST' ? $lineGst - $lineCgst : 0.0;
+                $lineIgst = $gstType === 'IGST' ? $lineGst : 0.0;
 
                 $orderItems[] = [
                     'variant_id'       => $variantId,
@@ -1263,6 +1289,7 @@ class SalesController {
                     'gst_amount'       => $lineGst,
                     'cgst_amount'      => $lineCgst,
                     'sgst_amount'      => $lineSgst,
+                    'igst_amount'      => $lineIgst,
                     'is_series'        => $itm['is_series'],
                     'total'            => $sub,
                     'scanned_qr_codes' => !empty($scannedQrs) ? $scannedQrs : null,
@@ -1280,6 +1307,7 @@ class SalesController {
         $gstAmount = array_sum(array_column($orderItems, 'gst_amount'));
         $cgstAmount = array_sum(array_column($orderItems, 'cgst_amount'));
         $sgstAmount = array_sum(array_column($orderItems, 'sgst_amount'));
+        $igstAmount = array_sum(array_column($orderItems, 'igst_amount'));
         $gstPercentage = $taxableSubtotal > 0 ? round(($gstAmount / $taxableSubtotal) * 100, 2) : 0.0;
         $grandTotalAmount = (float)ceil($grossTotal + $shippingCost);
 
@@ -1292,9 +1320,9 @@ class SalesController {
         try {
             Database::beginTransaction();
             Database::execute(
-                "INSERT INTO sales (invoice_number, sale_type, shop_id, customer_id, customer_address, subtotal, discount_amount, taxable_amount, gst_percentage, gst_amount, cgst_amount, sgst_amount, shipping_cost, total_amount, paid_amount, payment_mode, payment_status, status, sales_channel, biller_id, billing_staff_id, employee_name, employee_code, biller_name, notes, created_at)
-                 VALUES (?, 'WHATSAPP', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DELIVERED', 'WHATSAPP', ?, ?, ?, ?, ?, ?, NOW())",
-                [$invoiceNumber, $shopId, $customerId ?: null, $fullAddress, $taxableSubtotal, $discountAmount, $taxableSubtotal, $gstPercentage, $gstAmount, $cgstAmount, $sgstAmount, $shippingCost, $grandTotalAmount, ($paymentStatus === 'PAID' ? $grandTotalAmount : 0.0), $paymentMode, $paymentStatus, $billerId ?: null, $billingStaffId ?: null, $employeeName, $employeeCode, $billerName, $notes]
+                "INSERT INTO sales (invoice_number, sale_type, shop_id, channel_id, customer_id, customer_address, subtotal, discount_amount, taxable_amount, gst_percentage, gst_amount, cgst_amount, sgst_amount, igst_amount, gst_type, shipping_cost, total_amount, paid_amount, payment_mode, payment_status, status, sales_channel, biller_id, billing_staff_id, employee_name, employee_code, biller_name, notes, created_at)
+                 VALUES (?, 'WHATSAPP', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DELIVERED', 'WHATSAPP', ?, ?, ?, ?, ?, ?, NOW())",
+                [$invoiceNumber, $shopId, $channelId, $customerId ?: null, $fullAddress, $taxableSubtotal, $discountAmount, $taxableSubtotal, $gstPercentage, $gstAmount, $cgstAmount, $sgstAmount, $igstAmount, $gstType, $shippingCost, $grandTotalAmount, ($paymentStatus === 'PAID' ? $grandTotalAmount : 0.0), $paymentMode, $paymentStatus, $billerId ?: null, $billingStaffId ?: null, $employeeName, $employeeCode, $billerName, $notes]
             );
             $saleId = (int)Database::lastInsertId();
 
@@ -1314,8 +1342,8 @@ class SalesController {
                     (bool)$oi['is_series']
                 );
                 Database::execute(
-                    "INSERT INTO sale_items (sale_id, variant_id, quantity, unit_price, mrp, gst_percentage, hsn_code, cgst_amount, sgst_amount, total_amount, scanned_qr_codes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [$saleId, $oi['variant_id'], $oi['quantity'], $oi['unit_price'], $oi['mrp'], $oi['gst_percentage'], $oi['hsn_code'], $oi['cgst_amount'], $oi['sgst_amount'], $oi['total'], $oi['scanned_qr_codes']]
+                    "INSERT INTO sale_items (sale_id, variant_id, quantity, unit_price, mrp, gst_percentage, hsn_code, cgst_amount, sgst_amount, igst_amount, total_amount, scanned_qr_codes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [$saleId, $oi['variant_id'], $oi['quantity'], $oi['unit_price'], $oi['mrp'], $oi['gst_percentage'], $oi['hsn_code'], $oi['cgst_amount'], $oi['sgst_amount'], $oi['igst_amount'], $oi['total'], $oi['scanned_qr_codes']]
                 );
             }
             Database::commit();
@@ -1345,6 +1373,7 @@ class SalesController {
         }
         ShopService::ensureSaleItemHsnColumn();
 
+        SalesChannel::ensureSchema();
         $sale = Database::fetchOne(
             "SELECT s.*, c.name as customer_name, c.phone as customer_phone, c.address as customer_db_address
              FROM sales s
@@ -1358,6 +1387,7 @@ class SalesController {
             Response::redirect(url('warehouse/whatsapp-orders'));
             return;
         }
+        $channel = SalesChannel::find((int)($sale['channel_id'] ?? 0)) ?: SalesChannel::getForType('WHATSAPP');
 
         $items = Database::fetchAll(
             "SELECT si.*, pv.sku, pv.qr_code, p.name as product_name,
@@ -1384,6 +1414,7 @@ class SalesController {
             ],
             'sale'         => $sale,
             'items'        => $items,
+            'channel'      => $channel,
         ]);
     }
 

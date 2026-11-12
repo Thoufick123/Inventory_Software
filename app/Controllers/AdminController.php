@@ -58,6 +58,7 @@ class AdminController {
         ];
 
         // Organization Units with rich metrics
+        SalesChannel::ensureSchema();
         $productionUnits = ProductionUnit::getWithMetrics();
         $warehouses      = Warehouse::getWithMetrics();
         $shops           = Shop::getWithMetrics();
@@ -72,6 +73,7 @@ class AdminController {
         $data['managersList']         = $managersList;
         $data['whatsappChannels']     = $whatsappChannels;
         $data['websiteChannels']      = $websiteChannels;
+        $data['channels']             = array_merge($whatsappChannels, $websiteChannels);
         $data['totalProductionUnits'] = count($productionUnits);
         $data['totalWarehouses']      = count($warehouses);
         $data['totalShops']           = count($shops);
@@ -985,6 +987,7 @@ class AdminController {
         }
 
         try {
+            $logoUrl = $this->uploadConcernLogo($_FILES['logo'] ?? [], 'production/units');
             $id = ProductionUnit::create([
                 'name'         => $name,
                 'code'         => $code,
@@ -993,6 +996,7 @@ class AdminController {
                 'address'      => trim($_POST['address'] ?? ''),
                 'phone'        => $phone,
                 'gst_number'   => $gstNumber,
+                'logo_url'     => $logoUrl,
                 'is_active'    => isset($_POST['is_active']) ? (int)$_POST['is_active'] : 1,
             ]);
 
@@ -1028,7 +1032,14 @@ class AdminController {
             Response::redirect(url('admin/dashboard?tab=production-units'), 'error', 'Enter a valid 15-character GSTIN.');
         }
 
+        $unit = ProductionUnit::find($unitId);
+        if (!$unit) {
+            Response::redirect(url('admin/dashboard?tab=production-units'), 'error', 'Production Unit not found.');
+            return;
+        }
+
         try {
+            $logoUrl = $this->uploadConcernLogo($_FILES['logo'] ?? [], 'production/units') ?? ($unit['logo_url'] ?? null);
             ProductionUnit::update($unitId, [
                 'name'         => $name,
                 'code'         => $code,
@@ -1037,6 +1048,7 @@ class AdminController {
                 'address'      => trim($_POST['address'] ?? ''),
                 'phone'        => $phone,
                 'gst_number'   => $gstNumber,
+                'logo_url'     => $logoUrl,
                 'is_active'    => isset($_POST['is_active']) ? (int)$_POST['is_active'] : 1,
             ]);
 
@@ -1138,6 +1150,7 @@ class AdminController {
         }
 
         try {
+            $logoUrl = $this->uploadConcernLogo($_FILES['logo'] ?? [], 'production/units');
             $id = ProductionUnit::create([
                 'name'         => $name,
                 'code'         => $code,
@@ -1146,6 +1159,7 @@ class AdminController {
                 'address'      => trim($_POST['address'] ?? ''),
                 'phone'        => $phone,
                 'gst_number'   => $gstNumber,
+                'logo_url'     => $logoUrl,
                 'is_active'    => 1,
             ]);
 
@@ -1155,6 +1169,35 @@ class AdminController {
         } catch (Exception $e) {
             Response::jsonError('Database error: ' . $e->getMessage());
         }
+    }
+
+    private function uploadConcernLogo(array $file, string $folder): ?string {
+        $uploadError = (int)($file['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($uploadError === UPLOAD_ERR_NO_FILE) {
+            return null;
+        }
+        if ($uploadError !== UPLOAD_ERR_OK || empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
+            throw new RuntimeException('The logo could not be received. Please select the image again.');
+        }
+
+        $fileSize = filesize($file['tmp_name']);
+        if ($fileSize === false || $fileSize > 5 * 1024 * 1024) {
+            throw new RuntimeException('The logo must be 5 MB or smaller.');
+        }
+
+        $imageInfo = getimagesize($file['tmp_name']);
+        $mimeType = $imageInfo['mime'] ?? '';
+        if (!$imageInfo || !in_array($mimeType, ['image/jpeg', 'image/png', 'image/webp'], true)) {
+            throw new RuntimeException('Upload a valid JPG, PNG, or WEBP logo image.');
+        }
+
+        $file['type'] = $mimeType;
+        $logoUrl = CloudinaryService::upload($file, 'grm_inventory/' . trim($folder, '/'), 'image');
+        if (!$logoUrl) {
+            throw new RuntimeException('The logo could not be uploaded to Cloudinary. Check the Cloudinary configuration and try again.');
+        }
+
+        return $logoUrl;
     }
 
     // =========================================================================
@@ -1199,6 +1242,7 @@ class AdminController {
         }
 
         try {
+            $logoUrl = $this->uploadConcernLogo($_FILES['logo'] ?? [], 'warehouses');
             $id = Warehouse::create([
                 'name'         => $name,
                 'code'         => $code,
@@ -1207,6 +1251,7 @@ class AdminController {
                 'address'      => trim($_POST['address'] ?? ''),
                 'phone'        => $phone,
                 'gst_number'   => $gstNumber,
+                'logo_url'     => $logoUrl,
                 'is_active'    => isset($_POST['is_active']) ? (int)$_POST['is_active'] : 1,
             ]);
 
@@ -1242,7 +1287,14 @@ class AdminController {
             Response::redirect(url('admin/dashboard?tab=warehouses'), 'error', 'Enter a valid 15-character GSTIN.');
         }
 
+        $warehouse = Warehouse::find($whId);
+        if (!$warehouse) {
+            Response::redirect(url('admin/dashboard?tab=warehouses'), 'error', 'Warehouse not found.');
+            return;
+        }
+
         try {
+            $logoUrl = $this->uploadConcernLogo($_FILES['logo'] ?? [], 'warehouses') ?? ($warehouse['logo_url'] ?? null);
             Warehouse::update($whId, [
                 'name'         => $name,
                 'code'         => $code,
@@ -1251,6 +1303,7 @@ class AdminController {
                 'address'      => trim($_POST['address'] ?? ''),
                 'phone'        => $phone,
                 'gst_number'   => $gstNumber,
+                'logo_url'     => $logoUrl,
                 'is_active'    => isset($_POST['is_active']) ? (int)$_POST['is_active'] : 1,
             ]);
 
@@ -1356,6 +1409,7 @@ class AdminController {
         }
 
         try {
+            $logoUrl = $this->uploadConcernLogo($_FILES['logo'] ?? [], 'shops');
             $id = Shop::create([
                 'name'         => $name,
                 'code'         => $code,
@@ -1364,6 +1418,7 @@ class AdminController {
                 'gst_number'   => $gstNumber,
                 'address'      => trim($_POST['address'] ?? ''),
                 'phone'        => $phone,
+                'logo_url'     => $logoUrl,
                 'is_active'    => isset($_POST['is_active']) ? (int)$_POST['is_active'] : 1,
             ]);
 
@@ -1399,7 +1454,14 @@ class AdminController {
             Response::redirect(url('admin/dashboard?tab=shops'), 'error', 'Enter a valid 15-character GSTIN.');
         }
 
+        $shop = Shop::find($shopId);
+        if (!$shop) {
+            Response::redirect(url('admin/dashboard?tab=shops'), 'error', 'Shop not found.');
+            return;
+        }
+
         try {
+            $logoUrl = $this->uploadConcernLogo($_FILES['logo'] ?? [], 'shops') ?? ($shop['logo_url'] ?? null);
             Shop::update($shopId, [
                 'name'         => $name,
                 'code'         => $code,
@@ -1408,6 +1470,7 @@ class AdminController {
                 'gst_number'   => $gstNumber,
                 'address'      => trim($_POST['address'] ?? ''),
                 'phone'        => $phone,
+                'logo_url'     => $logoUrl,
                 'is_active'    => isset($_POST['is_active']) ? (int)$_POST['is_active'] : 1,
             ]);
 
@@ -1482,6 +1545,7 @@ class AdminController {
         $phone = trim($_POST['phone'] ?? '');
         $gstNumber = strtoupper(trim($_POST['gst_number'] ?? ''));
         $description = trim($_POST['description'] ?? '');
+        $address = trim($_POST['address'] ?? '');
         $is_active = isset($_POST['is_active']) ? 1 : 0;
         if (!$this->isValidGstNumber($gstNumber)) {
             Response::redirect(url("admin/dashboard?tab=tab-" . strtolower($type)), 'error', 'Enter a valid 15-character GSTIN.');
@@ -1508,9 +1572,12 @@ class AdminController {
                 }
             }
 
+            SalesChannel::ensureSchema();
+            $logoUrl = $this->uploadConcernLogo($_FILES['logo'] ?? [], 'channels/' . strtolower($type));
             Database::execute(
-                "INSERT INTO sales_channels (name, code, manager_name, phone, gst_number, description, channel_type, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                [$name, $code, $manager_name, $phone, $gstNumber ?: null, $description, $type, $is_active]
+                "INSERT INTO sales_channels (name, code, manager_name, phone, address, gst_number, description, logo_url, channel_type, is_active)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [$name, $code, $manager_name, $phone, $address ?: null, $gstNumber ?: null, $description, $logoUrl, $type, $is_active]
             );
             $id = Database::lastInsertId();
             AuditService::log('admin', 'create_channel', 'sales_channels', $id, null, $_POST);
@@ -1536,9 +1603,16 @@ class AdminController {
         $phone = trim($_POST['phone'] ?? '');
         $gstNumber = strtoupper(trim($_POST['gst_number'] ?? ''));
         $description = trim($_POST['description'] ?? '');
+        $address = trim($_POST['address'] ?? '');
         $is_active = isset($_POST['is_active']) ? 1 : 0;
         if (!$this->isValidGstNumber($gstNumber)) {
             Response::redirect(url("admin/dashboard?tab=tab-" . strtolower($type)), 'error', 'Enter a valid 15-character GSTIN.');
+        }
+
+        $channel = SalesChannel::find((int)$id);
+        if (!$channel) {
+            Response::redirect(url("admin/dashboard?tab=tab-" . strtolower($type)), 'error', 'Sales channel not found.');
+            return;
         }
 
         try {
@@ -1548,9 +1622,12 @@ class AdminController {
                 return;
             }
 
+            $logoUrl = $this->uploadConcernLogo($_FILES['logo'] ?? [], 'channels/' . strtolower($type)) ?? ($channel['logo_url'] ?? null);
             Database::execute(
-                "UPDATE sales_channels SET name = ?, code = ?, manager_name = ?, phone = ?, gst_number = ?, description = ?, channel_type = ?, is_active = ? WHERE id = ?",
-                [$name, $code, $manager_name, $phone, $gstNumber ?: null, $description, $type, $is_active, $id]
+                "UPDATE sales_channels
+                 SET name = ?, code = ?, manager_name = ?, phone = ?, address = ?, gst_number = ?, description = ?, logo_url = ?, channel_type = ?, is_active = ?
+                 WHERE id = ?",
+                [$name, $code, $manager_name, $phone, $address ?: null, $gstNumber ?: null, $description, $logoUrl, $type, $is_active, $id]
             );
             AuditService::log('admin', 'update_channel', 'sales_channels', $id, null, $_POST);
             Response::redirect(url("admin/dashboard?tab=tab-" . strtolower($type)), 'success', "Channel '{$name}' updated successfully.");

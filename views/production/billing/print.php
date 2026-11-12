@@ -16,7 +16,11 @@ $seller = static fn(string $key): string => htmlspecialchars((string)($sellerCom
 <div class="actions"><button onclick="window.print()">Print bill</button></div>
 <main class="invoice">
     <div class="header">
-        <div>
+        <div style="display:flex;align-items:flex-start;gap:14px">
+            <?php if (!empty($prodUnit['logo_url'])): ?>
+                <img src="<?= htmlspecialchars($prodUnit['logo_url'], ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars($prodUnit['name'] ?? 'Production unit', ENT_QUOTES, 'UTF-8') ?> logo" style="max-width:120px;max-height:80px;object-fit:contain">
+            <?php endif; ?>
+            <div>
             <h2 style="margin:0 0 6px"><?= htmlspecialchars($prodUnit['name'] ?? ($seller('company_name') ?: 'Production Facility')) ?></h2>
             <?php if (!empty($prodUnit['address'])): ?><div><?= nl2br(htmlspecialchars($prodUnit['address'])) ?></div><?php endif; ?>
             <div>
@@ -24,6 +28,7 @@ $seller = static fn(string $key): string => htmlspecialchars((string)($sellerCom
                 <?php if (!empty($prodUnit['code'])): ?><span> · Unit Code: <?= htmlspecialchars($prodUnit['code']) ?></span><?php endif; ?>
             </div>
             <?php if (!empty($prodUnit['gst_number'])): ?><div>GSTIN: <?= htmlspecialchars($prodUnit['gst_number']) ?></div><?php endif; ?>
+            </div>
         </div>
         <div class="right"><h2 style="margin:0 0 6px">TAX INVOICE</h2><div><strong>Bill:</strong> <?= htmlspecialchars($bill['bill_number']) ?></div><div><strong>Date:</strong> <?= htmlspecialchars(date('d M Y', strtotime($bill['bill_date']))) ?></div></div>
     </div>

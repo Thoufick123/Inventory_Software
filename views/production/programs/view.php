@@ -148,6 +148,22 @@
                                 <td><?= e($pr['roll_color'] ?: 'Standard') ?></td>
                                 <td><?= e($pr['roll_design'] ?: 'Plain') ?></td>
                                 <td><?= e($pr['seller_name'] ?? '-') ?></td>
+                                <td>
+                                    <?php
+                                    $allocQrs = [];
+                                    if (!empty($pr['allocated_qr_codes'])) {
+                                        $decoded = json_decode($pr['allocated_qr_codes'], true);
+                                        $allocQrs = is_array($decoded) ? $decoded : array_filter(array_map('trim', explode(',', $pr['allocated_qr_codes'])));
+                                    }
+                                    ?>
+                                    <?php if (!empty($allocQrs)): ?>
+                                        <span class="badge bg-primary-subtle text-primary border" title="<?= e(implode(', ', $allocQrs)) ?>">
+                                            <i class="bi bi-qr-code me-1"></i><?= count($allocQrs) ?> QRs
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="text-muted small">—</span>
+                                    <?php endif; ?>
+                                </td>
                                 <td class="text-end fw-semibold text-dark"><?= number_format((int)($pr['roll_qty'] ?? 0)) ?> pcs</td>
                                 <td class="text-end fw-semibold"><?= number_format((float)$pr['roll_weight'], 2) ?> kg</td>
                                 <td class="text-end fw-bold text-success"><?= formatCurrency((float)$pr['roll_price']) ?></td>

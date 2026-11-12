@@ -23,6 +23,33 @@
     </div>
 </div>
 
+<?php if (!empty($warehouseProfile)): ?>
+<div class="card border-0 shadow-sm rounded-3 mb-4">
+    <div class="card-body d-flex flex-wrap align-items-center gap-3">
+        <?php if (!empty($warehouseProfile['logo_url'])): ?>
+            <img src="<?= e($warehouseProfile['logo_url']) ?>" alt="<?= e($warehouseProfile['name'] ?? 'Warehouse') ?> logo" style="max-width:140px;max-height:64px;object-fit:contain;">
+        <?php else: ?>
+            <div class="rounded-circle bg-primary-subtle text-primary p-3"><i class="bi bi-buildings fs-4"></i></div>
+        <?php endif; ?>
+        <div class="flex-grow-1">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <h5 class="mb-0 fw-bold"><?= e($warehouseProfile['name'] ?? 'Warehouse') ?></h5>
+                <?php if (!empty($warehouseProfile['code'])): ?><span class="badge bg-light text-dark border"><?= e($warehouseProfile['code']) ?></span><?php endif; ?>
+            </div>
+            <div class="small text-muted mt-1">
+                <?php if (!empty($warehouseProfile['manager_name'])): ?>Manager: <?= e($warehouseProfile['manager_name']) ?> · <?php endif; ?>
+                <?php if (!empty($warehouseProfile['address'])): ?><?= e($warehouseProfile['address']) ?><?php endif; ?>
+                <?php if (!empty($warehouseProfile['phone'])): ?><?= !empty($warehouseProfile['address']) ? ' · ' : '' ?><?= e($warehouseProfile['phone']) ?><?php endif; ?>
+                <?php if (!empty($warehouseProfile['gst_number'])): ?><?= (!empty($warehouseProfile['address']) || !empty($warehouseProfile['phone'])) ? ' · ' : '' ?>GSTIN: <?= e($warehouseProfile['gst_number']) ?><?php endif; ?>
+            </div>
+        </div>
+        <?php if (!empty($warehouseProfile['id']) && hasPermission('dashboard', 'view') && (hasPermission('dashboard', 'edit') || hasPermission('warehouse', 'edit'))): ?>
+            <a class="btn btn-sm btn-outline-primary" href="<?= url('admin/dashboard?edit_type=warehouse&edit_id=' . (int)$warehouseProfile['id']) ?>"><i class="bi bi-pencil me-1"></i>Edit details</a>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- Row 1: Stock & Vendor Inward Overview -->
 <div class="row g-3 mb-4">
     <div class="col-sm-6 col-xl-3">

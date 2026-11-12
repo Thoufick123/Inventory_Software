@@ -16,6 +16,15 @@ $isEditMode = (!empty($_GET['mode']) && $_GET['mode'] === 'edit');
     </div>
 </div>
 
+<?php if (empty($warehouses)): ?>
+    <div class="alert alert-warning shadow-sm" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        No active warehouse is configured. Create or activate one in
+        <a href="<?= url('admin/dashboard?tab=warehouses') ?>" class="alert-link">Admin &gt; Warehouses</a>
+        before continuing.
+    </div>
+<?php endif; ?>
+
 <!-- ========================================================================= -->
 <!-- 2-PHASE WIZARD STEPPER -->
 <!-- ========================================================================= -->
@@ -266,13 +275,13 @@ $isEditMode = (!empty($_GET['mode']) && $_GET['mode'] === 'edit');
                     <div class="row g-3">
                         <div class="col-12">
                             <label class="form-label small fw-semibold">Destination Warehouse (Live Stock Inward)</label>
-                            <select name="warehouse_id" class="form-select form-select-sm" id="warehouseSelect">
+                            <select name="warehouse_id" class="form-select form-select-sm" id="warehouseSelect" required>
                                 <?php if (!empty($warehouses)): ?>
                                     <?php foreach ($warehouses as $wh): ?>
                                         <option value="<?= $wh['id'] ?>"><?= e($wh['name']) ?><?= !empty($wh['code']) ? ' (' . e($wh['code']) . ')' : '' ?></option>
                                     <?php endforeach; ?>
                                 <?php else: ?>
-                                    <option value="1">Main Central Warehouse (WH-MAIN)</option>
+                                    <option value="" selected disabled>No active warehouse available</option>
                                 <?php endif; ?>
                             </select>
                         </div>
@@ -345,7 +354,7 @@ $isEditMode = (!empty($_GET['mode']) && $_GET['mode'] === 'edit');
                 <a href="<?= url('warehouse/sellers') ?>" class="btn btn-outline-secondary">
                     Cancel
                 </a>
-                <button type="submit" class="btn btn-primary px-4 fw-bold shadow-sm" id="btnSubmitPhase1">
+                <button type="submit" class="btn btn-primary px-4 fw-bold shadow-sm" id="btnSubmitPhase1" <?= empty($warehouses) ? 'disabled' : '' ?>>
                     <?= $isEditMode ? 'Update Supplier &amp; Continue to Products (Phase 2)' : 'Save Supplier &amp; Continue to Products (Phase 2)' ?> <i class="bi bi-arrow-right ms-1"></i>
                 </button>
             </div>

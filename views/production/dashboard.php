@@ -55,6 +55,33 @@
     </div>
 </div>
 
+<?php if (!empty($productionUnitProfile)): ?>
+<div class="card border-0 shadow-sm rounded-3 mb-4">
+    <div class="card-body d-flex flex-wrap align-items-center gap-3">
+        <?php if (!empty($productionUnitProfile['logo_url'])): ?>
+            <img src="<?= e($productionUnitProfile['logo_url']) ?>" alt="<?= e($productionUnitProfile['name'] ?? 'Production unit') ?> logo" style="max-width:140px;max-height:64px;object-fit:contain;">
+        <?php else: ?>
+            <div class="rounded-circle bg-primary-subtle text-primary p-3"><i class="bi bi-gear-wide-connected fs-4"></i></div>
+        <?php endif; ?>
+        <div class="flex-grow-1">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <h5 class="mb-0 fw-bold"><?= e($productionUnitProfile['name'] ?? 'Production Unit') ?></h5>
+                <?php if (!empty($productionUnitProfile['code'])): ?><span class="badge bg-light text-dark border"><?= e($productionUnitProfile['code']) ?></span><?php endif; ?>
+            </div>
+            <div class="small text-muted mt-1">
+                <?php if (!empty($productionUnitProfile['manager_name'])): ?>Manager: <?= e($productionUnitProfile['manager_name']) ?> · <?php endif; ?>
+                <?php if (!empty($productionUnitProfile['address'])): ?><?= e($productionUnitProfile['address']) ?><?php endif; ?>
+                <?php if (!empty($productionUnitProfile['phone'])): ?><?= !empty($productionUnitProfile['address']) ? ' · ' : '' ?><?= e($productionUnitProfile['phone']) ?><?php endif; ?>
+                <?php if (!empty($productionUnitProfile['gst_number'])): ?><?= (!empty($productionUnitProfile['address']) || !empty($productionUnitProfile['phone'])) ? ' · ' : '' ?>GSTIN: <?= e($productionUnitProfile['gst_number']) ?><?php endif; ?>
+            </div>
+        </div>
+        <?php if (!empty($productionUnitProfile['id']) && hasPermission('dashboard', 'view') && (hasPermission('dashboard', 'edit') || hasPermission('production', 'edit'))): ?>
+            <a class="btn btn-sm btn-outline-primary" href="<?= url('admin/dashboard?edit_type=production_unit&edit_id=' . (int)$productionUnitProfile['id']) ?>"><i class="bi bi-pencil me-1"></i>Edit details</a>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- 1. KPI Stats Row -->
 <div class="row g-3 mb-4">
     <!-- 1. Programs -->

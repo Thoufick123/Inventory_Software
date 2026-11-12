@@ -1,5 +1,8 @@
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
     <div>
+        <?php if (!empty($prodUnit['logo_url'])): ?>
+            <img src="<?= htmlspecialchars($prodUnit['logo_url'], ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars($prodUnit['name'] ?? 'Production unit', ENT_QUOTES, 'UTF-8') ?> logo" class="mb-2" style="max-width:180px;max-height:64px;object-fit:contain;">
+        <?php endif; ?>
         <h4 class="mb-1 fw-bold"><?= htmlspecialchars($bill['bill_number']) ?></h4>
         <div class="text-muted small">Production bill · <?= htmlspecialchars(date('d M Y', strtotime($bill['bill_date']))) ?></div>
     </div>

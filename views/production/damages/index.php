@@ -311,7 +311,7 @@
                                         <button type="button" class="btn btn-action-icon btn-outline-primary" title="Edit Damage Record" aria-label="Edit Damage Record" onclick='openEditDamageModal(<?= json_encode($d) ?>)'>
                                             <i class="bi bi-pencil"></i>
                                         </button>
-                                        <button type="button" class="btn btn-action-icon btn-outline-success" title="Update Return / Refund / Resolution" aria-label="Update Return / Refund / Resolution" onclick='openResolveModal(<?= json_encode($d) ?>)'>
+                                        <button type="button" class="btn btn-action-icon btn-outline-success" title="Resolve Damage" aria-label="Resolve Damage" onclick='openResolveModal(<?= json_encode($d) ?>)'>
                                             <i class="bi bi-patch-check"></i>
                                         </button>
                                         <?php endif; ?>
@@ -710,7 +710,7 @@
                                         <div class="col-lg-2 col-md-3">
                                             <label class="form-label required small fw-bold">Weight (kg) *</label>
                                             <div class="input-group">
-                                                <input type="text" inputmode="decimal" name="replacement_weight" id="inputReplacementWeight" class="form-control" placeholder="0.00">
+                                                <input type="number" min="0" step="0.01" name="replacement_weight" id="inputReplacementWeight" class="form-control" placeholder="0.00">
                                                 <span class="input-group-text">kg</span>
                                             </div>
                                         </div>
@@ -1266,8 +1266,7 @@ async function scanEditDamageRollQr() {
     }
     const scanInput = document.getElementById('editDamageRollQrScan');
     const scannedCode = scanInput ? scanInput.value.trim() : '';
-    const editForm = document.getElementById('editDamageForm');
-    const damageId = parseInt(editForm.dataset.damageId, 10) || 0;
+    const damageId = parseInt(editForm?.dataset?.damageId, 10) || 0;
     if (!scannedCode || editDamageRollScanInProgress) return;
     if (!damageId) {
         setEditDamageRollScanStatus('Open an existing damage record before scanning a roll.', true);
@@ -1426,11 +1425,11 @@ function handleEditRollSelectionChange(selectEl, resetValues = true) {
 
 function openResolveModal(damageData) {
     document.getElementById('resolveDamageForm').action = '<?= url('production/damages/resolve') ?>/' + damageData.id;
-    document.getElementById('resDamageNo').textContent = damageData.damage_number;
-    document.getElementById('resSellerName').textContent = damageData.seller_name;
-    document.getElementById('resRollInfo').textContent = `${damageData.roll_number} (${damageData.damaged_weight} kg)`;
-    document.getElementById('resReason').textContent = damageData.damage_reason;
-    document.getElementById('resLossAmount').textContent = '₹ ' + parseFloat(damageData.loss_amount).toFixed(2);
+    document.getElementById('resDamageNo').textContent = damageData.damage_number || '—';
+    document.getElementById('resSellerName').textContent = damageData.seller_company || damageData.seller_name || 'Own Production / In-House';
+    document.getElementById('resRollInfo').textContent = damageData.roll_number ? `${damageData.roll_number} (${damageData.damaged_weight || 0} kg)` : `${damageData.product_name || damageData.qr_code || 'Damaged Item'} (${damageData.damaged_quantity || 1} pcs)`;
+    document.getElementById('resReason').textContent = damageData.damage_reason || '—';
+    document.getElementById('resLossAmount').textContent = '₹ ' + parseFloat(damageData.loss_amount || 0).toFixed(2);
 
     document.getElementById('resStatusSelect').value = damageData.status || 'LOGGED';
     document.getElementById('resTypeSelect').value = (damageData.resolution_type && damageData.resolution_type !== 'NONE') ? damageData.resolution_type : '';
@@ -1865,15 +1864,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const qty = parseInt(document.getElementById('editDamagedQty').value) || 0;
             const photoInput = document.getElementById('editPhotoInput');
 
-            if (!sellerId) {
-                alert('Please choose a Material Supplier / Mill.');
-                e.preventDefault();
-                return false;
-            }
-            if (!rollId) {
-                alert('Please select a Defective Fabric Roll.');
-                e.preventDefault();
-                return false;
+            const isNonRollDamage = editForm.dataset.supplyDamage === '1' || !editForm.dataset.originalRollId || editForm.dataset.originalRollId === '0';
+            if (!isNonRollDamage) {
+                if (!sellerId) {
+                    alert('Please choose a Material Supplier / Mill.');
+                    e.preventDefault();
+                    return false;
+                }
+                if (!rollId) {
+                    alert('Please select a Defective Fabric Roll.');
+                    e.preventDefault();
+                    return false;
+                }
             }
             if (rollId && loadedEditRollsMap[rollId]) {
                 const m = getRollMetrics(loadedEditRollsMap[rollId]);
@@ -2162,6 +2164,95 @@ function confirmDeleteDamage(actionUrl, damageNumber) {
         modal.show();
     }
 }
+
+// Strict numeric-only typing validation for numeric fields (Designs, RQ, Weight, Price, etc.)
+(function() {
+    function isDamageNumericInput(input) {
+        if (!input) return false;
+        return input.matches(
+            '#inputReplacementDesignCount, #inputReplacementQuantity, #inputReplacementWeight, #inputReplacementPrice, ' +
+            '#inputRefundAmount, #inputDamagedWeight, #editDamagedWeight, #inputEstimatedLoss, #editEstimatedLoss'
+        ) || (input.type === 'number');
+    }
+
+    function isDamageIntegerOnly(input) {
+        return input.id === 'inputReplacementDesignCount' || input.id === 'inputReplacementQuantity' || input.dataset.integer === 'true';
+    }
+
+    document.addEventListener('keydown', function(e) {
+        const input = e.target;
+        if (!isDamageNumericInput(input)) return;
+
+        // Allow navigation / editing controls
+        if (
+            e.ctrlKey || e.metaKey || e.altKey ||
+            ['Backspace', 'Delete', 'Tab', 'Enter', 'Escape', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)
+        ) {
+            return;
+        }
+
+        // Strictly block scientific notation 'e', 'E' and sign keys '+', '-'
+        if (['e', 'E', '+', '-'].includes(e.key)) {
+            e.preventDefault();
+            return;
+        }
+
+        if (isDamageIntegerOnly(input)) {
+            // Integer: Only digits 0-9 allowed (NO decimal point)
+            if (!/^[0-9]$/.test(e.key)) {
+                e.preventDefault();
+            }
+        } else {
+            // Decimal: Only digits 0-9 and single decimal point allowed
+            if (e.key === '.') {
+                if (input.value && input.value.includes('.')) {
+                    e.preventDefault();
+                }
+            } else if (!/^[0-9]$/.test(e.key)) {
+                e.preventDefault();
+            }
+        }
+    });
+
+    document.addEventListener('beforeinput', function(e) {
+        const input = e.target;
+        if (!isDamageNumericInput(input)) return;
+        if (!e.data) return;
+
+        if (['e', 'E', '+', '-'].some(ch => e.data.includes(ch))) {
+            e.preventDefault();
+            return;
+        }
+
+        if (isDamageIntegerOnly(input)) {
+            if (/[^0-9]/.test(e.data)) {
+                e.preventDefault();
+            }
+        } else {
+            if (/[^0-9.]/.test(e.data)) {
+                e.preventDefault();
+            } else if (e.data.includes('.') && input.value && input.value.includes('.')) {
+                e.preventDefault();
+            }
+        }
+    });
+
+    document.addEventListener('paste', function(e) {
+        const input = e.target;
+        if (!isDamageNumericInput(input)) return;
+        const pasteData = (e.clipboardData || window.clipboardData)?.getData('text') || '';
+        const isInt = isDamageIntegerOnly(input);
+        const regex = isInt ? /^[0-9]+$/ : /^[0-9]+(\.[0-9]*)?$/;
+        if (!regex.test(pasteData.trim())) {
+            e.preventDefault();
+            const clean = isInt ? pasteData.replace(/\D/g, '') : pasteData.replace(/[^0-9.]/g, '').replace(/(\..*?)\..*/g, '$1');
+            if (clean) {
+                input.value = clean;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        }
+    });
+})();
 </script>
 
 <!-- Modal: Modern Confirmation Popup for Deleting Damage Records -->

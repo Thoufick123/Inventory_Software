@@ -31,6 +31,7 @@ require_once BASE_PATH . '/app/Helpers/Auth.php';
 require_once BASE_PATH . '/app/Helpers/CSRF.php';
 require_once BASE_PATH . '/app/Helpers/Validator.php';
 require_once BASE_PATH . '/app/Helpers/Response.php';
+require_once BASE_PATH . '/app/Helpers/Request.php';
 
 // Autoload core models
 require_once BASE_PATH . '/app/Models/User.php';

@@ -342,9 +342,14 @@ class ExpenseService {
             $params[] = $filters['payment_method'];
         }
 
-        if (!empty($filters['payment_status']) && $filters['payment_status'] !== 'all') {
+        $paymentStatus = strtoupper(trim($filters['payment_status'] ?? 'ACTIVE'));
+        if ($paymentStatus === 'CANCELLED') {
+            $where[] = "e.payment_status = 'CANCELLED'";
+        } elseif (in_array($paymentStatus, ['PAID', 'PENDING', 'PARTIAL', 'APPROVED'], true)) {
             $where[] = "e.payment_status = ?";
-            $params[] = $filters['payment_status'];
+            $params[] = $paymentStatus;
+        } elseif ($paymentStatus !== 'ALL') {
+            $where[] = "e.payment_status <> 'CANCELLED'";
         }
 
         if (!empty($filters['start_date'])) {
@@ -375,7 +380,7 @@ class ExpenseService {
      * Compute Grand KPI Summary and Category Distributions for a Location/Module.
      */
     public static function getSummary(string $locationType, ?int $locationId = null, ?string $startDate = null, ?string $endDate = null): array {
-        $baseWhere = ["location_type = ?"];
+        $baseWhere = ["location_type = ?", "payment_status <> 'CANCELLED'"];
         $baseParams = [strtoupper(trim($locationType))];
 
         if ($locationId !== null && $locationId > 0) {
@@ -495,8 +500,162 @@ class ExpenseService {
         );
     }
 
+    public static function updateExpense(int $id, string $locationType, int $locationId, array $payload, int $userId): void {
+        $expense = Database::fetchOne(
+            "SELECT * FROM expenses WHERE id = ? AND location_type = ? AND location_id = ?",
+            [$id, strtoupper($locationType), $locationId]
+        );
+        if (!$expense || $expense['payment_status'] === 'CANCELLED') {
+            throw new InvalidArgumentException('This active expense record could not be found.');
+        }
+
+        $category = trim($payload['category'] ?? '');
+        $itemName = trim($payload['item_name'] ?? '');
+        $paidTo = trim($payload['paid_to'] ?? '');
+        $amountInput = $payload['amount'] ?? null;
+        if (mb_strlen($category) < 2 || mb_strlen($category) > 100) {
+            throw new InvalidArgumentException('Expense category must be between 2 and 100 characters.');
+        }
+        if (mb_strlen($itemName) < 2 || mb_strlen($itemName) > 255) {
+            throw new InvalidArgumentException('Item description must be between 2 and 255 characters.');
+        }
+        if (mb_strlen($paidTo) < 2 || mb_strlen($paidTo) > 100) {
+            throw new InvalidArgumentException('Payee name must be between 2 and 100 characters.');
+        }
+        if (!is_numeric($amountInput) || (float)$amountInput <= 0 || (float)$amountInput > 10000000) {
+            throw new InvalidArgumentException('Expense amount must be greater than zero and no more than ₹1,00,00,000.');
+        }
+
+        $expenseDate = trim($payload['expense_date'] ?? '');
+        $dateParts = explode('-', $expenseDate);
+        if (count($dateParts) !== 3 || !checkdate((int)$dateParts[1], (int)$dateParts[2], (int)$dateParts[0])) {
+            throw new InvalidArgumentException('Select a valid expense date.');
+        }
+
+        $amount = round((float)$amountInput, 2);
+        $paidAmount = (float)$expense['paid_amount'];
+        if ($amount < $paidAmount) {
+            throw new InvalidArgumentException('Expense amount cannot be less than the amount already paid.');
+        }
+
+        $paymentMethod = strtoupper(trim($payload['payment_method'] ?? ''));
+        if (!in_array($paymentMethod, ['CASH', 'UPI', 'BANK_TRANSFER', 'CARD', 'OTHER'], true)) {
+            throw new InvalidArgumentException('Select a valid payment method.');
+        }
+
+        $vendorPhone = trim($payload['vendor_phone'] ?? '');
+        if ($vendorPhone !== '') {
+            $digits = preg_replace('/\D/', '', $vendorPhone);
+            if (strlen($digits) !== 10 || !preg_match('/^[6-9]\d{9}$/', $digits)) {
+                throw new InvalidArgumentException('Vendor contact must be a valid 10-digit mobile number.');
+            }
+            $vendorPhone = $digits;
+        }
+
+        $invoiceNumber = trim($payload['invoice_number'] ?? '');
+        $paymentReference = trim($payload['payment_reference'] ?? '');
+        $vendorCompany = trim($payload['vendor_company'] ?? '');
+        $notes = trim($payload['notes'] ?? '');
+        if (mb_strlen($invoiceNumber) > 100 || mb_strlen($paymentReference) > 100 || mb_strlen($vendorCompany) > 200 || mb_strlen($notes) > 500) {
+            throw new InvalidArgumentException('One or more optional expense fields exceed their allowed length.');
+        }
+
+        $receiptUrl = $expense['receipt_url'] ?? null;
+        if (isset($_FILES['receipt_file']) && (int)($_FILES['receipt_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+            $file = $_FILES['receipt_file'];
+            if ((int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                throw new InvalidArgumentException('The receipt could not be uploaded. Please try again.');
+            }
+            $extension = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
+            if (!in_array($extension, ['jpg', 'jpeg', 'png', 'webp', 'pdf'], true) || (int)($file['size'] ?? 0) > 10 * 1024 * 1024) {
+                throw new InvalidArgumentException('Receipt must be JPG, PNG, WEBP, or PDF and no larger than 10 MB.');
+            }
+            $uploadedUrl = CloudinaryService::upload($file, 'grm_inventory/expenses/whatsapp', 'auto');
+            if (!$uploadedUrl) {
+                throw new RuntimeException('The receipt upload failed. The expense was not updated.');
+            }
+            $receiptUrl = $uploadedUrl;
+        }
+
+        $paymentStatus = $expense['payment_status'];
+        if ($paymentStatus === 'PAID') {
+            $paidAmount = $amount;
+        }
+        $newValues = [
+            'category' => $category,
+            'item_name' => $itemName,
+            'paid_to' => $paidTo,
+            'total_cost' => $amount,
+            'paid_amount' => $paidAmount,
+            'payment_method' => $paymentMethod,
+            'payment_reference' => $paymentReference,
+            'expense_date' => $expenseDate,
+            'vendor_phone' => $vendorPhone,
+            'vendor_company' => $vendorCompany,
+            'invoice_number' => $invoiceNumber,
+            'receipt_url' => $receiptUrl,
+            'notes' => $notes,
+        ];
+
+        Database::beginTransaction();
+        try {
+            Database::execute(
+                "UPDATE expenses
+                 SET category = ?, item_name = ?, description = ?, unit_cost = ?, total_cost = ?,
+                     paid_amount = ?, payment_status = ?, payment_method = ?, payment_reference = ?,
+                     paid_to = ?, vendor_phone = ?, vendor_company = ?, invoice_number = ?,
+                     expense_date = ?, receipt_url = ?, notes = ?, updated_at = NOW()
+                 WHERE id = ? AND location_type = ? AND location_id = ?",
+                [
+                    $category, $itemName, $notes, $amount, $amount, $paidAmount, $paymentStatus,
+                    $paymentMethod, $paymentReference ?: null, $paidTo, $vendorPhone ?: null,
+                    $vendorCompany ?: null, $invoiceNumber ?: null, $expenseDate,
+                    $receiptUrl ?: null, $notes ?: null, $id, strtoupper($locationType), $locationId
+                ]
+            );
+            AuditService::log('expense_management', 'UPDATE_EXPENSE', 'expenses', $id, $expense, $newValues, $userId);
+            Database::commit();
+        } catch (Throwable $e) {
+            Database::rollBack();
+            throw $e;
+        }
+    }
+
+    public static function cancelExpense(int $id, string $locationType, int $locationId, int $userId): bool {
+        $expense = Database::fetchOne(
+            "SELECT * FROM expenses WHERE id = ? AND location_type = ? AND location_id = ?",
+            [$id, strtoupper($locationType), $locationId]
+        );
+        if (!$expense || $expense['payment_status'] === 'CANCELLED') {
+            return false;
+        }
+
+        Database::beginTransaction();
+        try {
+            Database::execute(
+                "UPDATE expenses SET payment_status = 'CANCELLED', updated_at = NOW()
+                 WHERE id = ? AND location_type = ? AND location_id = ? AND payment_status <> 'CANCELLED'",
+                [$id, strtoupper($locationType), $locationId]
+            );
+            AuditService::log(
+                'expense_management',
+                'CANCEL_EXPENSE',
+                'expenses',
+                $id,
+                ['payment_status' => $expense['payment_status']],
+                ['payment_status' => 'CANCELLED', 'expense_number' => $expense['expense_number']],
+                $userId
+            );
+            Database::commit();
+            return true;
+        } catch (Throwable $e) {
+            Database::rollBack();
+            throw $e;
+        }
+    }
+
     /**
-     * Delete / Cancel an expense record.
+     * Permanently delete an expense record.
      */
     public static function deleteExpense(int $id, int $userId): bool {
         $exp = Database::fetchOne("SELECT * FROM expenses WHERE id = ?", [$id]);

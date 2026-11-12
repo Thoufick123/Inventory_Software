@@ -213,11 +213,51 @@
 <body>
 
 <div class="supply-qr-container">
+    <?php if (class_exists('Session') && Session::hasFlash('success')): ?>
+        <?php foreach (Session::getFlash('success') as $msg): ?>
+            <div class="alert alert-success alert-dismissible fade show no-print mb-3 shadow-sm border-0 border-start border-success border-4" role="alert">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-check-circle-fill text-success fs-5 me-2"></i>
+                    <div>
+                        <strong>Inward Completed:</strong> <?= htmlspecialchars($msg) ?>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php endforeach; ?>
+    <?php endif; ?>
+    <?php if (class_exists('Session') && Session::hasFlash('error')): ?>
+        <?php foreach (Session::getFlash('error') as $msg): ?>
+            <div class="alert alert-danger alert-dismissible fade show no-print mb-3 shadow-sm border-0 border-start border-danger border-4" role="alert">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-exclamation-triangle-fill text-danger fs-5 me-2"></i>
+                    <div>
+                        <strong>Action Failed:</strong> <?= htmlspecialchars($msg) ?>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php endforeach; ?>
+    <?php endif; ?>
+
     <?php
     $canManageSupplies = hasPermission('production_purchases', 'create') 
         || hasPermission('production_purchases', 'edit') 
         || hasPermission('sellers', 'create') 
-        || hasPermission('sellers', 'edit');
+        || hasPermission('sellers', 'edit')
+        || (class_exists('Auth') && method_exists('Auth', 'isAdmin') && Auth::isAdmin())
+        || (class_exists('Session') && Session::get('role') === 'admin');
+
+    $isAllInwarded = !empty($purchase['is_inwarded']);
+    if (!$isAllInwarded && !empty($supplies)) {
+        $isAllInwarded = true;
+        foreach ($supplies as $s) {
+            if (empty($s['is_inwarded'])) {
+                $isAllInwarded = false;
+                break;
+            }
+        }
+    }
     ?>
 
     <!-- Top Action & Info Bar -->
@@ -233,6 +273,9 @@
                     · <strong>PO Date:</strong> <?= date('d M Y', strtotime($purchase['purchase_date'])) ?>
                     · <strong>Invoice:</strong> <?= htmlspecialchars($purchase['invoice_number'] ?: 'N/A') ?>
                     · <strong>Total Supplies:</strong> <span class="badge bg-success-subtle text-success border border-success"><?= count($supplies) ?> Item<?= count($supplies) === 1 ? '' : 's' ?> (<?= count($stickers) ?> Labels)</span>
+                    <?php if ($isAllInwarded): ?>
+                        <span class="badge bg-success text-white ms-1"><i class="bi bi-check-circle-fill me-1"></i>Inward Complete</span>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -241,10 +284,20 @@
                     <i class="bi bi-arrow-left me-1"></i> Back to Purchases
                 </a>
 
-                <?php if ($rollCount > 0): ?>
-                    <a href="<?= url('production/purchases/roll-qr/' . $purchase['id']) ?>" class="btn btn-outline-dark btn-sm" title="View Fabric Roll QR Labels">
-                        <i class="bi bi-qr-code text-warning me-1"></i> Roll QR (<?= $rollCount ?>)
-                    </a>
+                <?php if ($isAllInwarded): ?>
+                    <span class="badge bg-success-subtle text-success border border-success px-2.5 py-1.5 fw-bold d-inline-flex align-items-center gap-1 shadow-xs" title="Supplies inwarded to inventory on <?= !empty($purchase['inwarded_at']) ? date('d M Y, h:i A', strtotime($purchase['inwarded_at'])) : 'Completed' ?>">
+                        <i class="bi bi-check-circle-fill text-success"></i> Inwarded to Inventory
+                    </span>
+                <?php else: ?>
+                    <form method="POST" action="<?= url('production/purchases/supply-inward/' . $purchase['id']) ?>" class="d-inline" id="supplyInwardForm" onsubmit="return confirmInwardSupplies(event);">
+                        <?= CSRF::field() ?>
+                        <?php if ($selectedItemId > 0): ?>
+                            <input type="hidden" name="item_id" value="<?= $selectedItemId ?>">
+                        <?php endif; ?>
+                        <button type="submit" class="btn btn-success btn-sm fw-bold shadow-sm d-inline-flex align-items-center gap-1" id="btnMoveToInward" <?= $canManageSupplies ? '' : 'disabled style="opacity: 0.5; cursor: not-allowed;" title="Action disabled in view-only access"' ?>>
+                            <i class="bi bi-box-arrow-in-down"></i> Move to Inward
+                        </button>
+                    </form>
                 <?php endif; ?>
 
                 <!-- Mode Switcher: Per Piece vs Master Package -->
@@ -473,6 +526,24 @@ function printSingleLabel(index) {
         </html>
     `);
     printWin.document.close();
+}
+
+function confirmInwardSupplies(event) {
+    if (!canManageSupplies) {
+        alert('Action restricted: You do not have permission to inward supplies.');
+        event.preventDefault();
+        return false;
+    }
+    if (!confirm("Are you sure you want to Move to Inward?\n\nThis will automatically register these garment supply product(s) into inventory and credit their stock balances.")) {
+        event.preventDefault();
+        return false;
+    }
+    const btn = document.getElementById('btnMoveToInward');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Adding to Inventory...';
+    }
+    return true;
 }
 </script>
 
