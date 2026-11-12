@@ -5634,7 +5634,7 @@ class WarehouseController {
                 );
             }
 
-            Response::redirect(url('warehouse/purchases/receive/' . $poId), 'success', 'Direct customer purchase recorded successfully! Invoice generated.');
+            Response::redirect(url('warehouse/purchases/receive/' . $poId), 'success', 'Direct customer purchase recorded successfully! Customer bill generated.');
         } catch (Exception $e) {
             Response::redirect(url('warehouse/purchases/create'), 'error', 'Failed to record purchase: ' . $e->getMessage());
         }
@@ -5944,9 +5944,10 @@ class WarehouseController {
 
         $items = PurchaseItem::getByPurchaseOrder($poId);
 
-        if (empty($po['seller_id']) && empty($po['warehouse_supplier_id'])) {
+        $isDirectCustomerPurchase = empty($po['seller_id']) && empty($po['warehouse_supplier_id']);
+        $requestedDocument = strtolower(trim((string)($_GET['document'] ?? 'bill')));
+        if ($isDirectCustomerPurchase && $requestedDocument !== 'invoice') {
             Response::viewOnly('warehouse.purchases.customer_receipt', [
-                'pageTitle'       => 'Customer Bill #' . $po['po_number'],
                 'po'              => $po,
                 'items'           => $items,
                 'companySettings' => class_exists('SettingsService') ? \SettingsService::getGroup('company') : [],
@@ -5960,6 +5961,7 @@ class WarehouseController {
             'activeMenu'   => 'purchases',
             'po'           => $po,
             'items'        => $items,
+            'isOfficeCopy' => $isDirectCustomerPurchase && $requestedDocument === 'invoice',
             'breadcrumb'   => [
                 ['label' => 'Warehouse', 'url' => url('warehouse/dashboard')],
                 ['label' => 'Direct Purchases', 'url' => url('warehouse/purchases')],

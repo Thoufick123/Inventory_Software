@@ -273,6 +273,7 @@ foreach ($items as $item) {
 <body>
     <div class="receipt-actions">
         <a href="<?= e(url('warehouse/purchases')) ?>">Back to Purchases</a>
+        <a href="<?= e(url('warehouse/purchases/receive/' . ($po['id'] ?? 0))) ?>?document=invoice" target="_blank" rel="noopener">Office Invoice</a>
         <button type="button" onclick="window.print()">Print Bill</button>
     </div>
 
@@ -452,6 +453,7 @@ foreach ($items as $item) {
             <p>Please check the items and bill before leaving.</p>
             <p>No bargain; fixed price only.</p>
             <p>No cash back.</p>
+            <p>Returns &amp; exchanges available.</p>
         </section>
         <div class="thank-you">Thank you. Visit again!</div>
     </main>
