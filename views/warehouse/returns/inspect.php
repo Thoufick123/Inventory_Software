@@ -242,11 +242,13 @@ document.addEventListener('DOMContentLoaded', function () {
         let message = '';
 
         if (input.dataset.allowEdit === '1' && value !== '') {
-            const quantity = Number(value);
-            if (!Number.isInteger(quantity)) {
+            if (!/^\d+$/.test(value)) {
                 message = 'Enter a whole number of pieces.';
-            } else if (quantity < 0 || quantity > returned) {
-                message = 'Good quantity must be between 0 and the returned quantity (' + returned + ').';
+            } else {
+                const quantity = Number(value);
+                if (quantity < 0 || quantity > returned) {
+                    message = 'Good quantity must be between 0 and the returned quantity (' + returned + ').';
+                }
             }
         } else if (input.dataset.allowEdit === '1' && value === '') {
             message = 'Good quantity is required.';
