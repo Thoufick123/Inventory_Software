@@ -6,6 +6,9 @@ $currentSourceType = $_GET['source_type'] ?? (($_GET['tab'] ?? '') === 'returns'
 if (!in_array($currentSourceType, ['returns', 'tp_purchase', 'po'])) {
     $currentSourceType = 'tp_purchase';
 }
+$returnSource = trim((string)($_GET['return_source'] ?? ''));
+$isDirectPurchaseReturn = $currentSourceType === 'returns' && $returnSource === 'purchase';
+$selectedReturnItemId = !empty($_GET['return_item_id']) ? (int)$_GET['return_item_id'] : null;
 
 $selectedVariantId = !empty($_GET['variant_id']) ? (int)$_GET['variant_id'] : (!empty($_GET['return_variant_id']) ? (int)$_GET['return_variant_id'] : null);
 $selectedSourceId  = !empty($_GET['source_id']) ? (int)$_GET['source_id'] : (!empty($_GET['return_id']) ? (int)$_GET['return_id'] : null);
@@ -592,6 +595,21 @@ if ($currentSourceType === 'po' || $currentSourceType === 'tp_purchase') {
                     }
                 }
             }
+            if ($isDirectPurchaseReturn && !empty($selectedPurchaseReturnItem)) {
+                $isDirectReturnSeriesOrComp = strtoupper((string)$selectedPurchaseReturnItem['qr_type']) === 'SERIES_BATCH'
+                    || strtoupper((string)$selectedPurchaseReturnItem['qr_type']) === 'SERIES'
+                    || !empty($selectedPurchaseReturnItem['is_complementary'])
+                    || strtoupper((string)$selectedPurchaseReturnItem['warehouse_category_type']) === 'SERIES'
+                    || strtoupper((string)$selectedPurchaseReturnItem['warehouse_category_type']) === 'COMPLEMENTARY';
+                $totalExpectedQty = (int)$selectedPurchaseReturnItem['quantity'];
+                $alreadyInwardedQty = 0;
+                $remainingQty = $totalExpectedQty;
+                $isFullyInwarded = false;
+                $isPartiallyInwarded = false;
+                $effectiveStock = $totalExpectedQty;
+                $isZeroStockRestricted = false;
+                $copiesCount = $isDirectReturnSeriesOrComp ? 1 : $totalExpectedQty;
+            }
             $poNumber = $poInfo['po_number'] ?? '';
 
             $brandOrSeller = !empty($activeVar['brand_name']) && $activeVar['brand_name'] !== 'Third-Party Brand' ? $activeVar['brand_name'] : (!empty($activeVar['seller_company']) ? $activeVar['seller_company'] : (!empty($activeVar['seller_name']) ? $activeVar['seller_name'] : 'GRM CLASSIC'));
@@ -972,7 +990,22 @@ if ($currentSourceType === 'po' || $currentSourceType === 'tp_purchase') {
         if ($activeVar) {
             $sourceName = 'Customer Return';
             $returnRef = 'RET-' . date('ymd');
-            if ($selectedSourceId) {
+            if ($isDirectPurchaseReturn && !empty($selectedPurchaseReturnItem)) {
+                $sourceName = 'Direct Purchase ' . ($selectedPurchaseReturnItem['return_number'] ?? 'Return');
+                $returnRef = (string)($selectedPurchaseReturnItem['return_number'] ?? $returnRef);
+                $tagType = 'GOOD';
+                $isReturnSeriesOrComp = strtoupper((string)($activeVar['qr_type'] ?? '')) === 'SERIES_BATCH'
+                    || strtoupper((string)($activeVar['qr_type'] ?? '')) === 'SERIES'
+                    || !empty($activeVar['is_complementary'])
+                    || !empty($activeVar['product_is_comp'])
+                    || strtoupper((string)($activeVar['warehouse_category_type'] ?? '')) === 'SERIES'
+                    || strtoupper((string)($activeVar['warehouse_category_type'] ?? '')) === 'COMPLEMENTARY'
+                    || strtoupper((string)($selectedPurchaseReturnItem['warehouse_category_type'] ?? '')) === 'SERIES'
+                    || strtoupper((string)($selectedPurchaseReturnItem['warehouse_category_type'] ?? '')) === 'COMPLEMENTARY';
+                $copiesCount = $isReturnSeriesOrComp
+                    ? 1
+                    : max(1, (int)$selectedPurchaseReturnItem['quantity']);
+            } elseif ($selectedSourceId) {
                 $retInfo = Database::fetchOne("SELECT wr.*, COALESCE(s.name, wr.source_type) as source_name FROM warehouse_returns wr LEFT JOIN shops s ON wr.source_type = 'SHOP' AND wr.source_id = s.id WHERE wr.id = ?", [$selectedSourceId]);
                 if ($retInfo) {
                     if (!empty($retInfo['source_name'])) $sourceName = $retInfo['source_name'];
@@ -1229,15 +1262,22 @@ if (!empty($generatedItems) && !$isViewingExisting) {
             }
 
             if (!array_key_exists($variantId, $availableQrCodesByVariant)) {
+                $returnQrPrefixFilter = $isDirectPurchaseReturn ? "AND qr_code LIKE ?" : '';
+                $savedQrParams = [$variantId, $targetWarehouseId];
+                if ($isDirectPurchaseReturn) {
+                    $savedQrParams[] = $qrPrefix . '%';
+                }
+                $savedQrParams[] = $variantId;
                 $savedQrCodes = Database::fetchAll(
                     "SELECT qr_code
                      FROM warehouse_qr_codes
                      WHERE variant_id = ? AND warehouse_id = ? AND inwarded_at IS NULL
+                       {$returnQrPrefixFilter}
                        AND qr_code NOT IN (SELECT code FROM warehouse_deleted_label_codes WHERE variant_id = ? OR variant_id IS NULL)
                      ORDER BY id DESC
                      LIMIT " . (int)($requestedQrCountByVariant[$variantId] ?? 0) . "
                      FOR UPDATE",
-                    [$variantId, $targetWarehouseId, $variantId]
+                    $savedQrParams
                 );
                 $availableQrCodesByVariant[$variantId] = array_reverse(array_column($savedQrCodes, 'qr_code'));
             }
@@ -1707,6 +1747,53 @@ foreach ($qrBatches as $batch) {
                             <?php if (hasPermission('wh_labels', 'create')): ?>
                                 <a class="btn btn-sm btn-outline-danger" href="<?= url('warehouse/labels?source_type=returns&view=generate&history_tab=returns&return_id=' . (int)$returnItem['warehouse_return_id'] . '&return_item_id=' . (int)$returnItem['id'] . '&return_variant_id=' . (int)$returnItem['variant_id']) ?>">
                                     <i class="bi bi-qr-code me-1"></i>Return QR
+                                </a>
+                            <?php else: ?>
+                                <span class="text-muted small">View only</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card border-0 shadow-sm rounded-3 mt-4">
+        <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+            <div>
+                <h5 class="mb-0 fw-bold"><i class="bi bi-receipt-cutoff text-primary me-2"></i>Direct Purchase Customer Returns</h5>
+                <small class="text-muted">Track GOOD returned items from R-prefixed QR generation through admin inward.</small>
+            </div>
+            <span class="badge bg-primary-subtle text-primary border border-primary-subtle"><?= count($directPurchaseReturns ?? []) ?> Return Items</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>Return No.</th><th>Purchase / Customer</th><th>Product</th><th>SKU</th><th>Quantity</th><th>Status</th><th class="text-end">Action</th></tr></thead>
+                <tbody>
+                <?php if (empty($directPurchaseReturns)): ?>
+                    <tr><td colspan="7" class="text-center text-muted py-5">No direct purchase customer returns are waiting for QR inward or have completed it.</td></tr>
+                <?php else: foreach ($directPurchaseReturns as $purchaseReturnItem): ?>
+                    <?php $purchaseReturnInwarded = !empty($purchaseReturnItem['is_inwarded']); ?>
+                    <tr>
+                        <td class="font-monospace fw-semibold text-primary"><?= e($purchaseReturnItem['return_number'] ?? '-') ?></td>
+                        <td>
+                            <div class="fw-semibold"><?= e($purchaseReturnItem['po_number'] ?? 'Direct Purchase') ?></div>
+                            <small class="text-muted"><?= e($purchaseReturnItem['customer_name'] ?? 'Direct Customer') ?></small>
+                        </td>
+                        <td class="fw-semibold"><?= e($purchaseReturnItem['product_name'] ?? '-') ?></td>
+                        <td class="font-monospace small"><?= e($purchaseReturnItem['sku'] ?? '-') ?></td>
+                        <td><?= (int)$purchaseReturnItem['quantity'] ?> pcs</td>
+                        <td>
+                            <span class="badge <?= $purchaseReturnInwarded ? 'bg-success' : 'bg-warning text-dark' ?>">
+                                <?= $purchaseReturnInwarded ? 'Inwarded' : 'Waiting for QR Inward' ?>
+                            </span>
+                        </td>
+                        <td class="text-end">
+                            <?php if ($purchaseReturnInwarded): ?>
+                                <span class="text-success small fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>Stock updated</span>
+                            <?php elseif (hasPermission('wh_labels', 'create') || (function_exists('isAdmin') && isAdmin())): ?>
+                                <a class="btn btn-sm btn-outline-primary" href="<?= url('warehouse/labels?source_type=returns&return_source=purchase&view=generate&history_tab=returns&return_id=' . (int)$purchaseReturnItem['return_id'] . '&return_item_id=' . (int)$purchaseReturnItem['return_item_id'] . '&return_variant_id=' . (int)$purchaseReturnItem['variant_id'] . '&warehouse_id=' . (int)$purchaseReturnItem['warehouse_id']) ?>">
+                                    <i class="bi bi-qr-code me-1"></i>Generate R QR
                                 </a>
                             <?php else: ?>
                                 <span class="text-muted small">View only</span>
@@ -2240,6 +2327,13 @@ foreach ($qrBatches as $batch) {
     <div class="card-body p-4">
         <form method="GET" action="<?= url('warehouse/labels') ?>" id="qrGenForm" class="row g-3" <?= $isViewingExisting ? 'style="display:none;"' : '' ?>>
             <input type="hidden" name="source_type" value="<?= e($currentSourceType) ?>">
+            <?php if ($isDirectPurchaseReturn): ?>
+                <input type="hidden" name="return_source" value="purchase">
+                <input type="hidden" name="return_item_id" value="<?= (int)$selectedReturnItemId ?>">
+                <input type="hidden" name="return_id" value="<?= (int)$selectedSourceId ?>">
+                <input type="hidden" name="return_variant_id" value="<?= (int)$selectedVariantId ?>">
+                <input type="hidden" name="warehouse_id" value="<?= (int)$targetWarehouseId ?>">
+            <?php endif; ?>
 
             <?php if ($currentSourceType === 'returns'): ?>
                 <!-- SESSION 1: CUSTOMER RETURNS QR GENERATOR -->
@@ -2275,7 +2369,7 @@ foreach ($qrBatches as $batch) {
 
                 <div class="col-md-4">
                     <label class="form-label fw-bold small text-dark"><i class="bi bi-tag text-primary me-1"></i>Returned Product Variant / SKU <span class="text-danger">*</span></label>
-                    <select name="variant_id" id="returnsVariantSelect" class="form-select form-select-sm" required onchange="onReturnVariantChange(this)">
+                    <select name="variant_id" id="returnsVariantSelect" class="form-select form-select-sm" required onchange="onReturnVariantChange(this)" <?= $isDirectPurchaseReturn ? 'disabled' : '' ?>>
                         <option value="">-- Select Product Variant --</option>
                         <?php foreach ($stockVariants as $sv): 
                             $hParts = array_filter([$sv['category_name'] ?? '', $sv['subcategory_name'] ?? '', $sv['sub_subcategory_name'] ?? '']);
@@ -2291,6 +2385,9 @@ foreach ($qrBatches as $batch) {
                             </option>
                         <?php endforeach; ?>
                     </select>
+                    <?php if ($isDirectPurchaseReturn): ?>
+                        <input type="hidden" name="variant_id" value="<?= (int)$selectedVariantId ?>">
+                    <?php endif; ?>
                 </div>
 
                 <!-- Custom Brand for Return -->
@@ -2310,21 +2407,24 @@ foreach ($qrBatches as $batch) {
 
                 <div class="col-md-2">
                     <label class="form-label fw-bold small text-dark">Return QC Classification</label>
-                    <select name="tag_type" class="form-select form-select-sm">
+                    <select name="tag_type" class="form-select form-select-sm" <?= $isDirectPurchaseReturn ? 'disabled' : '' ?>>
                         <option value="GOOD" <?= $tagType === 'GOOD' ? 'selected' : '' ?>>GOOD — Re-Stock (Available Inventory)</option>
                         <option value="DAMAGED" <?= $tagType === 'DAMAGED' ? 'selected' : '' ?>>DAMAGED — Quarantine / Scrap</option>
                         <option value="DEFECTIVE" <?= $tagType === 'DEFECTIVE' ? 'selected' : '' ?>>DEFECTIVE — Factory Rework</option>
                         <option value="WRONG_SIZE" <?= $tagType === 'WRONG_SIZE' ? 'selected' : '' ?>>WRONG SIZE — Store Exchange</option>
                     </select>
+                    <?php if ($isDirectPurchaseReturn): ?>
+                        <input type="hidden" name="tag_type" value="GOOD">
+                    <?php endif; ?>
                 </div>
 
                 <div class="col-md-1">
                     <label class="form-label fw-bold small text-dark">Copies</label>
-                    <input type="number" name="copies" class="form-control form-control-sm text-center" value="<?= $copiesCount ?>" min="1" max="500" required>
+                    <input type="number" name="copies" class="form-control form-control-sm text-center" value="<?= $copiesCount ?>" min="1" max="500" required <?= $isDirectPurchaseReturn ? 'readonly' : '' ?>>
                 </div>
 
                 <div class="col-md-2 d-flex align-items-end">
-                    <?php if (hasPermission('wh_labels', 'create')): ?>
+                    <?php if ($canCreateWarehouseQr): ?>
                         <button type="submit" class="btn btn-primary btn-sm w-100 fw-semibold py-2 shadow-sm">
                             <i class="bi bi-qr-code me-1"></i> Generate QR Labels
                         </button>
@@ -3050,6 +3150,14 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                 $inwardPieceQty = $isSeriesOrComp
                     ? ($aggregateTotalQty > 0 ? $aggregatePendingQty : ($remainingQty > 0 ? $remainingQty : (!empty($activeVar['pack_quantity']) && (int)$activeVar['pack_quantity'] > 1 ? (int)$activeVar['pack_quantity'] : $totalExpectedQty)))
                         : ($remainingQty > 0 ? $remainingQty : count($generatedItems));
+                if ($isDirectPurchaseReturn && !empty($selectedPurchaseReturnItem)) {
+                    $totalExpectedQty = (int)$selectedPurchaseReturnItem['quantity'];
+                    $alreadyInwardedQty = !empty($selectedPurchaseReturnItem['is_inwarded']) ? $totalExpectedQty : 0;
+                    $remainingQty = max(0, $totalExpectedQty - $alreadyInwardedQty);
+                    $isFullyInwarded = $totalExpectedQty > 0 && $remainingQty === 0;
+                    $isPartiallyInwarded = $alreadyInwardedQty > 0 && !$isFullyInwarded;
+                    $inwardPieceQty = $remainingQty;
+                }
                 ?>
                 <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
                     <span class="badge bg-success px-3 py-1 fs-7 shadow-xs">
@@ -3129,6 +3237,8 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                     <input type="hidden" name="seller_id" id="inwardSellerId" value="<?= (int)$selectedSellerId ?>">
                     <input type="hidden" name="source_id" id="inwardSourceId" value="<?= (int)$selectedSourceId ?>">
                     <input type="hidden" name="return_inward" value="<?= $currentSourceType === 'returns' ? '1' : '0' ?>">
+                    <input type="hidden" name="return_source" value="<?= $isDirectPurchaseReturn ? 'purchase' : '' ?>">
+                    <input type="hidden" name="return_item_id" value="<?= $isDirectPurchaseReturn ? (int)$selectedReturnItemId : 0 ?>">
                     <input type="hidden" name="tag_codes" id="inwardTagCodesInput" value="<?= htmlspecialchars(json_encode(array_column($generatedItems, 'tag_code')), ENT_QUOTES, 'UTF-8') ?>">
                     
                     <?php 
