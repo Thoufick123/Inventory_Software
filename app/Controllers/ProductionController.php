@@ -5808,7 +5808,8 @@ class ProductionController {
             "SELECT id FROM subcategories WHERE id = ? AND category_id = ?",
             [$subcategoryId, $categoryId]
         )) {
-            return null;
+            $subcategoryId = null;
+            $subSubcategoryId = null;
         }
         if ($subSubcategoryId !== null && (
             $subcategoryId === null
@@ -5817,7 +5818,7 @@ class ProductionController {
                 [$subSubcategoryId, $subcategoryId]
             )
         )) {
-            return null;
+            $subSubcategoryId = null;
         }
 
         return [
@@ -5825,6 +5826,34 @@ class ProductionController {
             'subcategory_id' => $subcategoryId,
             'sub_subcategory_id' => $subSubcategoryId,
         ];
+    }
+
+    private function ensureProductionCategoryAttributesTable(): void {
+        static $ensured = false;
+        if ($ensured) return;
+        try {
+            Database::execute("
+                CREATE TABLE IF NOT EXISTS `production_category_attributes` (
+                  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+                  `category_id` int(10) unsigned NOT NULL,
+                  `subcategory_id` int(10) unsigned DEFAULT NULL,
+                  `sub_subcategory_id` int(10) unsigned DEFAULT NULL,
+                  `attr_name` varchar(100) NOT NULL,
+                  `attr_type` enum('TEXT','NUMBER','SELECT','MULTI_SELECT') NOT NULL DEFAULT 'TEXT',
+                  `attr_options` text DEFAULT NULL,
+                  `is_required` tinyint(1) NOT NULL DEFAULT 0,
+                  `sort_order` int(11) NOT NULL DEFAULT 0,
+                  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+                  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+                  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+                  PRIMARY KEY (`id`),
+                  KEY `idx_production_cat_attrs` (`category_id`,`subcategory_id`,`sub_subcategory_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+            ");
+            $ensured = true;
+        } catch (\Throwable $e) {
+            // Table creation attempted
+        }
     }
 
     private function findProductionCategoryAttribute(int $attributeId, string $attributeName, ?array $scope = null): ?array {
@@ -5856,6 +5885,7 @@ class ProductionController {
      */
     public function ajaxGetCategoryAttributes(int $categoryId): void {
         try {
+            $this->ensureProductionCategoryAttributesTable();
             $subcategoryId = !empty($_GET['subcategory_id']) ? (int)$_GET['subcategory_id'] : null;
             $subSubcategoryId = !empty($_GET['sub_subcategory_id']) ? (int)$_GET['sub_subcategory_id'] : null;
             $scope = $this->resolveProductionAttributeScope($categoryId, $subcategoryId, $subSubcategoryId);
@@ -5866,10 +5896,37 @@ class ProductionController {
 
             $allSubcatIds = $subcategoryId ? [$subcategoryId] : [];
             $allSubSubcatIds = $subSubcategoryId ? [$subSubcategoryId] : [];
-            $rawAttributes = Database::fetchAll(
-                "SELECT * FROM production_category_attributes WHERE category_id = ? AND is_active = 1",
-                [$categoryId]
-            );
+            
+            $rawAttributes = [];
+            try {
+                $rawAttributes = Database::fetchAll(
+                    "SELECT * FROM production_category_attributes WHERE category_id = ? AND is_active = 1",
+                    [$categoryId]
+                );
+            } catch (\Throwable $e) {
+                $rawAttributes = [];
+            }
+
+            // Also check wh_category_attributes and merge any missing category-level specifications
+            try {
+                $whAttributes = Database::fetchAll(
+                    "SELECT * FROM wh_category_attributes WHERE category_id = ? AND is_active = 1",
+                    [$categoryId]
+                );
+                if (!empty($whAttributes)) {
+                    $prodKeys = [];
+                    foreach ($rawAttributes as $pa) {
+                        $pKey = mb_strtoupper(trim($pa['attr_name'])) . '_' . (int)($pa['subcategory_id'] ?? 0) . '_' . (int)($pa['sub_subcategory_id'] ?? 0);
+                        $prodKeys[$pKey] = true;
+                    }
+                    foreach ($whAttributes as $wa) {
+                        $wKey = mb_strtoupper(trim($wa['attr_name'])) . '_' . (int)($wa['subcategory_id'] ?? 0) . '_' . (int)($wa['sub_subcategory_id'] ?? 0);
+                        if (!isset($prodKeys[$wKey])) {
+                            $rawAttributes[] = $wa;
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {}
 
             // Hierarchy matching & override logic:
             // Level 1: Category root (subcategory_id is NULL or 0)
@@ -5981,7 +6038,6 @@ class ProductionController {
 
             $finalAttributes = [];
             $hasSizeAttr = false;
-            $hasColorAttr = false;
 
             foreach ($scopedAttrs as $item) {
                 $attr = $item['data'];
@@ -5991,23 +6047,21 @@ class ProductionController {
                     $hasSizeAttr = true;
                     $attr['attr_name'] = 'SIZE';
 
-                    // If catalog product style exists and has defined sizes, prioritize catalog style's sizes so they match exactly
-                    if (!empty($catalogSizes)) {
-                        $opts = $catalogSizes;
-                    } else {
-                        $opts = !empty($attr['attr_options']) ? array_map('trim', explode(',', $attr['attr_options'])) : [];
-                        $opts = array_values(array_unique(array_filter($opts)));
-                        if (empty($opts)) {
-                            $opts = $defaultSizeCodes;
-                        }
+                    // Merge catalog product sizes WITH user-defined/configured sizes so newly added sizes are preserved!
+                    $userOpts = !empty($attr['attr_options']) ? array_map('trim', explode(',', $attr['attr_options'])) : [];
+                    $mergedOpts = array_values(array_unique(array_filter(array_merge($catalogSizes, $userOpts))));
+                    if (empty($mergedOpts)) {
+                        $mergedOpts = $defaultSizeCodes;
                     }
-                    $attr['attr_options'] = implode(',', $opts);
+                    $attr['attr_options'] = implode(',', $mergedOpts);
                     $attr['attr_type'] = 'MULTI_SELECT';
                     $attr['sort_order'] = 1;
                 } elseif (in_array($attrNameUpper, ['COLOR', 'COLORS', 'COLOR ATTRIBUTE', 'COLOR ATTRIBUTES'], true)) {
-                    // In apparel roll management, fabric roll colors are tracked at the individual roll card level.
-                    // Do not inject or require separate COLOR attribute checkboxes in cutting specifications.
-                    continue;
+                    // If options are configured for COLOR, show it; otherwise skip empty dummy color
+                    if (empty(trim($attr['attr_options'] ?? ''))) {
+                        continue;
+                    }
+                    $attr['attr_type'] = 'MULTI_SELECT';
                 } else {
                     // Suppress empty select/multi_select attributes with zero options
                     if (in_array($attr['attr_type'], ['SELECT', 'MULTI_SELECT'], true) && empty(trim($attr['attr_options'] ?? ''))) {
@@ -6053,6 +6107,7 @@ class ProductionController {
      */
     public function ajaxAddCategoryAttributeOption(): void {
         try {
+            $this->ensureProductionCategoryAttributesTable();
             $attrId = (int)($_POST['attribute_id'] ?? 0);
             $attrName = mb_strtoupper(trim($_POST['attr_name'] ?? ''));
             if (in_array($attrName, ['SIZE', 'SIZES', 'SIZE ATTRIBUTE', 'SIZE ATTRIBUTES', 'SIZES ATTRIBUTE', 'SIZES ATTRIBUTES'], true)) {
@@ -6127,6 +6182,11 @@ class ProductionController {
             $updatedOptsStr = implode(',', $currentOpts);
             Database::execute("UPDATE production_category_attributes SET attr_options = ?, attr_type = 'MULTI_SELECT', updated_at = NOW() WHERE id = ?", [$updatedOptsStr, $attr['id']]);
 
+            // Sync with wh_category_attributes
+            try {
+                Database::execute("UPDATE wh_category_attributes SET attr_options = ?, attr_type = 'MULTI_SELECT', updated_at = NOW() WHERE category_id = ? AND attr_name = ?", [$updatedOptsStr, $attr['category_id'], $attr['attr_name']]);
+            } catch (\Throwable $e) {}
+
             // If attribute is SIZE, also add each added option to sizes table if not present
             if ($attr['attr_name'] === 'SIZE') {
                 foreach ($addedOpts as $szCode) {
@@ -6153,6 +6213,7 @@ class ProductionController {
      */
     public function ajaxDeleteCategoryAttributeOption(): void {
         try {
+            $this->ensureProductionCategoryAttributesTable();
             $attrId = (int)($_POST['attribute_id'] ?? 0);
             $attrName = mb_strtoupper(trim($_POST['attr_name'] ?? ''));
             if (in_array($attrName, ['SIZE', 'SIZES', 'SIZE ATTRIBUTE', 'SIZE ATTRIBUTES', 'SIZES ATTRIBUTE', 'SIZES ATTRIBUTES'], true)) {
@@ -6185,6 +6246,10 @@ class ProductionController {
 
             Database::execute("UPDATE production_category_attributes SET attr_options = ?, updated_at = NOW() WHERE id = ?", [$updatedOptsStr, $attr['id']]);
 
+            try {
+                Database::execute("UPDATE wh_category_attributes SET attr_options = ?, updated_at = NOW() WHERE category_id = ? AND attr_name = ?", [$updatedOptsStr, $attr['category_id'], $attr['attr_name']]);
+            } catch (\Throwable $e) {}
+
             Response::json(['success' => true]);
         } catch (\Throwable $e) {
             Response::json(['success' => false, 'message' => $e->getMessage()], 500);
@@ -6196,6 +6261,7 @@ class ProductionController {
      */
     public function ajaxQuickAddCategoryAttribute(): void {
         try {
+            $this->ensureProductionCategoryAttributesTable();
             $categoryId = (int)($_POST['category_id'] ?? 0);
             $subcategoryId = !empty($_POST['subcategory_id']) ? (int)$_POST['subcategory_id'] : null;
             $subSubcategoryId = !empty($_POST['sub_subcategory_id']) ? (int)$_POST['sub_subcategory_id'] : null;
@@ -6205,7 +6271,7 @@ class ProductionController {
             } elseif (in_array($attrName, ['COLOR', 'COLORS', 'COLOR ATTRIBUTE', 'COLOR ATTRIBUTES'], true)) {
                 $attrName = 'COLOR';
             }
-            $attrType = in_array(strtoupper(trim($_POST['attr_type'] ?? '')), ['TEXT', 'NUMBER', 'SELECT', 'MULTI_SELECT']) ? strtoupper(trim($_POST['attr_type'])) : 'SELECT';
+            $attrType = in_array(strtoupper(trim($_POST['attr_type'] ?? '')), ['TEXT', 'NUMBER', 'SELECT', 'MULTI_SELECT']) ? strtoupper(trim($_POST['attr_type'])) : 'MULTI_SELECT';
             if ($attrName === 'SIZE' || $attrName === 'COLOR') {
                 $attrType = 'MULTI_SELECT';
             }
@@ -6242,8 +6308,7 @@ class ProductionController {
             }
 
             // Check if attribute with the same name already exists for this exact hierarchy scope.
-            // This prevents ghost duplicates while still allowing a parent-level attribute to be reused at a more specific level.
-            $existingSql = "SELECT id FROM production_category_attributes WHERE category_id = ? AND attr_name = ? AND is_active = 1";
+            $existingSql = "SELECT id, attr_options FROM production_category_attributes WHERE category_id = ? AND attr_name = ? AND is_active = 1";
             $existingParams = [$categoryId, $attrName];
             if ($subSubcategoryId) {
                 $existingSql .= " AND COALESCE(subcategory_id, 0) = ? AND COALESCE(sub_subcategory_id, 0) = ?";
@@ -6257,9 +6322,13 @@ class ProductionController {
             }
             $existing = Database::fetchOne($existingSql, $existingParams);
             if ($existing) {
+                $newOptsArray = $formattedOptions ? explode(',', $formattedOptions) : [];
+                $oldOptsArray = !empty($existing['attr_options']) ? explode(',', $existing['attr_options']) : [];
+                $mergedOptions = implode(',', array_values(array_unique(array_filter(array_merge($oldOptsArray, $newOptsArray)))));
+
                 Database::execute(
                     "UPDATE production_category_attributes SET attr_type = ?, attr_options = ?, is_required = ?, is_active = 1, updated_at = NOW() WHERE id = ?",
-                    [$attrType, $formattedOptions, $isRequired, $existing['id']]
+                    [$attrType, $mergedOptions ?: $formattedOptions, $isRequired, $existing['id']]
                 );
                 $attrId = (int)$existing['id'];
             } else {
@@ -6271,6 +6340,30 @@ class ProductionController {
                 );
                 $attrId = (int)Database::lastInsertId();
             }
+
+            // Sync with wh_category_attributes
+            try {
+                $whExisting = Database::fetchOne(
+                    "SELECT id, attr_options FROM wh_category_attributes WHERE category_id = ? AND attr_name = ? AND is_active = 1 LIMIT 1",
+                    [$categoryId, $attrName]
+                );
+                if ($whExisting) {
+                    $whMerged = implode(',', array_values(array_unique(array_filter(array_merge(
+                        !empty($whExisting['attr_options']) ? explode(',', $whExisting['attr_options']) : [],
+                        $formattedOptions ? explode(',', $formattedOptions) : []
+                    )))));
+                    Database::execute(
+                        "UPDATE wh_category_attributes SET attr_type = ?, attr_options = ?, is_required = ?, is_active = 1, updated_at = NOW() WHERE id = ?",
+                        [$attrType, $whMerged ?: $formattedOptions, $isRequired, $whExisting['id']]
+                    );
+                } else {
+                    Database::execute(
+                        "INSERT INTO wh_category_attributes (category_id, subcategory_id, sub_subcategory_id, attr_name, attr_type, attr_options, is_required, sort_order, is_active, created_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, NOW())",
+                        [$categoryId, $subcategoryId, $subSubcategoryId, $attrName, $attrType, $formattedOptions, $isRequired]
+                    );
+                }
+            } catch (\Throwable $e) {}
 
             $savedAttr = Database::fetchOne("SELECT * FROM production_category_attributes WHERE id = ?", [$attrId]);
             Response::json([
