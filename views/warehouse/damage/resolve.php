@@ -64,38 +64,22 @@ if (!empty($damage['replacement_variant_id'])) {
                     <h5 class="mb-0 fw-bold"><i class="bi bi-box-seam me-2 text-success"></i>Replacement QR Ready</h5>
                 </div>
                 <div class="card-body">
-                    <p class="text-muted">Scan or verify this replacement label, then confirm inward to update warehouse stock.</p>
+                    <p class="text-muted">The replacement QR is ready. Open it in Warehouse Labels to print the label and complete the inward there.</p>
                     <div class="row align-items-center g-3">
-                        <div class="col-md-4 text-center">
-                            <div id="replacementQrPreview" class="d-inline-flex bg-white border rounded p-3"></div>
-                            <div class="font-monospace fw-bold text-dark mt-2"><?= e($damage['replacement_qr_code']) ?></div>
-                        </div>
                         <div class="col-md-8">
                             <div class="fw-bold fs-5"><?= e($replacementVariant['product_name'] ?? 'Replacement product') ?></div>
                             <div class="font-monospace text-primary"><?= e($replacementVariant['sku'] ?? '') ?></div>
                             <div class="small text-muted mt-2">Replacement quantity: <?= number_format((int)$damage['quantity']) ?> pcs</div>
                             <div class="small text-muted">Resolution reason: <?= e(str_replace('_', ' ', (string)$damage['resolution_reason'])) ?></div>
-                            <form method="POST" action="<?= url('warehouse/damage/inward-replacement/' . (int)$damage['id']) ?>" class="mt-3" onsubmit="return confirm('Inward the replacement QR and update warehouse stock?');">
-                                <?= CSRF::input() ?>
-                                <button type="submit" class="btn btn-success fw-semibold">
-                                    <i class="bi bi-box-arrow-in-down me-1"></i> Confirm QR &amp; Inward Stock
-                                </button>
-                            </form>
+                        </div>
+                        <div class="col-md-4 text-md-end">
+                            <a class="btn btn-success fw-semibold" href="<?= url('warehouse/labels?damage_id=' . (int)$damage['id']) ?>">
+                                <i class="bi bi-qr-code-scan me-1"></i> Open in Warehouse Labels
+                            </a>
                         </div>
                     </div>
                 </div>
             </div>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-            <script>
-                if (typeof QRCode !== 'undefined') {
-                    new QRCode(document.getElementById('replacementQrPreview'), {
-                        text: <?= json_encode($damage['replacement_qr_code']) ?>,
-                        width: 140,
-                        height: 140,
-                        correctLevel: QRCode.CorrectLevel.M
-                    });
-                }
-            </script>
         <?php elseif (!empty($damage['resolution_action'])): ?>
             <div class="alert alert-info border-0 shadow-sm rounded-3">
                 <div class="fw-bold mb-1">This case already has a resolution in progress or completed.</div>
@@ -118,7 +102,7 @@ if (!empty($damage['replacement_variant_id'])) {
                             <label class="form-label fw-semibold" for="resolutionAction">Resolution action</label>
                             <select class="form-select" name="resolution_action" id="resolutionAction" required onchange="updateDamageResolutionFields()">
                                 <option value="">Select an action</option>
-                                <option value="REPLACEMENT">Supplier replacement (generate QR and inward)</option>
+                                <option value="REPLACEMENT">Supplier replacement (generate QR, then inward in Labels)</option>
                                 <option value="REFUND">Refund</option>
                                 <option value="SUPPLIER_CREDIT">Supplier credit</option>
                                 <option value="REWORK">Repair / factory rework</option>
@@ -138,15 +122,63 @@ if (!empty($damage['replacement_variant_id'])) {
                         </div>
                         <div class="mb-3 p-3 bg-success bg-opacity-10 border border-success-subtle rounded-3" id="replacementProductGroup" style="display:none;">
                             <label class="form-label fw-semibold" for="replacementVariant">Replacement product</label>
-                            <select class="form-select" name="replacement_variant_id" id="replacementVariant">
+                            <select class="form-select" name="replacement_variant_id" id="replacementVariant" onchange="updateDamageReplacementDetails()">
                                 <option value="">Select a replacement product</option>
                                 <?php foreach ($variants as $variant): ?>
-                                    <option value="<?= (int)$variant['id'] ?>">
+                                    <?php
+                                        $categoryHierarchy = implode(' › ', array_filter([
+                                            $variant['category_name'] ?? '',
+                                            $variant['subcategory_name'] ?? '',
+                                            $variant['sub_subcategory_name'] ?? '',
+                                        ]));
+                                    ?>
+                                    <option value="<?= (int)$variant['id'] ?>"
+                                        data-product-name="<?= e($variant['product_name']) ?>"
+                                        data-category="<?= e($categoryHierarchy) ?>"
+                                        data-category-type="<?= e(strtoupper((string)$variant['category_type'])) ?>"
+                                        data-hsn="<?= e($variant['variant_hsn_code'] ?: ($variant['product_hsn_code'] ?? '')) ?>"
+                                        data-gst="<?= e($variant['gst_rate'] ?? $variant['gst_percentage'] ?? '5.00') ?>"
+                                        data-weight="<?= e($variant['variant_weight'] ?? $variant['product_weight'] ?? '0.000') ?>"
+                                        data-variant="<?= e(($variant['size_name'] ?? 'Free') . ' / ' . ($variant['color_name'] ?? 'Std')) ?>"
+                                        data-mrp="<?= e($variant['mrp'] ?? '0.00') ?>"
+                                        data-selling="<?= e($variant['selling_price'] ?? '0.00') ?>"
+                                        data-cost="<?= e($variant['purchase_price'] ?? '0.00') ?>">
                                         <?= e($variant['product_name']) ?> · <?= e($variant['sku']) ?> · <?= e($variant['size_name'] ?? 'Free') ?> / <?= e($variant['color_name'] ?? 'Std') ?> — <?= e($variant['supplier_name']) ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
-                            <small class="text-muted d-block mt-2">One replacement QR will be generated for <?= number_format((int)$damage['quantity']) ?> pcs. Stock is not added until you confirm the QR inward step.</small>
+                            <div id="replacementProductDetails" class="mt-3" style="display:none;">
+                                <div class="small fw-bold text-muted mb-2">Replacement product details</div>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-bordered align-middle text-nowrap mb-2">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Category hierarchy</th><th>Category type</th><th>Product name</th>
+                                                <th>HSN</th><th>GST (%)</th><th>Weight (kg)</th><th>Variant / size</th>
+                                                <th>Base MRP (₹)</th><th>Selling price (₹)</th><th>Supplier cost (₹)</th>
+                                                <th>Qty</th><th>Line retail value (₹)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td><input class="form-control form-control-sm" id="replacementCategory" readonly></td>
+                                                <td><input class="form-control form-control-sm" id="replacementCategoryType" readonly></td>
+                                                <td><input class="form-control form-control-sm" id="replacementProductName" readonly></td>
+                                                <td><input class="form-control form-control-sm" id="replacementHsn" readonly></td>
+                                                <td><input class="form-control form-control-sm" id="replacementGst" readonly></td>
+                                                <td><input class="form-control form-control-sm" id="replacementWeight" readonly></td>
+                                                <td><input class="form-control form-control-sm" id="replacementVariantName" readonly></td>
+                                                <td><input class="form-control form-control-sm" id="replacementMrp" readonly></td>
+                                                <td><input class="form-control form-control-sm" id="replacementSelling" readonly></td>
+                                                <td><input class="form-control form-control-sm" id="replacementCost" readonly></td>
+                                                <td><input class="form-control form-control-sm" value="<?= (int)$damage['quantity'] ?>" readonly></td>
+                                                <td><input class="form-control form-control-sm" id="replacementRetailValue" readonly></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <small class="text-muted">Details are loaded from the selected catalog variant. The QR is reserved for <?= number_format((int)$damage['quantity']) ?> pcs; stock is updated only when you inward it from Warehouse Labels.</small>
+                            </div>
                         </div>
                         <div class="mb-3" id="resolutionAmountGroup" style="display:none;">
                             <label class="form-label fw-semibold" for="resolutionAmount">Refund / credit amount (₹)</label>
@@ -165,7 +197,7 @@ if (!empty($damage['replacement_variant_id'])) {
                             <label class="form-label fw-semibold" for="resolutionNotes">Resolution notes</label>
                             <textarea class="form-control" name="resolution_notes" id="resolutionNotes" rows="3" placeholder="Supplier reference, refund details, or inspection notes"></textarea>
                         </div>
-                        <button type="submit" class="btn btn-primary fw-semibold">
+                        <button type="submit" id="damageResolveSubmit" class="btn btn-primary fw-semibold">
                             <i class="bi bi-check2-circle me-1"></i> Save Resolution
                         </button>
                     </form>
@@ -182,11 +214,48 @@ if (!empty($damage['replacement_variant_id'])) {
                     const unitSelect = document.getElementById('productionUnit');
                     replacementGroup.style.display = action === 'REPLACEMENT' ? '' : 'none';
                     replacementSelect.required = action === 'REPLACEMENT';
+                    document.getElementById('damageResolveSubmit').innerHTML = action === 'REPLACEMENT'
+                        ? '<i class="bi bi-qr-code me-1"></i> Generate Replacement QR'
+                        : '<i class="bi bi-check2-circle me-1"></i> Save Resolution';
                     amountGroup.style.display = ['REFUND', 'SUPPLIER_CREDIT'].includes(action) ? '' : 'none';
                     amount.required = ['REFUND', 'SUPPLIER_CREDIT'].includes(action);
                     reworkGroup.style.display = action === 'REWORK' ? '' : 'none';
                     unitSelect.required = action === 'REWORK';
+                    if (action !== 'REPLACEMENT') {
+                        document.getElementById('replacementProductDetails').style.display = 'none';
+                    } else if (replacementSelect.value) {
+                        updateDamageReplacementDetails();
+                    }
                 }
+                function updateDamageReplacementDetails() {
+                    const select = document.getElementById('replacementVariant');
+                    const option = select.options[select.selectedIndex];
+                    const details = document.getElementById('replacementProductDetails');
+                    if (!option || !option.value) {
+                        details.style.display = 'none';
+                        return;
+                    }
+                    const values = {
+                        replacementCategory: option.dataset.category,
+                        replacementCategoryType: option.dataset.categoryType,
+                        replacementProductName: option.dataset.productName,
+                        replacementHsn: option.dataset.hsn,
+                        replacementGst: option.dataset.gst,
+                        replacementWeight: option.dataset.weight,
+                        replacementVariantName: option.dataset.variant,
+                        replacementMrp: option.dataset.mrp,
+                        replacementSelling: option.dataset.selling,
+                        replacementCost: option.dataset.cost
+                    };
+                    Object.keys(values).forEach(function(id) {
+                        document.getElementById(id).value = values[id] || '';
+                    });
+                    const quantity = <?= (int)$damage['quantity'] ?>;
+                    const mrp = Number(option.dataset.mrp || 0);
+                    document.getElementById('replacementRetailValue').value = (mrp * quantity).toFixed(2);
+                    details.style.display = '';
+                }
+                updateDamageResolutionFields();
             </script>
         <?php endif; ?>
     </div>

@@ -681,7 +681,7 @@ class Router {
         $this->post('warehouse/returns/classify/{id}', 'WarehouseController', 'classifyReturn', ['AuthMiddleware', ['PermissionMiddleware', 'returns', 'classify']]);
 
         // Labels/QR Codes
-        $this->get('warehouse/labels', 'WarehouseController', 'labels', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'view']]);
+        $this->get('warehouse/labels', 'WarehouseController', 'labels', ['AuthMiddleware']);
         $this->get('warehouse/labels/ajax-source/{type}/{id}', 'WarehouseController', 'ajaxLabelSourceData', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'view']]);
         $this->post('warehouse/labels/generate', 'WarehouseController', 'generateLabels', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'create']]);
         $this->post('warehouse/labels/produce-new-qr', 'WarehouseController', 'produceNewQrAjax', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'edit']]);
