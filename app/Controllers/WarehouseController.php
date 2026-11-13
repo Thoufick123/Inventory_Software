@@ -5670,12 +5670,20 @@ class WarehouseController {
             }
 
             // Server-side duplicate piece QR check (enforced only for individual garments, series QR remaining quantity is still available)
+            $purchaseWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+            $purchaseWarehouseId = $purchaseWarehouseId !== null
+                ? (int)$purchaseWarehouseId
+                : (int)($_POST['warehouse_id'] ?? 1);
             $seenTags = [];
             foreach ($items as $item) {
                 if (!empty($item['scanned_qr_codes'])) {
                     foreach (array_filter(array_map('trim', explode(',', $item['scanned_qr_codes']))) as $scannedPieceTag) {
                         $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag($scannedPieceTag);
-                        if ($exchangedReplacement) {
+                        if ($exchangedReplacement && !WarehouseService::isAvailableExchangedSeriesTagForDirectPurchase(
+                            $scannedPieceTag,
+                            $purchaseWarehouseId,
+                            (int)$item['variant_id']
+                        )) {
                             Response::redirect(
                                 url('warehouse/purchases/create'),
                                 'error',
@@ -5777,6 +5785,9 @@ class WarehouseController {
                 'expected_date'  => !empty($_POST['expected_date']) ? $_POST['expected_date'] : date('Y-m-d'),
                 'payment_method' => $paymentMethod,
                 'paid_amount'   => $paidAmount,
+                'cash_tendered' => isset($_POST['cash_tendered']) && $_POST['cash_tendered'] !== ''
+                    ? $_POST['cash_tendered']
+                    : null,
                 'payment_status' => $_POST['payment_status'] ?? 'PAID',
                 'gst_type'       => $_POST['gst_type'] ?? 'CGST_SGST',
                 'status'         => $_POST['status'] ?? 'COMPLETED',
@@ -6183,7 +6194,9 @@ class WarehouseController {
     public function ajaxScanPurchaseQr(): void {
         $isAdjustmentScan = ($_REQUEST['purpose'] ?? '') === 'stock_adjustment';
         $isReturnEditScan = ($_REQUEST['purpose'] ?? '') === 'purchase_return_edit';
+        $isDirectPurchaseScan = ($_REQUEST['purpose'] ?? '') === 'direct_purchase';
         $isSameProductExchangeScan = ($_REQUEST['same_product_exchange_scan'] ?? '') === '1';
+        $directPurchaseWarehouseId = (int)($_REQUEST['warehouse_id'] ?? 0);
         $returnEditId = $isReturnEditScan ? (int)($_REQUEST['return_id'] ?? 0) : 0;
         $hasScanPermission = $isAdjustmentScan
             ? hasPermission('stock', 'adjust')
@@ -6248,11 +6261,19 @@ class WarehouseController {
         $exchangedReplacement = null;
         $exchangedReplacementTag = '';
         foreach (array_unique(array_merge([$extractedTag], $candidateCodes)) as $scannedPieceTag) {
-            $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag(
+            $candidateExchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag(
                 (string)$scannedPieceTag,
                 $isSameProductExchangeScan ? $returnEditId : null
             );
-            if ($exchangedReplacement) {
+            if ($candidateExchangedReplacement) {
+                if ($isDirectPurchaseScan && WarehouseService::isAvailableExchangedSeriesTagForDirectPurchase(
+                    (string)$scannedPieceTag,
+                    $directPurchaseWarehouseId
+                )) {
+                    continue;
+                }
+
+                $exchangedReplacement = $candidateExchangedReplacement;
                 if (!$isSameProductExchangeScan) {
                     echo json_encode([
                         'success' => false,
@@ -6935,6 +6956,32 @@ class WarehouseController {
         }
         echo json_encode(['success' => true, 'customers' => $customers]);
         exit;
+    }
+
+    public function ajaxCustomerPurchaseCount(int|string $id = 0): void {
+        if (
+            !hasPermission('purchases', 'view')
+            && !hasPermission('purchases', 'create')
+            && !hasPermission('purchases', 'edit')
+        ) {
+            Response::jsonError('Access denied.', [], 403);
+            return;
+        }
+
+        $customerId = (int)$id;
+        if ($customerId <= 0 || !Database::fetchOne("SELECT id FROM customers WHERE id = ?", [$customerId])) {
+            Response::json(['success' => false, 'message' => 'Customer not found.'], 404);
+            return;
+        }
+
+        $count = Database::fetchOne(
+            "SELECT COUNT(*) AS purchase_count FROM purchase_orders WHERE customer_id = ?",
+            [$customerId]
+        );
+        Response::json([
+            'success' => true,
+            'purchase_count' => (int)($count['purchase_count'] ?? 0),
+        ]);
     }
 
     public function ajaxCustomerPurchaseHistory(int|string $id = 0): void {

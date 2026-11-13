@@ -1042,22 +1042,36 @@ class WarehouseService {
      * Create Direct Customer Purchase / Order with tax & discount calculation.
      */
     private static function applyCustomerPurchasePayment(array &$poData, float $grandTotal, ?float $defaultPaidAmount = null): void {
-        if (!array_key_exists('paid_amount', $poData)) {
+        if (!array_key_exists('paid_amount', $poData) && !array_key_exists('cash_tendered', $poData)) {
             return;
         }
 
         $paymentMethod = strtoupper(trim((string)($poData['payment_method'] ?? 'CASH')));
-        $rawPaidAmount = $paymentMethod === 'CREDIT'
-            ? 0
-            : ($poData['paid_amount'] ?? $defaultPaidAmount ?? $grandTotal);
-        if (!is_numeric($rawPaidAmount)) {
-            throw new InvalidArgumentException('Payment received must be a valid amount.');
-        }
-
-        $paidAmount = round((float)$rawPaidAmount, 2);
         $grandTotal = round($grandTotal, 2);
-        if ($paidAmount < 0 || $paidAmount > $grandTotal) {
-            throw new InvalidArgumentException('Payment received cannot be negative or greater than the bill total.');
+
+        $cashTenderedValue = $poData['cash_tendered'] ?? null;
+        if ($paymentMethod === 'CASH' && $cashTenderedValue !== null && $cashTenderedValue !== '') {
+            if (!is_numeric($cashTenderedValue) || (float)$cashTenderedValue < 0) {
+                throw new InvalidArgumentException('Cash tendered must be a valid non-negative amount.');
+            }
+            $cashTendered = round((float)$cashTenderedValue, 2);
+            $paidAmount = min($cashTendered, $grandTotal);
+            $poData['cash_tendered'] = $cashTendered;
+            $poData['change_amount'] = round(max(0, $cashTendered - $grandTotal), 2);
+        } else {
+            $rawPaidAmount = $paymentMethod === 'CREDIT'
+                ? 0
+                : ($poData['paid_amount'] ?? $defaultPaidAmount ?? $grandTotal);
+            if (!is_numeric($rawPaidAmount)) {
+                throw new InvalidArgumentException('Payment received must be a valid amount.');
+            }
+
+            $paidAmount = round((float)$rawPaidAmount, 2);
+            if ($paidAmount < 0 || $paidAmount > $grandTotal) {
+                throw new InvalidArgumentException('Payment received cannot be negative or greater than the bill total.');
+            }
+            $poData['cash_tendered'] = $paymentMethod === 'CASH' ? $paidAmount : 0;
+            $poData['change_amount'] = 0;
         }
 
         $poData['paid_amount'] = $paidAmount;
@@ -3298,10 +3312,14 @@ class WarehouseService {
                       AND restock_return.status NOT IN ('CANCELLED', 'REJECTED')
                       AND ri.item_condition = 'GOOD'
                       AND ri.destination = 'AVAILABLE'
-                      AND ri.reason LIKE 'Piece Tags:%'
+                      AND ri.reason IS NOT NULL
                       AND FIND_IN_SET(
                           UPPER(?),
-                          REPLACE(UPPER(SUBSTRING_INDEX(ri.reason, 'Piece Tags: ', -1)), ' ', '')
+                          REPLACE(
+                              SUBSTRING_INDEX(UPPER(ri.reason), 'PIECE TAGS:', -1),
+                              ' ',
+                              ''
+                          )
                       ) > 0
                )";
         $params = [$pieceTag, $pieceTag];
@@ -3312,6 +3330,66 @@ class WarehouseService {
         $sql .= " ORDER BY e.id DESC LIMIT 1";
 
         return Database::fetchOne($sql, $params);
+    }
+
+    public static function isAvailableExchangedSeriesTagForDirectPurchase(
+        string $pieceTag,
+        int $warehouseId,
+        ?int $expectedVariantId = null
+    ): bool {
+        $pieceTag = trim($pieceTag);
+        if ($pieceTag === '' || $warehouseId <= 0) {
+            return false;
+        }
+
+        $replacement = Database::fetchOne(
+            "SELECT ei.variant_id, pv.qr_type,
+                    GREATEST(COALESCE(pv.pack_quantity, 1), COALESCE(wq.pack_quantity, 1)) AS pack_quantity,
+                    COALESCE(wc.category_type, 'NORMAL') AS category_type,
+                    GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) AS is_complementary
+             FROM exchange_items ei
+             JOIN exchanges e ON e.id = ei.exchange_id
+             JOIN `returns` r ON r.id = e.return_id
+             JOIN product_variants pv ON pv.id = ei.variant_id
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+             LEFT JOIN warehouse_qr_codes wq
+               ON wq.variant_id = ei.variant_id
+              AND UPPER(TRIM(wq.qr_code)) = UPPER(?)
+             WHERE ei.item_type = 'NEW'
+               AND r.source_type = 'WAREHOUSE_PURCHASE'
+               AND e.status = 'COMPLETED'
+               AND ei.piece_tag IS NOT NULL
+               AND FIND_IN_SET(UPPER(?), REPLACE(UPPER(ei.piece_tag), ' ', '')) > 0
+             ORDER BY e.id DESC LIMIT 1",
+            [$pieceTag, $pieceTag]
+        );
+        if (!$replacement) {
+            return false;
+        }
+        if ($expectedVariantId !== null && (int)$replacement['variant_id'] !== $expectedVariantId) {
+            return false;
+        }
+
+        $isSeriesOrPack = in_array(strtoupper((string)($replacement['qr_type'] ?? '')), ['SERIES', 'SERIES_BATCH'], true)
+            || strtoupper((string)($replacement['category_type'] ?? '')) === 'SERIES'
+            || (int)($replacement['pack_quantity'] ?? 1) > 1
+            || !empty($replacement['is_complementary']);
+        if (!$isSeriesOrPack) {
+            return false;
+        }
+
+        $availableStock = (float)(Database::fetchOne(
+            "SELECT COALESCE(SUM(quantity), 0) AS quantity
+             FROM stock_balances
+             WHERE variant_id = ?
+               AND location_type = 'WAREHOUSE'
+               AND location_id = ?
+               AND stock_state = 'AVAILABLE'",
+            [(int)$replacement['variant_id'], $warehouseId]
+        )['quantity'] ?? 0);
+
+        return $availableStock > 0;
     }
 
     /**

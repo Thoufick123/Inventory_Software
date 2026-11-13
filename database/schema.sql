@@ -1787,6 +1787,8 @@ CREATE TABLE `purchase_orders` (
   `expected_delivery_date` date DEFAULT NULL,
   `tax_amount` decimal(10,2) DEFAULT 0.00,
   `paid_amount` decimal(12,2) DEFAULT 0.00,
+  `cash_tendered` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `change_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
   `warehouse_supplier_id` int(10) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `po_number` (`po_number`),
@@ -3117,6 +3119,27 @@ CREATE TABLE `wh_category_attributes` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
   KEY `idx_cat_attrs` (`category_id`,`subcategory_id`,`sub_subcategory_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+-- Table structure for table `production_category_attributes`
+-- --------------------------------------------------------
+DROP TABLE IF EXISTS `production_category_attributes`;
+CREATE TABLE `production_category_attributes` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `category_id` int(10) unsigned NOT NULL,
+  `subcategory_id` int(10) unsigned DEFAULT NULL,
+  `sub_subcategory_id` int(10) unsigned DEFAULT NULL,
+  `attr_name` varchar(100) NOT NULL,
+  `attr_type` enum('TEXT','NUMBER','SELECT','MULTI_SELECT') NOT NULL DEFAULT 'TEXT',
+  `attr_options` text DEFAULT NULL,
+  `is_required` tinyint(1) NOT NULL DEFAULT 0,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_production_cat_attrs` (`category_id`,`subcategory_id`,`sub_subcategory_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------

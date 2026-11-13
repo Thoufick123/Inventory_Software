@@ -5800,62 +5800,76 @@ class ProductionController {
         }
     }
 
+    private function resolveProductionAttributeScope(int $categoryId, ?int $subcategoryId, ?int $subSubcategoryId): ?array {
+        if ($categoryId <= 0 || !Database::fetchOne("SELECT id FROM categories WHERE id = ?", [$categoryId])) {
+            return null;
+        }
+        if ($subcategoryId !== null && !Database::fetchOne(
+            "SELECT id FROM subcategories WHERE id = ? AND category_id = ?",
+            [$subcategoryId, $categoryId]
+        )) {
+            return null;
+        }
+        if ($subSubcategoryId !== null && (
+            $subcategoryId === null
+            || !Database::fetchOne(
+                "SELECT id FROM sub_subcategories WHERE id = ? AND subcategory_id = ?",
+                [$subSubcategoryId, $subcategoryId]
+            )
+        )) {
+            return null;
+        }
+
+        return [
+            'category_id' => $categoryId,
+            'subcategory_id' => $subcategoryId,
+            'sub_subcategory_id' => $subSubcategoryId,
+        ];
+    }
+
+    private function findProductionCategoryAttribute(int $attributeId, string $attributeName, ?array $scope = null): ?array {
+        if ($attributeId > 0) {
+            return Database::fetchOne("SELECT * FROM production_category_attributes WHERE id = ?", [$attributeId]);
+        }
+        if ($scope === null) {
+            return null;
+        }
+
+        return Database::fetchOne(
+            "SELECT * FROM production_category_attributes
+             WHERE category_id = ?
+               AND COALESCE(subcategory_id, 0) = ?
+               AND COALESCE(sub_subcategory_id, 0) = ?
+               AND attr_name = ?
+             ORDER BY id DESC LIMIT 1",
+            [
+                $scope['category_id'],
+                $scope['subcategory_id'] ?? 0,
+                $scope['sub_subcategory_id'] ?? 0,
+                $attributeName,
+            ]
+        );
+    }
+
     /**
-     * AJAX: Get category attributes for dynamic catalog hierarchy specifications.
-     * Matches exact hierarchy with multi-level scoping and cross-catalog synchronization.
+     * AJAX: Get production-only category attributes for dynamic program specifications.
      */
     public function ajaxGetCategoryAttributes(int $categoryId): void {
         try {
             $subcategoryId = !empty($_GET['subcategory_id']) ? (int)$_GET['subcategory_id'] : null;
             $subSubcategoryId = !empty($_GET['sub_subcategory_id']) ? (int)$_GET['sub_subcategory_id'] : null;
-
-            // 1. Resolve Category IDs across both `categories` and `warehouse_categories` by name and ID
-            $allCatIds = [$categoryId];
-            $catRow = Database::fetchOne("SELECT name FROM categories WHERE id = ?", [$categoryId]);
-            if (!$catRow) {
-                $catRow = Database::fetchOne("SELECT name FROM warehouse_categories WHERE id = ?", [$categoryId]);
-            }
-            if ($catRow && !empty($catRow['name'])) {
-                $catName = trim($catRow['name']);
-                $cIds = Database::fetchAll("SELECT id FROM categories WHERE LOWER(TRIM(name)) = LOWER(?)", [$catName]);
-                $wcIds = Database::fetchAll("SELECT id FROM warehouse_categories WHERE LOWER(TRIM(name)) = LOWER(?)", [$catName]);
-                $allCatIds = array_values(array_unique(array_filter(array_merge($allCatIds, array_column($cIds, 'id'), array_column($wcIds, 'id')))));
+            $scope = $this->resolveProductionAttributeScope($categoryId, $subcategoryId, $subSubcategoryId);
+            if ($scope === null) {
+                Response::json(['success' => false, 'message' => 'Invalid production category hierarchy.'], 404);
+                return;
             }
 
-            // 2. Resolve Subcategory IDs across both `subcategories` and `warehouse_subcategories`
             $allSubcatIds = $subcategoryId ? [$subcategoryId] : [];
-            if ($subcategoryId) {
-                $subcatRow = Database::fetchOne("SELECT name FROM subcategories WHERE id = ?", [$subcategoryId]);
-                if (!$subcatRow) {
-                    $subcatRow = Database::fetchOne("SELECT name FROM warehouse_subcategories WHERE id = ?", [$subcategoryId]);
-                }
-                if ($subcatRow && !empty($subcatRow['name'])) {
-                    $subName = trim($subcatRow['name']);
-                    $sIds = Database::fetchAll("SELECT id FROM subcategories WHERE LOWER(TRIM(name)) = LOWER(?)", [$subName]);
-                    $wsIds = Database::fetchAll("SELECT id FROM warehouse_subcategories WHERE LOWER(TRIM(name)) = LOWER(?)", [$subName]);
-                    $allSubcatIds = array_values(array_unique(array_filter(array_merge($allSubcatIds, array_column($sIds, 'id'), array_column($wsIds, 'id')))));
-                }
-            }
-
-            // 3. Resolve Sub-Subcategory IDs across both `sub_subcategories` and `warehouse_sub_subcategories`
             $allSubSubcatIds = $subSubcategoryId ? [$subSubcategoryId] : [];
-            if ($subSubcategoryId) {
-                $subSubRow = Database::fetchOne("SELECT name FROM sub_subcategories WHERE id = ?", [$subSubcategoryId]);
-                if (!$subSubRow) {
-                    $subSubRow = Database::fetchOne("SELECT name FROM warehouse_sub_subcategories WHERE id = ?", [$subSubcategoryId]);
-                }
-                if ($subSubRow && !empty($subSubRow['name'])) {
-                    $sscName = trim($subSubRow['name']);
-                    $ssIds = Database::fetchAll("SELECT id FROM sub_subcategories WHERE LOWER(TRIM(name)) = LOWER(?)", [$sscName]);
-                    $wssIds = Database::fetchAll("SELECT id FROM warehouse_sub_subcategories WHERE LOWER(TRIM(name)) = LOWER(?)", [$sscName]);
-                    $allSubSubcatIds = array_values(array_unique(array_filter(array_merge($allSubSubcatIds, array_column($ssIds, 'id'), array_column($wssIds, 'id')))));
-                }
-            }
-
-            // 4. Query matching attributes from `wh_category_attributes`
-            $catPlaceholders = implode(',', array_fill(0, count($allCatIds), '?'));
-            $sql = "SELECT * FROM wh_category_attributes WHERE category_id IN ($catPlaceholders) AND is_active = 1";
-            $rawAttributes = Database::fetchAll($sql, array_values($allCatIds));
+            $rawAttributes = Database::fetchAll(
+                "SELECT * FROM production_category_attributes WHERE category_id = ? AND is_active = 1",
+                [$categoryId]
+            );
 
             // Hierarchy matching & override logic:
             // Level 1: Category root (subcategory_id is NULL or 0)
@@ -5899,7 +5913,7 @@ class ProductionController {
                 }
             }
 
-            // 5. Query matching product style(s) and their variants from catalog (products & product_variants)
+            // Use production catalog styles only; warehouse catalog attributes are stored separately.
             $catalogSizes = [];
             $catalogColors = [];
 
@@ -5918,11 +5932,10 @@ class ProductionController {
                     array_values($allSubcatIds)
                 );
             }
-            if (empty($matchingProducts) && !empty($allCatIds)) {
-                $cPlaceholders = implode(',', array_fill(0, count($allCatIds), '?'));
+            if (empty($matchingProducts)) {
                 $matchingProducts = Database::fetchAll(
-                    "SELECT id, name, code FROM products WHERE category_id IN ($cPlaceholders) AND is_active = 1 ORDER BY id DESC",
-                    array_values($allCatIds)
+                    "SELECT id, name, code FROM products WHERE category_id = ? AND is_active = 1 ORDER BY id DESC",
+                    [$categoryId]
                 );
             }
 
@@ -6005,7 +6018,7 @@ class ProductionController {
                 $finalAttributes[] = $attr;
             }
 
-            // If no SIZE attribute was defined in wh_category_attributes, provide it dynamically
+            // If no production SIZE attribute was defined, provide it dynamically.
             if (!$hasSizeAttr) {
                 $sizeOptions = !empty($catalogSizes) ? $catalogSizes : $defaultSizeCodes;
                 $finalAttributes[] = [
@@ -6054,12 +6067,39 @@ class ProductionController {
                 return;
             }
 
-            $attr = null;
-            if ($attrId > 0) {
-                $attr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE id = ?", [$attrId]);
-            }
-            if (!$attr && !empty($attrName)) {
-                $attr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE attr_name = ? ORDER BY id DESC LIMIT 1", [$attrName]);
+            $scope = $this->resolveProductionAttributeScope(
+                (int)($_POST['category_id'] ?? 0),
+                !empty($_POST['subcategory_id']) ? (int)$_POST['subcategory_id'] : null,
+                !empty($_POST['sub_subcategory_id']) ? (int)$_POST['sub_subcategory_id'] : null
+            );
+            $attr = $this->findProductionCategoryAttribute($attrId, $attrName, $scope);
+            if (!$attr && $attrId <= 0 && $scope !== null && $attrName !== '') {
+                $currentOptions = array_values(array_filter(
+                    array_map('trim', explode(',', (string)($_POST['current_options'] ?? ''))),
+                    fn($value) => $value !== ''
+                ));
+                $currentOptions = array_values(array_unique(array_map('mb_strtoupper', $currentOptions)));
+                $sortOrder = (int)(Database::fetchOne(
+                    "SELECT MAX(sort_order) AS max_sort FROM production_category_attributes WHERE category_id = ?",
+                    [$scope['category_id']]
+                )['max_sort'] ?? 0) + 1;
+                Database::execute(
+                    "INSERT INTO production_category_attributes
+                        (category_id, subcategory_id, sub_subcategory_id, attr_name, attr_type, attr_options, sort_order, is_active, created_at)
+                     VALUES (?, ?, ?, ?, 'MULTI_SELECT', ?, ?, 1, NOW())",
+                    [
+                        $scope['category_id'],
+                        $scope['subcategory_id'],
+                        $scope['sub_subcategory_id'],
+                        $attrName,
+                        implode(',', $currentOptions),
+                        $sortOrder,
+                    ]
+                );
+                $attr = Database::fetchOne(
+                    "SELECT * FROM production_category_attributes WHERE id = ?",
+                    [(int)Database::lastInsertId()]
+                );
             }
 
             if (!$attr) {
@@ -6085,7 +6125,7 @@ class ProductionController {
             }
 
             $updatedOptsStr = implode(',', $currentOpts);
-            Database::execute("UPDATE wh_category_attributes SET attr_options = ?, attr_type = 'MULTI_SELECT', updated_at = NOW() WHERE id = ?", [$updatedOptsStr, $attr['id']]);
+            Database::execute("UPDATE production_category_attributes SET attr_options = ?, attr_type = 'MULTI_SELECT', updated_at = NOW() WHERE id = ?", [$updatedOptsStr, $attr['id']]);
 
             // If attribute is SIZE, also add each added option to sizes table if not present
             if ($attr['attr_name'] === 'SIZE') {
@@ -6099,6 +6139,7 @@ class ProductionController {
 
             Response::json([
                 'success'     => true,
+                'attribute_id' => (int)$attr['id'],
                 'new_options' => $addedOpts,
                 'all_options' => $currentOpts
             ]);
@@ -6126,13 +6167,12 @@ class ProductionController {
                 return;
             }
 
-            $attr = null;
-            if ($attrId > 0) {
-                $attr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE id = ?", [$attrId]);
-            }
-            if (!$attr && !empty($attrName)) {
-                $attr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE attr_name = ? ORDER BY id DESC LIMIT 1", [$attrName]);
-            }
+            $scope = $this->resolveProductionAttributeScope(
+                (int)($_POST['category_id'] ?? 0),
+                !empty($_POST['subcategory_id']) ? (int)$_POST['subcategory_id'] : null,
+                !empty($_POST['sub_subcategory_id']) ? (int)$_POST['sub_subcategory_id'] : null
+            );
+            $attr = $this->findProductionCategoryAttribute($attrId, $attrName, $scope);
 
             if (!$attr) {
                 Response::json(['success' => false, 'message' => 'Attribute not found.'], 404);
@@ -6143,7 +6183,7 @@ class ProductionController {
             $filteredOpts = array_filter($currentOpts, fn($v) => mb_strtoupper(trim($v)) !== $optionToDelete);
             $updatedOptsStr = implode(',', $filteredOpts);
 
-            Database::execute("UPDATE wh_category_attributes SET attr_options = ?, updated_at = NOW() WHERE id = ?", [$updatedOptsStr, $attr['id']]);
+            Database::execute("UPDATE production_category_attributes SET attr_options = ?, updated_at = NOW() WHERE id = ?", [$updatedOptsStr, $attr['id']]);
 
             Response::json(['success' => true]);
         } catch (\Throwable $e) {
@@ -6176,6 +6216,13 @@ class ProductionController {
                 Response::json(['success' => false, 'message' => 'Please select a Main Category first.'], 400);
                 return;
             }
+            $scope = $this->resolveProductionAttributeScope($categoryId, $subcategoryId, $subSubcategoryId);
+            if ($scope === null) {
+                Response::json(['success' => false, 'message' => 'Invalid production category hierarchy.'], 400);
+                return;
+            }
+            $subcategoryId = $scope['subcategory_id'];
+            $subSubcategoryId = $scope['sub_subcategory_id'];
             if (empty($attrName)) {
                 Response::json(['success' => false, 'message' => 'Attribute Name is required.'], 400);
                 return;
@@ -6196,36 +6243,36 @@ class ProductionController {
 
             // Check if attribute with the same name already exists for this exact hierarchy scope.
             // This prevents ghost duplicates while still allowing a parent-level attribute to be reused at a more specific level.
-            $existingSql = "SELECT id FROM wh_category_attributes WHERE category_id = ? AND attr_name = ? AND is_active = 1";
+            $existingSql = "SELECT id FROM production_category_attributes WHERE category_id = ? AND attr_name = ? AND is_active = 1";
             $existingParams = [$categoryId, $attrName];
             if ($subSubcategoryId) {
-                $existingSql .= " AND subcategory_id = ? AND sub_subcategory_id = ?";
+                $existingSql .= " AND COALESCE(subcategory_id, 0) = ? AND COALESCE(sub_subcategory_id, 0) = ?";
                 $existingParams[] = $subcategoryId ?: 0;
                 $existingParams[] = $subSubcategoryId;
             } elseif ($subcategoryId) {
-                $existingSql .= " AND subcategory_id = ? AND (sub_subcategory_id IS NULL OR sub_subcategory_id = 0)";
+                $existingSql .= " AND subcategory_id = ? AND COALESCE(sub_subcategory_id, 0) = 0";
                 $existingParams[] = $subcategoryId;
             } else {
-                $existingSql .= " AND (subcategory_id IS NULL OR subcategory_id = 0) AND (sub_subcategory_id IS NULL OR sub_subcategory_id = 0)";
+                $existingSql .= " AND COALESCE(subcategory_id, 0) = 0 AND COALESCE(sub_subcategory_id, 0) = 0";
             }
             $existing = Database::fetchOne($existingSql, $existingParams);
             if ($existing) {
                 Database::execute(
-                    "UPDATE wh_category_attributes SET attr_type = ?, attr_options = ?, is_required = ?, is_active = 1, updated_at = NOW() WHERE id = ?",
+                    "UPDATE production_category_attributes SET attr_type = ?, attr_options = ?, is_required = ?, is_active = 1, updated_at = NOW() WHERE id = ?",
                     [$attrType, $formattedOptions, $isRequired, $existing['id']]
                 );
                 $attrId = (int)$existing['id'];
             } else {
-                $maxSort = (int)(Database::fetchOne("SELECT MAX(sort_order) as m FROM wh_category_attributes WHERE category_id = ?", [$categoryId])['m'] ?? 0);
+                $maxSort = (int)(Database::fetchOne("SELECT MAX(sort_order) as m FROM production_category_attributes WHERE category_id = ?", [$categoryId])['m'] ?? 0);
                 Database::execute(
-                    "INSERT INTO wh_category_attributes (category_id, subcategory_id, sub_subcategory_id, attr_name, attr_type, attr_options, is_required, sort_order, is_active, created_at)
+                    "INSERT INTO production_category_attributes (category_id, subcategory_id, sub_subcategory_id, attr_name, attr_type, attr_options, is_required, sort_order, is_active, created_at)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())",
                     [$categoryId, $subcategoryId, $subSubcategoryId, $attrName, $attrType, $formattedOptions, $isRequired, $maxSort + 1]
                 );
                 $attrId = (int)Database::lastInsertId();
             }
 
-            $savedAttr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE id = ?", [$attrId]);
+            $savedAttr = Database::fetchOne("SELECT * FROM production_category_attributes WHERE id = ?", [$attrId]);
             Response::json([
                 'success'   => true,
                 'message'   => "Attribute '{$attrName}' saved successfully.",

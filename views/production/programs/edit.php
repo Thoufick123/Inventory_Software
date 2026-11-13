@@ -2069,10 +2069,23 @@ function openQuickAddOptionModal(idx, attrName, attrId) {
     const inputVal = prompt(promptText);
     if (!inputVal || !inputVal.trim()) return;
 
+    const card = document.getElementById('program_roll_card_' + idx);
+    const categoryId = card?.querySelector('.roll-cat-select')?.value || '';
+    const subcategoryId = card?.querySelector('.roll-subcat-select')?.value || '';
+    const subSubcategoryId = card?.querySelector('.roll-subsubcat-select')?.value || '';
+    const cleanAttrName = attrName.replace(/[^a-zA-Z0-9_]/g, '_');
+    const chipsBox = document.getElementById(`attr_chips_container_${idx}_${cleanAttrName}`);
+    const currentOptions = chipsBox
+        ? Array.from(chipsBox.querySelectorAll('input[type="checkbox"]')).map(input => input.value)
+        : [];
     const formData = new FormData();
     formData.append('attribute_id', attrId);
     formData.append('attr_name', attrName);
     formData.append('options', inputVal.trim());
+    formData.append('category_id', categoryId);
+    formData.append('subcategory_id', subcategoryId);
+    formData.append('sub_subcategory_id', subSubcategoryId);
+    formData.append('current_options', currentOptions.join(','));
 
     fetch(`${baseUrl}/api/categories/attributes/add-option`, {
         method: 'POST',
@@ -2122,10 +2135,14 @@ function openQuickAddOptionModal(idx, attrName, attrId) {
 function deleteRollAttrOption(idx, attrName, optionVal, attrId) {
     if (!confirm(`Are you sure you want to remove "${optionVal}" from ${attrName}?`)) return;
 
+    const card = document.getElementById('program_roll_card_' + idx);
     const formData = new FormData();
     formData.append('attribute_id', attrId);
     formData.append('attr_name', attrName);
     formData.append('option', optionVal);
+    formData.append('category_id', card?.querySelector('.roll-cat-select')?.value || '');
+    formData.append('subcategory_id', card?.querySelector('.roll-subcat-select')?.value || '');
+    formData.append('sub_subcategory_id', card?.querySelector('.roll-subsubcat-select')?.value || '');
 
     fetch(`${baseUrl}/api/categories/attributes/delete-option`, {
         method: 'POST',

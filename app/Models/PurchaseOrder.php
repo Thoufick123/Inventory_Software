@@ -152,8 +152,8 @@ class PurchaseOrder {
     public static function create(array $data): int {
         Database::execute(
             "INSERT INTO purchase_orders 
-             (po_number, customer_id, seller_id, warehouse_supplier_id, warehouse_id, order_date, expected_date, subtotal, discount_amount, cgst_amount, sgst_amount, igst_amount, tax_amount, total_amount, paid_amount, payment_status, payment_method, payment_screenshot_url, payment_screenshot_public_id, status, notes, created_by, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+             (po_number, customer_id, seller_id, warehouse_supplier_id, warehouse_id, order_date, expected_date, subtotal, discount_amount, cgst_amount, sgst_amount, igst_amount, tax_amount, total_amount, paid_amount, cash_tendered, change_amount, payment_status, payment_method, payment_screenshot_url, payment_screenshot_public_id, status, notes, created_by, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
             [
                 $data['po_number'],
                 !empty($data['customer_id']) ? (int)$data['customer_id'] : null,
@@ -170,6 +170,8 @@ class PurchaseOrder {
                 $data['tax_amount'] ?? 0.00,
                 $data['total_amount'] ?? 0.00,
                 $data['paid_amount'] ?? 0.00,
+                $data['cash_tendered'] ?? 0.00,
+                $data['change_amount'] ?? 0.00,
                 $data['payment_status'] ?? 'PENDING',
                 $data['payment_method'] ?? 'CASH',
                 $data['payment_screenshot_url'] ?? null,
