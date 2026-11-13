@@ -8,7 +8,8 @@
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" href="<?= url('production/billing') ?>"><i class="bi bi-arrow-left me-1"></i>Back</a>
-         </div>
+        <a class="btn btn-outline-primary" href="<?= url('production/billing/print/' . (int)$bill['id']) ?>" target="_blank"><i class="bi bi-printer me-1"></i>Print Invoice</a>
+    </div>
 </div>
 
 <div class="card border-0 shadow-sm mb-3">

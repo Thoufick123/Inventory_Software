@@ -10674,7 +10674,146 @@ class ProductionController {
                 'notes'                    => $notesStr,
             ], $items, $userId);
 
-            Session::flash('success', 'Production batch packed and created successfully.');
+            // Auto-generate Production Bill & Tax Invoice for this packed batch
+            $batch = ProductionBatch::find($batchId);
+            $whId = (int)$_POST['destination_warehouse_id'];
+            $wh = Database::fetchOne("SELECT * FROM warehouses WHERE id = ?", [$whId]);
+            $whName = $wh['name'] ?? 'Central Warehouse';
+            $whAddress = $wh['address'] ?? '';
+            $whPhone = $wh['phone'] ?? '';
+            $whGstin = $wh['gstin'] ?? ($wh['gst_number'] ?? '');
+
+            $prodUnitId = !empty($batch['production_unit_id']) ? (int)$batch['production_unit_id'] : 0;
+            if ($prodUnitId <= 0) {
+                $pRow = Database::fetchOne("SELECT production_unit_id FROM production_programs WHERE id = ?", [$programId]);
+                $prodUnitId = (int)($pRow['production_unit_id'] ?? 0);
+            }
+            if ($prodUnitId <= 0 && class_exists('ProductionUnit')) {
+                $actUnit = ProductionUnit::getActiveFacility();
+                if ($actUnit) $prodUnitId = (int)$actUnit['id'];
+            }
+
+            $grossAmt = 0.0;
+            $discAmt = 0.0;
+            $subTot = 0.0;
+            $cgstTot = 0.0;
+            $sgstTot = 0.0;
+            $igstTot = 0.0;
+            $taxTot = 0.0;
+            $billItemsToInsert = [];
+
+            foreach ($items as $it) {
+                $qty = (int)($it['quantity'] ?? 0);
+                if ($qty <= 0) continue;
+                $vId = (int)($it['variant_id'] ?? 0);
+                $qcItemId = (int)($it['qc_item_id'] ?? 0);
+
+                $vRow = $vId > 0 ? Database::fetchOne("SELECT pv.*, p.name as product_name, p.hsn_code, p.gst_percentage, s.name as size_name, c.name as color_name FROM product_variants pv JOIN products p ON pv.product_id = p.id LEFT JOIN sizes s ON pv.size_id = s.id LEFT JOIN colors c ON pv.color_id = c.id WHERE pv.id = ?", [$vId]) : null;
+                $qcRow = $qcItemId > 0 ? Database::fetchOne("SELECT * FROM qc_items WHERE id = ?", [$qcItemId]) : null;
+
+                $pName = $vRow['product_name'] ?? ($batch['product_name'] ?? 'Finished Product');
+                $sku = $vRow['sku'] ?? trim(($vRow['size_name'] ?? '') . '-' . ($vRow['color_name'] ?? ''));
+                $hsn = !empty($vRow['hsn_code']) ? $vRow['hsn_code'] : '6109';
+                $sName = $vRow['size_name'] ?? ($it['size_name'] ?? '');
+                $cName = $vRow['color_name'] ?? ($it['color_name'] ?? '');
+
+                $mrp = (float)($qcRow['base_price'] ?: ($vRow['mrp'] ?: 0));
+                $unitP = (float)($qcRow['discount_price'] ?: ($qcRow['base_price'] ?: ($vRow['selling_price'] ?: ($vRow['mrp'] ?: 0))));
+                if ($mrp <= 0) $mrp = $unitP;
+                if ($unitP <= 0) $unitP = $mrp;
+
+                $gstR = (float)($vRow['gst_percentage'] ?: 5.0);
+                $itGross = round($mrp * $qty, 2);
+                $itTaxable = round($unitP * $qty, 2);
+                $itDisc = max(0, $itGross - $itTaxable);
+
+                $halfR = round($gstR / 2, 2);
+                $itCgst = round($itTaxable * ($halfR / 100), 2);
+                $itSgst = round($itTaxable * ($halfR / 100), 2);
+                $itTax = $itCgst + $itSgst;
+                $itTotal = $itTaxable + $itTax;
+
+                $grossAmt += $itGross;
+                $discAmt += $itDisc;
+                $subTot += $itTaxable;
+                $cgstTot += $itCgst;
+                $sgstTot += $itSgst;
+                $taxTot += $itTax;
+
+                $billItemsToInsert[] = [
+                    'qc_item_id'     => $qcItemId,
+                    'variant_id'     => $vId,
+                    'product_name'   => $pName,
+                    'sku'            => $sku,
+                    'hsn_code'       => $hsn,
+                    'size_name'      => $sName,
+                    'color_name'     => $cName,
+                    'quantity'       => $qty,
+                    'mrp'            => $mrp,
+                    'unit_price'     => $unitP,
+                    'discount_amount'=> $itDisc,
+                    'discount_pct'   => $itGross > 0 ? round(($itDisc / $itGross) * 100, 3) : 0,
+                    'gst_pct'        => $gstR,
+                    'sgst_rate'      => $halfR,
+                    'cgst_rate'      => $halfR,
+                    'taxable_amount' => $itTaxable,
+                    'cgst_amount'    => $itCgst,
+                    'sgst_amount'    => $itSgst,
+                    'tax_amount'     => $itTax,
+                    'total_amount'   => $itTotal,
+                    'tags'           => is_array($it['piece_tags'] ?? null) ? $it['piece_tags'] : [],
+                ];
+            }
+
+            $billTotal = $subTot + $taxTot;
+            $billNum = 'PB-' . date('Y') . '-' . date('mdHis') . '-' . random_int(10, 99);
+
+            Database::execute(
+                "INSERT INTO production_bills
+                 (bill_number, production_unit_id, buyer_type, company_name, company_address, company_phone, company_gstin,
+                  bill_date, payment_method, payment_status, tax_type, cash_amount, upi_amount,
+                  gross_amount, discount_amount, subtotal, cgst_amount, sgst_amount, igst_amount, tax_amount,
+                  total_amount, notes, created_by)
+                 VALUES (?, ?, 'COMPANY', ?, ?, ?, ?, CURDATE(), 'CREDIT', 'PAID', 'CGST_SGST', 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    $billNum, $prodUnitId > 0 ? $prodUnitId : null, $whName, $whAddress, $whPhone, $whGstin,
+                    $grossAmt, $discAmt, $subTot, $cgstTot, $sgstTot, $igstTot, $taxTot,
+                    $billTotal, 'Automated bill & invoice for batch ' . ($batch['batch_number'] ?? '#' . $batchId), $userId
+                ]
+            );
+            $billId = (int)Database::lastInsertId();
+
+            foreach ($billItemsToInsert as $bi) {
+                Database::execute(
+                    "INSERT INTO production_bill_items
+                     (bill_id, qc_item_id, variant_id, product_name, sku, size_name, color_name, quantity, mrp,
+                      hsn_code, unit_price, discount_percentage, discount_amount, gst_percentage, gst_type, tax_input_type,
+                      sgst_rate, cgst_rate, igst_rate, taxable_amount, cgst_amount, sgst_amount, igst_amount,
+                      tax_amount, total_amount)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'BOTH', 'PERCENT', ?, ?, 0, ?, ?, ?, 0, ?, ?)",
+                    [
+                        $billId, $bi['qc_item_id'] ?: 0, $bi['variant_id'] ?: null,
+                        $bi['product_name'], $bi['sku'], $bi['size_name'], $bi['color_name'],
+                        $bi['quantity'], $bi['mrp'], $bi['hsn_code'], $bi['unit_price'], $bi['discount_pct'],
+                        $bi['discount_amount'], $bi['gst_pct'], $bi['sgst_rate'], $bi['cgst_rate'],
+                        $bi['taxable_amount'], $bi['cgst_amount'], $bi['sgst_amount'], $bi['tax_amount'], $bi['total_amount']
+                    ]
+                );
+                $bItemId = (int)Database::lastInsertId();
+                foreach ($bi['tags'] as $tg) {
+                    $cTag = trim((string)$tg);
+                    if ($cTag !== '') {
+                        Database::execute(
+                            "INSERT IGNORE INTO production_bill_item_tags (bill_id, bill_item_id, qc_item_id, tag_code) VALUES (?, ?, ?, ?)",
+                            [$billId, $bItemId, $bi['qc_item_id'] ?: 0, $cTag]
+                        );
+                    }
+                }
+            }
+
+            Database::execute("UPDATE production_batches SET production_bill_id = ? WHERE id = ?", [$billId, $batchId]);
+
+            Session::flash('success', 'Production batch ' . ($batch['batch_number'] ?? '#' . $batchId) . ' packed and Bill / Invoice ' . $billNum . ' created successfully.');
             Response::redirect(url('production/batches'));
         } catch (Exception $e) {
             Session::flash('error', $e->getMessage());
@@ -10719,6 +10858,123 @@ class ProductionController {
             'batch' => $batch,
             'items' => $items,
         ]);
+    }
+
+    public function viewBatch(string $id): void {
+        $batchId = (int)$id;
+        $batch = ProductionBatch::find($batchId);
+        if (!$batch) {
+            Response::error(404, 'Production batch not found.');
+            return;
+        }
+
+        $items = ProductionBatch::getItems($batchId);
+        $outward = ProductionOutward::findByBatchId($batchId);
+        $bill = !empty($batch['production_bill_id']) ? Database::fetchOne("SELECT * FROM production_bills WHERE id = ?", [(int)$batch['production_bill_id']]) : null;
+        $billItems = $bill ? Database::fetchAll("SELECT * FROM production_bill_items WHERE bill_id = ?", [(int)$bill['id']]) : [];
+
+        Response::view('production.batches.view', [
+            'pageTitle'    => 'Batch ' . ($batch['batch_number'] ?? ('#' . $batchId)),
+            'activeModule' => 'production',
+            'activeMenu'   => 'batches',
+            'batch'        => $batch,
+            'items'        => $items,
+            'outward'      => $outward,
+            'bill'         => $bill,
+            'billItems'    => $billItems,
+            'breadcrumb'   => [
+                ['label' => 'Production', 'url' => url('production/dashboard')],
+                ['label' => 'Batches', 'url' => url('production/batches')],
+                ['label' => $batch['batch_number'] ?? ('#' . $batchId)],
+            ],
+        ]);
+    }
+
+    public function printBatchBill(string $id): void {
+        $batchId = (int)$id;
+        $batch = ProductionBatch::find($batchId);
+        if (!$batch) {
+            Response::error(404, 'Production batch not found.');
+            return;
+        }
+
+        $items = ProductionBatch::getItems($batchId);
+        $outward = ProductionOutward::findByBatchId($batchId);
+        $prodUnit = !empty($batch['production_unit_id']) 
+            ? (class_exists('ProductionUnit') ? ProductionUnit::find((int)$batch['production_unit_id']) : null)
+            : (class_exists('ProductionUnit') ? ProductionUnit::getActiveFacility() : null);
+
+        Response::viewOnly('production.batches.bill', [
+            'batch'    => $batch,
+            'items'    => $items,
+            'outward'  => $outward,
+            'prodUnit' => $prodUnit,
+        ]);
+    }
+
+    public function printBatchInvoice(string $id): void {
+        $batchId = (int)$id;
+        $batch = ProductionBatch::find($batchId);
+        if (!$batch) {
+            Response::error(404, 'Production batch not found.');
+            return;
+        }
+
+        if (!empty($batch['production_bill_id'])) {
+            Response::redirect(url('production/billing/print/' . (int)$batch['production_bill_id']));
+            return;
+        }
+
+        Response::redirect(url('production/billing/create?batch_id=' . $batchId));
+    }
+
+    public function deleteBatch(string $id): void {
+        if (!hasPermission('batches', 'delete')) {
+            Session::flash('error', 'Access denied: You do not have permission to delete batches.');
+            Response::redirect(url('production/batches'));
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::redirect(url('production/batches'));
+            return;
+        }
+
+        $batchId = (int)$id;
+        $batch = ProductionBatch::find($batchId);
+        if (!$batch) {
+            Session::flash('error', 'Production batch not found.');
+            Response::redirect(url('production/batches'));
+            return;
+        }
+
+        $isDispatched = ($batch['status'] === 'DISPATCHED' || $batch['status'] === 'RECEIVED' || !empty($batch['outward_id']) || !empty($batch['production_outward_id']));
+        if ($isDispatched) {
+            Session::flash('error', 'Cannot delete batch ' . ($batch['batch_number'] ?? ('#' . $batchId)) . '. Items have already been dispatched outward to the warehouse.');
+            Response::redirect(url('production/batches'));
+            return;
+        }
+
+        Database::beginTransaction();
+        try {
+            if (!empty($batch['production_bill_id'])) {
+                $billId = (int)$batch['production_bill_id'];
+                Database::execute("DELETE FROM production_bill_item_tags WHERE bill_id = ?", [$billId]);
+                Database::execute("DELETE FROM production_bill_items WHERE bill_id = ?", [$billId]);
+                Database::execute("DELETE FROM production_bills WHERE id = ?", [$billId]);
+            }
+
+            Database::execute("DELETE FROM production_batch_items WHERE production_batch_id = ?", [$batchId]);
+            Database::execute("DELETE FROM production_batches WHERE id = ?", [$batchId]);
+
+            Database::commit();
+            Session::flash('success', 'Batch ' . ($batch['batch_number'] ?? ('#' . $batchId)) . ' deleted successfully. All garments and QR codes have been restored to available QC inventory.');
+        } catch (Exception $e) {
+            Database::rollback();
+            Session::flash('error', 'Failed to delete batch: ' . $e->getMessage());
+        }
+
+        Response::redirect(url('production/batches'));
     }
 
     // =========================================================================
@@ -10984,7 +11240,68 @@ class ProductionController {
             [$warehouseId, max(1, $boxCount), $totalQty, $transporterName, $vehicleNumber, $lrNumber, $driverName, $driverContact, $batchId]
         );
 
-        Session::flash('success', 'Production Batch ' . ($updateData['batch_number'] ?? ('#' . $batchId)) . ' updated successfully.');
+        // Keep linked production bill and invoice in sync
+        if (!empty($batch['production_bill_id'])) {
+            $billId = (int)$batch['production_bill_id'];
+            $wh = Database::fetchOne("SELECT * FROM warehouses WHERE id = ?", [$warehouseId]);
+            if ($wh) {
+                Database::execute(
+                    "UPDATE production_bills 
+                     SET company_name = ?, company_address = ?, company_phone = ?, company_gstin = ?
+                     WHERE id = ?",
+                    [$wh['name'], $wh['address'] ?? '', $wh['phone'] ?? '', $wh['gstin'] ?? ($wh['gst_number'] ?? ''), $billId]
+                );
+            }
+            if (!empty($_POST['item_qty']) && is_array($_POST['item_qty'])) {
+                $bItems = Database::fetchAll("SELECT * FROM production_bill_items WHERE bill_id = ?", [$billId]);
+                $batchItems = Database::fetchAll("SELECT * FROM production_batch_items WHERE production_batch_id = ?", [$batchId]);
+                $batchItemMap = [];
+                foreach ($batchItems as $bit) {
+                    $batchItemMap[(int)$bit['variant_id']] = (int)$bit['quantity'];
+                }
+
+                $totGross = 0; $totDisc = 0; $totSub = 0; $totCgst = 0; $totSgst = 0; $totTax = 0;
+                foreach ($bItems as $bi) {
+                    $vId = (int)($bi['variant_id'] ?? 0);
+                    $newQ = $batchItemMap[$vId] ?? (int)$bi['quantity'];
+                    $mrp = (float)$bi['mrp'];
+                    $unitP = (float)$bi['unit_price'];
+                    $gstR = (float)$bi['gst_percentage'];
+
+                    $itGross = round($mrp * $newQ, 2);
+                    $itTaxable = round($unitP * $newQ, 2);
+                    $itDisc = max(0, $itGross - $itTaxable);
+                    $halfR = round($gstR / 2, 2);
+                    $itCgst = round($itTaxable * ($halfR / 100), 2);
+                    $itSgst = round($itTaxable * ($halfR / 100), 2);
+                    $itTax = $itCgst + $itSgst;
+                    $itTot = $itTaxable + $itTax;
+
+                    $totGross += $itGross;
+                    $totDisc += $itDisc;
+                    $totSub += $itTaxable;
+                    $totCgst += $itCgst;
+                    $totSgst += $itSgst;
+                    $totTax += $itTax;
+
+                    Database::execute(
+                        "UPDATE production_bill_items 
+                         SET quantity = ?, discount_amount = ?, taxable_amount = ?, cgst_amount = ?, sgst_amount = ?, tax_amount = ?, total_amount = ?
+                         WHERE id = ?",
+                        [$newQ, $itDisc, $itTaxable, $itCgst, $itSgst, $itTax, $itTot, (int)$bi['id']]
+                    );
+                }
+                $totBill = $totSub + $totTax;
+                Database::execute(
+                    "UPDATE production_bills 
+                     SET gross_amount = ?, discount_amount = ?, subtotal = ?, cgst_amount = ?, sgst_amount = ?, tax_amount = ?, total_amount = ?
+                     WHERE id = ?",
+                    [$totGross, $totDisc, $totSub, $totCgst, $totSgst, $totTax, $totBill, $billId]
+                );
+            }
+        }
+
+        Session::flash('success', 'Production Batch ' . ($updateData['batch_number'] ?? ('#' . $batchId)) . ' and linked bill updated successfully.');
         Response::redirect(url('production/batches'));
     }
 
