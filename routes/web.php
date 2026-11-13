@@ -290,6 +290,7 @@ class Router {
         $this->get('api/hsn-codes', 'ProductionController', 'ajaxHsnCodesList', ['AuthMiddleware']);
         $this->post('api/hsn-codes/store', 'ProductionController', 'ajaxStoreHsnCode', ['AuthMiddleware']);
         $this->post('api/operators/quick-add', 'ProductionController', 'ajaxQuickAddOperator', ['AuthMiddleware']);
+        $this->post('api/tailors/quick-add', 'ProductionController', 'ajaxQuickAddTailor', ['AuthMiddleware']);
         $this->post('api/warehouse/quick-add', 'WarehouseController', 'ajaxAddWarehouse', ['AuthMiddleware', ['PermissionMiddleware', 'warehouse', 'create']]);
         $this->post('api/warehouse/store', 'WarehouseController', 'ajaxAddWarehouse', ['AuthMiddleware', ['PermissionMiddleware', 'warehouse', 'create']]);
         $this->get('api/warehouse/get/{id}', 'WarehouseController', 'ajaxGetWarehouse', ['AuthMiddleware', ['PermissionMiddleware', 'warehouse', 'view']]);

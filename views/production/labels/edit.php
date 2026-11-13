@@ -538,7 +538,7 @@
 .lbl-sku { font-size: 9px; font-weight: 700; color: #0f172a; line-height: 1.1; }
 .lbl-mrp { font-size: 8px; color: #64748b; text-decoration: line-through; line-height: 1.1; }
 .lbl-disc { font-size: 8.5px; font-weight: 800; color: #16a34a; line-height: 1.1; }
-.lbl-damage-code { font-size: 8.5px; font-weight: 800; background: #000; color: #fff; padding: 1px 4px; border-radius: 2px; display: inline-block; margin-top: 2px; }
+.lbl-damage-code { font-size: 8.5px; font-weight: 800; background: transparent !important; color: #000 !important; padding: 1px 2px; display: inline-block; margin-top: 2px; }
 </style>
 
 <script>
@@ -1359,7 +1359,7 @@ function printExtraLabelBrowser() {
                 .lbl-sku { font-size: 9px; font-weight: 700; color: #0f172a; line-height: 1.1; }
                 .lbl-mrp { font-size: 8px; color: #64748b; text-decoration: line-through; line-height: 1.1; }
                 .lbl-disc { font-size: 8.5px; font-weight: 800; color: #16a34a; line-height: 1.1; }
-                .lbl-damage-code { font-size: 8.5px; font-weight: 800; background: #000; color: #fff; padding: 1px 4px; border-radius: 2px; display: inline-block; margin-top: 2px; }
+                .lbl-damage-code { font-size: 8.5px; font-weight: 800; background: transparent !important; color: #000 !important; padding: 1px 2px; display: inline-block; margin-top: 2px; }
                 @media print {
                     body { padding: 0; margin: 0; }
                     .no-print { display: none !important; }

@@ -11737,9 +11737,21 @@ class ProductionController {
         // Generate email if not given
         $email = $username . '@grm.local';
 
-        // Find appropriate role (QC or Production Staff)
-        $role = Database::fetchOne("SELECT id FROM roles WHERE slug IN ('qc', 'qc-inspector', 'production-staff') OR name LIKE '%QC%' OR name LIKE '%Production Staff%' ORDER BY id ASC LIMIT 1");
-        $roleId = $role ? (int)$role['id'] : 4;
+        // Find appropriate role (QC or Production Staff, or fallback to any valid role in roles table)
+        $role = Database::fetchOne("SELECT id FROM roles WHERE slug IN ('qc', 'qc-inspector', 'production-staff', 'operator', 'staff', 'production-manager') OR name LIKE '%QC%' OR name LIKE '%Inspector%' OR name LIKE '%Production%' OR name LIKE '%Staff%' ORDER BY id ASC LIMIT 1");
+        if (!$role) {
+            $role = Database::fetchOne("SELECT id FROM roles ORDER BY (CASE WHEN id != 1 THEN 0 ELSE 1 END), id ASC LIMIT 1");
+        }
+
+        if (!$role) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'System configuration error: No user roles found in the database. Please configure roles first.'
+            ]);
+            return;
+        }
+
+        $roleId = (int)$role['id'];
 
         $passwordHash = password_hash('grm@123', PASSWORD_BCRYPT);
 
@@ -15822,9 +15834,16 @@ class ProductionController {
             return;
         }
 
-        // Determine operator role
-        $role = Database::fetchOne("SELECT id FROM roles WHERE slug IN ('production-staff', 'operator', 'staff', 'production-manager') ORDER BY id ASC LIMIT 1");
-        $roleId = $role ? (int)$role['id'] : 4;
+        // Determine operator role (with safe fallback ensuring foreign key constraint never fails)
+        $role = Database::fetchOne("SELECT id FROM roles WHERE slug IN ('production-staff', 'operator', 'staff', 'production-manager') OR name LIKE '%Production%' OR name LIKE '%Operator%' OR name LIKE '%Staff%' ORDER BY id ASC LIMIT 1");
+        if (!$role) {
+            $role = Database::fetchOne("SELECT id FROM roles ORDER BY (CASE WHEN id != 1 THEN 0 ELSE 1 END), id ASC LIMIT 1");
+        }
+        if (!$role) {
+            Response::json(['success' => false, 'message' => 'System configuration error: No user roles found in the database.'], 500);
+            return;
+        }
+        $roleId = (int)$role['id'];
 
         // Generate clean unique username
         $baseUsername = strtolower(preg_replace('/[^a-z0-9_]/', '', str_replace(' ', '_', $fullName)));
@@ -15853,6 +15872,66 @@ class ProductionController {
             'id'      => $newId,
             'name'    => $fullName,
             'message' => 'Cutting Master added successfully!'
+        ]);
+    }
+
+    /**
+     * AJAX quick add Tailor / Stitching Master.
+     */
+    public function ajaxQuickAddTailor(): void {
+        header('Content-Type: application/json');
+
+        $rawInput = file_get_contents('php://input');
+        $jsonData = !empty($rawInput) ? json_decode($rawInput, true) : [];
+        if (!is_array($jsonData)) $jsonData = [];
+
+        $fullName = mb_strtoupper(trim($_POST['full_name'] ?? $jsonData['full_name'] ?? ''));
+        $phone = trim($_POST['phone'] ?? $jsonData['phone'] ?? '');
+
+        if (empty($fullName)) {
+            Response::json(['success' => false, 'message' => 'Tailor / Stitching Master name is required.'], 422);
+            return;
+        }
+
+        // Determine staff role (with safe fallback ensuring foreign key constraint never fails)
+        $role = Database::fetchOne("SELECT id FROM roles WHERE slug IN ('production-staff', 'operator', 'staff', 'production-manager') OR name LIKE '%Production%' OR name LIKE '%Tailor%' OR name LIKE '%Staff%' ORDER BY id ASC LIMIT 1");
+        if (!$role) {
+            $role = Database::fetchOne("SELECT id FROM roles ORDER BY (CASE WHEN id != 1 THEN 0 ELSE 1 END), id ASC LIMIT 1");
+        }
+        if (!$role) {
+            Response::json(['success' => false, 'message' => 'System configuration error: No user roles found in the database.'], 500);
+            return;
+        }
+        $roleId = (int)$role['id'];
+
+        // Generate clean unique username
+        $baseUsername = strtolower(preg_replace('/[^a-z0-9_]/', '', str_replace(' ', '_', $fullName)));
+        if (empty($baseUsername)) {
+            $baseUsername = 'tailor_' . time();
+        }
+        $username = $baseUsername;
+        $counter = 1;
+        while (Database::fetchOne("SELECT id FROM users WHERE username = ?", [$username])) {
+            $username = $baseUsername . '_' . $counter;
+            $counter++;
+        }
+
+        $passwordHash = password_hash('Tailor@123', PASSWORD_BCRYPT);
+        $scopedUnitId = function_exists('currentProductionUnitId') ? currentProductionUnitId() : null;
+
+        Database::execute(
+            "INSERT INTO users (username, full_name, phone, role_id, department, production_unit_id, password_hash, is_active, created_at, updated_at) 
+             VALUES (?, ?, ?, ?, 'PRODUCTION', ?, ?, 1, NOW(), NOW())",
+            [$username, $fullName, $phone ?: null, $roleId, $scopedUnitId, $passwordHash]
+        );
+
+        $newId = (int)Database::lastInsertId();
+
+        Response::json([
+            'success' => true,
+            'id'      => $newId,
+            'name'    => $fullName,
+            'message' => 'Tailor / Stitching Master added successfully!'
         ]);
     }
 
