@@ -456,9 +456,6 @@ if (!empty($authUser['shop_name'])) {
                             <?php if (hasPermission('production_expenses', 'view')): ?>
                             <li><a href="<?= url('production/expenses') ?>" class="<?= ($activeMenu ?? '') === 'production-expenses' ? 'active' : '' ?>">Expenses</a></li>
                             <?php endif; ?>
-                            <?php if (hasPermission('production_billing', 'view')): ?>
-                            <li><a href="<?= url('production/billing') ?>" class="<?= ($activeMenu ?? '') === 'prod-billing' ? 'active' : '' ?>">Billing</a></li>
-                            <?php endif; ?>
                             <?php if (hasPermission('production_returns', 'view')): ?>
                             <li><a href="<?= url('production/returns') ?>" class="<?= ($activeMenu ?? '') === 'prod-returns' ? 'active' : '' ?>">Returns &amp; Exchanges</a></li>
                             <?php endif; ?>

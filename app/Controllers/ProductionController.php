@@ -11037,19 +11037,21 @@ class ProductionController {
         $batch = ProductionBatch::find($batchId);
         if (!$batch) {
             Session::flash('error', 'Production batch not found.');
-            Response::redirect(url('production/batches'));
-            return;
-        }
-
-        $isDispatched = ($batch['status'] === 'DISPATCHED' || $batch['status'] === 'RECEIVED' || !empty($batch['outward_id']) || !empty($batch['production_outward_id']));
-        if ($isDispatched) {
-            Session::flash('error', 'Cannot delete batch ' . ($batch['batch_number'] ?? ('#' . $batchId)) . '. Items have already been dispatched outward to the warehouse.');
-            Response::redirect(url('production/batches'));
+            Response::redirect('production/batches');
             return;
         }
 
         Database::beginTransaction();
         try {
+            // Clean up outward linking if any
+            Database::execute("DELETE FROM production_outward_batches WHERE production_batch_id = ?", [$batchId]);
+            if (!empty($batch['production_outward_id'])) {
+                $rem = (int)Database::fetchColumn("SELECT COUNT(*) FROM production_outward_batches WHERE production_outward_id = ?", [(int)$batch['production_outward_id']]);
+                if ($rem === 0) {
+                    Database::execute("DELETE FROM production_outwards WHERE id = ?", [(int)$batch['production_outward_id']]);
+                }
+            }
+
             if (!empty($batch['production_bill_id'])) {
                 $billId = (int)$batch['production_bill_id'];
                 Database::execute("DELETE FROM production_bill_item_tags WHERE bill_id = ?", [$billId]);
@@ -11067,7 +11069,7 @@ class ProductionController {
             Session::flash('error', 'Failed to delete batch: ' . $e->getMessage());
         }
 
-        Response::redirect(url('production/batches'));
+        Response::redirect('production/batches');
     }
 
     // =========================================================================
@@ -11489,12 +11491,64 @@ class ProductionController {
             if (!empty($outward['production_batch_id'])) {
                 Database::execute("UPDATE production_batches SET destination_warehouse_id = ? WHERE id = ?", [$warehouseId, (int)$outward['production_batch_id']]);
             }
+            Database::execute("UPDATE production_batches pb JOIN production_outward_batches pob ON pb.id = pob.production_batch_id SET pb.destination_warehouse_id = ? WHERE pob.production_outward_id = ?", [$warehouseId, $outwardId]);
         }
 
         ProductionOutward::update($outwardId, $updateData);
 
         Session::flash('success', 'Outward Dispatch ' . ($outward['outward_number'] ?? ('#' . $outwardId)) . ' updated successfully.');
-        Response::redirect(url('production/outward'));
+        Response::redirect('production/outward');
+    }
+
+    public function deleteOutward(string $id): void {
+        if (!hasPermission('outward', 'delete')) {
+            Session::flash('error', 'Access denied: You do not have permission to delete outward dispatch records.');
+            Response::redirect('production/outward');
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::redirect('production/outward');
+            return;
+        }
+
+        $outwardId = (int)$id;
+        $outward = ProductionOutward::find($outwardId);
+        if (!$outward) {
+            Session::flash('error', 'Outward record not found.');
+            Response::redirect('production/outward');
+            return;
+        }
+
+        Database::beginTransaction();
+        try {
+            // Find all linked batches
+            $linkedBatchRows = Database::fetchAll("SELECT production_batch_id FROM production_outward_batches WHERE production_outward_id = ?", [$outwardId]);
+            $bIds = array_filter(array_map(fn($r) => (int)$r['production_batch_id'], $linkedBatchRows));
+            if (!empty($outward['production_batch_id']) && !in_array((int)$outward['production_batch_id'], $bIds, true)) {
+                $bIds[] = (int)$outward['production_batch_id'];
+            }
+
+            // Reset batches back to APPROVED and clear outward association
+            if (!empty($bIds)) {
+                $placeholders = implode(',', array_fill(0, count($bIds), '?'));
+                Database::execute("UPDATE production_batches SET status = 'APPROVED', production_outward_id = NULL WHERE id IN ($placeholders)", $bIds);
+            }
+
+            // Clean up production_outward_batches
+            Database::execute("DELETE FROM production_outward_batches WHERE production_outward_id = ?", [$outwardId]);
+
+            // Delete outward record
+            Database::execute("DELETE FROM production_outwards WHERE id = ?", [$outwardId]);
+
+            Database::commit();
+            Session::flash('success', 'Outward Dispatch ' . ($outward['outward_number'] ?? ('#' . $outwardId)) . ' deleted successfully. Associated batch(es) returned to Approved status.');
+        } catch (Exception $e) {
+            Database::rollback();
+            Session::flash('error', 'Failed to delete outward dispatch: ' . $e->getMessage());
+        }
+
+        Response::redirect('production/outward');
     }
 
     // =========================================================================

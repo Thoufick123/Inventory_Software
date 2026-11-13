@@ -171,13 +171,9 @@
                                             <i class="bi bi-eye"></i>
                                         </a>
 
-                                        <!-- 2. Edit Batch Details (allowed before outward) -->
-                                        <?php if (!$isDispatched && hasPermission('batches', 'edit')): ?>
+                                        <!-- 2. Edit Batch Details -->
+                                        <?php if (hasPermission('batches', 'edit')): ?>
                                             <button type="button" class="btn btn-outline-primary btn-action-icon" onclick='openEditBatchModal(<?= json_encode($b, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)' title="Edit Batch Details">
-                                                <i class="bi bi-pencil"></i>
-                                            </button>
-                                        <?php else: ?>
-                                            <button type="button" class="btn btn-outline-secondary btn-action-icon disabled" title="Dispatched batches cannot be edited" style="opacity: 0.45;">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
                                         <?php endif; ?>
@@ -215,18 +211,14 @@
                                             <i class="bi bi-qr-code"></i>
                                         </a>
 
-                                        <!-- 7. Delete Batch (only before outward time) -->
-                                        <?php if (!$isDispatched && hasPermission('batches', 'delete')): ?>
+                                        <!-- 7. Delete Batch -->
+                                        <?php if (hasPermission('batches', 'delete')): ?>
                                             <form method="POST" action="<?= url('production/batches/delete/' . $b['id']) ?>" class="d-inline" onsubmit="return confirm('Delete Batch <?= e($b['batch_number']) ?>? All garments and QR codes will be returned to QC inventory.');">
                                                 <?= CSRF::field() ?>
                                                 <button type="submit" class="btn btn-outline-danger btn-action-icon" title="Delete Batch (Return to QC)">
                                                     <i class="bi bi-trash3"></i>
                                                 </button>
                                             </form>
-                                        <?php else: ?>
-                                            <button type="button" class="btn btn-outline-secondary btn-action-icon disabled" title="Dispatched batches cannot be deleted (already sent to warehouse)" style="opacity: 0.45;">
-                                                <i class="bi bi-trash3"></i>
-                                            </button>
                                         <?php endif; ?>
                                     </div>
                                 </td>

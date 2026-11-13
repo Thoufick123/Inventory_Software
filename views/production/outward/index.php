@@ -184,13 +184,23 @@
                                 <td><?= formatDateTime($o['dispatch_date']) ?></td>
                                 <td><span class="badge bg-success px-2 py-1"><i class="bi bi-check-all me-1"></i>DISPATCHED</span></td>
                                 <td class="text-end">
-                                    <div class="action-btns-group justify-content-end">
+                                    <div class="action-btns-group justify-content-end d-flex gap-1">
                                         <button type="button" class="btn btn-outline-info btn-action-icon" onclick="viewOutwardDispatchDetails(<?= $o['id'] ?>)" title="View Outward & Product Breakdown">
                                             <i class="bi bi-eye"></i>
                                         </button>
-                                        <button type="button" class="btn btn-outline-primary btn-action-icon" onclick='openEditOutwardModal(<?= json_encode($o, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)' title="Edit Outward Dispatch">
-                                            <i class="bi bi-pencil"></i>
-                                        </button>
+                                        <?php if (hasPermission('outward', 'edit')): ?>
+                                            <button type="button" class="btn btn-outline-primary btn-action-icon" onclick='openEditOutwardModal(<?= json_encode($o, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)' title="Edit Outward Dispatch">
+                                                <i class="bi bi-pencil"></i>
+                                            </button>
+                                        <?php endif; ?>
+                                        <?php if (hasPermission('outward', 'delete')): ?>
+                                            <form method="POST" action="<?= url('production/outward/delete/' . $o['id']) ?>" class="d-inline" onsubmit="return confirm('Delete Outward Dispatch <?= e($o['outward_number']) ?>? Associated batch(es) will be returned to Approved status.');">
+                                                <?= CSRF::field() ?>
+                                                <button type="submit" class="btn btn-outline-danger btn-action-icon" title="Delete Outward Dispatch">
+                                                    <i class="bi bi-trash3"></i>
+                                                </button>
+                                            </form>
+                                        <?php endif; ?>
                                     </div>
                                 </td>
                             </tr>
@@ -466,7 +476,7 @@ function openEditOutwardModal(outward) {
 
     const whSelect = document.getElementById('editOutwardWarehouse');
     if (whSelect) {
-        whSelect.value = outward.warehouse_id || '';
+        whSelect.value = outward.warehouse_id || outward.destination_warehouse_id || '';
     }
     const vehicleInput = document.getElementById('editOutwardVehicle');
     if (vehicleInput) {
@@ -495,10 +505,12 @@ function openEditOutwardModal(outward) {
     const dateInput = document.getElementById('editOutwardDispatchDate');
     if (dateInput) {
         if (outward.dispatch_date) {
-            const dt = new Date(outward.dispatch_date.replace(' ', 'T'));
-            if (!isNaN(dt.getTime())) {
-                const pad = (n) => String(n).padStart(2, '0');
-                dateInput.value = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+            const parts = String(outward.dispatch_date).trim().split(' ');
+            if (parts.length >= 2) {
+                const timeParts = parts[1].split(':');
+                dateInput.value = `${parts[0]}T${String(timeParts[0]).padStart(2, '0')}:${String(timeParts[1] || '00').padStart(2, '0')}`;
+            } else if (parts.length === 1 && parts[0]) {
+                dateInput.value = `${parts[0]}T00:00`;
             }
         }
     }
