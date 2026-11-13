@@ -633,6 +633,10 @@ function deleteRollFromWastage(rowId) {
 
 function handleManualTotalWastageInput(totalVal) {
     const totalW = parseFloat(totalVal) || 0;
+    const totalInput = document.getElementById('wastageWeight');
+    if (totalInput) {
+        totalInput.dataset.manual = '1';
+    }
     const wastageInputs = document.querySelectorAll('.roll-wastage-input');
     if (wastageInputs.length === 1) {
         wastageInputs[0].value = totalW.toFixed(2);
@@ -1192,11 +1196,13 @@ function calculateMetrics() {
 
     const rollWeight = parseFloat(document.getElementById('rollWeight').value) || 0;
     const rollPrice = parseFloat(document.getElementById('rollPrice').value) || 0;
+    const totalWastageInput = document.getElementById('wastageWeight');
 
     // Calculate Per-Roll Wastage Weights and Costs
     const rollWastageInputs = document.querySelectorAll('.roll-wastage-input');
     let sumRollWastageWeight = 0;
     let sumRollWastageCost = 0;
+    let totalWastageValue = 0;
 
     if (rollWastageInputs.length > 0) {
         rollWastageInputs.forEach(inp => {
@@ -1214,14 +1220,25 @@ function calculateMetrics() {
             }
         });
 
-        document.getElementById('wastageWeight').value = sumRollWastageWeight.toFixed(2);
+        const isManualTotal = totalWastageInput && totalWastageInput.dataset.manual === '1';
+        if (isManualTotal) {
+            totalWastageValue = parseFloat(totalWastageInput.value) || 0;
+        } else {
+            totalWastageValue = sumRollWastageWeight;
+            if (totalWastageInput) {
+                totalWastageInput.value = totalWastageValue.toFixed(2);
+            }
+        }
+
         const totalCostSumEl = document.getElementById('dispTotalWastageCostSum');
         if (totalCostSumEl) {
             totalCostSumEl.innerText = 'Total Cost: ₹' + sumRollWastageCost.toFixed(2);
         }
+    } else {
+        totalWastageValue = parseFloat(totalWastageInput ? totalWastageInput.value : 0) || 0;
     }
 
-    const wastageWeight = parseFloat(document.getElementById('wastageWeight').value) || 0;
+    const wastageWeight = totalWastageValue;
 
     // 1. Single / Per-kg Fabric Price: Roll Price / Roll Weight
     const ratePerKg = rollWeight > 0 ? (rollPrice / rollWeight) : 0;
