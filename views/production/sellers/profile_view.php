@@ -18,6 +18,9 @@
         <a href="<?= url('production/sellers') ?>" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i>Suppliers
         </a>
+        <button type="button" class="btn btn-outline-success" onclick="exportReplacedRollsCSV()" title="Export Rolls Replaced Tab Data">
+            <i class="bi bi-file-earmark-excel me-1"></i>Export Replaced Rolls
+        </button>
         <a href="<?= url('production/purchases/create?seller_id=' . (int)$seller['id']) ?>" class="btn btn-outline-primary">
             <i class="bi bi-cart-plus me-1"></i>New Purchase
         </a>
@@ -416,10 +419,13 @@
                         <h6 class="fw-bold mb-0 text-dark"><i class="bi bi-arrow-repeat me-1.5 text-info"></i>Damage Replacement Rolls Log</h6>
                         <small class="text-muted">Register of all replacement rolls received from this supplier to replace defective or damaged fabric rolls.</small>
                     </div>
-                    <div class="d-flex align-items-center gap-2">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
                         <span class="badge bg-info-subtle text-info border border-info-subtle px-2.5 py-1.5 fs-6">
                             <i class="bi bi-arrow-repeat me-1"></i>Replaced Count: <strong><?= number_format($totalReplacedRollsCount) ?> Rolls</strong>
                         </span>
+                        <button type="button" class="btn btn-sm btn-success fw-semibold" onclick="exportReplacedRollsCSV()" title="Export Replaced Rolls Data Only">
+                            <i class="bi bi-file-earmark-arrow-down me-1"></i>Export Replaced (CSV)
+                        </button>
                     </div>
                 </div>
 
@@ -431,10 +437,10 @@
                     </div>
                 <?php else: ?>
                     <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0">
+                        <table class="table table-hover align-middle mb-0" id="replacedRollsTable">
                             <thead class="table-light">
                                 <tr>
-                                    <th style="width: 5%;">#</th>
+                                    <th style="width: 4%;">#</th>
                                     <th>Replacement Roll</th>
                                     <th>Replaced For (Damaged Roll)</th>
                                     <th>Defect Reason / Cause</th>
@@ -445,10 +451,46 @@
                                     <th>Damage Claim #</th>
                                     <th>Purchase Inward #</th>
                                     <th>Resolved By</th>
+                                    <th class="text-end">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php foreach ($replacedRolls as $idx => $rr): ?>
+                                    <?php
+                                        // Dynamically resolve damaged item title
+                                        $damagedTitle = '';
+                                        if (!empty($rr['damaged_roll_number'])) {
+                                            $damagedTitle = $rr['damaged_roll_number'];
+                                        } elseif (!empty($rr['product_name'])) {
+                                            $damagedTitle = $rr['product_name'];
+                                        } elseif (!empty($rr['catalog_product_name'])) {
+                                            $damagedTitle = $rr['catalog_product_name'];
+                                        } elseif (!empty($rr['seller_roll_id'])) {
+                                            $damagedTitle = 'Roll #' . $rr['seller_roll_id'];
+                                        } elseif (!empty($rr['qr_code'])) {
+                                            $damagedTitle = 'Item [' . $rr['qr_code'] . ']';
+                                        } else {
+                                            $damagedTitle = 'Damaged Item #' . $rr['id'];
+                                        }
+
+                                        // Dynamically resolve damaged specifications
+                                        $damagedSpecParts = [];
+                                        if (!empty($rr['damaged_color']) && $rr['damaged_color'] !== '—') {
+                                            $damagedSpecParts[] = 'Color: <strong>' . e($rr['damaged_color']) . '</strong>';
+                                            if (!empty($rr['damaged_design']) && $rr['damaged_design'] !== '—') {
+                                                $damagedSpecParts[] = 'Design: ' . e($rr['damaged_design']);
+                                            }
+                                        } elseif (!empty($rr['variant_color_name'])) {
+                                            $damagedSpecParts[] = 'Color: <strong>' . e($rr['variant_color_name']) . '</strong>';
+                                        }
+                                        if (!empty($rr['variant_info'])) {
+                                            $damagedSpecParts[] = e($rr['variant_info']);
+                                        }
+                                        if (!empty($rr['qr_code']) && strpos($damagedTitle, $rr['qr_code']) === false) {
+                                            $damagedSpecParts[] = '<span class="font-monospace text-secondary">' . e($rr['qr_code']) . '</span>';
+                                        }
+                                        $damagedSpecHtml = implode(' • ', $damagedSpecParts);
+                                    ?>
                                     <tr>
                                         <td class="text-muted"><?= $idx + 1 ?></td>
                                         <td>
@@ -463,11 +505,24 @@
                                             </div>
                                         </td>
                                         <td>
-                                            <div class="fw-bold text-danger font-monospace">
-                                                <i class="bi bi-x-circle me-1"></i><?= e($rr['damaged_roll_number'] ?: ('Roll #' . $rr['seller_roll_id'])) ?>
+                                            <div class="fw-bold text-danger font-monospace fs-6">
+                                                <i class="bi bi-x-circle me-1"></i><?= e($damagedTitle) ?>
                                             </div>
-                                            <div class="small text-muted">
-                                                Color: <?= e($rr['damaged_color'] ?: '—') ?>
+                                            <?php if ($damagedSpecHtml !== ''): ?>
+                                                <div class="small text-muted mt-0.5">
+                                                    <?= $damagedSpecHtml ?>
+                                                </div>
+                                            <?php endif; ?>
+                                            <div class="mt-1 d-flex flex-wrap gap-1 align-items-center">
+                                                <span class="badge bg-danger-subtle text-danger border border-danger-subtle" style="font-size: 10px;">
+                                                    Defect Qty: <?= number_format((float)($rr['damaged_quantity'] ?: 1)) ?> pcs
+                                                    <?php if ((float)($rr['damaged_weight'] ?? 0) > 0): ?>
+                                                        (<?= number_format((float)$rr['damaged_weight'], 2) ?> kg)
+                                                    <?php endif; ?>
+                                                </span>
+                                                <a href="<?= url('production/damages') ?>?search=<?= urlencode($rr['damage_number']) ?>" class="badge bg-light text-primary border text-decoration-none" style="font-size: 10px;" title="View damage case">
+                                                    <i class="bi bi-eye me-0.5"></i><?= e($rr['damage_number']) ?>
+                                                </a>
                                             </div>
                                         </td>
                                         <td>
@@ -528,6 +583,18 @@
                                             <span class="small text-muted">
                                                 <?= e($rr['resolved_by_name'] ?: ($rr['reported_by_name'] ?: 'System Administrator')) ?>
                                             </span>
+                                        </td>
+                                        <td class="text-end text-nowrap">
+                                            <div class="btn-group btn-group-sm">
+                                                <a href="<?= url('production/damages') ?>?search=<?= urlencode($rr['damage_number']) ?>" class="btn btn-outline-danger btn-sm" title="View Damage Claim">
+                                                    <i class="bi bi-shield-exclamation"></i>
+                                                </a>
+                                                <?php if (!empty($rr['replacement_purchase_id'])): ?>
+                                                    <a href="<?= url('production/purchases/view/' . (int)$rr['replacement_purchase_id']) ?>" class="btn btn-outline-primary btn-sm" title="View Replacement Inward Purchase">
+                                                        <i class="bi bi-cart-check"></i>
+                                                    </a>
+                                                <?php endif; ?>
+                                            </div>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>
@@ -702,5 +769,161 @@ function filterAuditLogTable(query) {
         const text = row.textContent.toLowerCase();
         row.style.display = (q === '' || text.includes(q)) ? '' : 'none';
     });
+}
+
+// Replaced Rolls dataset formatted specifically for CSV export
+const replacedRollsData = <?= json_encode(array_map(function($idx, $rr) {
+    // Dynamic damaged title
+    $damagedTitle = '';
+    if (!empty($rr['damaged_roll_number'])) {
+        $damagedTitle = $rr['damaged_roll_number'];
+    } elseif (!empty($rr['product_name'])) {
+        $damagedTitle = $rr['product_name'];
+    } elseif (!empty($rr['catalog_product_name'])) {
+        $damagedTitle = $rr['catalog_product_name'];
+    } elseif (!empty($rr['seller_roll_id'])) {
+        $damagedTitle = 'Roll #' . $rr['seller_roll_id'];
+    } elseif (!empty($rr['qr_code'])) {
+        $damagedTitle = 'Item [' . $rr['qr_code'] . ']';
+    } else {
+        $damagedTitle = 'Damaged Item #' . $rr['id'];
+    }
+
+    $damagedSpecParts = [];
+    if (!empty($rr['damaged_color']) && $rr['damaged_color'] !== '—') {
+        $damagedSpecParts[] = 'Color: ' . $rr['damaged_color'];
+    } elseif (!empty($rr['variant_color_name'])) {
+        $damagedSpecParts[] = 'Color: ' . $rr['variant_color_name'];
+    }
+    if (!empty($rr['damaged_design'])) {
+        $damagedSpecParts[] = 'Design: ' . $rr['damaged_design'];
+    }
+    if (!empty($rr['variant_size_name'])) {
+        $damagedSpecParts[] = 'Size: ' . $rr['variant_size_name'];
+    }
+    if (!empty($rr['variant_info'])) {
+        $damagedSpecParts[] = $rr['variant_info'];
+    }
+    if (!empty($rr['qr_code']) && strpos($damagedTitle, $rr['qr_code']) === false) {
+        $damagedSpecParts[] = 'QR: ' . $rr['qr_code'];
+    }
+    $damagedSpec = implode(' | ', $damagedSpecParts);
+
+    // Replacement Roll No
+    $replRoll = $rr['repl_roll_number'] ?: ($rr['replacement_roll_number'] ?: ('Roll #' . ($rr['replacement_roll_id'] ?: '—')));
+    $replColor = $rr['repl_color'] ?: '—';
+    $replDesign = $rr['repl_design'] ?: '—';
+    $replQty = (float)($rr['repl_quantity'] ?: ($rr['damaged_quantity'] ?: 0));
+    $replWeight = (float)($rr['repl_weight'] ?: ($rr['damaged_weight'] ?: 0));
+    $replPrice = (float)($rr['repl_price'] ?: 0);
+    $replValuation = $replQty > 0 && $replPrice > 0 ? ($replQty * $replPrice) : (float)($rr['replacement_valuation'] ?: ($rr['loss_valuation'] ?: 0));
+
+    // QR range
+    $replQrRange = '—';
+    if (!empty($rr['repl_start_code']) && !empty($rr['repl_end_code'])) {
+        $replQrRange = $rr['repl_start_code'] . ' -> ' . $rr['repl_end_code'];
+    } elseif (!empty($rr['repl_qr_code'])) {
+        $replQrRange = $rr['repl_qr_code'];
+    }
+
+    $dateStr = date('d-m-Y H:i:s', strtotime($rr['resolved_at'] ?: ($rr['updated_at'] ?: $rr['created_at'])));
+
+    return [
+        'sl_no' => $idx + 1,
+        'replacement_roll' => $replRoll,
+        'color' => $replColor,
+        'design' => $replDesign,
+        'replaced_for_damaged' => $damagedTitle,
+        'damaged_details' => $damagedSpec,
+        'defect_qty' => number_format((float)($rr['damaged_quantity'] ?: 1), 2) . ' pcs',
+        'defect_weight' => (float)($rr['damaged_weight'] ?? 0) > 0 ? number_format((float)$rr['damaged_weight'], 2) . ' kg' : '—',
+        'defect_reason' => $rr['defect_type'] ?: '—',
+        'defect_notes' => $rr['defect_notes'] ?: ($rr['resolution_notes'] ?: '—'),
+        'quantity_pcs' => $replQty,
+        'weight_kg' => $replWeight,
+        'valuation_inr' => $replValuation,
+        'replacement_qr_codes' => $replQrRange,
+        'replaced_date' => $dateStr,
+        'damage_claim_no' => $rr['damage_number'] ?: '—',
+        'purchase_inward_no' => $rr['replacement_purchase_number'] ?: '—',
+        'resolved_by' => $rr['resolved_by_name'] ?: ($rr['reported_by_name'] ?: 'System Administrator')
+    ];
+}, array_keys($replacedRolls), $replacedRolls), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+
+function exportReplacedRollsCSV() {
+    if (!replacedRollsData || replacedRollsData.length === 0) {
+        alert('No replaced rolls data found to export.');
+        return;
+    }
+
+    const headers = [
+        '#',
+        'Replacement Roll No',
+        'Color',
+        'Design / Pattern',
+        'Replaced For (Damaged Roll / Item)',
+        'Damaged Item Specifications',
+        'Defect Quantity',
+        'Defect Weight',
+        'Defect Reason / Cause',
+        'Defect / Resolution Notes',
+        'Quantity (pcs)',
+        'Weight (kg)',
+        'Valuation (INR)',
+        'Replacement QR Codes',
+        'Replaced Date & Time',
+        'Damage Claim #',
+        'Purchase Inward #',
+        'Resolved By'
+    ];
+
+    function escapeCSV(val) {
+        if (val === null || val === undefined) return '""';
+        let str = String(val).replace(/"/g, '""');
+        return `"${str}"`;
+    }
+
+    let csvContent = '\uFEFF'; // UTF-8 BOM for Excel compatibility
+    csvContent += headers.map(escapeCSV).join(',') + '\r\n';
+
+    replacedRollsData.forEach(row => {
+        const line = [
+            row.sl_no,
+            row.replacement_roll,
+            row.color,
+            row.design,
+            row.replaced_for_damaged,
+            row.damaged_details,
+            row.defect_qty,
+            row.defect_weight,
+            row.defect_reason,
+            row.defect_notes,
+            row.quantity_pcs,
+            row.weight_kg,
+            row.valuation_inr,
+            row.replacement_qr_codes,
+            row.replaced_date,
+            row.damage_claim_no,
+            row.purchase_inward_no,
+            row.resolved_by
+        ];
+        csvContent += line.map(escapeCSV).join(',') + '\r\n';
+    });
+
+    const supplierName = <?= json_encode(preg_replace('/[^a-zA-Z0-9_-]/', '_', $seller['name'] ?? 'Supplier')) ?>;
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    const filename = `Replaced_Rolls_${supplierName}_${dateStamp}.csv`;
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    if (navigator.msSaveBlob) {
+        navigator.msSaveBlob(blob, filename);
+    } else {
+        link.href = URL.createObjectURL(blob);
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
 }
 </script>

@@ -521,8 +521,28 @@ class ProductionController {
         $search = trim($_GET['search'] ?? '');
         $status = $_GET['status'] ?? '';
         $city = trim($_GET['city'] ?? '');
+        $damageFilter = trim($_GET['damage_filter'] ?? '');
 
-        $sql = "SELECT s.* FROM sellers s WHERE s.seller_type = 'MATERIAL_SUPPLIER' AND (s.is_active = 1 OR s.is_active IS NULL) AND s.production_deleted_at IS NULL";
+        $sql = "SELECT s.*,
+                       (SELECT COUNT(DISTINCT rd.id)
+                        FROM roll_damages rd
+                        LEFT JOIN seller_rolls sr ON rd.seller_roll_id = sr.id
+                        WHERE rd.seller_id = s.id OR sr.seller_id = s.id
+                       ) AS damages_count,
+                       (SELECT COUNT(DISTINCT rd.id)
+                        FROM roll_damages rd
+                        LEFT JOIN seller_rolls orig_sr ON rd.seller_roll_id = orig_sr.id
+                        LEFT JOIN seller_rolls repl_sr ON rd.replacement_roll_id = repl_sr.id
+                        WHERE (rd.seller_id = s.id OR orig_sr.seller_id = s.id OR repl_sr.seller_id = s.id)
+                          AND (rd.replacement_roll_id IS NOT NULL 
+                               OR rd.resolution_type = 'REPLACEMENT' 
+                               OR rd.status = 'REPLACEMENT_RECEIVED'
+                               OR (rd.replacement_roll_number IS NOT NULL AND rd.replacement_roll_number != ''))
+                       ) AS replaced_count
+                FROM sellers s 
+                WHERE s.seller_type = 'MATERIAL_SUPPLIER' 
+                  AND (s.is_active = 1 OR s.is_active IS NULL) 
+                  AND s.production_deleted_at IS NULL";
         $params = [];
 
         if ($search !== '') {
@@ -535,6 +555,14 @@ class ProductionController {
         if ($city !== '') {
             $sql .= " AND s.city = ?";
             $params[] = $city;
+        }
+
+        if ($damageFilter === 'damage') {
+            $sql .= " HAVING damages_count > 0";
+        } elseif ($damageFilter === 'replaced') {
+            $sql .= " HAVING replaced_count > 0";
+        } elseif ($damageFilter === 'clean' || $damageFilter === 'no_damage') {
+            $sql .= " HAVING damages_count = 0";
         }
 
         $sql .= " ORDER BY s.created_at DESC";
@@ -551,6 +579,7 @@ class ProductionController {
             'status'         => $status,
             'city'           => $city,
             'cities'         => $cities,
+            'damageFilter'   => $damageFilter,
             'breadcrumb'     => [
                 ['label' => 'Production', 'url' => url('production/dashboard')],
                 ['label' => 'Suppliers'],
@@ -627,18 +656,30 @@ class ProductionController {
                     repl_sr.price AS repl_price, repl_sr.qr_code AS repl_qr_code,
                     repl_sr.start_code AS repl_start_code, repl_sr.end_code AS repl_end_code,
                     repl_sr.created_at AS repl_created_at,
+                    p.name AS catalog_product_name,
+                    cl.name AS variant_color_name,
+                    sz.name AS variant_size_name,
                     u_rep.full_name AS reported_by_name,
                     u_res.full_name AS resolved_by_name,
-                    pp.id AS replacement_purchase_id,
-                    pp.purchase_number AS replacement_purchase_number,
-                    pp.created_at AS replacement_purchase_created_at
+                    (SELECT pp.id FROM production_purchases pp 
+                     LEFT JOIN production_purchase_items ppi ON ppi.purchase_id = pp.id 
+                     WHERE (rd.replacement_roll_id IS NOT NULL AND ppi.seller_roll_id = rd.replacement_roll_id)
+                        OR pp.notes LIKE CONCAT('%', rd.damage_number, '%')
+                     ORDER BY pp.id DESC LIMIT 1) AS replacement_purchase_id,
+                    (SELECT pp.purchase_number FROM production_purchases pp 
+                     LEFT JOIN production_purchase_items ppi ON ppi.purchase_id = pp.id 
+                     WHERE (rd.replacement_roll_id IS NOT NULL AND ppi.seller_roll_id = rd.replacement_roll_id)
+                        OR pp.notes LIKE CONCAT('%', rd.damage_number, '%')
+                     ORDER BY pp.id DESC LIMIT 1) AS replacement_purchase_number
              FROM roll_damages rd
              LEFT JOIN seller_rolls orig_sr ON rd.seller_roll_id = orig_sr.id
              LEFT JOIN seller_rolls repl_sr ON rd.replacement_roll_id = repl_sr.id
+             LEFT JOIN products p ON rd.product_id = p.id
+             LEFT JOIN product_variants pv ON rd.variant_id = pv.id
+             LEFT JOIN colors cl ON pv.color_id = cl.id
+             LEFT JOIN sizes sz ON pv.size_id = sz.id
              LEFT JOIN users u_rep ON rd.reported_by = u_rep.id
              LEFT JOIN users u_res ON rd.resolved_by = u_res.id
-             LEFT JOIN production_purchase_items ppi ON ppi.seller_roll_id = rd.replacement_roll_id
-             LEFT JOIN production_purchases pp ON pp.id = ppi.purchase_id
              WHERE (rd.seller_id = ? OR orig_sr.seller_id = ? OR repl_sr.seller_id = ?)
                AND (rd.replacement_roll_id IS NOT NULL 
                     OR rd.resolution_type = 'REPLACEMENT' 
@@ -748,6 +789,13 @@ class ProductionController {
                 }
             }
             if (!$alreadyLogged) {
+                $damagedName = !empty($rr['damaged_roll_number'])
+                    ? $rr['damaged_roll_number']
+                    : (!empty($rr['product_name'])
+                        ? $rr['product_name']
+                        : (!empty($rr['catalog_product_name'])
+                            ? $rr['catalog_product_name']
+                            : (!empty($rr['seller_roll_id']) ? ('Roll #' . $rr['seller_roll_id']) : ('Item ' . ($rr['qr_code'] ?: '#' . $rr['id'])))));
                 $auditLog[] = [
                     'type'            => 'REPLACED',
                     'action_label'    => 'Supplier Replacement Received',
@@ -755,8 +803,8 @@ class ProductionController {
                     'badge_icon'      => 'bi-shield-check',
                     'datetime'        => $dt,
                     'roll_number'     => $rr['repl_roll_number'] ?: ($rr['replacement_roll_number'] ?: '—'),
-                    'item_name'       => ($rr['repl_material'] ?: 'Replacement Fabric Roll') . ' (Replaced for Damaged: ' . ($rr['damaged_roll_number'] ?: 'Roll #' . $rr['seller_roll_id']) . ')',
-                    'color'           => $rr['repl_color'] ?: ($rr['damaged_color'] ?: '—'),
+                    'item_name'       => ($rr['repl_material'] ?: 'Replacement Fabric Roll') . ' (Replaced for Damaged: ' . $damagedName . ')',
+                    'color'           => $rr['repl_color'] ?: ($rr['damaged_color'] ?: ($rr['variant_color_name'] ?: '—')),
                     'design'          => $rr['repl_design'] ?: ($rr['damaged_design'] ?: '—'),
                     'quantity'        => (float)($rr['repl_quantity'] ?: ($rr['damaged_quantity'] ?? 0)),
                     'weight'          => (float)($rr['repl_weight'] ?: ($rr['damaged_weight'] ?? 0)),
