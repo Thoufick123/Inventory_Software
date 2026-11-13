@@ -27,7 +27,7 @@
         <div class="col-xl-4 col-lg-5">
             <!-- Customer & Order Details Card -->
             <div class="card border-0 shadow-sm mb-3 bg-white rounded-3">
-                <div class="card-header bg-white py-2.5 px-3 d-flex justify-content-between align-items-center border-bottom">
+                <div class="card-header bg-white py-2 px-3 d-flex justify-content-between align-items-center border-bottom">
                     <h6 class="card-title mb-0 fw-bold text-dark" style="font-size: 0.92rem;">
                         <i class="bi bi-person-check me-1.5 text-primary"></i>Customer &amp; Order Details
                     </h6>
@@ -35,11 +35,11 @@
                         <i class="bi bi-person me-0.5"></i>Walk-in Customer
                     </span>
                 </div>
-                <div class="card-body p-3">
+                <div class="card-body p-4">
                     <input type="hidden" name="customer_id" id="selectedCustomerId" value="">
 
                     <!-- 1. Customer Mobile / Phone with live auto-suggest -->
-                    <div class="mb-2.5 position-relative">
+                    <div class="mb-3 position-relative">
                         <div class="d-flex justify-content-between align-items-center mb-1">
                             <label class="form-label small fw-semibold mb-0 text-secondary">
                                 <i class="bi bi-telephone text-primary me-1"></i>Mobile Number <span class="text-danger">*</span>
@@ -71,7 +71,7 @@
                     </div>
 
                     <!-- 2. Customer Name -->
-                    <div class="mb-2.5">
+                    <div class="mb-3">
                         <label class="form-label small fw-semibold mb-1 text-secondary">
                             <i class="bi bi-person text-primary me-1"></i>Customer Name <span class="text-danger">*</span>
                         </label>
@@ -89,7 +89,7 @@
                     </div>
 
                     <!-- 3. Billing Address / Street -->
-                    <div class="mb-2.5">
+                    <div class="mb-3">
                         <label class="form-label small fw-semibold mb-1 text-secondary">
                             <i class="bi bi-geo-alt text-primary me-1"></i>Customer Address / Street <span class="text-muted fw-normal">(for Invoice)</span>
                         </label>
@@ -99,7 +99,7 @@
                     </div>
 
                     <!-- 4. District / City & State -->
-                    <div class="row g-2 mb-2.5">
+                    <div class="row g-2 mb-3">
                         <div class="col-7">
                             <label class="form-label small fw-semibold mb-1 text-secondary">District / City <span class="text-danger">*</span></label>
                             <select name="customer_city" id="custCity" class="form-select form-select-sm" required onchange="onCustDistrictChange(this)">
@@ -163,7 +163,7 @@
                     </div>
 
                     <!-- History link when customer selected -->
-                    <div id="custHistorySection" class="d-none pt-1 mb-2.5">
+                    <div id="custHistorySection" class="d-none pt-1 mb-3">
                         <div class="d-flex gap-1">
                             <button type="button" class="btn btn-xs btn-light border text-secondary py-1 fw-semibold" id="btnCustPurchaseCount" disabled>
                                 <i class="bi bi-receipt me-1"></i><span id="custPurchaseCount">0</span> Purchases
@@ -175,7 +175,7 @@
                     </div>
 
                     <!-- Source Warehouse -->
-                    <div class="mb-2.5">
+                    <div class="mb-3">
                         <label class="form-label small fw-semibold mb-1 text-secondary">Source Warehouse <span class="text-danger">*</span></label>
                         <select name="warehouse_id" class="form-select form-select-sm" id="warehouseSelect" required onchange="onWarehouseChange()" <?= ((function_exists('currentWarehouseId') && currentWarehouseId() !== null) || count($warehouses) <= 1) ? 'disabled' : '' ?>>
                             <?php foreach ($warehouses as $wh): ?>
@@ -187,13 +187,13 @@
                         <?php endif; ?>
                     </div>
 
-                    <div class="mb-2.5">
+                    <div class="mb-3">
                         <label class="form-label small fw-semibold mb-1 text-secondary">Purchase Date</label>
                         <input type="date" name="order_date" class="form-control form-control-sm" value="<?= date('Y-m-d') ?>" required>
                     </div>
 
                     <!-- Payment mode; payment status is derived automatically -->
-                    <div class="row g-2 mb-2.5">
+                    <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label class="form-label small fw-semibold mb-1 text-secondary">Payment Mode</label>
                             <select name="payment_method" id="paymentMethodSelect" class="form-select form-select-sm fw-semibold" onchange="onPaymentMethodChange()">
@@ -208,13 +208,13 @@
                         <input type="hidden" name="payment_status" id="paymentStatusInput" value="PAID">
                     </div>
 
-                    <div class="form-check border rounded-3 bg-light px-3 py-2 mb-2.5">
+                    <div class="form-check border rounded-3 bg-light px-3 py-2 mb-3">
                         <input type="checkbox" class="form-check-input ms-0 me-2" id="isDirectPurchaseInput" name="is_direct_purchase" value="1">
                         <label class="form-check-label fw-semibold small" for="isDirectPurchaseInput">Separate as Direct Purchase</label>
                         <small class="text-muted d-block ms-4">Checked orders appear in the Direct Purchase tab and are excluded from normal purchase counts and totals.</small>
                     </div>
 
-                    <div class="mb-2.5" id="cashTenderSection">
+                    <div class="mb-3" id="cashTenderSection">
                         <div class="row g-2">
                             <div class="col-6">
                                 <label class="form-label small fw-semibold mb-1 text-secondary" for="cashTenderInput">Cash Given by Customer (₹)</label>
@@ -228,7 +228,7 @@
                         <small class="text-muted">Any cash above the bill total is calculated as change to return.</small>
                     </div>
 
-                    <div class="mb-2.5" id="paymentAmountSection">
+                    <div class="mb-3" id="paymentAmountSection">
                         <label class="form-label small fw-semibold mb-1 text-secondary" for="paidAmountInput">Amount Received Now (₹)</label>
                         <input type="number" step="0.01" min="0" name="paid_amount" id="paidAmountInput" class="form-control form-control-sm text-end fw-bold" placeholder="0.00" data-auto-value="1" oninput="onPaidAmountInput()">
                         <small class="text-muted">Enter the amount collected now. Any remaining amount will be recorded as due.</small>
@@ -237,7 +237,7 @@
                     <!-- ============================================================= -->
                     <!-- DYNAMIC SPLIT PAYMENT CONTAINER (CASH + UPI) -->
                     <!-- ============================================================= -->
-                    <div id="splitPaymentSection" class="p-2.5 rounded-3 mb-2.5 border d-none" style="background-color: #f0fdf4; border-color: #bbf7d0 !important;">
+                    <div id="splitPaymentSection" class="p-3 rounded-3 mb-3 border d-none" style="background-color: #f0fdf4; border-color: #bbf7d0 !important;">
                         <div class="d-flex align-items-center justify-content-between mb-2">
                             <span class="fw-bold text-success small">
                                 <i class="bi bi-wallet2 me-1"></i>Cash + UPI Split Breakdown
@@ -256,7 +256,7 @@
                                 <input type="number" step="0.01" min="0" name="upi_amount" id="splitUpiInput" class="form-control form-control-sm text-end fw-bold" placeholder="0.00" oninput="onSplitUpiChange()">
                             </div>
                         </div>
-                        <div class="mb-1.5">
+                        <div class="mb-2">
                             <label class="form-label text-secondary mb-1" style="font-size: 0.76rem; font-weight: 600;">UPI Ref / Transaction ID / App</label>
                             <input type="text" name="upi_reference" id="splitUpiRef" class="form-control form-control-sm font-monospace" placeholder="e.g. GPay Ref #402918237">
                         </div>
@@ -314,22 +314,22 @@
 
 
             <!-- Financial Summary Card -->
-            <div class="card border-0 shadow-sm bg-white rounded-3">
+            <div class="card border-0 shadow-sm bg-white rounded-3" id="purchasePaymentSummary">
                 <div class="card-header bg-light py-2 px-3 border-bottom">
                     <h6 class="fw-bold mb-0 text-dark" style="font-size: 0.88rem;">
                         <i class="bi bi-calculator me-1.5 text-success"></i>Billing &amp; Tax Summary
                     </h6>
                 </div>
                 <div class="card-body p-3">
-                    <div class="d-flex justify-content-between mb-1.5 small">
+                    <div class="d-flex justify-content-between mb-2 small">
                         <span class="text-muted">Gross Amount:</span>
                         <span class="fw-bold text-dark font-monospace" id="lblGross">₹0.00</span>
                     </div>
-                    <div class="d-flex justify-content-between mb-1.5 small">
+                    <div class="d-flex justify-content-between mb-2 small">
                         <span class="text-muted">Total Discount:</span>
                         <span class="fw-semibold text-danger font-monospace" id="lblDiscount">-₹0.00</span>
                     </div>
-                    <div class="d-flex justify-content-between mb-1.5 small">
+                    <div class="d-flex justify-content-between mb-2 small">
                         <span class="text-muted">Taxable Subtotal:</span>
                         <span class="fw-bold text-dark font-monospace" id="lblSubtotal">₹0.00</span>
                     </div>
@@ -342,11 +342,11 @@
                         <span class="fw-bold text-dark" style="font-size: 1rem;">Grand Total:</span>
                         <span class="fs-4 fw-bold text-success font-monospace" id="lblTotal">₹0.00</span>
                     </div>
-                    <div class="d-flex justify-content-between mb-1.5 small">
+                    <div class="d-flex justify-content-between mb-2 small">
                         <span class="text-muted">Amount Received:</span>
                         <span class="fw-semibold text-success font-monospace" id="lblPaidAmount">₹0.00</span>
                     </div>
-                    <div class="d-flex justify-content-between mb-1.5 small d-none" id="changeSummaryRow">
+                    <div class="d-flex justify-content-between mb-2 small d-none" id="changeSummaryRow">
                         <span class="text-muted">Change to Return:</span>
                         <span class="fw-semibold text-success font-monospace" id="lblChangeToReturn">₹0.00</span>
                     </div>
@@ -366,23 +366,28 @@
         <!-- ========================================================================= -->
         <div class="col-xl-8 col-lg-7">
             <div class="card border-0 shadow-sm bg-white rounded-3">
-                <div class="card-header bg-white py-2.5 px-3 d-flex justify-content-between align-items-center flex-wrap gap-2 border-bottom">
+                <div class="card-header bg-white py-2 px-3 d-flex justify-content-between align-items-center flex-wrap gap-2 border-bottom">
                     <div class="d-flex align-items-center gap-2">
                         <h6 class="card-title mb-0 fw-bold text-dark" style="font-size: 0.92rem;">
                             <i class="bi bi-basket3 me-1.5 text-primary"></i>Purchased Products &amp; Garments
                         </h6>
                         <span class="badge bg-secondary-subtle text-secondary px-2 py-0.5" id="itemCountBadge">1 item</span>
                     </div>
-                    <button type="button" class="btn btn-xs btn-primary fw-semibold px-2.5 py-1" onclick="addItemRow()">
-                        <i class="bi bi-plus-circle me-1"></i> Add Product Item
-                    </button>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-xs btn-outline-success fw-semibold px-2 py-1" onclick="finishScanning()" title="Go to payment summary when scanning is complete">
+                            <i class="bi bi-check2-circle me-1"></i> Finish Scanning
+                        </button>
+                        <button type="button" class="btn btn-xs btn-primary fw-semibold px-2 py-1" onclick="addItemRow()">
+                            <i class="bi bi-plus-circle me-1"></i> Add Product Item
+                        </button>
+                    </div>
                 </div>
 
                 <div class="card-body p-3">
                     <!-- ========================================================================= -->
                     <!-- HIGH-SPEED SMART SCANNER & PRODUCT SEARCH BAR -->
                     <!-- ========================================================================= -->
-                    <div class="rounded-3 mb-3 p-2.5 text-white" style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border: 1px solid #334155;">
+                    <div class="rounded-3 mb-3 p-3 text-white" style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border: 1px solid #334155;">
                         <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                             <div class="d-flex align-items-center gap-2">
                                 <span class="badge bg-warning text-dark px-2 py-0.5 fw-bold" style="font-size: 0.72rem;">
@@ -397,7 +402,7 @@
                         <!-- Search & Scanner Input with Floating Auto-Suggest Dropdown -->
                         <div class="position-relative">
                             <div class="input-group">
-                                <span class="input-group-text bg-dark border-secondary text-warning px-2.5">
+                                <span class="input-group-text bg-dark border-secondary text-warning px-2">
                                     <i class="bi bi-search"></i>
                                 </span>
                                 <input type="text" id="purchaseScanInput" class="form-control bg-dark text-white border-secondary font-monospace" 
@@ -411,7 +416,7 @@
                             
                         </div>
 
-                        <div id="scanFeedbackMsg" class="mt-2 small d-none alert py-1 px-2.5 mb-0" style="font-size: 0.8rem;"></div>
+                        <div id="scanFeedbackMsg" class="mt-2 small d-none alert py-1 px-2 mb-0" style="font-size: 0.8rem;"></div>
                     </div>
 
                     <!-- Line Items Table (Shop POS Style: Compact, Spacious, No-Overflow Layout) -->
@@ -2127,6 +2132,13 @@ function submitCurrentScan() {
     handleScanInput(rawVal);
 }
 
+function finishScanning() {
+    document.getElementById('purchasePaymentSummary')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+    });
+}
+
 // =========================================================================
 // SCANNER ENGINE (EXACT WAREHOUSE QR TAGS)
 // =========================================================================
@@ -2180,7 +2192,7 @@ function handleScanInput(rawCode) {
     const scanInput = document.getElementById('purchaseScanInput');
     if (scanInput) {
         scanInput.value = '';
-        scanInput.focus();
+        scanInput.focus({ preventScroll: true });
     }
 }
 
@@ -2235,7 +2247,6 @@ function applyVariantToTable(matched, tagLabel = '') {
             }
             if (dupRow) {
                 dupRow.classList.add('table-danger');
-                dupRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 setTimeout(() => dupRow.classList.remove('table-danger'), 2500);
             }
             showScanAlert(`Piece QR / Tag "${cleanTag}" has already been scanned into this purchase order. Each individual piece QR tag can only be added once.`);
@@ -2296,13 +2307,11 @@ function applyVariantToTable(matched, tagLabel = '') {
         sel.value = matched.id;
         onVariantChange(sel, pieceTagsList);
         targetRow.classList.add('table-success');
-        targetRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         setTimeout(() => targetRow.classList.remove('table-success'), 1200);
     } else {
         // Create next row in the product list for this scanned piece QR
         const newRow = addItemRow(matched.id, pieceTagValue);
         newRow.classList.add('table-success');
-        newRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         setTimeout(() => newRow.classList.remove('table-success'), 1200);
     }
 
