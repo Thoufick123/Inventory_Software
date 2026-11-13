@@ -208,6 +208,12 @@
                         <input type="hidden" name="payment_status" id="paymentStatusInput" value="PAID">
                     </div>
 
+                    <div class="form-check border rounded-3 bg-light px-3 py-2 mb-2.5">
+                        <input type="checkbox" class="form-check-input ms-0 me-2" id="isDirectPurchaseInput" name="is_direct_purchase" value="1">
+                        <label class="form-check-label fw-semibold small" for="isDirectPurchaseInput">Separate as Direct Purchase</label>
+                        <small class="text-muted d-block ms-4">Checked orders appear in the Direct Purchase tab and are excluded from normal purchase counts and totals.</small>
+                    </div>
+
                     <div class="mb-2.5" id="cashTenderSection">
                         <div class="row g-2">
                             <div class="col-6">

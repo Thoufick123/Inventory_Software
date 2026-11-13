@@ -5415,6 +5415,13 @@ class WarehouseController {
                 : ($purchase['paid_amount'] > 0 ? 'PARTIAL' : 'PENDING');
         }
         unset($purchase);
+        $directPurchases = array_values(array_filter($purchases, static function ($purchase): bool {
+            return !empty($purchase['is_direct_purchase']);
+        }));
+        $purchases = array_values(array_filter($purchases, static function ($purchase): bool {
+            return empty($purchase['is_direct_purchase']);
+        }));
+
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
         $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $customers = Database::fetchAll("SELECT * FROM customers WHERE is_active = 1 ORDER BY name ASC");
@@ -5519,6 +5526,7 @@ class WarehouseController {
             'activeModule'          => 'warehouse',
             'activeMenu'            => 'purchases',
             'purchases'             => $purchases,
+            'directPurchases'       => $directPurchases,
             'regularCustomers'      => $regularCustomers,
             'oneTimeCustomers'      => $oneTimeCustomers,
             'groupedCustomers'      => array_values($groupedCustomers),
@@ -5841,6 +5849,7 @@ class WarehouseController {
             $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
             $poData = [
                 'customer_id'    => $customerId,
+                'is_direct_purchase' => !empty($_POST['is_direct_purchase']),
                 'warehouse_id'   => $scopedWarehouseId !== null ? $scopedWarehouseId : (int)($_POST['warehouse_id'] ?? 1),
                 'order_date'     => $_POST['order_date'] ?? date('Y-m-d'),
                 'expected_date'  => !empty($_POST['expected_date']) ? $_POST['expected_date'] : date('Y-m-d'),

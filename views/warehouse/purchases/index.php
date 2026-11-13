@@ -21,7 +21,7 @@
         <div class="card border-0 shadow-sm rounded-3 p-3 bg-white border-start border-primary border-4">
             <div class="d-flex align-items-center justify-content-between">
                 <div>
-                    <span class="text-muted small fw-semibold">Total Direct Orders</span>
+                    <span class="text-muted small fw-semibold">Normal Orders</span>
                     <h4 class="mb-0 fw-bold mt-1 text-dark"><?= number_format($stats['total_orders'] ?? 0) ?></h4>
                 </div>
                 <div class="rounded-circle bg-primary-subtle text-primary p-3">
@@ -34,7 +34,7 @@
         <div class="card border-0 shadow-sm rounded-3 p-3 bg-white border-start border-success border-4">
             <div class="d-flex align-items-center justify-content-between">
                 <div>
-                    <span class="text-muted small fw-semibold">Total Sales Revenue</span>
+                    <span class="text-muted small fw-semibold">Normal Sales Revenue</span>
                     <h4 class="mb-0 fw-bold mt-1 text-success">₹<?= number_format($stats['total_revenue'] ?? 0, 2) ?></h4>
                 </div>
                 <div class="rounded-circle bg-success-subtle text-success p-3">
@@ -47,7 +47,7 @@
         <div class="card border-0 shadow-sm rounded-3 p-3 bg-white border-start border-info border-4">
             <div class="d-flex align-items-center justify-content-between">
                 <div>
-                    <span class="text-muted small fw-semibold">Total Garment Units</span>
+                    <span class="text-muted small fw-semibold">Normal Garment Units</span>
                     <h4 class="mb-0 fw-bold mt-1 text-info"><?= number_format($stats['total_units'] ?? 0) ?> <span class="fs-6 fw-normal text-muted">pcs</span></h4>
                 </div>
                 <div class="rounded-circle bg-info-subtle text-info p-3">
@@ -60,7 +60,7 @@
         <div class="card border-0 shadow-sm rounded-3 p-3 bg-white border-start border-warning border-4">
             <div class="d-flex align-items-center justify-content-between">
                 <div>
-                    <span class="text-muted small fw-semibold">Paid vs Pending Revenue</span>
+                    <span class="text-muted small fw-semibold">Normal Paid vs Pending</span>
                     <h5 class="mb-0 fw-bold mt-1 text-dark">
                         <span class="text-success">₹<?= number_format($stats['paid_revenue'] ?? 0) ?></span>
                         <small class="text-muted fs-7">/ ₹<?= number_format($stats['pending_revenue'] ?? 0) ?> pend</small>
@@ -73,6 +73,7 @@
         </div>
     </div>
 </div>
+<p class="text-muted small mb-3">Summary totals and customer categories exclude orders marked as Direct Purchase. Those orders are listed separately below.</p>
 
 <!-- ========================================================================= -->
 <!-- FILTERS CARD (AUTOMATIC INSTANT FILTERING) -->
@@ -127,23 +128,24 @@
 </div>
 
 <!-- ========================================================================= -->
-<!-- SEPARATE TABS: 1. ALL INVOICES | 2. ONE-TIME PURCHASES | 3. REGULAR CUSTOMERS -->
+<!-- SEPARATE TABS: NORMAL INVOICES, ONE-TIME CUSTOMERS, REPEAT CUSTOMERS, AND DIRECT PURCHASES -->
 <!-- ========================================================================= -->
 <?php 
 $regularCount = count($regularCustomers ?? []);
 $oneTimeCount = count($oneTimeCustomers ?? []) + count($unregisteredPurchases ?? []);
+$directPurchaseCount = count($directPurchases ?? []);
 ?>
 
 <div class="card border-0 shadow-sm rounded-3 overflow-hidden mb-4">
     <!-- View Mode Tabs Bar -->
     <div class="card-header bg-white py-2.5 px-3 border-bottom d-flex align-items-center justify-content-between flex-wrap gap-2">
         <ul class="nav nav-pills gap-2" id="customerCategoryTabs" role="tablist">
-            <!-- TAB 1: ALL INVOICES -->
+            <!-- TAB 1: NORMAL INVOICES -->
             <li class="nav-item" role="presentation">
                 <button class="nav-link active py-2 px-3 fw-semibold small shadow-sm d-flex align-items-center gap-1.5" 
                         id="tab-all-btn" data-bs-toggle="pill" data-bs-target="#tab-all-pane" type="button" role="tab">
                     <i class="bi bi-receipt me-1 text-white"></i>
-                    <span>All Invoices (Order-by-Order)</span>
+                    <span>Normal Invoices (Order-by-Order)</span>
                     <span class="badge bg-white text-primary rounded-pill ms-1 fw-bold"><?= count($purchases ?? []) ?></span>
                 </button>
             </li>
@@ -165,6 +167,15 @@ $oneTimeCount = count($oneTimeCustomers ?? []) + count($unregisteredPurchases ??
                     <i class="bi bi-arrow-repeat me-1 text-primary fs-6"></i>
                     <span>Regular Customers (Repeat Buyers)</span>
                     <span class="badge bg-secondary text-white rounded-pill ms-1"><?= $regularCount ?></span>
+                </button>
+            </li>
+
+            <li class="nav-item" role="presentation">
+                <button class="nav-link py-2 px-3 fw-semibold small text-secondary border bg-light d-flex align-items-center gap-1.5"
+                        id="tab-direct-btn" data-bs-toggle="pill" data-bs-target="#tab-direct-pane" type="button" role="tab">
+                    <i class="bi bi-box-arrow-up-right me-1 text-primary"></i>
+                    <span>Direct Purchase Orders</span>
+                    <span class="badge bg-secondary text-white rounded-pill ms-1"><?= $directPurchaseCount ?></span>
                 </button>
             </li>
         </ul>
@@ -444,7 +455,7 @@ $oneTimeCount = count($oneTimeCustomers ?? []) + count($unregisteredPurchases ??
                 <?php if (empty($purchases)): ?>
                     <div class="text-center py-5">
                         <i class="bi bi-bag-x fs-1 text-muted d-block mb-3"></i>
-                        <h5 class="text-muted">No Direct Customer Purchases Found</h5>
+                        <h5 class="text-muted">No Normal Direct Customer Purchases Found</h5>
                     </div>
                 <?php else: ?>
                     <div class="table-responsive">
@@ -545,6 +556,76 @@ $oneTimeCount = count($oneTimeCustomers ?? []) + count($unregisteredPurchases ??
                                                 <a href="<?= url('warehouse/purchases/edit/' . $po['id']) ?>" class="btn btn-outline-secondary" title="Edit Purchase">
                                                     <i class="bi bi-pencil"></i>
                                                 </a>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            </div>
+
+            <div class="tab-pane fade" id="tab-direct-pane" role="tabpanel">
+                <?php if (empty($directPurchases)): ?>
+                    <div class="text-center py-5">
+                        <i class="bi bi-box-seam fs-1 text-muted d-block mb-3"></i>
+                        <h5 class="text-muted">No Direct Purchase Orders Found</h5>
+                        <p class="text-muted small">Orders marked as Direct Purchase during billing will appear here.</p>
+                    </div>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="ps-3">Order / Invoice #</th>
+                                    <th>Customer</th>
+                                    <th>Warehouse</th>
+                                    <th>Order Date</th>
+                                    <th>Purchased Items</th>
+                                    <th>Grand Total</th>
+                                    <th>Payment</th>
+                                    <th class="text-end pe-3">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($directPurchases as $po): ?>
+                                    <tr>
+                                        <td class="ps-3"><span class="fw-bold font-monospace text-primary"><?= e($po['po_number']) ?></span></td>
+                                        <td>
+                                            <span class="fw-semibold"><?= e($po['display_customer_name'] ?? 'Direct Customer') ?></span>
+                                            <?php if (!empty($po['display_customer_phone'])): ?>
+                                                <small class="text-muted d-block"><?= e($po['display_customer_phone']) ?></small>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td><span class="badge bg-secondary"><?= e($po['warehouse_name']) ?></span></td>
+                                        <td><small class="text-muted"><?= date('d M Y', strtotime($po['order_date'])) ?></small></td>
+                                        <td>
+                                            <span class="badge bg-light text-dark border fw-bold"><?= number_format($po['total_ordered_qty']) ?> pcs</span>
+                                            <small class="text-muted d-block"><?= number_format($po['total_items']) ?> SKU line(s)</small>
+                                        </td>
+                                        <td>
+                                            <span class="fw-bold text-success">₹<?= number_format($po['total_amount'], 2) ?></span>
+                                            <small class="text-success d-block">Paid: ₹<?= number_format((float)($po['paid_amount'] ?? 0), 2) ?></small>
+                                            <?php if ((float)($po['balance_due'] ?? 0) > 0): ?>
+                                                <small class="text-danger d-block">Due: ₹<?= number_format((float)$po['balance_due'], 2) ?></small>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-<?= ($po['payment_status'] ?? 'PAID') === 'PAID' ? 'success' : (($po['payment_status'] ?? '') === 'PARTIAL' ? 'warning text-dark' : 'danger') ?>">
+                                                <?= e($po['payment_status'] ?? 'PAID') ?>
+                                            </span>
+                                            <small class="text-muted d-block font-monospace"><?= e($po['payment_method'] ?? 'CASH') ?></small>
+                                        </td>
+                                        <td class="text-end pe-3">
+                                            <div class="btn-group btn-group-sm">
+                                                <?php if ($canReceivePurchase): ?>
+                                                    <a href="<?= url('warehouse/purchases/receive/' . $po['id']) ?>" target="_blank" class="btn btn-outline-success" title="Open customer handover bill"><i class="bi bi-receipt me-1"></i>Bill</a>
+                                                    <a href="<?= url('warehouse/purchases/receive/' . $po['id']) ?>?document=invoice" target="_blank" class="btn btn-outline-primary" title="Open office invoice"><i class="bi bi-file-earmark-text me-1"></i>Invoice</a>
+                                                <?php endif; ?>
+                                                <?php if (hasPermission('purchases', 'edit')): ?>
+                                                    <a href="<?= url('warehouse/purchases/edit/' . $po['id']) ?>" class="btn btn-outline-secondary" title="Edit Purchase"><i class="bi bi-pencil"></i></a>
                                                 <?php endif; ?>
                                             </div>
                                         </td>
@@ -1359,7 +1440,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function filterTableRowsLive(query) {
-    const tableBodies = document.querySelectorAll('#tab-regular-pane tbody, #tab-onetime-pane tbody, #tab-all-pane tbody');
+    const tableBodies = document.querySelectorAll('#tab-regular-pane tbody, #tab-onetime-pane tbody, #tab-all-pane tbody, #tab-direct-pane tbody');
     tableBodies.forEach(tbody => {
         const rows = tbody.querySelectorAll('tr');
         rows.forEach(row => {
