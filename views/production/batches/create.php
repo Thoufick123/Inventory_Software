@@ -288,12 +288,16 @@
                                             $hasAvailableTags = $it['computed_has_tags'];
                                             $packQty = $it['computed_pack_qty'];
                                             $rejectedQty = (int)($it['rejected_qty'] ?? 0);
+                                            $rowPrice = (float)(!empty($it['discount_price']) ? $it['discount_price'] : (!empty($it['base_price']) ? $it['base_price'] : (!empty($it['selling_price']) ? $it['selling_price'] : (!empty($it['mrp']) ? $it['mrp'] : 0))));
+                                            $rowGst = (float)(!empty($it['gst_percentage']) ? $it['gst_percentage'] : 5.0);
                                         ?>
                                             <tr class="variant-item-row" 
                                                 data-variant-name="<?= e($it['size_name'] ?? $it['display_size'] ?? 'Standard') ?> / <?= e($it['color_name'] ?? $it['display_color'] ?? 'Assorted') ?>" 
                                                 data-passed="<?= $packQty ?>" 
                                                 data-passed-qty="<?= $remPassedQty ?>"
                                                 data-rework-qty="<?= $reworkQty ?>"
+                                                data-unit-price="<?= $rowPrice ?>"
+                                                data-gst-rate="<?= $rowGst ?>"
                                                 data-is-zero="0">
                                                 <td>
                                                     <input type="hidden" name="items[<?= $idx ?>][qc_batch_id]" value="<?= $it['qc_batch_id'] ?? $selectedQC['id'] ?>">
@@ -408,6 +412,29 @@
                         </div>
                     <?php endif; ?>
                 </div>
+                <!-- Live Billing & Product Valuation Summary Before Save -->
+                <?php if ($selectedQC): ?>
+                    <div class="px-4 py-3 bg-light border-top border-bottom">
+                        <div class="row g-3 align-items-center text-center text-md-start">
+                            <div class="col-6 col-md-3">
+                                <span class="small text-muted text-uppercase fw-bold d-block"><i class="bi bi-box-seam me-1 text-primary"></i>Product Count</span>
+                                <span class="fs-5 fw-bold text-dark" id="calcSummaryProductCount">0 pcs</span>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <span class="small text-muted text-uppercase fw-bold d-block"><i class="bi bi-currency-rupee me-1 text-secondary"></i>Taxable Value</span>
+                                <span class="fs-5 fw-bold text-secondary" id="calcSummaryTaxable">₹0.00</span>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <span class="small text-muted text-uppercase fw-bold d-block"><i class="bi bi-percent me-1 text-info"></i>GST Amount</span>
+                                <span class="fs-5 fw-bold text-primary" id="calcSummaryGst">₹0.00</span>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <span class="small text-muted text-uppercase fw-bold d-block"><i class="bi bi-receipt me-1 text-success"></i>Total Bill &amp; Invoice</span>
+                                <span class="fs-4 fw-bold text-success" id="calcSummaryTotal">₹0.00</span>
+                            </div>
+                        </div>
+                    </div>
+                <?php endif; ?>
                 <div class="card-footer bg-white p-3 d-flex justify-content-between align-items-center border-top flex-wrap gap-2">
                     <a href="<?= url('production/batches') ?>" class="btn btn-outline-secondary">
                         <i class="bi bi-x-circle me-1"></i> Cancel
@@ -428,8 +455,8 @@
                                     <i class="bi bi-receipt-cutoff me-1"></i> Generate Bill &amp; Invoice
                                 </button>
                             <?php endif; ?>
-                            <button type="submit" class="btn btn-primary px-4 fw-semibold" id="btnSavePackedBatch">
-                                <i class="bi bi-check2-circle me-1"></i> Save Packed Batch
+                            <button type="submit" class="btn btn-primary px-4 fw-semibold shadow-sm" id="btnSavePackedBatch">
+                                <i class="bi bi-check2-circle me-1"></i> Save Packed Batch &amp; Generate Bill / Invoice
                             </button>
                         </div>
                     <?php endif; ?>
@@ -515,20 +542,45 @@ function handleQCBatchChange(qcBatchId) {
 }
 
 function calcPackedTotal() {
-    let total = 0;
-    document.querySelectorAll('.packed-input').forEach(inp => {
-        if (!inp.disabled) {
-            const val = parseInt(inp.value, 10);
-            if (!isNaN(val) && val > 0) {
-                total += val;
-            }
-        }
+    let totalQty = 0;
+    let totalTaxable = 0;
+    let totalGst = 0;
+
+    document.querySelectorAll('.variant-item-row').forEach(row => {
+        const inp = row.querySelector('.packed-input');
+        if (!inp || inp.disabled) return;
+        const qty = parseInt(inp.value, 10) || 0;
+        if (qty <= 0) return;
+
+        totalQty += qty;
+        const unitPrice = parseFloat(row.getAttribute('data-unit-price')) || 0;
+        const gstRate = parseFloat(row.getAttribute('data-gst-rate')) || 5.0;
+
+        const rowTaxable = qty * unitPrice;
+        const rowGst = rowTaxable * (gstRate / 100);
+
+        totalTaxable += rowTaxable;
+        totalGst += rowGst;
     });
+
     const badge = document.getElementById('totalPackedBadge');
     if (badge) {
-        badge.innerText = total.toLocaleString() + ' pcs Packed';
+        badge.innerText = totalQty.toLocaleString() + ' pcs Packed';
     }
-    return total;
+
+    const elCount = document.getElementById('calcSummaryProductCount');
+    if (elCount) elCount.innerText = totalQty.toLocaleString() + ' pcs';
+
+    const elTaxable = document.getElementById('calcSummaryTaxable');
+    if (elTaxable) elTaxable.innerText = '₹' + totalTaxable.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    const elGst = document.getElementById('calcSummaryGst');
+    if (elGst) elGst.innerText = '₹' + totalGst.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    const elTotal = document.getElementById('calcSummaryTotal');
+    if (elTotal) elTotal.innerText = '₹' + (totalTaxable + totalGst).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    return totalQty;
 }
 
 function updatePieceTagCounts() {

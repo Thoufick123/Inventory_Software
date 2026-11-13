@@ -160,22 +160,43 @@
                                 <td><?= e($b['prepared_by_name'] ?: 'Staff') ?></td>
                                 <td><span class="badge <?= $statusClass ?>"><?= e($b['status']) ?></span></td>
                                 <td class="text-end">
-                                    <div class="action-btns-group justify-content-end">
-                                        <a href="<?= url('production/batches/label/' . $b['id']) ?>" target="_blank" class="btn btn-outline-info btn-action-icon" title="Print Carton QR Label">
-                                            <i class="bi bi-qr-code"></i>
+                                    <?php
+                                        $isDispatched = ($b['status'] === 'DISPATCHED' || $b['status'] === 'RECEIVED' || !empty($b['outward_id']) || !empty($b['production_outward_id']));
+                                        $billUrl = url('production/batches/bill/' . $b['id']);
+                                        $invUrl = !empty($b['production_bill_id']) ? url('production/billing/print/' . (int)$b['production_bill_id']) : url('production/batches/invoice/' . $b['id']);
+                                    ?>
+                                    <div class="action-btns-group justify-content-end d-flex gap-1">
+                                        <!-- 1. View Batch Details -->
+                                        <a href="<?= url('production/batches/view/' . $b['id']) ?>" class="btn btn-outline-info btn-action-icon" title="View Batch Details">
+                                            <i class="bi bi-eye"></i>
                                         </a>
-                                        <a href="<?= url('production/billing/create?batch_id=' . $b['id']) ?>" class="btn btn-outline-success btn-action-icon" title="Generate Bill &amp; Invoice for this Batch">
+
+                                        <!-- 2. Edit Batch Details (allowed before outward) -->
+                                        <?php if (!$isDispatched && hasPermission('batches', 'edit')): ?>
+                                            <button type="button" class="btn btn-outline-primary btn-action-icon" onclick='openEditBatchModal(<?= json_encode($b, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)' title="Edit Batch Details">
+                                                <i class="bi bi-pencil"></i>
+                                            </button>
+                                        <?php else: ?>
+                                            <button type="button" class="btn btn-outline-secondary btn-action-icon disabled" title="Dispatched batches cannot be edited" style="opacity: 0.45;">
+                                                <i class="bi bi-pencil"></i>
+                                            </button>
+                                        <?php endif; ?>
+
+                                        <!-- 3. Batch Transfer Bill -->
+                                        <a href="<?= $billUrl ?>" target="_blank" class="btn btn-outline-secondary btn-action-icon" title="Print Batch Delivery Bill / Challan">
+                                            <i class="bi bi-file-earmark-ruled"></i>
+                                        </a>
+
+                                        <!-- 4. Tax Invoice for Products -->
+                                        <a href="<?= $invUrl ?>" target="_blank" class="btn btn-outline-success btn-action-icon" title="Print Tax Invoice for this Batch">
                                             <i class="bi bi-receipt"></i>
                                         </a>
-                                        <?php if (hasPermission('batches', 'edit')): ?>
-                                        <button type="button" class="btn btn-outline-primary btn-action-icon" onclick='openEditBatchModal(<?= json_encode($b, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)' title="Edit Batch Details">
-                                            <i class="bi bi-pencil"></i>
-                                        </button>
-                                        <?php endif; ?>
+
+                                        <!-- 5. Dispatch / Approve Action (Current unchanged) -->
                                         <?php if ($b['status'] === 'PREPARING' && hasPermission('batches', 'approve')): ?>
                                             <form method="POST" action="<?= url('production/batches/approve/' . $b['id']) ?>" class="d-inline" onsubmit="return confirm('Approve this batch for outward dispatch?');">
                                                 <?= CSRF::field() ?>
-                                                <button type="submit" class="btn btn-outline-success btn-action-icon" title="Approve Batch">
+                                                <button type="submit" class="btn btn-outline-success btn-action-icon" title="Approve Batch for Dispatch">
                                                     <i class="bi bi-patch-check"></i>
                                                 </button>
                                             </form>
@@ -183,9 +204,28 @@
                                             <a href="<?= url('production/outward') ?>" class="btn btn-outline-success btn-action-icon" title="Dispatch Outward">
                                                 <i class="bi bi-truck"></i>
                                             </a>
-                                        <?php elseif ($b['status'] === 'DISPATCHED' || $b['status'] === 'RECEIVED' || !empty($b['outward_id'])): ?>
-                                            <button type="button" class="btn btn-outline-info btn-action-icon" onclick="viewBatchDispatchDetails(<?= $b['id'] ?>)" title="View Dispatched Details">
-                                                <i class="bi bi-eye"></i>
+                                        <?php else: ?>
+                                            <button type="button" class="btn btn-outline-secondary btn-action-icon" onclick="viewBatchDispatchDetails(<?= $b['id'] ?>)" title="Outward Dispatched Details">
+                                                <i class="bi bi-truck-flatbed"></i>
+                                            </button>
+                                        <?php endif; ?>
+
+                                        <!-- 6. Print Carton QR Label -->
+                                        <a href="<?= url('production/batches/label/' . $b['id']) ?>" target="_blank" class="btn btn-outline-dark btn-action-icon" title="Print Carton QR Label">
+                                            <i class="bi bi-qr-code"></i>
+                                        </a>
+
+                                        <!-- 7. Delete Batch (only before outward time) -->
+                                        <?php if (!$isDispatched && hasPermission('batches', 'delete')): ?>
+                                            <form method="POST" action="<?= url('production/batches/delete/' . $b['id']) ?>" class="d-inline" onsubmit="return confirm('Delete Batch <?= e($b['batch_number']) ?>? All garments and QR codes will be returned to QC inventory.');">
+                                                <?= CSRF::field() ?>
+                                                <button type="submit" class="btn btn-outline-danger btn-action-icon" title="Delete Batch (Return to QC)">
+                                                    <i class="bi bi-trash3"></i>
+                                                </button>
+                                            </form>
+                                        <?php else: ?>
+                                            <button type="button" class="btn btn-outline-secondary btn-action-icon disabled" title="Dispatched batches cannot be deleted (already sent to warehouse)" style="opacity: 0.45;">
+                                                <i class="bi bi-trash3"></i>
                                             </button>
                                         <?php endif; ?>
                                     </div>

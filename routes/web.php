@@ -518,10 +518,14 @@ class Router {
         $this->get('production/batches', 'ProductionController', 'batchList', ['AuthMiddleware', ['PermissionMiddleware', 'batches', 'view']]);
         $this->get('production/batches/create', 'ProductionController', 'createBatch', ['AuthMiddleware', ['PermissionMiddleware', 'batches', 'create']]);
         $this->post('production/batches/store', 'ProductionController', 'storeBatch', ['AuthMiddleware', ['PermissionMiddleware', 'batches', 'create']]);
+        $this->get('production/batches/view/{id}', 'ProductionController', 'viewBatch', ['AuthMiddleware', ['PermissionMiddleware', 'batches', 'view']]);
+        $this->get('production/batches/bill/{id}', 'ProductionController', 'printBatchBill', ['AuthMiddleware', ['PermissionMiddleware', 'batches', 'view']]);
+        $this->get('production/batches/invoice/{id}', 'ProductionController', 'printBatchInvoice', ['AuthMiddleware', ['PermissionMiddleware', 'batches', 'view']]);
         $this->post('production/batches/approve/{id}', 'ProductionController', 'approveBatch', ['AuthMiddleware', ['PermissionMiddleware', 'batches', 'approve']]);
         $this->get('production/batches/label/{id}', 'ProductionController', 'printBatchQRLabel', ['AuthMiddleware', ['PermissionMiddleware', 'batches', 'print']]);
         $this->get('production/batches/view-ajax/{id}', 'ProductionController', 'batchDetailsAjax', ['AuthMiddleware', ['PermissionMiddleware', 'batches', 'view']]);
         $this->post('production/batches/update/{id}', 'ProductionController', 'updateBatch', ['AuthMiddleware', ['PermissionMiddleware', 'batches', 'edit']]);
+        $this->post('production/batches/delete/{id}', 'ProductionController', 'deleteBatch', ['AuthMiddleware', ['PermissionMiddleware', 'batches', 'delete']]);
         $this->get('production/outward', 'ProductionController', 'outwardList', ['AuthMiddleware', ['PermissionMiddleware', 'outward', 'view']]);
         $this->post('production/outward/store', 'ProductionController', 'storeOutward', ['AuthMiddleware', ['PermissionMiddleware', 'outward', 'create']]);
         $this->post('production/outward/dispatch/{id}', 'ProductionController', 'dispatchOutward', ['AuthMiddleware', ['PermissionMiddleware', 'outward', 'create']]);
