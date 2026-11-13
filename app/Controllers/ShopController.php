@@ -246,13 +246,48 @@ class ShopController {
             return;
         }
 
+        $shopId = (int)ShopService::getActiveShop()['id'];
+        $phoneDigits = preg_replace('/\D+/', '', $query);
+        $phoneLast10 = strlen($phoneDigits) >= 10 ? substr($phoneDigits, -10) : '';
         $customers = Database::fetchAll(
-            "SELECT id, name, phone, email, address, city, state, gst_number
-             FROM customers 
-             WHERE phone LIKE ? OR name LIKE ? 
-             ORDER BY id DESC LIMIT 10",
-            ['%' . $query . '%', '%' . $query . '%']
+            "SELECT c.id, c.name, c.phone, c.email, c.address, c.city, c.state, c.gst_number,
+                    (SELECT COUNT(DISTINCT s.id)
+                     FROM sales s
+                     WHERE s.sale_type = 'SHOP' AND s.shop_id = ? AND s.status <> 'CANCELLED'
+                       AND (
+                           s.customer_id = c.id
+                           OR (
+                               ? <> '' AND c.phone IS NOT NULL AND c.phone <> ''
+                               AND RIGHT(REGEXP_REPLACE(s.customer_phone, '[^0-9]', ''), 10) = ?
+                               AND RIGHT(REGEXP_REPLACE(c.phone, '[^0-9]', ''), 10) = ?
+                           )
+                       )
+                    ) AS previous_order_count
+             FROM customers c
+             WHERE c.phone LIKE ? OR c.name LIKE ?
+                OR (? <> '' AND RIGHT(REGEXP_REPLACE(c.phone, '[^0-9]', ''), 10) = ?)
+             ORDER BY c.id DESC LIMIT 10",
+            [$shopId, $phoneLast10, $phoneLast10, $phoneLast10, '%' . $query . '%', '%' . $query . '%', $phoneLast10, $phoneLast10]
         );
+        if (!$customers && $phoneLast10 !== '') {
+            $historicalCustomer = Database::fetchOne(
+                "SELECT MAX(customer_name) AS name, MAX(customer_phone) AS phone,
+                        MAX(customer_address) AS address, COUNT(DISTINCT id) AS previous_order_count
+                 FROM sales
+                 WHERE sale_type = 'SHOP' AND shop_id = ? AND status <> 'CANCELLED'
+                   AND RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', ''), 10) = ?",
+                [$shopId, $phoneLast10]
+            );
+            if ((int)($historicalCustomer['previous_order_count'] ?? 0) > 0) {
+                $customers[] = array_merge([
+                    'id' => null,
+                    'email' => null,
+                    'city' => null,
+                    'state' => null,
+                    'gst_number' => null,
+                ], $historicalCustomer);
+            }
+        }
 
         Response::jsonSuccess("Customers found", $customers);
     }
@@ -2025,10 +2060,18 @@ class ShopController {
     /**
      * Process Shop Return or Exchange
      */
+    public function updateReturn(string|int $id): void {
+        $_POST['return_id'] = (int)$id;
+        $this->processReturn();
+    }
+
     public function processReturn(): void {
         CSRF::verify();
 
-        if (!hasPermission('shop_returns', 'create') && !hasPermission('shop_returns', 'process')) {
+        $editReturnId = (int)($_POST['return_id'] ?? 0);
+        $canProcess = hasPermission('shop_returns', 'create') || hasPermission('shop_returns', 'process');
+        if (($editReturnId > 0 && !hasPermission('shop_returns', 'edit'))
+            || ($editReturnId === 0 && !$canProcess)) {
             Session::flash('error', 'Access denied: You do not have permission to process returns or exchanges.');
             Response::redirect(url('shop/returns'));
             return;
@@ -2042,6 +2085,7 @@ class ShopController {
         $saleId = (int)($_POST['sale_id'] ?? 0);
         $returnType = strtoupper(trim($_POST['return_type'] ?? 'RETURN'));
         $reason = trim($_POST['reason'] ?? 'Shop Customer Request');
+        $notes = trim($_POST['notes'] ?? $reason);
         $refundMethod = strtoupper(trim($_POST['refund_mode'] ?? $_POST['refund_method'] ?? 'CASH'));
         $items = $_POST['items'] ?? [];
         $replacements = $_POST['replacement_items'] ?? [];
@@ -2063,6 +2107,7 @@ class ShopController {
             if (!Database::beginTransaction()) {
                 throw new RuntimeException('Unable to start the return transaction. Please try again.');
             }
+            $editSnapshot = null;
             $sale = Database::fetchOne(
                 "SELECT * FROM sales
                  WHERE id = ? AND sale_type = 'SHOP' AND shop_id = ?
@@ -2073,16 +2118,155 @@ class ShopController {
                 throw new RuntimeException('Shop sale record was not found in the active shop.');
             }
 
+            $existingReturn = null;
+            $existingExchange = null;
+            $existingExchangeItems = [];
+            if ($editReturnId > 0) {
+                $existingReturn = Database::fetchOne(
+                    "SELECT r.* FROM returns r
+                     WHERE r.id = ? AND r.sale_id = ? AND r.source_type = 'SHOP'
+                     FOR UPDATE",
+                    [$editReturnId, $saleId]
+                );
+                if (!$existingReturn) {
+                    throw new RuntimeException('The Shop return or exchange to edit was not found.');
+                }
+                if (in_array(strtoupper((string)($existingReturn['status'] ?? '')), ['CANCELLED', 'REJECTED'], true)) {
+                    throw new RuntimeException('Cancelled or rejected Shop returns cannot be edited.');
+                }
+                $oldReturnItems = Database::fetchAll(
+                    "SELECT * FROM return_items WHERE return_id = ? FOR UPDATE",
+                    [$editReturnId]
+                );
+
+                $printedReturnedProduct = Database::fetchOne(
+                    "SELECT id FROM shop_returned_products
+                     WHERE return_id = ? AND printed_at IS NOT NULL
+                     LIMIT 1 FOR UPDATE",
+                    [$editReturnId]
+                );
+                if ($printedReturnedProduct) {
+                    throw new RuntimeException('This return cannot be edited because a returned-product QR label has already been printed and stock may have moved.');
+                }
+                $linkedReturnMovement = Database::fetchOne(
+                    "SELECT id FROM stock_transactions
+                     WHERE (reference_type = 'returns' AND reference_id = ?)
+                        OR (reference_type = 'shop_returned_products'
+                            AND reference_id IN (
+                                SELECT id FROM shop_returned_products WHERE return_id = ?
+                            ))
+                     LIMIT 1 FOR UPDATE",
+                    [$editReturnId, $editReturnId]
+                );
+                if ($linkedReturnMovement) {
+                    throw new RuntimeException('This return cannot be edited because stock movements are already linked to it.');
+                }
+
+                $existingExchange = Database::fetchOne(
+                    "SELECT * FROM exchanges WHERE return_id = ? FOR UPDATE",
+                    [$editReturnId]
+                );
+                if ($existingExchange) {
+                    if (($existingExchange['status'] ?? '') !== 'COMPLETED') {
+                        throw new RuntimeException('Only completed exchanges can be edited.');
+                    }
+                    $existingExchangeItems = Database::fetchAll(
+                        "SELECT * FROM exchange_items WHERE exchange_id = ? FOR UPDATE",
+                        [(int)$existingExchange['id']]
+                    );
+
+                    $restoreByVariant = [];
+                    foreach ($existingExchangeItems as $exchangeItem) {
+                        if (($exchangeItem['item_type'] ?? '') !== 'NEW') {
+                            continue;
+                        }
+                        $variantId = (int)$exchangeItem['variant_id'];
+                        $quantity = (int)$exchangeItem['quantity'];
+                        $tag = trim((string)($exchangeItem['piece_tag'] ?? ''));
+                        if ($tag !== '') {
+                            $oldReplacement = $this->findExactShopReplacement($tag, $shopId);
+                            if (!$oldReplacement || (int)$oldReplacement['id'] !== $variantId) {
+                                throw new RuntimeException("Exchange replacement piece '{$tag}' can no longer be verified in this shop.");
+                            }
+                            if (!empty($oldReplacement['aggregate_stock'])) {
+                                $restoreByVariant[$variantId] = ($restoreByVariant[$variantId] ?? 0) + $quantity;
+                            } elseif ($this->findShopBilledPieceTag($shopId, $variantId, $tag)
+                                || $this->findShopDamageForPieceTag($shopId, $variantId, $tag)
+                                || $this->isShopPieceAvailableForDamage($variantId, $shopId, $tag) !== true) {
+                                throw new RuntimeException("Exchange replacement piece '{$tag}' is no longer available; this transaction cannot be edited safely.");
+                            }
+                        } else {
+                            $restoreByVariant[$variantId] = ($restoreByVariant[$variantId] ?? 0) + $quantity;
+                        }
+                    }
+                    foreach ($restoreByVariant as $variantId => $quantity) {
+                        if (StockService::getBalance((int)$variantId, 'SHOP', $shopId, 'AVAILABLE') < $quantity) {
+                            throw new RuntimeException('Exchange replacement stock has already moved; this transaction cannot be edited safely.');
+                        }
+                        $laterMovement = Database::fetchOne(
+                            "SELECT id FROM stock_transactions
+                             WHERE variant_id = ? AND location_type = 'SHOP' AND location_id = ?
+                               AND created_at >= ?
+                               AND (
+                                   COALESCE(reference_type, '') <> 'exchanges'
+                                   OR COALESCE(reference_id, 0) <> ?
+                                   OR COALESCE(transaction_type, '') <> 'EXCHANGE_DISPATCH'
+                               )
+                             LIMIT 1 FOR UPDATE",
+                            [
+                                (int)$variantId,
+                                $shopId,
+                                $existingExchange['created_at'],
+                                $editReturnId,
+                            ]
+                        );
+                        if ($laterMovement) {
+                            throw new RuntimeException('Aggregate replacement stock has recorded later movements; this transaction cannot be edited safely.');
+                        }
+                    }
+                    foreach ($existingExchangeItems as $exchangeItem) {
+                        if (($exchangeItem['item_type'] ?? '') === 'NEW') {
+                            StockService::increase(
+                                (int)$exchangeItem['variant_id'],
+                                'SHOP',
+                                $shopId,
+                                'AVAILABLE',
+                                (float)$exchangeItem['quantity'],
+                                'EXCHANGE_EDIT_REVERSAL',
+                                'exchanges',
+                                $editReturnId,
+                                $userId,
+                                "Restore replacement stock for editing {$existingReturn['return_number']}"
+                            );
+                        }
+                    }
+                }
+                $editSnapshot = [
+                    'return' => $existingReturn,
+                    'return_items' => $oldReturnItems,
+                    'exchange' => $existingExchange,
+                    'exchange_items' => $existingExchangeItems,
+                ];
+
+                Database::execute("DELETE FROM shop_returned_products WHERE return_id = ?", [$editReturnId]);
+                Database::execute("DELETE FROM return_items WHERE return_id = ?", [$editReturnId]);
+                if ($existingExchange) {
+                    Database::execute("DELETE FROM exchange_items WHERE exchange_id = ?", [(int)$existingExchange['id']]);
+                    Database::execute("DELETE FROM exchanges WHERE id = ?", [(int)$existingExchange['id']]);
+                }
+            }
+
             $previousReturn = Database::fetchOne(
                 "SELECT r.return_number
                  FROM returns r
                  LEFT JOIN exchanges e ON e.return_id = r.id
                  WHERE r.sale_id = ? AND r.source_type = 'SHOP'
+                   AND r.id <> ?
                    AND r.status <> 'CANCELLED'
                    AND (e.id IS NULL OR e.status <> 'CANCELLED')
                  ORDER BY r.id DESC
                  LIMIT 1",
-                [$saleId]
+                [$saleId, $editReturnId]
             );
             if ($previousReturn) {
                 throw new RuntimeException('This invoice has already been used for a return or exchange. Each invoice can be processed only once.');
@@ -2127,8 +2311,8 @@ class ShopController {
 
                 $previouslyReturned = Database::fetchOne(
                     "SELECT COALESCE(SUM(quantity), 0) as returned_quantity
-                     FROM return_items WHERE sale_item_id = ?",
-                    [$saleItemId]
+                     FROM return_items WHERE sale_item_id = ? AND return_id <> ?",
+                    [$saleItemId, $editReturnId]
                 );
                 $returnableQty = (int)$saleItem['quantity'] - (int)($previouslyReturned['returned_quantity'] ?? 0);
                 if ($qty > $returnableQty) {
@@ -2306,28 +2490,54 @@ class ShopController {
         $dbRefundMode = in_array($refundMethod, $validRefundModes) ? $refundMethod : 'CASH';
         $refundAmount = $differenceAmount < 0 ? abs($differenceAmount) : ($returnType === 'RETURN' ? $totalReturnVal : 0.0);
 
-        $returnNumber = 'RET-SH-' . date('Ymd') . '-' . mt_rand(1000, 9999);
-        Database::execute(
-            "INSERT INTO returns (return_number, source_type, sale_id, customer_id, return_type, reason, inspection_status, 
-                                 refund_amount, refund_mode, refund_status, total_amount, status, processed_by, approved_by, inspected_by, notes, created_at, updated_at)
-             VALUES (?, 'SHOP', ?, ?, ?, ?, 'APPROVED', ?, ?, 'COMPLETED', ?, ?, ?, ?, ?, ?, NOW(), NOW())",
-            [
-                $returnNumber,
-                $saleId,
-                $sale['customer_id'] ?? null,
-                $dbReturnType,
-                $reason,
-                $refundAmount,
-                $dbRefundMode,
-                $totalReturnVal,
-                $refundAmount > 0 ? 'REFUNDED' : 'APPROVED',
-                $userId,
-                $userId,
-                $userId,
-                $reason
-            ]
-        );
-        $returnId = (int)Database::lastInsertId();
+        if ($editReturnId > 0) {
+            $returnNumber = (string)$existingReturn['return_number'];
+            $returnId = $editReturnId;
+            Database::execute(
+                "UPDATE returns
+                 SET return_type = ?, reason = ?, inspection_status = 'APPROVED',
+                     refund_amount = ?, refund_mode = ?, refund_status = 'COMPLETED',
+                     total_amount = ?, status = ?, processed_by = ?, approved_by = ?,
+                     inspected_by = ?, notes = ?, updated_at = NOW()
+                 WHERE id = ? AND source_type = 'SHOP'",
+                [
+                    $dbReturnType,
+                    $reason,
+                    $refundAmount,
+                    $dbRefundMode,
+                    $totalReturnVal,
+                    $refundAmount > 0 ? 'REFUNDED' : 'APPROVED',
+                    $userId,
+                    $userId,
+                    $userId,
+                    $notes,
+                    $returnId
+                ]
+            );
+        } else {
+            $returnNumber = 'RET-SH-' . date('Ymd') . '-' . mt_rand(1000, 9999);
+            Database::execute(
+                "INSERT INTO returns (return_number, source_type, sale_id, customer_id, return_type, reason, inspection_status,
+                                     refund_amount, refund_mode, refund_status, total_amount, status, processed_by, approved_by, inspected_by, notes, created_at, updated_at)
+                 VALUES (?, 'SHOP', ?, ?, ?, ?, 'APPROVED', ?, ?, 'COMPLETED', ?, ?, ?, ?, ?, ?, NOW(), NOW())",
+                [
+                    $returnNumber,
+                    $saleId,
+                    $sale['customer_id'] ?? null,
+                    $dbReturnType,
+                    $reason,
+                    $refundAmount,
+                    $dbRefundMode,
+                    $totalReturnVal,
+                    $refundAmount > 0 ? 'REFUNDED' : 'APPROVED',
+                    $userId,
+                    $userId,
+                    $userId,
+                    $notes
+                ]
+            );
+            $returnId = (int)Database::lastInsertId();
+        }
 
         foreach ($items as $k => $itm) {
             $saleItemId = is_numeric($k) ? (int)$k : (int)($itm['sale_item_id'] ?? 0);
@@ -2424,7 +2634,9 @@ class ShopController {
         }
 
         if ($returnType === 'EXCHANGE' || $returnType === 'EXCHANGE_SAME' || $returnType === 'EXCHANGE_DIFFERENT') {
-            $exchNumber = 'EXC-SH-' . date('Ymd') . '-' . mt_rand(1000, 9999);
+            $exchNumber = !empty($existingExchange['exchange_number'])
+                ? (string)$existingExchange['exchange_number']
+                : 'EXC-SH-' . date('Ymd') . '-' . mt_rand(1000, 9999);
             $payAction = $differenceAmount > 0 ? 'COLLECT' : ($differenceAmount < 0 ? 'REFUND' : 'NONE');
             Database::execute(
                 "INSERT INTO exchanges (exchange_number, return_id, source_type, sale_id, original_amount, new_amount, difference_amount, settlement_mode, payment_action, status, payment_status, notes, created_at, updated_at)
@@ -2497,8 +2709,32 @@ class ShopController {
             }
         }
 
+            if ($editReturnId > 0) {
+                $newExchange = Database::fetchOne("SELECT * FROM exchanges WHERE return_id = ? LIMIT 1", [$returnId]);
+                $newReturnItems = Database::fetchAll("SELECT * FROM return_items WHERE return_id = ?", [$returnId]);
+                $newExchangeItems = $newExchange
+                    ? Database::fetchAll("SELECT * FROM exchange_items WHERE exchange_id = ?", [(int)$newExchange['id']])
+                    : [];
+                AuditService::logStrict(
+                    'shop_returns',
+                    'EDIT_RETURN',
+                    'returns',
+                    $returnId,
+                    $editSnapshot,
+                    [
+                        'return' => Database::fetchOne("SELECT * FROM returns WHERE id = ?", [$returnId]),
+                        'return_items' => $newReturnItems,
+                        'exchange' => $newExchange,
+                        'exchange_items' => $newExchangeItems,
+                    ],
+                    $userId
+                );
+            }
+
             Database::commit();
-            Session::flash('success', "Shop Return/Exchange #{$returnNumber} processed successfully!");
+            Session::flash('success', $editReturnId > 0
+                ? "Shop Return/Exchange #{$returnNumber} updated successfully!"
+                : "Shop Return/Exchange #{$returnNumber} processed successfully!");
             Response::redirect(url('shop/returns'));
         } catch (Throwable $e) {
             if (Database::inTransaction()) {
@@ -2591,7 +2827,208 @@ class ShopController {
      * View Customer Return Details Page
      */
     public function viewReturn(string|int $id): void {
-        $this->printReturnInvoice($id);
+        $shop = ShopService::getActiveShop();
+        $return = Database::fetchOne(
+            "SELECT r.*,
+                    s.invoice_number,
+                    s.invoice_number as sale_invoice,
+                    s.created_at as sale_date,
+                    COALESCE(c.name, s.customer_name, 'Shop Customer') as customer_name,
+                    COALESCE(c.phone, s.customer_phone, '-') as customer_phone,
+                    u.full_name as staff_name,
+                    ? as shop_name,
+                    e.id as exchange_id
+             FROM returns r
+             JOIN sales s ON r.sale_id = s.id
+             LEFT JOIN customers c ON s.customer_id = c.id
+             LEFT JOIN users u ON COALESCE(r.approved_by, r.processed_by) = u.id
+             LEFT JOIN exchanges e ON e.return_id = r.id
+             WHERE (r.id = ? OR r.return_number = ?)
+               AND (s.sale_type = 'SHOP' OR (s.sale_type IS NULL AND s.shop_id = ?))
+               AND (r.source_type = 'SHOP' OR r.source_type IS NULL)
+             LIMIT 1",
+            [$shop['name'] ?? 'Shop', $id, (string)$id, (int)($shop['id'] ?? 1)]
+        );
+
+        if (!$return) {
+            Session::setFlash('error', 'Shop return record not found.');
+            Response::redirect(url('shop/returns'));
+            return;
+        }
+
+        $returnId = (int)$return['id'];
+        $items = Database::fetchAll(
+            "SELECT ri.*, ri.refund_amount as calculated_refund,
+                    CASE WHEN ri.quantity > 0 THEN ri.refund_amount / ri.quantity ELSE 0 END as unit_price,
+                    p.name as product_name, p.image, pv.sku,
+                    sz.name as size_name, clr.name as color_name,
+                    COALESCE(srp.returned_tags, '') as scanned_qr_codes
+             FROM return_items ri
+             JOIN product_variants pv ON ri.variant_id = pv.id
+             JOIN products p ON pv.product_id = p.id
+             LEFT JOIN sizes sz ON pv.size_id = sz.id
+             LEFT JOIN colors clr ON pv.color_id = clr.id
+             LEFT JOIN (
+                 SELECT return_id, sale_item_id, GROUP_CONCAT(returned_tag ORDER BY id SEPARATOR ',') as returned_tags
+                 FROM shop_returned_products
+                 GROUP BY return_id, sale_item_id
+             ) srp ON srp.return_id = ri.return_id AND srp.sale_item_id = ri.sale_item_id
+             WHERE ri.return_id = ?",
+            [$returnId]
+        );
+
+        $exchangeItems = [];
+        if (!empty($return['exchange_id'])) {
+            $exchangeItems = Database::fetchAll(
+                "SELECT ei.*, p.name as product_name, pv.sku,
+                        sz.name as size_name, clr.name as color_name
+                 FROM exchange_items ei
+                 JOIN product_variants pv ON ei.variant_id = pv.id
+                 JOIN products p ON pv.product_id = p.id
+                 LEFT JOIN sizes sz ON pv.size_id = sz.id
+                 LEFT JOIN colors clr ON pv.color_id = clr.id
+                 WHERE ei.exchange_id = ?",
+                [(int)$return['exchange_id']]
+            );
+        }
+
+        $totalReturnedQty = array_sum(array_map(
+            static fn(array $item): int => (int)$item['quantity'],
+            $items
+        ));
+
+        Response::view('shop.returns.view', [
+            'pageTitle' => 'Return #' . $return['return_number'],
+            'activeModule' => 'shop',
+            'activeMenu' => 'shop-returns',
+            'shop' => $shop,
+            'return' => $return,
+            'items' => $items,
+            'exchangeItems' => $exchangeItems,
+            'totalReturnedQty' => $totalReturnedQty,
+        ]);
+    }
+
+    public function editReturn(string|int $id): void {
+        if (!hasPermission('shop_returns', 'edit')) {
+            Session::setFlash('error', 'Access denied: You do not have permission to edit Shop returns.');
+            Response::redirect(url('shop/returns'));
+            return;
+        }
+
+        ShopReturnedProduct::ensureReady();
+        $shop = ShopService::getActiveShop();
+        $shopId = (int)($shop['id'] ?? 1);
+        $return = Database::fetchOne(
+            "SELECT r.*, s.invoice_number, s.created_at as sale_date,
+                    COALESCE(c.name, s.customer_name, 'Shop Customer') as customer_name
+             FROM returns r
+             JOIN sales s ON s.id = r.sale_id
+             LEFT JOIN customers c ON c.id = s.customer_id
+             WHERE r.id = ? AND r.source_type = 'SHOP'
+               AND s.sale_type = 'SHOP' AND s.shop_id = ?
+             LIMIT 1",
+            [(int)$id, $shopId]
+        );
+        if (!$return) {
+            Session::setFlash('error', 'Shop return or exchange was not found.');
+            Response::redirect(url('shop/returns'));
+            return;
+        }
+        if (in_array(strtoupper((string)($return['status'] ?? '')), ['CANCELLED', 'REJECTED'], true)) {
+            Session::setFlash('error', 'Cancelled or rejected Shop returns cannot be edited.');
+            Response::redirect(url('shop/returns'));
+            return;
+        }
+
+        $printed = Database::fetchOne(
+            "SELECT id FROM shop_returned_products WHERE return_id = ? AND printed_at IS NOT NULL LIMIT 1",
+            [(int)$return['id']]
+        );
+        if ($printed) {
+            Session::setFlash('error', 'This transaction cannot be edited because a returned-product QR label has already been printed.');
+            Response::redirect(url('shop/returns'));
+            return;
+        }
+
+        $saleItems = Database::fetchAll(
+            "SELECT si.*, p.name as product_name, pv.sku,
+                    COALESCE(sz.name, 'Free Size') as size_name,
+                    COALESCE(clr.name, 'Standard') as color_name,
+                    COALESCE(ri.quantity, 0) as edit_quantity,
+                    COALESCE(ri.item_condition, 'GOOD') as edit_condition,
+                    COALESCE((
+                        SELECT GROUP_CONCAT(srp.original_piece_tag ORDER BY srp.id SEPARATOR ',')
+                        FROM shop_returned_products srp
+                        WHERE srp.return_id = ? AND srp.sale_item_id = si.id
+                          AND srp.original_piece_tag IS NOT NULL AND srp.original_piece_tag <> ''
+                    ), '') as edit_piece_tags,
+                    COALESCE((
+                        SELECT SUM(other_ri.quantity)
+                        FROM return_items other_ri
+                        WHERE other_ri.sale_item_id = si.id AND other_ri.return_id <> ?
+                    ), 0) as other_returned_quantity
+             FROM sale_items si
+             JOIN product_variants pv ON pv.id = si.variant_id
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN sizes sz ON sz.id = pv.size_id
+             LEFT JOIN colors clr ON clr.id = pv.color_id
+             LEFT JOIN return_items ri ON ri.sale_item_id = si.id AND ri.return_id = ?
+             WHERE si.sale_id = ?
+             ORDER BY si.id",
+            [(int)$return['id'], (int)$return['id'], (int)$return['id'], (int)$return['sale_id']]
+        );
+        foreach ($saleItems as &$saleItem) {
+            $saleItem['unit_price'] = $this->getShopSaleItemPaidUnitPrice($saleItem);
+            $saleItem['max_return_quantity'] = max(
+                0,
+                (int)$saleItem['quantity'] - (int)$saleItem['other_returned_quantity']
+            );
+        }
+        unset($saleItem);
+
+        $exchangeItems = Database::fetchAll(
+            "SELECT ei.*, pv.sku, p.name as product_name,
+                    COALESCE(sz.name, 'Free Size') as size_name,
+                    COALESCE(clr.name, 'Standard') as color_name
+             FROM exchanges e
+             JOIN exchange_items ei ON ei.exchange_id = e.id
+             JOIN product_variants pv ON pv.id = ei.variant_id
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN sizes sz ON sz.id = pv.size_id
+             LEFT JOIN colors clr ON clr.id = pv.color_id
+             WHERE e.return_id = ? AND ei.item_type = 'NEW'
+             ORDER BY ei.id",
+            [(int)$return['id']]
+        );
+        $catalogVariants = Database::fetchAll(
+            "SELECT pv.id, pv.sku, pv.qr_code, pv.mrp,
+                    COALESCE(NULLIF(pv.selling_price, 0), pv.mrp, 0) as selling_price,
+                    p.name as product_name,
+                    COALESCE(sz.name, 'Free Size') as size_name,
+                    COALESCE(clr.name, 'Standard') as color_name
+             FROM product_variants pv
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN sizes sz ON sz.id = pv.size_id
+             LEFT JOIN colors clr ON clr.id = pv.color_id
+             WHERE p.is_active = 1 AND pv.is_active = 1
+             ORDER BY p.name, sz.sort_order"
+        );
+
+        Response::view('shop.returns.edit', [
+            'pageTitle' => 'Edit Return #' . $return['return_number'],
+            'activeModule' => 'shop',
+            'activeMenu' => 'shop-returns',
+            'breadcrumb' => [
+                ['label' => 'Shop', 'url' => url('shop/dashboard')],
+                ['label' => 'Returns & Exchanges', 'url' => url('shop/returns')],
+                ['label' => 'Edit ' . $return['return_number']],
+            ],
+            'return' => $return,
+            'saleItems' => $saleItems,
+            'exchangeItems' => $exchangeItems,
+            'catalogVariants' => $catalogVariants,
+        ]);
     }
 
     /**
@@ -3269,7 +3706,15 @@ class ShopController {
             'start_date'   => trim($_GET['start_date'] ?? ''),
             'end_date'     => trim($_GET['end_date'] ?? ''),
             'category_id'  => trim($_GET['category_id'] ?? 'ALL'),
+            'payment_mode' => strtoupper(trim($_GET['payment_mode'] ?? 'ALL')),
+            'gst_type'     => strtoupper(trim($_GET['gst_type'] ?? 'ALL')),
         ];
+        if (!in_array($filters['payment_mode'], ['ALL', 'CASH', 'UPI', 'CARD', 'CASH_UPI', 'MIXED', 'ONLINE', 'BANK_TRANSFER', 'OTHER'], true)) {
+            $filters['payment_mode'] = 'ALL';
+        }
+        if (!in_array($filters['gst_type'], ['ALL', 'CGST_SGST', 'IGST', 'EXEMPT'], true)) {
+            $filters['gst_type'] = 'ALL';
+        }
 
         $categories = Database::fetchAll("SELECT id, name FROM categories WHERE is_active = 1 ORDER BY name ASC");
         $data = ShopService::getSoldInvoices($shopId, $filters);
@@ -3292,6 +3737,7 @@ class ShopController {
 
     public function editSale(string $id): void {
         $shop = ShopService::getActiveShop();
+        ShopService::ensureSalesOnlineFlagColumn();
         $details = ShopService::getInvoiceDetails((int)$id);
         $sale = $details['sale'] ?? null;
         if (!$sale || (int)$sale['shop_id'] !== (int)$shop['id'] || ($sale['sale_type'] ?? '') !== 'SHOP') {

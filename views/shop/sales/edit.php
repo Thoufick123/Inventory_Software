@@ -193,6 +193,14 @@
                                 <label class="form-label">Payment reference</label>
                                 <input class="form-control" name="payment_ref" value="<?= e($paymentReference ?? '') ?>">
                             </div>
+                            <div class="col-12">
+                                <input type="hidden" name="is_online_sale" value="0">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="isOnlineSale" name="is_online_sale" value="1" <?= !empty($sale['is_online_sale']) ? 'checked' : '' ?>>
+                                    <label class="form-check-label fw-semibold" for="isOnlineSale">Show this sale in the Online section</label>
+                                    <div class="form-text">Classification only; this does not change the recorded payment method.</div>
+                                </div>
+                            </div>
                         </div>
                         <div class="d-flex justify-content-end gap-2 mt-4">
                             <a class="btn btn-light border" href="<?= url('shop/sales') ?>">Cancel</a>

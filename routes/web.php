@@ -732,6 +732,8 @@ class Router {
         $this->post('api/whatsapp/returns/lookup-piece', 'WhatsappController', 'ajaxLookupReturnPiece', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_returns', 'view']]);
         $this->post('warehouse/whatsapp-orders/returns/process', 'WhatsappController', 'processWhatsappReturn', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_returns', 'create']]);
         $this->get('warehouse/whatsapp-orders/returns/view/{id}', 'WhatsappController', 'whatsappReturnView', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_returns', 'view']]);
+        $this->get('warehouse/whatsapp-orders/returns/edit/{id}', 'WhatsappController', 'editWhatsappReturn', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_returns', 'edit']]);
+        $this->post('warehouse/whatsapp-orders/returns/update/{id}', 'WhatsappController', 'updateWhatsappReturn', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_returns', 'edit']]);
         $this->get('warehouse/whatsapp-orders/returns/invoice/{id}', 'WhatsappController', 'whatsappReturnInvoice', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_returns', 'print']]);
         $this->get('warehouse/whatsapp-orders/customers', 'WhatsappController', 'whatsappCustomers', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_customers', 'view']]);
         
@@ -922,8 +924,10 @@ class Router {
         $this->post('api/shop/returns/lookup-piece', 'ShopController', 'ajaxLookupReturnPiece', ['AuthMiddleware', ['PermissionMiddleware', 'shop_returns', 'view']]);
         $this->post('shop/returns/process', 'ShopController', 'processReturn', ['AuthMiddleware', ['PermissionMiddleware', 'shop_returns', 'create']]);
         $this->post('shop/returns/store', 'ShopController', 'processReturn', ['AuthMiddleware', ['PermissionMiddleware', 'shop_returns', 'create']]);
+        $this->post('shop/returns/update/{id}', 'ShopController', 'updateReturn', ['AuthMiddleware']);
         $this->post('shop/returns/process/{id}', 'ShopController', 'processReturn', ['AuthMiddleware', ['PermissionMiddleware', 'shop_returns', 'process']]);
         $this->get('shop/returns/view/{id}', 'ShopController', 'viewReturn', ['AuthMiddleware', ['PermissionMiddleware', 'shop_returns', 'view']]);
+        $this->get('shop/returns/edit/{id}', 'ShopController', 'editReturn', ['AuthMiddleware', ['PermissionMiddleware', 'shop_returns', 'edit']]);
         $this->get('shop/returns/invoice/{id}', 'ShopController', 'printReturnInvoice', ['AuthMiddleware', ['PermissionMiddleware', 'shop_returns', 'print']]);
         $this->get('shop/returns/print/{id}', 'ShopController', 'printReturnInvoice', ['AuthMiddleware', ['PermissionMiddleware', 'shop_returns', 'print']]);
         $this->get('api/shop/returns/{id}', 'ShopController', 'ajaxGetReturnDetails', ['AuthMiddleware', ['PermissionMiddleware', 'shop_returns', 'view']]);
@@ -973,6 +977,8 @@ class Router {
         $this->get('api/whatsapp/customers/lookup', 'SalesController', 'lookupWhatsappCustomer', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_orders', 'create']]);
         $this->post('sales/whatsapp/store', 'SalesController', 'storeWhatsappOrder', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_orders', 'create']]);
         $this->get('sales/whatsapp/view/{id}', 'SalesController', 'viewWhatsappOrder', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_orders', 'view']]);
+        $this->get('sales/whatsapp/edit/{id}', 'SalesController', 'editWhatsappOrder', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_orders', 'edit']]);
+        $this->post('sales/whatsapp/update/{id}', 'SalesController', 'updateWhatsappOrder', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_orders', 'edit']]);
         $this->post('sales/whatsapp/process/{id}', 'SalesController', 'processWhatsappOrder', ['AuthMiddleware', ['PermissionMiddleware', 'whatsapp_orders', 'process']]);
 
         // ==========================================

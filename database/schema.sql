@@ -1776,6 +1776,7 @@ CREATE TABLE `purchase_orders` (
   `total_amount` decimal(12,2) DEFAULT 0.00,
   `payment_status` enum('PENDING','PARTIAL','PAID') DEFAULT 'PENDING',
   `payment_method` varchar(50) DEFAULT 'CASH',
+  `is_direct_purchase` tinyint(1) NOT NULL DEFAULT 0,
   `status` enum('DRAFT','CONFIRMED','RECEIVED','PARTIAL_RECEIVED','CANCELLED') DEFAULT 'DRAFT',
   `notes` text DEFAULT NULL,
   `created_by` int(10) unsigned DEFAULT NULL,

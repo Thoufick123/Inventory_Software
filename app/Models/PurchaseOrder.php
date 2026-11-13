@@ -8,6 +8,18 @@ require_once __DIR__ . '/PurchaseItem.php';
 
 class PurchaseOrder {
     private static bool $productEditTrackingReady = false;
+    private static bool $directPurchaseColumnReady = false;
+
+    private static function ensureDirectPurchaseColumn(): void {
+        if (self::$directPurchaseColumnReady) {
+            return;
+        }
+
+        if (!Database::fetchOne("SHOW COLUMNS FROM purchase_orders LIKE 'is_direct_purchase'")) {
+            Database::execute("ALTER TABLE purchase_orders ADD COLUMN is_direct_purchase TINYINT(1) NOT NULL DEFAULT 0 AFTER payment_method");
+        }
+        self::$directPurchaseColumnReady = true;
+    }
 
     public static function getEffectivePaidAmount(array $purchaseOrder): float {
         $totalAmount = max(0.0, (float)($purchaseOrder['total_amount'] ?? 0));
@@ -73,6 +85,7 @@ class PurchaseOrder {
      * Get all purchase orders with filters.
      */
     public static function getAll(array $filters = []): array {
+        self::ensureDirectPurchaseColumn();
         $sql = "SELECT po.*, 
                        c.name as customer_name, c.phone as customer_phone, c.city as customer_city, c.gst_number as customer_gst,
                        COALESCE(c.name, s.name, 'Direct Customer') as display_customer_name,
@@ -150,10 +163,11 @@ class PurchaseOrder {
      * Create purchase order.
      */
     public static function create(array $data): int {
+        self::ensureDirectPurchaseColumn();
         Database::execute(
             "INSERT INTO purchase_orders 
-             (po_number, customer_id, seller_id, warehouse_supplier_id, warehouse_id, order_date, expected_date, subtotal, discount_amount, cgst_amount, sgst_amount, igst_amount, tax_amount, total_amount, paid_amount, cash_tendered, change_amount, payment_status, payment_method, payment_screenshot_url, payment_screenshot_public_id, status, notes, created_by, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+             (po_number, customer_id, seller_id, warehouse_supplier_id, warehouse_id, order_date, expected_date, subtotal, discount_amount, cgst_amount, sgst_amount, igst_amount, tax_amount, total_amount, paid_amount, cash_tendered, change_amount, payment_status, payment_method, is_direct_purchase, payment_screenshot_url, payment_screenshot_public_id, status, notes, created_by, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
             [
                 $data['po_number'],
                 !empty($data['customer_id']) ? (int)$data['customer_id'] : null,
@@ -174,6 +188,7 @@ class PurchaseOrder {
                 $data['change_amount'] ?? 0.00,
                 $data['payment_status'] ?? 'PENDING',
                 $data['payment_method'] ?? 'CASH',
+                !empty($data['is_direct_purchase']) ? 1 : 0,
                 $data['payment_screenshot_url'] ?? null,
                 $data['payment_screenshot_public_id'] ?? null,
                 $data['status'] ?? 'CONFIRMED',

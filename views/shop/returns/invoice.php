@@ -18,7 +18,14 @@
         <!-- Header -->
         <div class="row align-items-center pb-3 mb-3 border-bottom">
             <div class="col-sm-7">
-                <h3 class="fw-bold mb-0 text-primary"><i class="bi bi-shop me-2"></i><?= htmlspecialchars($shop['name'] ?? 'GRM RETAIL STORE') ?></h3>
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <?php if (!empty($shop['logo_url'])): ?>
+                        <img src="<?= e($shop['logo_url']) ?>" alt="<?= e($shop['name'] ?? 'Shop') ?> logo" style="max-width:160px;max-height:56px;object-fit:contain;">
+                    <?php else: ?>
+                        <i class="bi bi-shop text-primary fs-3" aria-hidden="true"></i>
+                    <?php endif; ?>
+                    <h3 class="fw-bold mb-0 text-primary"><?= htmlspecialchars($shop['name'] ?? 'GRM RETAIL STORE') ?></h3>
+                </div>
                 <div class="text-muted small"><?= htmlspecialchars($shop['address'] ?? 'Retail Store & POS Center') ?></div>
                 <div class="small text-secondary mt-1">
                     GSTIN: <strong><?= htmlspecialchars($shop['gst_number'] ?? '33AAAAA0000A1Z5') ?></strong> | Phone: <?= htmlspecialchars($shop['phone'] ?? '+91 98765 43210') ?>

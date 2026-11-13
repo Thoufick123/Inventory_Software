@@ -3170,9 +3170,28 @@ class WarehouseController {
 
         foreach ($items as $item) {
             $itemTags = array_filter(array_map('trim', explode(',', (string)($item['tag_code'] ?? ''))));
+            if (!$itemTags) {
+                Session::flash('error', 'Scan a valid warehouse QR code for every damage or rework item.');
+                Response::back();
+                return;
+            }
             foreach ($itemTags as $pieceTag) {
+                if (!WarehouseService::isWarehouseQrTagAvailable(
+                    (int)($item['variant_id'] ?? 0),
+                    $warehouseId,
+                    $pieceTag
+                )) {
+                    Session::flash('error', "Incorrect QR: '{$pieceTag}' is not recorded as available stock in the selected warehouse.");
+                    Response::back();
+                    return;
+                }
+
                 $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag($pieceTag);
-                if ($exchangedReplacement) {
+                if ($exchangedReplacement && !WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
+                    $pieceTag,
+                    $warehouseId,
+                    (int)($item['variant_id'] ?? 0)
+                )) {
                     Session::flash('error', "QR code '{$pieceTag}' was already issued to a customer as an exchange replacement and is no longer in warehouse stock.");
                     Response::back();
                     return;
@@ -3565,7 +3584,7 @@ class WarehouseController {
         $warehouseId = (int)($_REQUEST['warehouse_id'] ?? 0);
 
         if (empty($rawCode)) {
-            echo json_encode(['success' => false, 'message' => 'No scan code or SKU provided.']);
+            echo json_encode(['success' => false, 'message' => 'Scan a warehouse QR code.']);
             exit;
         }
 
@@ -3665,6 +3684,12 @@ class WarehouseController {
 
         foreach (array_unique(array_merge([$extractedTag], $candidateCodes)) as $scannedPieceTag) {
             $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag((string)$scannedPieceTag);
+            if ($exchangedReplacement && WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
+                (string)$scannedPieceTag,
+                $warehouseId
+            )) {
+                continue;
+            }
             if ($exchangedReplacement) {
                 echo json_encode([
                     'success' => false,
@@ -4585,7 +4610,8 @@ class WarehouseController {
         if (!$variant) {
             echo json_encode([
                 'success' => false,
-                'message' => 'No matching product variant found for scanned code "' . htmlspecialchars($rawCode) . '"'
+                'is_incorrect_qr' => true,
+                'message' => 'Incorrect QR: this code is not recorded as available stock in the selected warehouse.'
             ]);
             exit;
         }
@@ -4651,6 +4677,23 @@ class WarehouseController {
         $reservedStock  = (float)($res['qty'] ?? 0);
         $damagedStock   = (float)($dmg['qty'] ?? 0);
         $totalStock     = $availableStock + $reservedStock;
+
+        $verifiedQrTag = null;
+        foreach (array_unique(array_merge([$extractedTag], $candidateCodes)) as $candidateTag) {
+            if (WarehouseService::isWarehouseQrTagAvailable((int)$variant['id'], $warehouseId, (string)$candidateTag)) {
+                $verifiedQrTag = trim((string)$candidateTag);
+                break;
+            }
+        }
+        if ($verifiedQrTag === null) {
+            echo json_encode([
+                'success' => false,
+                'is_incorrect_qr' => true,
+                'message' => "Incorrect QR: this code is not recorded as available stock in the selected warehouse."
+            ]);
+            exit;
+        }
+        $extractedTag = $verifiedQrTag;
 
         if ($warehouseId > 0 && $availableStock <= 0) {
             echo json_encode([
@@ -5372,6 +5415,13 @@ class WarehouseController {
                 : ($purchase['paid_amount'] > 0 ? 'PARTIAL' : 'PENDING');
         }
         unset($purchase);
+        $directPurchases = array_values(array_filter($purchases, static function ($purchase): bool {
+            return !empty($purchase['is_direct_purchase']);
+        }));
+        $purchases = array_values(array_filter($purchases, static function ($purchase): bool {
+            return empty($purchase['is_direct_purchase']);
+        }));
+
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
         $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $customers = Database::fetchAll("SELECT * FROM customers WHERE is_active = 1 ORDER BY name ASC");
@@ -5476,6 +5526,7 @@ class WarehouseController {
             'activeModule'          => 'warehouse',
             'activeMenu'            => 'purchases',
             'purchases'             => $purchases,
+            'directPurchases'       => $directPurchases,
             'regularCustomers'      => $regularCustomers,
             'oneTimeCustomers'      => $oneTimeCustomers,
             'groupedCustomers'      => array_values($groupedCustomers),
@@ -5676,23 +5727,41 @@ class WarehouseController {
                 : (int)($_POST['warehouse_id'] ?? 1);
             $seenTags = [];
             foreach ($items as $item) {
-                if (!empty($item['scanned_qr_codes'])) {
-                    foreach (array_filter(array_map('trim', explode(',', $item['scanned_qr_codes']))) as $scannedPieceTag) {
-                        $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag($scannedPieceTag);
-                        if ($exchangedReplacement && !WarehouseService::isAvailableExchangedSeriesTagForDirectPurchase(
-                            $scannedPieceTag,
-                            $purchaseWarehouseId,
-                            (int)$item['variant_id']
-                        )) {
-                            Response::redirect(
-                                url('warehouse/purchases/create'),
-                                'error',
-                                "QR code '{$scannedPieceTag}' was already issued to a customer as an exchange replacement and is no longer available in warehouse stock."
-                            );
-                            return;
-                        }
+                $scannedTags = array_filter(array_map('trim', preg_split('/[,;|\r\n]+/', (string)($item['scanned_qr_codes'] ?? '')) ?: []));
+                if (!$scannedTags) {
+                    Response::redirect(url('warehouse/purchases/create'), 'error', 'Scan a valid warehouse QR code for every purchase item.');
+                    return;
+                }
+                foreach ($scannedTags as $scannedPieceTag) {
+                    if (!WarehouseService::isWarehouseQrTagAvailable(
+                        (int)$item['variant_id'],
+                        $purchaseWarehouseId,
+                        $scannedPieceTag
+                    )) {
+                        Response::redirect(
+                            url('warehouse/purchases/create'),
+                            'error',
+                            "Incorrect QR: '{$scannedPieceTag}' is not recorded as available stock in the selected warehouse."
+                        );
+                        return;
                     }
 
+                    $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag($scannedPieceTag);
+                    if ($exchangedReplacement && !WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
+                        $scannedPieceTag,
+                        $purchaseWarehouseId,
+                        (int)$item['variant_id']
+                    )) {
+                        Response::redirect(
+                            url('warehouse/purchases/create'),
+                            'error',
+                            "QR code '{$scannedPieceTag}' was already issued to a customer as an exchange replacement and is no longer available in warehouse stock."
+                        );
+                        return;
+                    }
+                }
+
+                if (!empty($item['scanned_qr_codes'])) {
                     $vInfo = Database::fetchOne(
                         "SELECT pv.id, pv.qr_type, pv.pack_quantity, COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
                                 COALESCE(wc.category_type, 'NORMAL') as cat_type
@@ -5780,6 +5849,7 @@ class WarehouseController {
             $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
             $poData = [
                 'customer_id'    => $customerId,
+                'is_direct_purchase' => !empty($_POST['is_direct_purchase']),
                 'warehouse_id'   => $scopedWarehouseId !== null ? $scopedWarehouseId : (int)($_POST['warehouse_id'] ?? 1),
                 'order_date'     => $_POST['order_date'] ?? date('Y-m-d'),
                 'expected_date'  => !empty($_POST['expected_date']) ? $_POST['expected_date'] : date('Y-m-d'),
@@ -6218,7 +6288,7 @@ class WarehouseController {
 
         $rawCode = trim($_REQUEST['code'] ?? $_REQUEST['query'] ?? $_REQUEST['search'] ?? '');
         if (empty($rawCode)) {
-            echo json_encode(['success' => false, 'message' => 'No scan code or SKU provided.']);
+            echo json_encode(['success' => false, 'message' => 'Scan a warehouse QR code.']);
             exit;
         }
 
@@ -6266,7 +6336,7 @@ class WarehouseController {
                 $isSameProductExchangeScan ? $returnEditId : null
             );
             if ($candidateExchangedReplacement) {
-                if ($isDirectPurchaseScan && WarehouseService::isAvailableExchangedSeriesTagForDirectPurchase(
+                if ($isDirectPurchaseScan && WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
                     (string)$scannedPieceTag,
                     $directPurchaseWarehouseId
                 )) {
@@ -6660,7 +6730,10 @@ class WarehouseController {
             }
             echo json_encode([
                 'success' => false,
-                'message' => 'No matching product variant found for scanned code "' . htmlspecialchars($rawCode) . '"'
+                'message' => $isDirectPurchaseScan
+                    ? 'Incorrect QR: this code is not recorded as available stock in the selected warehouse.'
+                    : 'No matching product variant found for scanned code "' . htmlspecialchars($rawCode) . '"',
+                'is_incorrect_qr' => $isDirectPurchaseScan
             ]);
             exit;
         }
@@ -6680,6 +6753,25 @@ class WarehouseController {
             );
         }
         $availableStock = (int)($avail['qty'] ?? 0);
+
+        if ($isDirectPurchaseScan) {
+            $verifiedQrTag = null;
+            foreach (array_unique(array_merge([$extractedTag], $candidateCodes)) as $candidateTag) {
+                if (WarehouseService::isWarehouseQrTagAvailable((int)$variant['id'], $warehouseId, (string)$candidateTag)) {
+                    $verifiedQrTag = trim((string)$candidateTag);
+                    break;
+                }
+            }
+            if ($verifiedQrTag === null) {
+                echo json_encode([
+                    'success' => false,
+                    'is_incorrect_qr' => true,
+                    'message' => "Incorrect QR: this code is not recorded as available stock in the selected warehouse."
+                ]);
+                exit;
+            }
+            $extractedTag = $verifiedQrTag;
+        }
 
         $isCurrentReturnedPiece = false;
         $isSameProductReturnVariant = false;
@@ -8445,6 +8537,11 @@ class WarehouseController {
         $seenInSubmission = [];
         foreach ($variantIds as $idx => $vId) {
             $qrCodesStr = trim($selectedQrCodes[$idx] ?? '');
+            if ((float)($requestedQty[$idx] ?? 0) > 0 && $qrCodesStr === '') {
+                Session::flash('error', 'Scan a valid warehouse QR code for every allocation item.');
+                Response::redirect(url('warehouse/allocation/create'));
+                return;
+            }
             if (!empty($qrCodesStr)) {
                 $allocationVariant = Database::fetchOne(
                     "SELECT pv.*, p.code as product_code,
@@ -8466,6 +8563,11 @@ class WarehouseController {
                 foreach ($submittedTags as $stag) {
                     if (empty($stag) || strlen($stag) < 3) continue;
                     $stagUpper = strtoupper($stag);
+                    if (!WarehouseService::isWarehouseQrTagAvailable((int)$vId, $warehouseId, $stag)) {
+                        Session::flash('error', "Incorrect QR: '{$stag}' is not recorded as available stock in the selected warehouse.");
+                        Response::redirect(url('warehouse/allocation/create'));
+                        return;
+                    }
 
                     $allocPType = self::determineAllocationProductType($allocationVariant ?: []);
                     $isMasterOrComp = in_array($allocPType, ['SERIES', 'COMPLEMENTARY'], true);
@@ -8482,7 +8584,11 @@ class WarehouseController {
                     }
 
                     $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag($stag);
-                    if ($exchangedReplacement) {
+                    if ($exchangedReplacement && !WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
+                        $stag,
+                        $warehouseId,
+                        (int)$vId
+                    )) {
                         Session::flash('error', "QR code '{$stag}' was already issued to a customer as an exchange replacement and cannot be allocated.");
                         Response::redirect(url('warehouse/allocation/create'));
                         return;
@@ -9198,7 +9304,7 @@ class WarehouseController {
         $warehouseId = (int)($_REQUEST['warehouse_id'] ?? 0);
 
         if (empty($rawCode)) {
-            echo json_encode(['success' => false, 'message' => 'No scan code or SKU provided.']);
+            echo json_encode(['success' => false, 'message' => 'Scan a warehouse QR code.']);
             exit;
         }
 
@@ -9298,6 +9404,12 @@ class WarehouseController {
 
         foreach (array_unique(array_merge([$extractedTag], $candidateCodes)) as $scannedPieceTag) {
             $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag((string)$scannedPieceTag);
+            if ($exchangedReplacement && WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
+                (string)$scannedPieceTag,
+                $warehouseId
+            )) {
+                continue;
+            }
             if ($exchangedReplacement) {
                 echo json_encode([
                     'success' => false,
@@ -10232,7 +10344,8 @@ class WarehouseController {
         if (!$variant) {
             echo json_encode([
                 'success' => false,
-                'message' => 'No matching product variant found for scanned code "' . htmlspecialchars($rawCode) . '"'
+                'is_incorrect_qr' => true,
+                'message' => 'Incorrect QR: this code is not recorded as available stock in the selected warehouse.'
             ]);
             exit;
         }
@@ -10287,6 +10400,23 @@ class WarehouseController {
         $availableStock = (float)($avail['qty'] ?? 0);
         $reservedStock  = (float)($res['qty'] ?? 0);
         $totalStock     = $availableStock + $reservedStock;
+
+        $verifiedQrTag = null;
+        foreach (array_unique(array_merge([$extractedTag], $candidateCodes)) as $candidateTag) {
+            if (WarehouseService::isWarehouseQrTagAvailable((int)$variant['id'], $warehouseId, (string)$candidateTag)) {
+                $verifiedQrTag = trim((string)$candidateTag);
+                break;
+            }
+        }
+        if ($verifiedQrTag === null) {
+            echo json_encode([
+                'success' => false,
+                'is_incorrect_qr' => true,
+                'message' => "Incorrect QR: this code is not recorded as available stock in the selected warehouse."
+            ]);
+            exit;
+        }
+        $extractedTag = $verifiedQrTag;
 
         // Check if the resolved variant is marked with active unresolved damage in this warehouse
         $activeDmgVariant = Database::fetchOne(

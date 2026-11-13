@@ -24,6 +24,7 @@ if ($customerName === '') {
     $customerName = 'Walk-in Customer';
 }
 $customerGst = trim((string)($po['customer_gst'] ?? ''));
+$staffName = trim((string)($po['created_by_name'] ?? ''));
 $paymentMethod = trim((string)($po['payment_method'] ?? 'CASH'));
 $paymentStatus = trim((string)($po['payment_status'] ?? ''));
 $paymentNotes = (string)($po['notes'] ?? '');
@@ -44,6 +45,8 @@ $netAmount = (float)($po['total_amount'] ?? 0);
 $discountAmount = (float)($po['discount_amount'] ?? 0);
 $paidAmount = PurchaseOrder::getEffectivePaidAmount($po);
 $balanceDue = max(0, $netAmount - $paidAmount);
+$cashTendered = max(0, (float)($po['cash_tendered'] ?? 0));
+$changeAmount = max(0, (float)($po['change_amount'] ?? 0));
 $paymentStatus = $balanceDue <= 0 ? 'PAID' : ($paidAmount > 0 ? 'PARTIAL' : 'PENDING');
 $roundOff = round($netAmount - ($taxableAmount + $totalGst), 2);
 $gstType = (float)($po['igst_amount'] ?? 0) > 0
@@ -175,9 +178,19 @@ foreach ($items as $item) {
             font-weight: 700;
         }
 
+        .staff-row {
+            justify-content: flex-end;
+            text-align: right;
+            overflow-wrap: anywhere;
+        }
+
         .customer-name {
             margin: 3px 0;
             font-weight: 700;
+        }
+
+        .customer-date {
+            font-size: 10px;
         }
 
         table {
@@ -313,14 +326,14 @@ foreach ($items as $item) {
             <span>Bill No: <strong><?= e($billNumber) ?></strong></span>
             <span>BID: <strong><?= e((string)($po['id'] ?? '')) ?></strong></span>
         </div>
-        <div class="meta-row">
-            <span>Date: <?= e(formatUtcDateTime($po['created_at'] ?? null)) ?></span>
-            <span>Staff: <?= e((string)($po['created_by_name'] ?? '')) ?></span>
+        <div class="meta-row staff-row">
+            <span>Staff: <?= e($staffName !== '' ? $staffName : '-') ?></span>
         </div>
 
         <hr class="rule">
         <section class="customer-header">
             <div class="customer-name"><?= e($customerName) ?></div>
+            <div class="customer-date">Date: <?= e(formatDateTime($po['created_at'] ?? null)) ?></div>
             <?php if ($customerGst !== ''): ?>
                 <div>GST No: <?= e($customerGst) ?></div>
             <?php endif; ?>
@@ -436,9 +449,19 @@ foreach ($items as $item) {
                 <span><?= e($paymentStatus) ?></span>
             </div>
             <div class="meta-row">
-                <span>Amount Received</span>
+                <span>Amount Received (Applied to Bill)</span>
                 <strong>₹ <?= e(number_format($paidAmount, 2)) ?></strong>
             </div>
+            <?php if ($cashTendered > $paidAmount): ?>
+                <div class="meta-row">
+                    <span>Cash Given by Customer</span>
+                    <strong>₹ <?= e(number_format($cashTendered, 2)) ?></strong>
+                </div>
+                <div class="meta-row">
+                    <span>Change Returned</span>
+                    <strong>₹ <?= e(number_format($changeAmount, 2)) ?></strong>
+                </div>
+            <?php endif; ?>
             <div class="meta-row">
                 <span>Balance Due</span>
                 <strong>₹ <?= e(number_format($balanceDue, 2)) ?></strong>

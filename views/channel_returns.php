@@ -249,6 +249,11 @@ $canProcessReturns = !$isWebsiteReturns || hasPermission('website_returns', 'cre
                                     <a href="<?= url($returnBasePath . '/invoice/' . $row['id']) ?>" class="btn btn-sm btn-outline-primary" title="Print Return / Exchange Slip" target="_blank">
                                         <i class="bi bi-printer me-1"></i> Slip
                                     </a>
+                                    <?php if (!$isWebsiteReturns && hasPermission('whatsapp_returns', 'edit')): ?>
+                                        <a href="<?= url($returnBasePath . '/edit/' . $row['id']) ?>" class="btn btn-sm btn-outline-success" title="Edit WhatsApp Return / Exchange">
+                                            <i class="bi bi-pencil-square me-1"></i> Edit
+                                        </a>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
