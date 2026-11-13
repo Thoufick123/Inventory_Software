@@ -2702,23 +2702,24 @@ class WarehouseService {
 
                 // Determine accurate unit price (tax-inclusive effective price)
                 $unitPrice = 0.0;
+                $purchaseItem = null;
                 if ($purchaseItemId) {
-                    $pi = Database::fetchOne(
-                        "SELECT variant_id, unit_price, total_amount, quantity
+                    $purchaseItem = Database::fetchOne(
+                        "SELECT variant_id, unit_price, total_amount, quantity, batch_lot_no, notes
                          FROM purchase_items WHERE id = ? AND purchase_order_id = ?",
                         [$purchaseItemId, $poId]
                     );
-                    if (!$pi || (int)$pi['variant_id'] !== $variantId) {
+                    if (!$purchaseItem || (int)$purchaseItem['variant_id'] !== $variantId) {
                         throw new InvalidArgumentException("A selected return item does not belong to this purchase order.");
                     }
                     $quantityByPurchaseItem[$purchaseItemId] = ($quantityByPurchaseItem[$purchaseItemId] ?? 0) + $qty;
-                    if ($quantityByPurchaseItem[$purchaseItemId] > (int)$pi['quantity']) {
+                    if ($quantityByPurchaseItem[$purchaseItemId] > (int)$purchaseItem['quantity']) {
                         throw new InvalidArgumentException("Return quantity cannot exceed the purchased quantity for an item.");
                     }
-                    if ((int)$pi['quantity'] > 0 && (float)($pi['total_amount'] ?? 0) > 0) {
-                        $unitPrice = round((float)$pi['total_amount'] / (int)$pi['quantity'], 2);
+                    if ((int)$purchaseItem['quantity'] > 0 && (float)($purchaseItem['total_amount'] ?? 0) > 0) {
+                        $unitPrice = round((float)$purchaseItem['total_amount'] / (int)$purchaseItem['quantity'], 2);
                     } else {
-                        $unitPrice = (float)$pi['unit_price'];
+                        $unitPrice = (float)$purchaseItem['unit_price'];
                     }
                 } else {
                     $purchasedQuantity = (int)(Database::fetchOne(
@@ -2744,6 +2745,12 @@ class WarehouseService {
                 $replacementVariantId = !empty($it['replacement_variant_id']) ? (int)$it['replacement_variant_id'] : null;
                 $replacementPieceTag = trim((string)($it['replacement_piece_tag'] ?? ''));
                 $pieceTags = !empty($it['piece_tags']) && is_array($it['piece_tags']) ? implode(', ', array_filter($it['piece_tags'])) : (is_string($it['piece_tags'] ?? null) ? trim($it['piece_tags']) : '');
+                if ($pieceTags === '' && $purchaseItem) {
+                    $pieceTags = trim((string)($purchaseItem['batch_lot_no'] ?? ''));
+                    if ($pieceTags === '' && preg_match('/\bQR:\s*(.*)$/is', (string)($purchaseItem['notes'] ?? ''), $matches)) {
+                        $pieceTags = trim($matches[1]);
+                    }
+                }
 
                 $condition = strtoupper(trim((string)($it['condition'] ?? 'GOOD')));
                 if (!in_array($condition, ['GOOD', 'DAMAGED'], true)) {
