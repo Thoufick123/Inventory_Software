@@ -362,6 +362,11 @@ $editData = $editData ?? null;
                                 <a href="<?= url('warehouse/purchases/returns/view/' . $r['id']) ?>" class="btn btn-outline-secondary" title="View Audit Details">
                                     <i class="bi bi-eye"></i>
                                 </a>
+                                <?php if (hasPermission('wh_labels', 'view') || (function_exists('isAdmin') && isAdmin())): ?>
+                                    <a href="<?= url('warehouse/labels?history_tab=returns') ?>" class="btn btn-outline-primary" title="Open Customer Return QR Labels and Inward">
+                                        <i class="bi bi-qr-code"></i>
+                                    </a>
+                                <?php endif; ?>
                                 <?php if ($canEditReturns): ?>
                                     <a href="<?= url('warehouse/purchases/returns/edit/' . $r['id']) ?>" class="btn btn-outline-warning" title="Edit Return / Exchange">
                                         <i class="bi bi-pencil-square"></i>

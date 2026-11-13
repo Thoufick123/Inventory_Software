@@ -3170,7 +3170,22 @@ class WarehouseController {
 
         foreach ($items as $item) {
             $itemTags = array_filter(array_map('trim', explode(',', (string)($item['tag_code'] ?? ''))));
+            if (!$itemTags) {
+                Session::flash('error', 'Scan a valid warehouse QR code for every damage or rework item.');
+                Response::back();
+                return;
+            }
             foreach ($itemTags as $pieceTag) {
+                if (!WarehouseService::isWarehouseQrTagAvailable(
+                    (int)($item['variant_id'] ?? 0),
+                    $warehouseId,
+                    $pieceTag
+                )) {
+                    Session::flash('error', "Incorrect QR: '{$pieceTag}' is not recorded as available stock in the selected warehouse.");
+                    Response::back();
+                    return;
+                }
+
                 $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag($pieceTag);
                 if ($exchangedReplacement && !WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
                     $pieceTag,
@@ -3569,7 +3584,7 @@ class WarehouseController {
         $warehouseId = (int)($_REQUEST['warehouse_id'] ?? 0);
 
         if (empty($rawCode)) {
-            echo json_encode(['success' => false, 'message' => 'No scan code or SKU provided.']);
+            echo json_encode(['success' => false, 'message' => 'Scan a warehouse QR code.']);
             exit;
         }
 
@@ -4595,7 +4610,8 @@ class WarehouseController {
         if (!$variant) {
             echo json_encode([
                 'success' => false,
-                'message' => 'No matching product variant found for scanned code "' . htmlspecialchars($rawCode) . '"'
+                'is_incorrect_qr' => true,
+                'message' => 'Incorrect QR: this code is not recorded as available stock in the selected warehouse.'
             ]);
             exit;
         }
@@ -4661,6 +4677,23 @@ class WarehouseController {
         $reservedStock  = (float)($res['qty'] ?? 0);
         $damagedStock   = (float)($dmg['qty'] ?? 0);
         $totalStock     = $availableStock + $reservedStock;
+
+        $verifiedQrTag = null;
+        foreach (array_unique(array_merge([$extractedTag], $candidateCodes)) as $candidateTag) {
+            if (WarehouseService::isWarehouseQrTagAvailable((int)$variant['id'], $warehouseId, (string)$candidateTag)) {
+                $verifiedQrTag = trim((string)$candidateTag);
+                break;
+            }
+        }
+        if ($verifiedQrTag === null) {
+            echo json_encode([
+                'success' => false,
+                'is_incorrect_qr' => true,
+                'message' => "Incorrect QR: this code is not recorded as available stock in the selected warehouse."
+            ]);
+            exit;
+        }
+        $extractedTag = $verifiedQrTag;
 
         if ($warehouseId > 0 && $availableStock <= 0) {
             echo json_encode([
@@ -5382,6 +5415,13 @@ class WarehouseController {
                 : ($purchase['paid_amount'] > 0 ? 'PARTIAL' : 'PENDING');
         }
         unset($purchase);
+        $directPurchases = array_values(array_filter($purchases, static function ($purchase): bool {
+            return !empty($purchase['is_direct_purchase']);
+        }));
+        $purchases = array_values(array_filter($purchases, static function ($purchase): bool {
+            return empty($purchase['is_direct_purchase']);
+        }));
+
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
         $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $customers = Database::fetchAll("SELECT * FROM customers WHERE is_active = 1 ORDER BY name ASC");
@@ -5486,6 +5526,7 @@ class WarehouseController {
             'activeModule'          => 'warehouse',
             'activeMenu'            => 'purchases',
             'purchases'             => $purchases,
+            'directPurchases'       => $directPurchases,
             'regularCustomers'      => $regularCustomers,
             'oneTimeCustomers'      => $oneTimeCustomers,
             'groupedCustomers'      => array_values($groupedCustomers),
@@ -5686,23 +5727,41 @@ class WarehouseController {
                 : (int)($_POST['warehouse_id'] ?? 1);
             $seenTags = [];
             foreach ($items as $item) {
-                if (!empty($item['scanned_qr_codes'])) {
-                    foreach (array_filter(array_map('trim', explode(',', $item['scanned_qr_codes']))) as $scannedPieceTag) {
-                        $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag($scannedPieceTag);
-                        if ($exchangedReplacement && !WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
-                            $scannedPieceTag,
-                            $purchaseWarehouseId,
-                            (int)$item['variant_id']
-                        )) {
-                            Response::redirect(
-                                url('warehouse/purchases/create'),
-                                'error',
-                                "QR code '{$scannedPieceTag}' was already issued to a customer as an exchange replacement and is no longer available in warehouse stock."
-                            );
-                            return;
-                        }
+                $scannedTags = array_filter(array_map('trim', preg_split('/[,;|\r\n]+/', (string)($item['scanned_qr_codes'] ?? '')) ?: []));
+                if (!$scannedTags) {
+                    Response::redirect(url('warehouse/purchases/create'), 'error', 'Scan a valid warehouse QR code for every purchase item.');
+                    return;
+                }
+                foreach ($scannedTags as $scannedPieceTag) {
+                    if (!WarehouseService::isWarehouseQrTagAvailable(
+                        (int)$item['variant_id'],
+                        $purchaseWarehouseId,
+                        $scannedPieceTag
+                    )) {
+                        Response::redirect(
+                            url('warehouse/purchases/create'),
+                            'error',
+                            "Incorrect QR: '{$scannedPieceTag}' is not recorded as available stock in the selected warehouse."
+                        );
+                        return;
                     }
 
+                    $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag($scannedPieceTag);
+                    if ($exchangedReplacement && !WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
+                        $scannedPieceTag,
+                        $purchaseWarehouseId,
+                        (int)$item['variant_id']
+                    )) {
+                        Response::redirect(
+                            url('warehouse/purchases/create'),
+                            'error',
+                            "QR code '{$scannedPieceTag}' was already issued to a customer as an exchange replacement and is no longer available in warehouse stock."
+                        );
+                        return;
+                    }
+                }
+
+                if (!empty($item['scanned_qr_codes'])) {
                     $vInfo = Database::fetchOne(
                         "SELECT pv.id, pv.qr_type, pv.pack_quantity, COALESCE(pv.is_complementary, p.is_complementary, 0) as is_comp,
                                 COALESCE(wc.category_type, 'NORMAL') as cat_type
@@ -5790,6 +5849,7 @@ class WarehouseController {
             $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
             $poData = [
                 'customer_id'    => $customerId,
+                'is_direct_purchase' => !empty($_POST['is_direct_purchase']),
                 'warehouse_id'   => $scopedWarehouseId !== null ? $scopedWarehouseId : (int)($_POST['warehouse_id'] ?? 1),
                 'order_date'     => $_POST['order_date'] ?? date('Y-m-d'),
                 'expected_date'  => !empty($_POST['expected_date']) ? $_POST['expected_date'] : date('Y-m-d'),
@@ -6228,7 +6288,7 @@ class WarehouseController {
 
         $rawCode = trim($_REQUEST['code'] ?? $_REQUEST['query'] ?? $_REQUEST['search'] ?? '');
         if (empty($rawCode)) {
-            echo json_encode(['success' => false, 'message' => 'No scan code or SKU provided.']);
+            echo json_encode(['success' => false, 'message' => 'Scan a warehouse QR code.']);
             exit;
         }
 
@@ -6670,7 +6730,10 @@ class WarehouseController {
             }
             echo json_encode([
                 'success' => false,
-                'message' => 'No matching product variant found for scanned code "' . htmlspecialchars($rawCode) . '"'
+                'message' => $isDirectPurchaseScan
+                    ? 'Incorrect QR: this code is not recorded as available stock in the selected warehouse.'
+                    : 'No matching product variant found for scanned code "' . htmlspecialchars($rawCode) . '"',
+                'is_incorrect_qr' => $isDirectPurchaseScan
             ]);
             exit;
         }
@@ -6690,6 +6753,25 @@ class WarehouseController {
             );
         }
         $availableStock = (int)($avail['qty'] ?? 0);
+
+        if ($isDirectPurchaseScan) {
+            $verifiedQrTag = null;
+            foreach (array_unique(array_merge([$extractedTag], $candidateCodes)) as $candidateTag) {
+                if (WarehouseService::isWarehouseQrTagAvailable((int)$variant['id'], $warehouseId, (string)$candidateTag)) {
+                    $verifiedQrTag = trim((string)$candidateTag);
+                    break;
+                }
+            }
+            if ($verifiedQrTag === null) {
+                echo json_encode([
+                    'success' => false,
+                    'is_incorrect_qr' => true,
+                    'message' => "Incorrect QR: this code is not recorded as available stock in the selected warehouse."
+                ]);
+                exit;
+            }
+            $extractedTag = $verifiedQrTag;
+        }
 
         $isCurrentReturnedPiece = false;
         $isSameProductReturnVariant = false;
@@ -8455,6 +8537,11 @@ class WarehouseController {
         $seenInSubmission = [];
         foreach ($variantIds as $idx => $vId) {
             $qrCodesStr = trim($selectedQrCodes[$idx] ?? '');
+            if ((float)($requestedQty[$idx] ?? 0) > 0 && $qrCodesStr === '') {
+                Session::flash('error', 'Scan a valid warehouse QR code for every allocation item.');
+                Response::redirect(url('warehouse/allocation/create'));
+                return;
+            }
             if (!empty($qrCodesStr)) {
                 $allocationVariant = Database::fetchOne(
                     "SELECT pv.*, p.code as product_code,
@@ -8476,6 +8563,11 @@ class WarehouseController {
                 foreach ($submittedTags as $stag) {
                     if (empty($stag) || strlen($stag) < 3) continue;
                     $stagUpper = strtoupper($stag);
+                    if (!WarehouseService::isWarehouseQrTagAvailable((int)$vId, $warehouseId, $stag)) {
+                        Session::flash('error', "Incorrect QR: '{$stag}' is not recorded as available stock in the selected warehouse.");
+                        Response::redirect(url('warehouse/allocation/create'));
+                        return;
+                    }
 
                     $allocPType = self::determineAllocationProductType($allocationVariant ?: []);
                     $isMasterOrComp = in_array($allocPType, ['SERIES', 'COMPLEMENTARY'], true);
@@ -9212,7 +9304,7 @@ class WarehouseController {
         $warehouseId = (int)($_REQUEST['warehouse_id'] ?? 0);
 
         if (empty($rawCode)) {
-            echo json_encode(['success' => false, 'message' => 'No scan code or SKU provided.']);
+            echo json_encode(['success' => false, 'message' => 'Scan a warehouse QR code.']);
             exit;
         }
 
@@ -10252,7 +10344,8 @@ class WarehouseController {
         if (!$variant) {
             echo json_encode([
                 'success' => false,
-                'message' => 'No matching product variant found for scanned code "' . htmlspecialchars($rawCode) . '"'
+                'is_incorrect_qr' => true,
+                'message' => 'Incorrect QR: this code is not recorded as available stock in the selected warehouse.'
             ]);
             exit;
         }
@@ -10307,6 +10400,23 @@ class WarehouseController {
         $availableStock = (float)($avail['qty'] ?? 0);
         $reservedStock  = (float)($res['qty'] ?? 0);
         $totalStock     = $availableStock + $reservedStock;
+
+        $verifiedQrTag = null;
+        foreach (array_unique(array_merge([$extractedTag], $candidateCodes)) as $candidateTag) {
+            if (WarehouseService::isWarehouseQrTagAvailable((int)$variant['id'], $warehouseId, (string)$candidateTag)) {
+                $verifiedQrTag = trim((string)$candidateTag);
+                break;
+            }
+        }
+        if ($verifiedQrTag === null) {
+            echo json_encode([
+                'success' => false,
+                'is_incorrect_qr' => true,
+                'message' => "Incorrect QR: this code is not recorded as available stock in the selected warehouse."
+            ]);
+            exit;
+        }
+        $extractedTag = $verifiedQrTag;
 
         // Check if the resolved variant is marked with active unresolved damage in this warehouse
         $activeDmgVariant = Database::fetchOne(
@@ -12144,6 +12254,54 @@ class WarehouseController {
              ORDER BY wri.id DESC LIMIT 50"
         );
 
+        $directPurchaseReturnSql = "
+            SELECT ri.id AS return_item_id, ri.return_id, ri.variant_id, ri.quantity, ri.item_condition,
+                   r.return_number, r.return_type, r.warehouse_id, r.created_at,
+                   po.po_number, c.name AS customer_name, p.name AS product_name, pv.sku, pv.mrp, pv.selling_price,
+                   sz.name AS size_name, col.name AS color_name,
+                   EXISTS (
+                       SELECT 1 FROM stock_transactions inward_st
+                       WHERE inward_st.reference_type = 'warehouse_purchase_return_items'
+                         AND inward_st.reference_id = ri.id
+                         AND inward_st.variant_id = ri.variant_id
+                         AND inward_st.transaction_type = 'RETURN_INWARD'
+                   ) AS is_inwarded
+            FROM return_items ri
+            JOIN returns r ON r.id = ri.return_id
+            LEFT JOIN purchase_orders po ON po.id = r.purchase_order_id
+            LEFT JOIN customers c ON c.id = r.customer_id
+            JOIN product_variants pv ON pv.id = ri.variant_id
+            JOIN products p ON p.id = pv.product_id
+            LEFT JOIN sizes sz ON sz.id = pv.size_id
+            LEFT JOIN colors col ON col.id = pv.color_id
+            WHERE r.source_type = 'WAREHOUSE_PURCHASE'
+              AND ri.item_condition = 'GOOD'
+              AND ri.destination = 'AVAILABLE'
+              AND (
+                  NOT EXISTS (
+                      SELECT 1 FROM stock_transactions legacy_st
+                      WHERE legacy_st.reference_type = 'returns'
+                        AND legacy_st.reference_id = r.id
+                        AND legacy_st.variant_id = ri.variant_id
+                        AND legacy_st.transaction_type = 'RETURN_GOOD'
+                  )
+                  OR EXISTS (
+                      SELECT 1 FROM stock_transactions inward_st
+                      WHERE inward_st.reference_type = 'warehouse_purchase_return_items'
+                        AND inward_st.reference_id = ri.id
+                        AND inward_st.variant_id = ri.variant_id
+                        AND inward_st.transaction_type = 'RETURN_INWARD'
+                  )
+              )";
+        $directPurchaseReturnParams = [];
+        $scopedReturnWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+        if ($scopedReturnWarehouseId !== null) {
+            $directPurchaseReturnSql .= " AND r.warehouse_id = ?";
+            $directPurchaseReturnParams[] = (int)$scopedReturnWarehouseId;
+        }
+        $directPurchaseReturnSql .= " ORDER BY ri.id DESC LIMIT 50";
+        $directPurchaseReturns = Database::fetchAll($directPurchaseReturnSql, $directPurchaseReturnParams);
+
         // Query inwarded and catalog QR batches for easy identification & one-time validation
         $inwardedRows = Database::fetchAll(
             "SELECT st.variant_id, SUM(st.quantity) as inwarded_qty, MAX(st.notes) as latest_notes, MAX(st.created_at) as latest_date
@@ -12335,6 +12493,53 @@ class WarehouseController {
         $isGeneratingView = in_array($viewParam, ['generate', 'existing'], true)
             || (!empty($_GET['catalog_code']) && $viewParam !== 'batches')
             || (!empty($_GET['variant_id']) && $viewParam !== 'batches');
+        $selectedPurchaseReturnItem = null;
+        if (($_GET['return_source'] ?? '') === 'purchase') {
+            $returnItemId = (int)($_GET['return_item_id'] ?? 0);
+            $returnId = (int)($_GET['return_id'] ?? $_GET['source_id'] ?? 0);
+            $returnVariantId = (int)($_GET['return_variant_id'] ?? $_GET['variant_id'] ?? 0);
+            $selectedPurchaseReturnItem = $returnItemId > 0 && $returnId > 0 && $returnVariantId > 0
+                ? Database::fetchOne(
+                    "SELECT ri.id, ri.return_id, ri.variant_id, ri.quantity, ri.item_condition, ri.destination,
+                            r.return_number, r.warehouse_id, pv.qr_type, pv.pack_quantity,
+                            COALESCE(pv.is_complementary, p.is_complementary, 0) AS is_complementary,
+                            wc.category_type AS warehouse_category_type,
+                            EXISTS (
+                                SELECT 1 FROM stock_transactions st
+                                WHERE st.reference_type = 'warehouse_purchase_return_items' AND st.reference_id = ri.id
+                                  AND st.variant_id = ri.variant_id
+                                  AND st.transaction_type = 'RETURN_INWARD'
+                            ) AS is_inwarded,
+                            EXISTS (
+                                SELECT 1 FROM stock_transactions st
+                                WHERE st.reference_type = 'returns' AND st.reference_id = r.id
+                                  AND st.variant_id = ri.variant_id AND st.transaction_type = 'RETURN_GOOD'
+                            ) AS has_legacy_stock
+                     FROM return_items ri
+                     JOIN returns r ON r.id = ri.return_id
+                     JOIN product_variants pv ON pv.id = ri.variant_id
+                     JOIN products p ON p.id = pv.product_id
+                     LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+                     WHERE ri.id = ? AND ri.return_id = ? AND ri.variant_id = ?
+                       AND r.source_type = 'WAREHOUSE_PURCHASE'",
+                    [$returnItemId, $returnId, $returnVariantId]
+                )
+                : null;
+
+            if (
+                !$selectedPurchaseReturnItem
+                || strtoupper((string)$selectedPurchaseReturnItem['item_condition']) !== 'GOOD'
+                || strtoupper((string)$selectedPurchaseReturnItem['destination']) !== 'AVAILABLE'
+                || !empty($selectedPurchaseReturnItem['is_inwarded'])
+                || !empty($selectedPurchaseReturnItem['has_legacy_stock'])
+                || ($scopedReturnWarehouseId !== null && (int)$selectedPurchaseReturnItem['warehouse_id'] !== (int)$scopedReturnWarehouseId)
+                || (!empty($_GET['warehouse_id']) && (int)$selectedPurchaseReturnItem['warehouse_id'] !== (int)$_GET['warehouse_id'])
+            ) {
+                Session::setFlash('warning', 'This customer return is not available for QR generation or has already been inwarded.');
+                Response::redirect(url('warehouse/labels?history_tab=returns'));
+                return;
+            }
+        }
 
         $activeHistoryTab = $_GET['history_tab'] ?? 'warehouse';
         if (!in_array($activeHistoryTab, ['warehouse', 'returns', 'extra_qrs'], true)) {
@@ -12374,6 +12579,8 @@ class WarehouseController {
             'sellers'           => $sellers,
             'returns'           => $returns,
             'classifiedReturns' => $classifiedReturns,
+            'directPurchaseReturns' => $directPurchaseReturns,
+            'selectedPurchaseReturnItem' => $selectedPurchaseReturnItem,
             'qrBatches'         => $qrBatches,
             'inwardedVariantIds'=> $inwardedVariantIds,
             'extraQrSupplierGroups' => $extraQrSupplierGroups,
@@ -12535,11 +12742,67 @@ class WarehouseController {
         $copies = max(1, min(500, (int)($_POST['copies'] ?? 10)));
         $tagType = trim($_POST['tag_type'] ?? 'GOOD');
         $reason = urlencode(trim($_POST['reason'] ?? ''));
+        $returnSource = trim((string)($_POST['return_source'] ?? ''));
+        $returnItemId = (int)($_POST['return_item_id'] ?? 0);
+
+        if ($returnSource === 'purchase') {
+            $purchaseReturnItem = Database::fetchOne(
+                "SELECT ri.quantity, ri.item_condition, ri.destination, r.warehouse_id,
+                        pv.qr_type, pv.pack_quantity,
+                        COALESCE(pv.is_complementary, p.is_complementary, 0) AS is_complementary,
+                        wc.category_type AS warehouse_category_type,
+                        EXISTS (
+                            SELECT 1 FROM stock_transactions st
+                            WHERE st.reference_type = 'warehouse_purchase_return_items' AND st.reference_id = ri.id
+                              AND st.variant_id = ri.variant_id
+                              AND st.transaction_type = 'RETURN_INWARD'
+                        ) AS is_inwarded,
+                        EXISTS (
+                            SELECT 1 FROM stock_transactions st
+                            WHERE st.reference_type = 'returns' AND st.reference_id = r.id
+                              AND st.variant_id = ri.variant_id AND st.transaction_type = 'RETURN_GOOD'
+                        ) AS has_legacy_stock
+                 FROM return_items ri
+                 JOIN returns r ON r.id = ri.return_id
+                 JOIN product_variants pv ON pv.id = ri.variant_id
+                 JOIN products p ON p.id = pv.product_id
+                 LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+                 WHERE ri.id = ? AND ri.return_id = ? AND ri.variant_id = ?
+                   AND r.source_type = 'WAREHOUSE_PURCHASE'",
+                [$returnItemId, $sourceId, $variantId]
+            );
+            $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+            if (
+                $sourceType !== 'returns'
+                || !$purchaseReturnItem
+                || strtoupper((string)$purchaseReturnItem['item_condition']) !== 'GOOD'
+                || strtoupper((string)$purchaseReturnItem['destination']) !== 'AVAILABLE'
+                || !empty($purchaseReturnItem['is_inwarded'])
+                || !empty($purchaseReturnItem['has_legacy_stock'])
+                || ($scopedWarehouseId !== null && (int)$purchaseReturnItem['warehouse_id'] !== (int)$scopedWarehouseId)
+            ) {
+                Session::setFlash('warning', 'This customer return is not available for QR generation or has already been inwarded.');
+                Response::redirect(url('warehouse/labels?history_tab=returns'));
+                return;
+            }
+
+            $isSeriesOrComp = strtoupper((string)$purchaseReturnItem['qr_type']) === 'SERIES_BATCH'
+                || strtoupper((string)$purchaseReturnItem['qr_type']) === 'SERIES'
+                || !empty($purchaseReturnItem['is_complementary'])
+                || strtoupper((string)$purchaseReturnItem['warehouse_category_type']) === 'SERIES'
+                || strtoupper((string)$purchaseReturnItem['warehouse_category_type']) === 'COMPLEMENTARY';
+            $copies = $isSeriesOrComp ? 1 : max(1, (int)$purchaseReturnItem['quantity']);
+            $tagType = 'GOOD';
+        } elseif ($returnItemId > 0) {
+            Session::setFlash('warning', 'The selected customer return QR source is invalid.');
+            Response::redirect(url('warehouse/labels?history_tab=returns'));
+            return;
+        }
 
         // A warehouse return must have one QR generation lifecycle. Once its
         // generated QR has been inwarded, block creating another QR set for
         // the same return item/variant.
-        if (in_array($sourceType, ['return', 'returns'], true) && $sourceId > 0 && $variantId > 0) {
+        if ($returnSource !== 'purchase' && in_array($sourceType, ['return', 'returns'], true) && $sourceId > 0 && $variantId > 0) {
             $returnQrInwarded = Database::fetchOne(
                 "SELECT id FROM stock_transactions
                  WHERE variant_id = ? AND reference_type = 'warehouse_returns'
@@ -12555,7 +12818,10 @@ class WarehouseController {
         }
 
         // Generate QR labels
-        Response::redirect(url("warehouse/labels?source_type={$sourceType}&source_id={$sourceId}&variant_id={$variantId}&tag_type={$tagType}&copies={$copies}&reason={$reason}&view=generate"));
+        $returnParams = $returnSource === 'purchase'
+            ? '&return_source=purchase&return_item_id=' . $returnItemId . '&return_id=' . $sourceId . '&return_variant_id=' . $variantId . '&warehouse_id=' . (int)$purchaseReturnItem['warehouse_id'] . '&history_tab=returns'
+            : '';
+        Response::redirect(url("warehouse/labels?source_type={$sourceType}&source_id={$sourceId}&variant_id={$variantId}&tag_type={$tagType}&copies={$copies}&reason={$reason}&view=generate{$returnParams}"));
     }
 
     /**
@@ -12563,6 +12829,9 @@ class WarehouseController {
      */
     public function confirmStickeredInward(): void {
         $isReturnInward = ($_POST['return_inward'] ?? '0') === '1';
+        $returnSource = trim((string)($_POST['return_source'] ?? ''));
+        $isDirectPurchaseReturnInward = $isReturnInward && $returnSource === 'purchase';
+        $returnItemId = (int)($_POST['return_item_id'] ?? 0);
         $canInwardStock = hasPermission('wh_labels', 'create') || hasPermission('inward', 'verify') || hasPermission('inward', 'create') || hasPermission('purchases', 'receive') || (function_exists('isAdmin') && isAdmin());
         $canInwardReturn = hasPermission('returns', 'classify') || hasPermission('returns', 'receive') || hasPermission('wh_labels', 'create') || $canInwardStock;
         if ($isReturnInward ? !$canInwardReturn : !$canInwardStock) {
@@ -12601,6 +12870,10 @@ class WarehouseController {
             $tagCode = strtoupper(trim((string)$tagCode));
             if ($tagCode === '' || strlen($tagCode) > 100 || !preg_match('/^[\p{L}\p{N}_-]+$/u', $tagCode)) {
                 Response::json(['success' => false, 'message' => 'The selected QR sticker list contains an invalid QR code.'], 400);
+                return;
+            }
+            if ($isDirectPurchaseReturnInward && !str_starts_with($tagCode, 'R')) {
+                Response::json(['success' => false, 'message' => 'Direct customer return labels must use an R-prefixed QR code.'], 400);
                 return;
             }
             if (isset($normalizedTagCodes[$tagCode])) {
@@ -12650,15 +12923,32 @@ class WarehouseController {
         // complete returned quantity, not only the number of selected labels.
         $returnItem = null;
         if ($isReturnInward && $poId > 0) {
-            $returnItem = Database::fetchOne(
-                "SELECT id, returned_qty, good_qty, damaged_qty, classification
-                 FROM warehouse_return_items
-                 WHERE warehouse_return_id = ? AND variant_id = ?
-                 ORDER BY id DESC LIMIT 1",
-                [$poId, $variantId]
-            );
-            if ($returnItem && $isSeriesOrComp) {
-                $quantity = max($quantity, (float)($returnItem['returned_qty'] ?? 0));
+            if ($isDirectPurchaseReturnInward) {
+                $returnItem = Database::fetchOne(
+                    "SELECT ri.id, ri.quantity, ri.return_id, r.return_number, r.warehouse_id
+                     FROM return_items ri
+                     JOIN returns r ON r.id = ri.return_id
+                     WHERE ri.id = ? AND ri.return_id = ? AND ri.variant_id = ?
+                       AND r.source_type = 'WAREHOUSE_PURCHASE'
+                       AND ri.item_condition = 'GOOD' AND ri.destination = 'AVAILABLE'",
+                    [$returnItemId, $poId, $variantId]
+                );
+                if (!$returnItem || (int)$returnItem['warehouse_id'] !== $warehouseId) {
+                    Response::json(['success' => false, 'message' => 'The selected direct customer return item is unavailable for inward.'], 404);
+                    return;
+                }
+                $quantity = (float)$returnItem['quantity'];
+            } else {
+                $returnItem = Database::fetchOne(
+                    "SELECT id, returned_qty, good_qty, damaged_qty, classification
+                     FROM warehouse_return_items
+                     WHERE warehouse_return_id = ? AND variant_id = ?
+                     ORDER BY id DESC LIMIT 1",
+                    [$poId, $variantId]
+                );
+                if ($returnItem && $isSeriesOrComp) {
+                    $quantity = max($quantity, (float)($returnItem['returned_qty'] ?? 0));
+                }
             }
         }
 
@@ -12711,11 +13001,62 @@ class WarehouseController {
                 Database::beginTransaction();
                 $packTransactionStarted = true;
             }
+            if ($isDirectPurchaseReturnInward) {
+                $lockedReturnItem = Database::fetchOne(
+                    "SELECT ri.id, ri.quantity, ri.item_condition, ri.destination, r.return_number, r.warehouse_id
+                     FROM return_items ri
+                     JOIN returns r ON r.id = ri.return_id
+                     WHERE ri.id = ? AND ri.return_id = ? AND ri.variant_id = ?
+                       AND r.source_type = 'WAREHOUSE_PURCHASE'
+                     FOR UPDATE",
+                    [$returnItemId, $poId, $variantId]
+                );
+                if (
+                    !$lockedReturnItem
+                    || strtoupper((string)$lockedReturnItem['item_condition']) !== 'GOOD'
+                    || strtoupper((string)$lockedReturnItem['destination']) !== 'AVAILABLE'
+                    || (int)$lockedReturnItem['warehouse_id'] !== $warehouseId
+                ) {
+                    throw new DomainException('The selected direct customer return item is unavailable for inward.');
+                }
+
+                $alreadyInwarded = Database::fetchOne(
+                    "SELECT id FROM stock_transactions
+                     WHERE reference_type = 'warehouse_purchase_return_items' AND reference_id = ?
+                       AND variant_id = ? AND transaction_type = 'RETURN_INWARD'
+                     LIMIT 1 FOR UPDATE",
+                    [$returnItemId, $variantId]
+                );
+                if ($alreadyInwarded) {
+                    throw new DomainException('This customer return item has already been inwarded.');
+                }
+
+                $legacyStockCredit = Database::fetchOne(
+                    "SELECT id FROM stock_transactions
+                     WHERE reference_type = 'returns' AND reference_id = ?
+                       AND variant_id = ? AND transaction_type = 'RETURN_GOOD'
+                     LIMIT 1 FOR UPDATE",
+                    [$poId, $variantId]
+                );
+                if ($legacyStockCredit) {
+                    throw new DomainException('This customer return was already added to stock before QR inward was enabled.');
+                }
+
+                $expectedLabelCount = $isSeriesOrComp ? 1 : (int)$lockedReturnItem['quantity'];
+                if (count($tagCodes) !== $expectedLabelCount) {
+                    throw new DomainException('Select all generated return QR labels before inwarding this returned item.');
+                }
+                $returnItem = $lockedReturnItem;
+                $quantity = (float)$lockedReturnItem['quantity'];
+            }
             foreach ($tagCodes as $tagCode) {
                 $qrRecord = Database::fetchOne(
                     "SELECT id, variant_id, warehouse_id, pack_quantity, series_end_code, inwarded_at FROM warehouse_qr_codes WHERE qr_code = ? FOR UPDATE",
                     [$tagCode]
                 );
+                if ($isDirectPurchaseReturnInward && !$qrRecord) {
+                    throw new DomainException("Return QR code {$tagCode} has not been generated for warehouse inward.");
+                }
                 if ($qrRecord) {
                     if ($qrRecord['inwarded_at'] !== null) {
                         throw new DomainException("QR code {$tagCode} has already been inwarded.");
@@ -12752,7 +13093,11 @@ class WarehouseController {
                 $quantity = $aggregatePackQuantity;
             }
             $typeLabel = $isComp ? "Complementary Product" : ($isSeries ? "Master Series Pack" : "Third-Party Product");
-            $inwardNote = !empty($notes) ? $notes : "Third-Party Stickered QR Inward (+{$quantity} pcs) for {$typeLabel} SKU {$variant['sku']}. Tags: {$tagSummary}";
+            $inwardNote = !empty($notes)
+                ? $notes
+                : ($isDirectPurchaseReturnInward
+                    ? "Direct Purchase Return QR Inward (+{$quantity} pcs) for {$returnItem['return_number']} SKU {$variant['sku']}. Tags: {$tagSummary}"
+                    : "Third-Party Stickered QR Inward (+{$quantity} pcs) for {$typeLabel} SKU {$variant['sku']}. Tags: {$tagSummary}");
 
             if ($isSeriesOrComp) {
                 $allInwarded = Database::fetchAll(
@@ -12778,8 +13123,8 @@ class WarehouseController {
                 'AVAILABLE',
                 $quantity,
                 $isReturnInward ? 'RETURN_INWARD' : 'PURCHASE_INWARD',
-                $isReturnInward ? 'warehouse_returns' : 'THIRD_PARTY_STICKERED',
-                $poId ?: $sellerId,
+                $isDirectPurchaseReturnInward ? 'warehouse_purchase_return_items' : ($isReturnInward ? 'warehouse_returns' : 'THIRD_PARTY_STICKERED'),
+                $isDirectPurchaseReturnInward ? $returnItemId : ($poId ?: $sellerId),
                 $userId,
                 $inwardNote
             );
@@ -12815,7 +13160,9 @@ class WarehouseController {
             // If regular form POST (non-AJAX)
             if (!empty($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') === false && empty($_POST['is_ajax'])) {
                 Session::flash('success', $successMsg);
-                Response::redirect(url('warehouse/labels?source_type=' . ($isReturnInward ? 'returns' : 'tp_purchase') . '&variant_id=' . $variantId));
+                Response::redirect($isDirectPurchaseReturnInward
+                    ? url('warehouse/labels?history_tab=returns')
+                    : url('warehouse/labels?source_type=' . ($isReturnInward ? 'returns' : 'tp_purchase') . '&variant_id=' . $variantId));
                 return;
             }
 

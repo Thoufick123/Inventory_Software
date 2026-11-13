@@ -27,7 +27,11 @@ class ProductionBatch {
                     po.vehicle_number,
                     po.dispatch_date,
                     po.notes as outward_notes,
-                    u_disp.full_name as dispatched_by_name
+                    u_disp.full_name as dispatched_by_name,
+                    p_bill.bill_number,
+                    p_bill.total_amount as bill_total_amount,
+                    p_bill.tax_amount as bill_tax_amount,
+                    p_bill.payment_status as bill_payment_status
              FROM production_batches pb
              LEFT JOIN production_programs pp ON pb.program_id = pp.id
              LEFT JOIN products p ON pp.product_id = p.id
@@ -37,6 +41,7 @@ class ProductionBatch {
              LEFT JOIN users u_appr ON pb.approved_by = u_appr.id
              LEFT JOIN production_outwards po ON po.production_batch_id = pb.id
              LEFT JOIN users u_disp ON po.created_by = u_disp.id
+             LEFT JOIN production_bills p_bill ON pb.production_bill_id = p_bill.id
              WHERE pb.id = ?",
             [$id]
         );
@@ -93,7 +98,11 @@ class ProductionBatch {
                        po.vehicle_number,
                        po.dispatch_date,
                        po.notes as outward_notes,
-                       u_disp.full_name as dispatched_by_name
+                       u_disp.full_name as dispatched_by_name,
+                       p_bill.bill_number,
+                       p_bill.total_amount as bill_total_amount,
+                       p_bill.tax_amount as bill_tax_amount,
+                       p_bill.payment_status as bill_payment_status
                 FROM production_batches pb
                 LEFT JOIN production_programs pp ON pb.program_id = pp.id
                 LEFT JOIN products p ON pp.product_id = p.id
@@ -103,6 +112,7 @@ class ProductionBatch {
                 LEFT JOIN users u_appr ON pb.approved_by = u_appr.id
                 LEFT JOIN production_outwards po ON po.production_batch_id = pb.id
                 LEFT JOIN users u_disp ON po.created_by = u_disp.id
+                LEFT JOIN production_bills p_bill ON pb.production_bill_id = p_bill.id
                 WHERE 1=1";
         $params = [];
 

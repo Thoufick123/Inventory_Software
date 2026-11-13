@@ -15,8 +15,8 @@
             <h5 class="card-title mb-0 fw-bold text-danger">
                 <i class="bi bi-qr-code-scan me-2"></i><?= $isSupplyLabel ? 'Damaged Garment Supply QR Label' : 'Damaged Fabric Piece QR Label' ?>
             </h5>
-            <button type="button" class="btn btn-outline-dark btn-sm fw-semibold" onclick="printDamageRecordQrLabel()">
-                <i class="bi bi-printer me-1"></i> Print Label Sticker
+            <button type="button" class="btn btn-danger btn-sm fw-bold text-white shadow-sm px-3 d-inline-flex align-items-center gap-1.5" onclick="printDamageRecordQrLabel()" style="background-color: #dc3545 !important; border-color: #dc3545 !important; color: #ffffff !important;">
+                <i class="bi bi-printer-fill me-1" style="color: #ffffff !important;"></i> <span style="color: #ffffff !important;">Print Label Sticker</span>
             </button>
         </div>
         <div class="card-body">
@@ -97,12 +97,26 @@
         function printDamageRecordQrLabel() {
             const card = document.getElementById('printableDamageSticker');
             if (!card) return;
-            const printWin = window.open('', '_blank', 'width=380,height=300');
+            const printWin = window.open('', '_blank', 'width=420,height=340');
             if (!printWin) {
                 alert('Please allow popups to print label.');
                 return;
             }
             const clone = card.cloneNode(true);
+
+            // If QR was rendered as a canvas, convert to img dataURL for printing
+            const origCanvas = card.querySelector('#damageRecordQr canvas');
+            const clonedQr = clone.querySelector('#damageRecordQr');
+            if (origCanvas && clonedQr) {
+                clonedQr.innerHTML = '';
+                const img = document.createElement('img');
+                img.src = origCanvas.toDataURL('image/png');
+                img.style.width = '100%';
+                img.style.height = '100%';
+                img.style.objectFit = 'contain';
+                clonedQr.appendChild(img);
+            }
+
             const cardHtml = clone.outerHTML;
             printWin.document.open();
             printWin.document.write(`
@@ -112,13 +126,17 @@
                     <title>Damage QR Label Print</title>
                     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
                     <style>
-                        body { margin: 0; padding: 10px; font-family: sans-serif; background: #fff; }
-                        #printableDamageSticker { width: 270px; border: 1.5px solid #000 !important; padding: 8px 10px; border-radius: 6px; }
+                        body { margin: 0; padding: 10px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #fff; }
+                        #printableDamageSticker { width: 295px; border: 1.5px solid #dc3545 !important; padding: 8px 10px; border-radius: 6px; background-color: #fff8f8; }
                         .qr-box { width: 72px; height: 72px; }
-                        .qr-box img, .qr-box canvas { width: 100% !important; height: 100% !important; }
+                        .qr-box img, .qr-box canvas { width: 100% !important; height: 100% !important; display: block; }
+                        @media print {
+                            body { padding: 0; margin: 0; }
+                            #printableDamageSticker { page-break-inside: avoid; }
+                        }
                     </style>
                 </head>
-                <body onload="window.print(); setTimeout(() => window.close(), 500);">
+                <body onload="setTimeout(() => { window.print(); setTimeout(() => window.close(), 600); }, 250);">
                     ${cardHtml}
                 </body>
                 </html>

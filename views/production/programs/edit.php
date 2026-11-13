@@ -401,7 +401,10 @@
                     <div class="mb-3">
                         <label class="form-label small fw-bold text-dark required">Input Type <span class="text-danger">*</span></label>
                         <select name="attr_type" id="attrModalType" class="form-select form-select-sm" onchange="handleAttrTypeChange(this.value)">
-                            <option value="MULTI_SELECT" selected>Multiple Checkbox Pills / Sizes (Image 2 style)</option>
+                            <option value="MULTI_SELECT" selected>Multiple Checkbox Pills / Sizes (Multi-Select)</option>
+                            <option value="SELECT">Dropdown Selection (Single Select)</option>
+                            <option value="TEXT">Text Field</option>
+                            <option value="NUMBER">Number Field</option>
                         </select>
                     </div>
 
@@ -573,11 +576,25 @@ function addProgramRollRow(rollData = null) {
     const subSubcategoryOptionsHtml = buildSubSubcategoryOptionsHtml(subcatId, subSubcatId);
 
     rowDiv.innerHTML = `
-        <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
-            <span class="badge bg-primary-subtle text-primary border fw-semibold roll-badge-num px-2.5 py-1.5" style="font-size: 12px;">Roll #${idx}</span>
+        <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-primary-subtle text-primary border fw-semibold roll-badge-num px-2.5 py-1.5" style="font-size: 12px;">Roll #${idx}</span>
+                <span class="badge bg-success-subtle text-success border font-monospace px-2.5 py-1.5 roll-scanned-badge ${rollData?.allocated_qr_codes ? '' : 'd-none'}" id="roll_scanned_badge_${idx}" style="font-size: 11px;">
+                    <i class="bi bi-qr-code me-1"></i>Label: <strong id="roll_scanned_code_label_${idx}">${escapeHtml(rollData?.allocated_qr_codes || '')}</strong>
+                </span>
+            </div>
             <button type="button" class="btn btn-sm btn-outline-danger p-1 px-2.5 btn-remove-roll fw-semibold" onclick="removeProgramRollRow(${idx})" title="Remove Roll">
                 <i class="bi bi-trash me-1"></i> Remove
             </button>
+        </div>
+
+        <div id="roll_scanned_banner_${idx}" class="p-2 px-3 bg-success-subtle border border-success-subtle rounded-2 small font-monospace text-success fw-bold d-flex align-items-center justify-content-between mb-3 ${rollData?.allocated_qr_codes ? '' : 'd-none'}">
+            <div class="d-flex align-items-center gap-2">
+                <i class="bi bi-upc-scan fs-6"></i>
+                <span>Scanned QR Label ID:</span>
+                <span class="badge bg-success text-white px-2 py-1 font-monospace" style="font-size: 12px;" id="roll_scanned_banner_code_${idx}">${escapeHtml(rollData?.allocated_qr_codes || '')}</span>
+            </div>
+            <span class="badge bg-white text-success border border-success-subtle px-2 py-0.5" style="font-size: 10px;">Individual Roll Verified</span>
         </div>
 
         <div class="mb-4">
@@ -803,6 +820,23 @@ function renderRollPieces(counterId) {
     const quantityInput = document.getElementById('roll_qty_' + counterId);
     if (quantityInput) quantityInput.readOnly = selectedCodes.size > 0;
     if (badge) badge.textContent = `${selectedCodes.size} Selected`;
+
+    const scannedBadge = document.getElementById('roll_scanned_badge_' + counterId);
+    const scannedLabel = document.getElementById('roll_scanned_code_label_' + counterId);
+    const scannedBanner = document.getElementById('roll_scanned_banner_' + counterId);
+    const scannedBannerCode = document.getElementById('roll_scanned_banner_code_' + counterId);
+
+    if (selectedCodes.size > 0) {
+        const codeList = [...selectedCodes].join(', ');
+        if (scannedLabel) scannedLabel.textContent = codeList;
+        if (scannedBadge) scannedBadge.classList.remove('d-none');
+        if (scannedBannerCode) scannedBannerCode.textContent = codeList;
+        if (scannedBanner) scannedBanner.classList.remove('d-none');
+    } else {
+        if (scannedBadge) scannedBadge.classList.add('d-none');
+        if (scannedBanner) scannedBanner.classList.add('d-none');
+    }
+
     if (!rollObj) {
         container.innerHTML = '<span class="text-muted small fst-italic">Select a fabric roll to load piece QR codes...</span>';
         return;
@@ -1752,46 +1786,63 @@ function processScannedRollCode(rawCode) {
         return false;
     }
 
-    let existingCard = null;
-    let emptyCard = null;
-    document.querySelectorAll('.program-roll-card').forEach(card => {
-        const sel = card.querySelector('.roll-select');
-        if (sel) {
-            if (String(sel.value) === String(matchedRoll.id)) {
-                existingCard = card;
-            } else if (!sel.value && !emptyCard) {
-                emptyCard = card;
+    // Check if this specific piece code is ALREADY scanned in any roll card
+    const targetPieceCode = matchedPiece ? String(matchedPiece.code || '').toUpperCase() : null;
+    if (targetPieceCode) {
+        let isAlreadyScanned = false;
+        let alreadyScannedCardNum = '';
+        document.querySelectorAll('.program-roll-card').forEach(c => {
+            const cId = c.id.match(/\d+$/)?.[0];
+            const allocInp = document.getElementById('roll_allocated_qrs_' + cId);
+            if (allocInp && allocInp.value) {
+                const codes = allocInp.value.split(',').map(s => s.trim().toUpperCase());
+                if (codes.includes(targetPieceCode)) {
+                    isAlreadyScanned = true;
+                    alreadyScannedCardNum = cId;
+                }
             }
+        });
+        if (isAlreadyScanned) {
+            showScanFeedback(`Piece QR <strong>${escapeHtml(targetPieceCode)}</strong> is already allocated in Roll #${alreadyScannedCardNum}.`, 'warning');
+            return false;
         }
-    });
+    }
 
-    let otherRowsUsed = 0;
+    // Check remaining total stock across all rows for this roll
+    let totalUsedAcrossAllCards = 0;
     document.querySelectorAll('.program-roll-card').forEach(card => {
-        if (card === existingCard) return;
         const sel = card.querySelector('.roll-select');
         const quantity = card.querySelector('.roll-qty-input');
         if (sel && String(sel.value) === String(matchedRoll.id)) {
-            otherRowsUsed += parseInt(quantity?.value || '0', 10) || 0;
+            totalUsedAcrossAllCards += parseInt(quantity?.value || '0', 10) || 0;
         }
     });
-    if (availStock - otherRowsUsed <= 0) {
-        showScanFeedback(`Roll <strong>${escapeHtml(matchedRoll.roll_number)}</strong> has no remaining stock for another QR allocation.`, 'warning');
+    if (availStock - totalUsedAcrossAllCards <= 0) {
+        showScanFeedback(`Roll <strong>${escapeHtml(matchedRoll.roll_number)}</strong> has no remaining stock for another roll allocation.`, 'warning');
         return false;
     }
 
-    let targetCard = existingCard;
-    if (emptyCard) {
-        if (!targetCard) {
-            targetCard = emptyCard;
+    // User requirement: Every roll scan creates a SEPARATE new roll row!
+    // Check if there is an empty unconfigured card (e.g. initial empty card)
+    let emptyCard = null;
+    document.querySelectorAll('.program-roll-card').forEach(card => {
+        const sel = card.querySelector('.roll-select');
+        if (sel && !sel.value && !emptyCard) {
+            emptyCard = card;
         }
-    }
+    });
 
-    if (!targetCard) {
+    let targetCard = null;
+    if (emptyCard) {
+        targetCard = emptyCard;
+    } else {
+        // ALWAYS create a separate new roll card for each scan
         addProgramRollRow({
             seller_roll_id: matchedRoll.id,
             roll_qty: 1,
             roll_weight: matchedRoll.weight,
-            roll_price: matchedRoll.price
+            roll_price: matchedRoll.price,
+            allocated_qr_codes: targetPieceCode || ''
         });
         targetCard = document.getElementById('program_roll_card_' + rollCounter);
     }
@@ -1800,33 +1851,41 @@ function processScannedRollCode(rawCode) {
     const counterId = cardIdMatch ? parseInt(cardIdMatch[0], 10) : 0;
     const select = targetCard?.querySelector('.roll-select');
     if (!counterId || !select) return false;
-    if (String(select.value) !== String(matchedRoll.id)) {
-        select.value = String(matchedRoll.id);
-        handleRollRowChange(select, counterId, true);
-    } else {
-        handleRollRowChange(select, counterId, false);
-    }
+
+    select.value = String(matchedRoll.id);
+    handleRollRowChange(select, counterId, true);
+
+    // Enforce Quantity = 1 for this scanned roll item
+    const quantity = document.getElementById('roll_qty_' + counterId);
+    if (quantity) quantity.value = '1';
 
     if (matchedPiece) {
-        if (!updateRollPieceSelection(counterId, matchedPiece.code, true)) return false;
-    } else if (Array.isArray(matchedRoll.pieces) && matchedRoll.pieces.length) {
-        selectAllRollPieces(counterId);
-    } else {
-        const quantity = document.getElementById('roll_qty_' + counterId);
-        if (quantity) quantity.value = String(Math.max(0, availStock - otherRowsUsed));
-        syncRollStockAllocations();
+        const allocInput = document.getElementById('roll_allocated_qrs_' + counterId);
+        if (allocInput) allocInput.value = matchedPiece.code;
     }
 
-    const selectedQuantity = parseInt(document.getElementById('roll_qty_' + counterId)?.value || '0', 10) || 0;
-    if (selectedQuantity <= 0) {
-        showScanFeedback(`No available piece QR labels remain for roll <strong>${escapeHtml(matchedRoll.roll_number)}</strong>.`, 'warning');
-        return false;
+    // Render piece list and sync stock
+    renderRollPieces(counterId);
+    syncRollStockAllocations();
+
+    // Show scanned label badge & banner prominently on this roll card
+    const labelCode = matchedPiece ? matchedPiece.code : (matchedRoll.roll_number || code);
+    const scannedBadge = document.getElementById('roll_scanned_badge_' + counterId);
+    const scannedLabel = document.getElementById('roll_scanned_code_label_' + counterId);
+    const scannedBanner = document.getElementById('roll_scanned_banner_' + counterId);
+    const scannedBannerCode = document.getElementById('roll_scanned_banner_code_' + counterId);
+
+    if (scannedBadge && scannedLabel) {
+        scannedLabel.textContent = labelCode;
+        scannedBadge.classList.remove('d-none');
+    }
+    if (scannedBanner && scannedBannerCode) {
+        scannedBannerCode.textContent = labelCode;
+        scannedBanner.classList.remove('d-none');
     }
 
     showScanFeedback(
-        matchedPiece
-            ? `✓ Added piece QR <strong>${escapeHtml(matchedPiece.code)}</strong>; Roll #${counterId} quantity is now ${selectedQuantity}.`
-            : `✓ Scanned roll <strong>${escapeHtml(matchedRoll.roll_number)}</strong>; selected ${selectedQuantity} available piece QR(s).`,
+        `✓ Created separate Roll #${counterId} for QR <strong>${escapeHtml(labelCode)}</strong> (Qty: 1 pcs).`,
         'success'
     );
     targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1921,6 +1980,26 @@ function stopCameraScanner() {
 // =========================================================================
 // DYNAMIC CATEGORY ATTRIBUTES & SPECIFICATIONS LOGIC
 // =========================================================================
+function getCurrentCardAttributeValues(idx) {
+    const card = document.getElementById('program_roll_card_' + idx);
+    if (!card) return {};
+    const values = {};
+    card.querySelectorAll(`[name^="rolls[${idx}][attributes]"]`).forEach(input => {
+        const match = input.name.match(/\[attributes\]\[([^\]]+)\]/);
+        if (!match) return;
+        const attrKey = match[1];
+        if (input.type === 'checkbox') {
+            if (input.checked) {
+                if (!values[attrKey]) values[attrKey] = [];
+                values[attrKey].push(input.value);
+            }
+        } else if (input.value !== '') {
+            values[attrKey] = input.value;
+        }
+    });
+    return values;
+}
+
 function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '', savedValues = null) {
     const container = document.getElementById('roll_attrs_container_' + idx);
     if (!container) return;
@@ -1933,7 +2012,7 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
     }
 
     container.innerHTML = `<div class="py-3 text-center text-muted small" style="font-size: 11px;">
-        <span class="spinner-border spinner-border-sm text-primary me-1" role="status"></span> Loading category attributes &amp; sizes...
+        <span class="spinner-border spinner-border-sm text-primary me-1" role="status"></span> Loading category attributes &amp; specifications...
     </div>`;
 
     let url = `${baseUrl}/api/categories/attributes/${encodeURIComponent(catId)}`;
@@ -1967,10 +2046,11 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
                 const isReq = attr.is_required == 1;
                 const isSize = /^(SIZE|SIZES)$/i.test(attr.attr_name.trim());
                 const isColor = /^(COLOR|COLORS)$/i.test(attr.attr_name.trim());
-                // Fabric roll colors are tracked per-roll on the roll card, skip rendering COLOR attribute in roll cutting attributes
-                if (isColor) return;
                 const cleanAttrName = isSize ? 'SIZE' : attr.attr_name.replace(/[^a-zA-Z0-9_]/g, '_');
                 const opts = attr.attr_options ? attr.attr_options.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+                // Only skip COLOR if it has zero configured options
+                if (isColor && opts.length === 0) return;
 
                 // Skip empty select/multi_select attributes with no options
                 if (opts.length === 0 && (attr.attr_type === 'MULTI_SELECT' || attr.attr_type === 'SELECT')) {
@@ -2003,6 +2083,11 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
                                 <span>${attrLabelTitle}</span>
                                 ${isReq ? '<span class="text-danger">*</span>' : ''}
                             </label>
+                            <div class="d-flex align-items-center gap-1">
+                                <button type="button" class="btn btn-xs btn-outline-primary py-0.5 px-2 fw-semibold" style="font-size: 11px;" onclick="openQuickAddOptionModal(${idx}, '${escapeHtml(inputAttrName)}', ${attr.id || 0})" title="Add new option to ${escapeHtml(inputAttrName)}">
+                                    <i class="bi bi-plus me-0.5"></i>+ Add Option
+                                </button>
+                            </div>
                         </div>
                         <div class="p-3 px-4 border rounded-3 bg-light d-flex flex-wrap gap-2 align-items-center" id="attr_chips_container_${idx}_${cleanAttrName}" style="min-height: 50px;">`;
 
@@ -2223,8 +2308,6 @@ function handleAttrTypeChange(type) {
 
 function refreshProgramRollAttributePanels(catId, subcatId = '', subsubcatId = '') {
     const cards = document.querySelectorAll('.program-roll-card');
-    let matched = false;
-
     cards.forEach(card => {
         const cMatch = card.id.match(/\d+$/);
         if (!cMatch) return;
@@ -2235,31 +2318,17 @@ function refreshProgramRollAttributePanels(catId, subcatId = '', subsubcatId = '
         const cSubSub = card.querySelector('.roll-subsubcat-select')?.value || '';
 
         const sameCategory = String(cCat) === String(catId);
-        const exactHierarchyMatch = sameCategory && (!subcatId || String(cSub) === String(subcatId)) && (!subsubcatId || String(cSubSub) === String(subsubcatId));
-        const categoryLevelMatch = sameCategory && (!subcatId || String(cSub) === String(subcatId) || !cSub || String(cSub) === '');
-
-        if (exactHierarchyMatch || (sameCategory && categoryLevelMatch)) {
-            matched = true;
-            loadRollCategoryAttributes(cIdx, cCat, cSub, cSubSub);
+        if (sameCategory) {
+            const currentVals = getCurrentCardAttributeValues(cIdx);
+            loadRollCategoryAttributes(cIdx, cCat, cSub, cSubSub, currentVals);
         }
     });
-
-    if (!matched && catId) {
-        cards.forEach(card => {
-            const cMatch = card.id.match(/\d+$/);
-            if (!cMatch) return;
-            const cIdx = parseInt(cMatch[0], 10);
-            const cCat = card.querySelector('.roll-cat-select')?.value || '';
-            if (String(cCat) === String(catId)) {
-                loadRollCategoryAttributes(cIdx, cCat, card.querySelector('.roll-subcat-select')?.value || '', card.querySelector('.roll-subsubcat-select')?.value || '');
-            }
-        });
-    }
 }
 
 function handleSaveCategoryAttribute(e) {
     e.preventDefault();
     const btn = document.getElementById('btnSubmitAttrModal');
+    const targetIdx = document.getElementById('attrModalTargetRowIdx').value;
     const catId = document.getElementById('attrModalCategoryId').value;
     const subcatId = document.getElementById('attrModalSubcategoryId').value;
     const subsubcatId = document.getElementById('attrModalSubSubcategoryId').value;
@@ -2302,8 +2371,21 @@ function handleSaveCategoryAttribute(e) {
         btn.innerHTML = '<i class="bi bi-check2-circle me-1"></i> Save Attribute';
 
         if (data.success) {
-            const modal = bootstrap.Modal.getInstance(document.getElementById('modalQuickAddCategoryAttribute'));
+            const modalEl = document.getElementById('modalQuickAddCategoryAttribute');
+            const modal = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl);
             if (modal) modal.hide();
+
+            // 1. Immediately reload target row attributes with currently selected values preserved
+            if (targetIdx) {
+                const targetCard = document.getElementById('program_roll_card_' + targetIdx);
+                const cCat = targetCard?.querySelector('.roll-cat-select')?.value || catId;
+                const cSub = targetCard?.querySelector('.roll-subcat-select')?.value || subcatId;
+                const cSubSub = targetCard?.querySelector('.roll-subsubcat-select')?.value || subsubcatId;
+                const currentVals = getCurrentCardAttributeValues(targetIdx);
+                loadRollCategoryAttributes(targetIdx, cCat, cSub, cSubSub, currentVals);
+            }
+
+            // 2. Also refresh all other matching roll cards
             refreshProgramRollAttributePanels(catId, subcatId, subsubcatId);
         } else {
             alert(data.message || 'Error saving category attribute.');

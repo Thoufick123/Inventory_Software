@@ -5808,7 +5808,8 @@ class ProductionController {
             "SELECT id FROM subcategories WHERE id = ? AND category_id = ?",
             [$subcategoryId, $categoryId]
         )) {
-            return null;
+            $subcategoryId = null;
+            $subSubcategoryId = null;
         }
         if ($subSubcategoryId !== null && (
             $subcategoryId === null
@@ -5817,7 +5818,7 @@ class ProductionController {
                 [$subSubcategoryId, $subcategoryId]
             )
         )) {
-            return null;
+            $subSubcategoryId = null;
         }
 
         return [
@@ -5825,6 +5826,34 @@ class ProductionController {
             'subcategory_id' => $subcategoryId,
             'sub_subcategory_id' => $subSubcategoryId,
         ];
+    }
+
+    private function ensureProductionCategoryAttributesTable(): void {
+        static $ensured = false;
+        if ($ensured) return;
+        try {
+            Database::execute("
+                CREATE TABLE IF NOT EXISTS `production_category_attributes` (
+                  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+                  `category_id` int(10) unsigned NOT NULL,
+                  `subcategory_id` int(10) unsigned DEFAULT NULL,
+                  `sub_subcategory_id` int(10) unsigned DEFAULT NULL,
+                  `attr_name` varchar(100) NOT NULL,
+                  `attr_type` enum('TEXT','NUMBER','SELECT','MULTI_SELECT') NOT NULL DEFAULT 'TEXT',
+                  `attr_options` text DEFAULT NULL,
+                  `is_required` tinyint(1) NOT NULL DEFAULT 0,
+                  `sort_order` int(11) NOT NULL DEFAULT 0,
+                  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+                  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+                  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+                  PRIMARY KEY (`id`),
+                  KEY `idx_production_cat_attrs` (`category_id`,`subcategory_id`,`sub_subcategory_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+            ");
+            $ensured = true;
+        } catch (\Throwable $e) {
+            // Table creation attempted
+        }
     }
 
     private function findProductionCategoryAttribute(int $attributeId, string $attributeName, ?array $scope = null): ?array {
@@ -5856,6 +5885,7 @@ class ProductionController {
      */
     public function ajaxGetCategoryAttributes(int $categoryId): void {
         try {
+            $this->ensureProductionCategoryAttributesTable();
             $subcategoryId = !empty($_GET['subcategory_id']) ? (int)$_GET['subcategory_id'] : null;
             $subSubcategoryId = !empty($_GET['sub_subcategory_id']) ? (int)$_GET['sub_subcategory_id'] : null;
             $scope = $this->resolveProductionAttributeScope($categoryId, $subcategoryId, $subSubcategoryId);
@@ -5866,10 +5896,37 @@ class ProductionController {
 
             $allSubcatIds = $subcategoryId ? [$subcategoryId] : [];
             $allSubSubcatIds = $subSubcategoryId ? [$subSubcategoryId] : [];
-            $rawAttributes = Database::fetchAll(
-                "SELECT * FROM production_category_attributes WHERE category_id = ? AND is_active = 1",
-                [$categoryId]
-            );
+            
+            $rawAttributes = [];
+            try {
+                $rawAttributes = Database::fetchAll(
+                    "SELECT * FROM production_category_attributes WHERE category_id = ? AND is_active = 1",
+                    [$categoryId]
+                );
+            } catch (\Throwable $e) {
+                $rawAttributes = [];
+            }
+
+            // Also check wh_category_attributes and merge any missing category-level specifications
+            try {
+                $whAttributes = Database::fetchAll(
+                    "SELECT * FROM wh_category_attributes WHERE category_id = ? AND is_active = 1",
+                    [$categoryId]
+                );
+                if (!empty($whAttributes)) {
+                    $prodKeys = [];
+                    foreach ($rawAttributes as $pa) {
+                        $pKey = mb_strtoupper(trim($pa['attr_name'])) . '_' . (int)($pa['subcategory_id'] ?? 0) . '_' . (int)($pa['sub_subcategory_id'] ?? 0);
+                        $prodKeys[$pKey] = true;
+                    }
+                    foreach ($whAttributes as $wa) {
+                        $wKey = mb_strtoupper(trim($wa['attr_name'])) . '_' . (int)($wa['subcategory_id'] ?? 0) . '_' . (int)($wa['sub_subcategory_id'] ?? 0);
+                        if (!isset($prodKeys[$wKey])) {
+                            $rawAttributes[] = $wa;
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {}
 
             // Hierarchy matching & override logic:
             // Level 1: Category root (subcategory_id is NULL or 0)
@@ -5981,7 +6038,6 @@ class ProductionController {
 
             $finalAttributes = [];
             $hasSizeAttr = false;
-            $hasColorAttr = false;
 
             foreach ($scopedAttrs as $item) {
                 $attr = $item['data'];
@@ -5991,23 +6047,21 @@ class ProductionController {
                     $hasSizeAttr = true;
                     $attr['attr_name'] = 'SIZE';
 
-                    // If catalog product style exists and has defined sizes, prioritize catalog style's sizes so they match exactly
-                    if (!empty($catalogSizes)) {
-                        $opts = $catalogSizes;
-                    } else {
-                        $opts = !empty($attr['attr_options']) ? array_map('trim', explode(',', $attr['attr_options'])) : [];
-                        $opts = array_values(array_unique(array_filter($opts)));
-                        if (empty($opts)) {
-                            $opts = $defaultSizeCodes;
-                        }
+                    // Merge catalog product sizes WITH user-defined/configured sizes so newly added sizes are preserved!
+                    $userOpts = !empty($attr['attr_options']) ? array_map('trim', explode(',', $attr['attr_options'])) : [];
+                    $mergedOpts = array_values(array_unique(array_filter(array_merge($catalogSizes, $userOpts))));
+                    if (empty($mergedOpts)) {
+                        $mergedOpts = $defaultSizeCodes;
                     }
-                    $attr['attr_options'] = implode(',', $opts);
+                    $attr['attr_options'] = implode(',', $mergedOpts);
                     $attr['attr_type'] = 'MULTI_SELECT';
                     $attr['sort_order'] = 1;
                 } elseif (in_array($attrNameUpper, ['COLOR', 'COLORS', 'COLOR ATTRIBUTE', 'COLOR ATTRIBUTES'], true)) {
-                    // In apparel roll management, fabric roll colors are tracked at the individual roll card level.
-                    // Do not inject or require separate COLOR attribute checkboxes in cutting specifications.
-                    continue;
+                    // If options are configured for COLOR, show it; otherwise skip empty dummy color
+                    if (empty(trim($attr['attr_options'] ?? ''))) {
+                        continue;
+                    }
+                    $attr['attr_type'] = 'MULTI_SELECT';
                 } else {
                     // Suppress empty select/multi_select attributes with zero options
                     if (in_array($attr['attr_type'], ['SELECT', 'MULTI_SELECT'], true) && empty(trim($attr['attr_options'] ?? ''))) {
@@ -6053,6 +6107,7 @@ class ProductionController {
      */
     public function ajaxAddCategoryAttributeOption(): void {
         try {
+            $this->ensureProductionCategoryAttributesTable();
             $attrId = (int)($_POST['attribute_id'] ?? 0);
             $attrName = mb_strtoupper(trim($_POST['attr_name'] ?? ''));
             if (in_array($attrName, ['SIZE', 'SIZES', 'SIZE ATTRIBUTE', 'SIZE ATTRIBUTES', 'SIZES ATTRIBUTE', 'SIZES ATTRIBUTES'], true)) {
@@ -6127,6 +6182,11 @@ class ProductionController {
             $updatedOptsStr = implode(',', $currentOpts);
             Database::execute("UPDATE production_category_attributes SET attr_options = ?, attr_type = 'MULTI_SELECT', updated_at = NOW() WHERE id = ?", [$updatedOptsStr, $attr['id']]);
 
+            // Sync with wh_category_attributes
+            try {
+                Database::execute("UPDATE wh_category_attributes SET attr_options = ?, attr_type = 'MULTI_SELECT', updated_at = NOW() WHERE category_id = ? AND attr_name = ?", [$updatedOptsStr, $attr['category_id'], $attr['attr_name']]);
+            } catch (\Throwable $e) {}
+
             // If attribute is SIZE, also add each added option to sizes table if not present
             if ($attr['attr_name'] === 'SIZE') {
                 foreach ($addedOpts as $szCode) {
@@ -6153,6 +6213,7 @@ class ProductionController {
      */
     public function ajaxDeleteCategoryAttributeOption(): void {
         try {
+            $this->ensureProductionCategoryAttributesTable();
             $attrId = (int)($_POST['attribute_id'] ?? 0);
             $attrName = mb_strtoupper(trim($_POST['attr_name'] ?? ''));
             if (in_array($attrName, ['SIZE', 'SIZES', 'SIZE ATTRIBUTE', 'SIZE ATTRIBUTES', 'SIZES ATTRIBUTE', 'SIZES ATTRIBUTES'], true)) {
@@ -6185,6 +6246,10 @@ class ProductionController {
 
             Database::execute("UPDATE production_category_attributes SET attr_options = ?, updated_at = NOW() WHERE id = ?", [$updatedOptsStr, $attr['id']]);
 
+            try {
+                Database::execute("UPDATE wh_category_attributes SET attr_options = ?, updated_at = NOW() WHERE category_id = ? AND attr_name = ?", [$updatedOptsStr, $attr['category_id'], $attr['attr_name']]);
+            } catch (\Throwable $e) {}
+
             Response::json(['success' => true]);
         } catch (\Throwable $e) {
             Response::json(['success' => false, 'message' => $e->getMessage()], 500);
@@ -6196,6 +6261,7 @@ class ProductionController {
      */
     public function ajaxQuickAddCategoryAttribute(): void {
         try {
+            $this->ensureProductionCategoryAttributesTable();
             $categoryId = (int)($_POST['category_id'] ?? 0);
             $subcategoryId = !empty($_POST['subcategory_id']) ? (int)$_POST['subcategory_id'] : null;
             $subSubcategoryId = !empty($_POST['sub_subcategory_id']) ? (int)$_POST['sub_subcategory_id'] : null;
@@ -6205,7 +6271,7 @@ class ProductionController {
             } elseif (in_array($attrName, ['COLOR', 'COLORS', 'COLOR ATTRIBUTE', 'COLOR ATTRIBUTES'], true)) {
                 $attrName = 'COLOR';
             }
-            $attrType = in_array(strtoupper(trim($_POST['attr_type'] ?? '')), ['TEXT', 'NUMBER', 'SELECT', 'MULTI_SELECT']) ? strtoupper(trim($_POST['attr_type'])) : 'SELECT';
+            $attrType = in_array(strtoupper(trim($_POST['attr_type'] ?? '')), ['TEXT', 'NUMBER', 'SELECT', 'MULTI_SELECT']) ? strtoupper(trim($_POST['attr_type'])) : 'MULTI_SELECT';
             if ($attrName === 'SIZE' || $attrName === 'COLOR') {
                 $attrType = 'MULTI_SELECT';
             }
@@ -6242,8 +6308,7 @@ class ProductionController {
             }
 
             // Check if attribute with the same name already exists for this exact hierarchy scope.
-            // This prevents ghost duplicates while still allowing a parent-level attribute to be reused at a more specific level.
-            $existingSql = "SELECT id FROM production_category_attributes WHERE category_id = ? AND attr_name = ? AND is_active = 1";
+            $existingSql = "SELECT id, attr_options FROM production_category_attributes WHERE category_id = ? AND attr_name = ? AND is_active = 1";
             $existingParams = [$categoryId, $attrName];
             if ($subSubcategoryId) {
                 $existingSql .= " AND COALESCE(subcategory_id, 0) = ? AND COALESCE(sub_subcategory_id, 0) = ?";
@@ -6257,9 +6322,13 @@ class ProductionController {
             }
             $existing = Database::fetchOne($existingSql, $existingParams);
             if ($existing) {
+                $newOptsArray = $formattedOptions ? explode(',', $formattedOptions) : [];
+                $oldOptsArray = !empty($existing['attr_options']) ? explode(',', $existing['attr_options']) : [];
+                $mergedOptions = implode(',', array_values(array_unique(array_filter(array_merge($oldOptsArray, $newOptsArray)))));
+
                 Database::execute(
                     "UPDATE production_category_attributes SET attr_type = ?, attr_options = ?, is_required = ?, is_active = 1, updated_at = NOW() WHERE id = ?",
-                    [$attrType, $formattedOptions, $isRequired, $existing['id']]
+                    [$attrType, $mergedOptions ?: $formattedOptions, $isRequired, $existing['id']]
                 );
                 $attrId = (int)$existing['id'];
             } else {
@@ -6271,6 +6340,30 @@ class ProductionController {
                 );
                 $attrId = (int)Database::lastInsertId();
             }
+
+            // Sync with wh_category_attributes
+            try {
+                $whExisting = Database::fetchOne(
+                    "SELECT id, attr_options FROM wh_category_attributes WHERE category_id = ? AND attr_name = ? AND is_active = 1 LIMIT 1",
+                    [$categoryId, $attrName]
+                );
+                if ($whExisting) {
+                    $whMerged = implode(',', array_values(array_unique(array_filter(array_merge(
+                        !empty($whExisting['attr_options']) ? explode(',', $whExisting['attr_options']) : [],
+                        $formattedOptions ? explode(',', $formattedOptions) : []
+                    )))));
+                    Database::execute(
+                        "UPDATE wh_category_attributes SET attr_type = ?, attr_options = ?, is_required = ?, is_active = 1, updated_at = NOW() WHERE id = ?",
+                        [$attrType, $whMerged ?: $formattedOptions, $isRequired, $whExisting['id']]
+                    );
+                } else {
+                    Database::execute(
+                        "INSERT INTO wh_category_attributes (category_id, subcategory_id, sub_subcategory_id, attr_name, attr_type, attr_options, is_required, sort_order, is_active, created_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, NOW())",
+                        [$categoryId, $subcategoryId, $subSubcategoryId, $attrName, $attrType, $formattedOptions, $isRequired]
+                    );
+                }
+            } catch (\Throwable $e) {}
 
             $savedAttr = Database::fetchOne("SELECT * FROM production_category_attributes WHERE id = ?", [$attrId]);
             Response::json([
@@ -10674,7 +10767,146 @@ class ProductionController {
                 'notes'                    => $notesStr,
             ], $items, $userId);
 
-            Session::flash('success', 'Production batch packed and created successfully.');
+            // Auto-generate Production Bill & Tax Invoice for this packed batch
+            $batch = ProductionBatch::find($batchId);
+            $whId = (int)$_POST['destination_warehouse_id'];
+            $wh = Database::fetchOne("SELECT * FROM warehouses WHERE id = ?", [$whId]);
+            $whName = $wh['name'] ?? 'Central Warehouse';
+            $whAddress = $wh['address'] ?? '';
+            $whPhone = $wh['phone'] ?? '';
+            $whGstin = $wh['gstin'] ?? ($wh['gst_number'] ?? '');
+
+            $prodUnitId = !empty($batch['production_unit_id']) ? (int)$batch['production_unit_id'] : 0;
+            if ($prodUnitId <= 0) {
+                $pRow = Database::fetchOne("SELECT production_unit_id FROM production_programs WHERE id = ?", [$programId]);
+                $prodUnitId = (int)($pRow['production_unit_id'] ?? 0);
+            }
+            if ($prodUnitId <= 0 && class_exists('ProductionUnit')) {
+                $actUnit = ProductionUnit::getActiveFacility();
+                if ($actUnit) $prodUnitId = (int)$actUnit['id'];
+            }
+
+            $grossAmt = 0.0;
+            $discAmt = 0.0;
+            $subTot = 0.0;
+            $cgstTot = 0.0;
+            $sgstTot = 0.0;
+            $igstTot = 0.0;
+            $taxTot = 0.0;
+            $billItemsToInsert = [];
+
+            foreach ($items as $it) {
+                $qty = (int)($it['quantity'] ?? 0);
+                if ($qty <= 0) continue;
+                $vId = (int)($it['variant_id'] ?? 0);
+                $qcItemId = (int)($it['qc_item_id'] ?? 0);
+
+                $vRow = $vId > 0 ? Database::fetchOne("SELECT pv.*, p.name as product_name, p.hsn_code, p.gst_percentage, s.name as size_name, c.name as color_name FROM product_variants pv JOIN products p ON pv.product_id = p.id LEFT JOIN sizes s ON pv.size_id = s.id LEFT JOIN colors c ON pv.color_id = c.id WHERE pv.id = ?", [$vId]) : null;
+                $qcRow = $qcItemId > 0 ? Database::fetchOne("SELECT * FROM qc_items WHERE id = ?", [$qcItemId]) : null;
+
+                $pName = $vRow['product_name'] ?? ($batch['product_name'] ?? 'Finished Product');
+                $sku = $vRow['sku'] ?? trim(($vRow['size_name'] ?? '') . '-' . ($vRow['color_name'] ?? ''));
+                $hsn = !empty($vRow['hsn_code']) ? $vRow['hsn_code'] : '6109';
+                $sName = $vRow['size_name'] ?? ($it['size_name'] ?? '');
+                $cName = $vRow['color_name'] ?? ($it['color_name'] ?? '');
+
+                $mrp = (float)($qcRow['base_price'] ?: ($vRow['mrp'] ?: 0));
+                $unitP = (float)($qcRow['discount_price'] ?: ($qcRow['base_price'] ?: ($vRow['selling_price'] ?: ($vRow['mrp'] ?: 0))));
+                if ($mrp <= 0) $mrp = $unitP;
+                if ($unitP <= 0) $unitP = $mrp;
+
+                $gstR = (float)($vRow['gst_percentage'] ?: 5.0);
+                $itGross = round($mrp * $qty, 2);
+                $itTaxable = round($unitP * $qty, 2);
+                $itDisc = max(0, $itGross - $itTaxable);
+
+                $halfR = round($gstR / 2, 2);
+                $itCgst = round($itTaxable * ($halfR / 100), 2);
+                $itSgst = round($itTaxable * ($halfR / 100), 2);
+                $itTax = $itCgst + $itSgst;
+                $itTotal = $itTaxable + $itTax;
+
+                $grossAmt += $itGross;
+                $discAmt += $itDisc;
+                $subTot += $itTaxable;
+                $cgstTot += $itCgst;
+                $sgstTot += $itSgst;
+                $taxTot += $itTax;
+
+                $billItemsToInsert[] = [
+                    'qc_item_id'     => $qcItemId,
+                    'variant_id'     => $vId,
+                    'product_name'   => $pName,
+                    'sku'            => $sku,
+                    'hsn_code'       => $hsn,
+                    'size_name'      => $sName,
+                    'color_name'     => $cName,
+                    'quantity'       => $qty,
+                    'mrp'            => $mrp,
+                    'unit_price'     => $unitP,
+                    'discount_amount'=> $itDisc,
+                    'discount_pct'   => $itGross > 0 ? round(($itDisc / $itGross) * 100, 3) : 0,
+                    'gst_pct'        => $gstR,
+                    'sgst_rate'      => $halfR,
+                    'cgst_rate'      => $halfR,
+                    'taxable_amount' => $itTaxable,
+                    'cgst_amount'    => $itCgst,
+                    'sgst_amount'    => $itSgst,
+                    'tax_amount'     => $itTax,
+                    'total_amount'   => $itTotal,
+                    'tags'           => is_array($it['piece_tags'] ?? null) ? $it['piece_tags'] : [],
+                ];
+            }
+
+            $billTotal = $subTot + $taxTot;
+            $billNum = 'PB-' . date('Y') . '-' . date('mdHis') . '-' . random_int(10, 99);
+
+            Database::execute(
+                "INSERT INTO production_bills
+                 (bill_number, production_unit_id, buyer_type, company_name, company_address, company_phone, company_gstin,
+                  bill_date, payment_method, payment_status, tax_type, cash_amount, upi_amount,
+                  gross_amount, discount_amount, subtotal, cgst_amount, sgst_amount, igst_amount, tax_amount,
+                  total_amount, notes, created_by)
+                 VALUES (?, ?, 'COMPANY', ?, ?, ?, ?, CURDATE(), 'CREDIT', 'PAID', 'CGST_SGST', 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    $billNum, $prodUnitId > 0 ? $prodUnitId : null, $whName, $whAddress, $whPhone, $whGstin,
+                    $grossAmt, $discAmt, $subTot, $cgstTot, $sgstTot, $igstTot, $taxTot,
+                    $billTotal, 'Automated bill & invoice for batch ' . ($batch['batch_number'] ?? '#' . $batchId), $userId
+                ]
+            );
+            $billId = (int)Database::lastInsertId();
+
+            foreach ($billItemsToInsert as $bi) {
+                Database::execute(
+                    "INSERT INTO production_bill_items
+                     (bill_id, qc_item_id, variant_id, product_name, sku, size_name, color_name, quantity, mrp,
+                      hsn_code, unit_price, discount_percentage, discount_amount, gst_percentage, gst_type, tax_input_type,
+                      sgst_rate, cgst_rate, igst_rate, taxable_amount, cgst_amount, sgst_amount, igst_amount,
+                      tax_amount, total_amount)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'BOTH', 'PERCENT', ?, ?, 0, ?, ?, ?, 0, ?, ?)",
+                    [
+                        $billId, $bi['qc_item_id'] ?: 0, $bi['variant_id'] ?: null,
+                        $bi['product_name'], $bi['sku'], $bi['size_name'], $bi['color_name'],
+                        $bi['quantity'], $bi['mrp'], $bi['hsn_code'], $bi['unit_price'], $bi['discount_pct'],
+                        $bi['discount_amount'], $bi['gst_pct'], $bi['sgst_rate'], $bi['cgst_rate'],
+                        $bi['taxable_amount'], $bi['cgst_amount'], $bi['sgst_amount'], $bi['tax_amount'], $bi['total_amount']
+                    ]
+                );
+                $bItemId = (int)Database::lastInsertId();
+                foreach ($bi['tags'] as $tg) {
+                    $cTag = trim((string)$tg);
+                    if ($cTag !== '') {
+                        Database::execute(
+                            "INSERT IGNORE INTO production_bill_item_tags (bill_id, bill_item_id, qc_item_id, tag_code) VALUES (?, ?, ?, ?)",
+                            [$billId, $bItemId, $bi['qc_item_id'] ?: 0, $cTag]
+                        );
+                    }
+                }
+            }
+
+            Database::execute("UPDATE production_batches SET production_bill_id = ? WHERE id = ?", [$billId, $batchId]);
+
+            Session::flash('success', 'Production batch ' . ($batch['batch_number'] ?? '#' . $batchId) . ' packed and Bill / Invoice ' . $billNum . ' created successfully.');
             Response::redirect(url('production/batches'));
         } catch (Exception $e) {
             Session::flash('error', $e->getMessage());
@@ -10719,6 +10951,123 @@ class ProductionController {
             'batch' => $batch,
             'items' => $items,
         ]);
+    }
+
+    public function viewBatch(string $id): void {
+        $batchId = (int)$id;
+        $batch = ProductionBatch::find($batchId);
+        if (!$batch) {
+            Response::error(404, 'Production batch not found.');
+            return;
+        }
+
+        $items = ProductionBatch::getItems($batchId);
+        $outward = ProductionOutward::findByBatchId($batchId);
+        $bill = !empty($batch['production_bill_id']) ? Database::fetchOne("SELECT * FROM production_bills WHERE id = ?", [(int)$batch['production_bill_id']]) : null;
+        $billItems = $bill ? Database::fetchAll("SELECT * FROM production_bill_items WHERE bill_id = ?", [(int)$bill['id']]) : [];
+
+        Response::view('production.batches.view', [
+            'pageTitle'    => 'Batch ' . ($batch['batch_number'] ?? ('#' . $batchId)),
+            'activeModule' => 'production',
+            'activeMenu'   => 'batches',
+            'batch'        => $batch,
+            'items'        => $items,
+            'outward'      => $outward,
+            'bill'         => $bill,
+            'billItems'    => $billItems,
+            'breadcrumb'   => [
+                ['label' => 'Production', 'url' => url('production/dashboard')],
+                ['label' => 'Batches', 'url' => url('production/batches')],
+                ['label' => $batch['batch_number'] ?? ('#' . $batchId)],
+            ],
+        ]);
+    }
+
+    public function printBatchBill(string $id): void {
+        $batchId = (int)$id;
+        $batch = ProductionBatch::find($batchId);
+        if (!$batch) {
+            Response::error(404, 'Production batch not found.');
+            return;
+        }
+
+        $items = ProductionBatch::getItems($batchId);
+        $outward = ProductionOutward::findByBatchId($batchId);
+        $prodUnit = !empty($batch['production_unit_id']) 
+            ? (class_exists('ProductionUnit') ? ProductionUnit::find((int)$batch['production_unit_id']) : null)
+            : (class_exists('ProductionUnit') ? ProductionUnit::getActiveFacility() : null);
+
+        Response::viewOnly('production.batches.bill', [
+            'batch'    => $batch,
+            'items'    => $items,
+            'outward'  => $outward,
+            'prodUnit' => $prodUnit,
+        ]);
+    }
+
+    public function printBatchInvoice(string $id): void {
+        $batchId = (int)$id;
+        $batch = ProductionBatch::find($batchId);
+        if (!$batch) {
+            Response::error(404, 'Production batch not found.');
+            return;
+        }
+
+        if (!empty($batch['production_bill_id'])) {
+            Response::redirect(url('production/billing/print/' . (int)$batch['production_bill_id']));
+            return;
+        }
+
+        Response::redirect(url('production/billing/create?batch_id=' . $batchId));
+    }
+
+    public function deleteBatch(string $id): void {
+        if (!hasPermission('batches', 'delete')) {
+            Session::flash('error', 'Access denied: You do not have permission to delete batches.');
+            Response::redirect(url('production/batches'));
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::redirect(url('production/batches'));
+            return;
+        }
+
+        $batchId = (int)$id;
+        $batch = ProductionBatch::find($batchId);
+        if (!$batch) {
+            Session::flash('error', 'Production batch not found.');
+            Response::redirect(url('production/batches'));
+            return;
+        }
+
+        $isDispatched = ($batch['status'] === 'DISPATCHED' || $batch['status'] === 'RECEIVED' || !empty($batch['outward_id']) || !empty($batch['production_outward_id']));
+        if ($isDispatched) {
+            Session::flash('error', 'Cannot delete batch ' . ($batch['batch_number'] ?? ('#' . $batchId)) . '. Items have already been dispatched outward to the warehouse.');
+            Response::redirect(url('production/batches'));
+            return;
+        }
+
+        Database::beginTransaction();
+        try {
+            if (!empty($batch['production_bill_id'])) {
+                $billId = (int)$batch['production_bill_id'];
+                Database::execute("DELETE FROM production_bill_item_tags WHERE bill_id = ?", [$billId]);
+                Database::execute("DELETE FROM production_bill_items WHERE bill_id = ?", [$billId]);
+                Database::execute("DELETE FROM production_bills WHERE id = ?", [$billId]);
+            }
+
+            Database::execute("DELETE FROM production_batch_items WHERE production_batch_id = ?", [$batchId]);
+            Database::execute("DELETE FROM production_batches WHERE id = ?", [$batchId]);
+
+            Database::commit();
+            Session::flash('success', 'Batch ' . ($batch['batch_number'] ?? ('#' . $batchId)) . ' deleted successfully. All garments and QR codes have been restored to available QC inventory.');
+        } catch (Exception $e) {
+            Database::rollback();
+            Session::flash('error', 'Failed to delete batch: ' . $e->getMessage());
+        }
+
+        Response::redirect(url('production/batches'));
     }
 
     // =========================================================================
@@ -10984,7 +11333,68 @@ class ProductionController {
             [$warehouseId, max(1, $boxCount), $totalQty, $transporterName, $vehicleNumber, $lrNumber, $driverName, $driverContact, $batchId]
         );
 
-        Session::flash('success', 'Production Batch ' . ($updateData['batch_number'] ?? ('#' . $batchId)) . ' updated successfully.');
+        // Keep linked production bill and invoice in sync
+        if (!empty($batch['production_bill_id'])) {
+            $billId = (int)$batch['production_bill_id'];
+            $wh = Database::fetchOne("SELECT * FROM warehouses WHERE id = ?", [$warehouseId]);
+            if ($wh) {
+                Database::execute(
+                    "UPDATE production_bills 
+                     SET company_name = ?, company_address = ?, company_phone = ?, company_gstin = ?
+                     WHERE id = ?",
+                    [$wh['name'], $wh['address'] ?? '', $wh['phone'] ?? '', $wh['gstin'] ?? ($wh['gst_number'] ?? ''), $billId]
+                );
+            }
+            if (!empty($_POST['item_qty']) && is_array($_POST['item_qty'])) {
+                $bItems = Database::fetchAll("SELECT * FROM production_bill_items WHERE bill_id = ?", [$billId]);
+                $batchItems = Database::fetchAll("SELECT * FROM production_batch_items WHERE production_batch_id = ?", [$batchId]);
+                $batchItemMap = [];
+                foreach ($batchItems as $bit) {
+                    $batchItemMap[(int)$bit['variant_id']] = (int)$bit['quantity'];
+                }
+
+                $totGross = 0; $totDisc = 0; $totSub = 0; $totCgst = 0; $totSgst = 0; $totTax = 0;
+                foreach ($bItems as $bi) {
+                    $vId = (int)($bi['variant_id'] ?? 0);
+                    $newQ = $batchItemMap[$vId] ?? (int)$bi['quantity'];
+                    $mrp = (float)$bi['mrp'];
+                    $unitP = (float)$bi['unit_price'];
+                    $gstR = (float)$bi['gst_percentage'];
+
+                    $itGross = round($mrp * $newQ, 2);
+                    $itTaxable = round($unitP * $newQ, 2);
+                    $itDisc = max(0, $itGross - $itTaxable);
+                    $halfR = round($gstR / 2, 2);
+                    $itCgst = round($itTaxable * ($halfR / 100), 2);
+                    $itSgst = round($itTaxable * ($halfR / 100), 2);
+                    $itTax = $itCgst + $itSgst;
+                    $itTot = $itTaxable + $itTax;
+
+                    $totGross += $itGross;
+                    $totDisc += $itDisc;
+                    $totSub += $itTaxable;
+                    $totCgst += $itCgst;
+                    $totSgst += $itSgst;
+                    $totTax += $itTax;
+
+                    Database::execute(
+                        "UPDATE production_bill_items 
+                         SET quantity = ?, discount_amount = ?, taxable_amount = ?, cgst_amount = ?, sgst_amount = ?, tax_amount = ?, total_amount = ?
+                         WHERE id = ?",
+                        [$newQ, $itDisc, $itTaxable, $itCgst, $itSgst, $itTax, $itTot, (int)$bi['id']]
+                    );
+                }
+                $totBill = $totSub + $totTax;
+                Database::execute(
+                    "UPDATE production_bills 
+                     SET gross_amount = ?, discount_amount = ?, subtotal = ?, cgst_amount = ?, sgst_amount = ?, tax_amount = ?, total_amount = ?
+                     WHERE id = ?",
+                    [$totGross, $totDisc, $totSub, $totCgst, $totSgst, $totTax, $totBill, $billId]
+                );
+            }
+        }
+
+        Session::flash('success', 'Production Batch ' . ($updateData['batch_number'] ?? ('#' . $batchId)) . ' and linked bill updated successfully.');
         Response::redirect(url('production/batches'));
     }
 

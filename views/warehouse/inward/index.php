@@ -394,8 +394,8 @@ $canDelete = hasPermission('inward', 'delete');
                                                         <i class="bi bi-clock-history"></i>
                                                     </button>
                                                     <?php if ($canEdit): ?>
-                                                        <a href="<?= url('warehouse/inward/edit/' . $b['id']) ?>" class="btn btn-sm btn-outline-warning" title="Edit Inward Shipment">
-                                                            <i class="bi bi-pencil-square"></i>
+                                                        <a href="<?= url('warehouse/inward/edit/' . $b['id']) ?>" class="btn btn-sm btn-warning fw-semibold" title="Edit Inward Shipment">
+                                                            <i class="bi bi-pencil-square me-1"></i>Edit Inward
                                                         </a>
                                                     <?php endif; ?>
                                                     <?php if ($canDelete): ?>
@@ -609,8 +609,8 @@ $canDelete = hasPermission('inward', 'delete');
                                                     <i class="bi bi-clock-history"></i> Logs
                                                 </button>
                                                 <?php if ($canEdit): ?>
-                                                    <a href="<?= url('warehouse/inward/edit/' . $b['id']) ?>" class="btn btn-sm btn-outline-warning py-1 px-2" title="Edit Inward">
-                                                        <i class="bi bi-pencil-square"></i>
+                                                    <a href="<?= url('warehouse/inward/edit/' . $b['id']) ?>" class="btn btn-sm btn-warning py-1 px-2 fw-semibold" title="Edit Inward">
+                                                        <i class="bi bi-pencil-square me-1"></i>Edit
                                                     </a>
                                                 <?php endif; ?>
                                                 <?php if ($canDelete): ?>

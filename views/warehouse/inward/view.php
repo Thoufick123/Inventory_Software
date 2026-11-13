@@ -76,15 +76,35 @@ $canEdit = hasPermission('inward', 'edit');
 $canDelete = hasPermission('inward', 'delete');
 $isFullyReceived = ($batch['status'] === 'RECEIVED' && $displayMis === 0 && ($displayRec + $displayDmg) >= $totalExpected);
 $canScanOrEdit = $canVerify && ($batch['status'] === 'DISPATCHED' || !$isFullyReceived);
+$inwardPageTitle = $batch['status'] === 'DISPATCHED'
+    ? 'Create Inward / Verify Shipment'
+    : (($batch['status'] === 'RECEIVED' && $displayMis > 0) ? 'Complete Inward Shipment' : 'Inward Verification & Reconciliation');
 ?>
 
-<div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">  
-    <div class="d-flex gap-2 flex-wrap align-items-center">
+<div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
+    <div>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-1 small">
+                <li class="breadcrumb-item"><a href="<?= url('warehouse/dashboard') ?>" class="text-decoration-none">Warehouse</a></li>
+                <li class="breadcrumb-item"><a href="<?= url('warehouse/inward') ?>" class="text-decoration-none">Inward / GRN</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Batch #<?= e($batch['batch_number']) ?></li>
+            </ol>
+        </nav>
+        <h3 class="fw-bold mb-0 text-dark">
+            <i class="bi bi-box-arrow-in-down text-primary me-2"></i><?= e($inwardPageTitle) ?>
+            <span class="fs-6 font-monospace text-muted fw-normal ms-2">#<?= e($batch['batch_number']) ?></span>
+        </h3>
+    </div>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+        <?php if ($canEdit): ?>
+            <a href="<?= url('warehouse/inward/edit/' . $batch['id']) ?>" class="btn btn-warning fw-bold px-3 shadow-sm">
+                <i class="bi bi-pencil-square me-1"></i> Edit Inward Quantities
+            </a>
+        <?php endif; ?>
         <a href="<?= url('warehouse/inward') ?>" class="btn btn-outline-secondary">
-            <i class="bi bi-arrow-left me-1"></i> Back
+            <i class="bi bi-arrow-left me-1"></i> Back to Batches
         </a>
     </div>
- 
 </div>
 
 <!-- ========================================================================= -->
@@ -187,7 +207,7 @@ $canScanOrEdit = $canVerify && ($batch['status'] === 'DISPATCHED' || !$isFullyRe
 
 <div class="row g-4 mb-4">
     <!-- LEFT COLUMN: Outward Dispatch Info & QR Widget (Responsive 4-col on XL) -->
-    <div class="col-xl-4 col-lg-5">
+    <div class="col-xl-3 col-lg-4">
         <!-- Scannable Batch QR Card -->
         <div class="card border-0 shadow-sm mb-4 text-center">
             <div class="card-header bg-white py-3">
@@ -279,7 +299,7 @@ $canScanOrEdit = $canVerify && ($batch['status'] === 'DISPATCHED' || !$isFullyRe
     </div>
 
     <!-- RIGHT COLUMN: Scanner Engine & Cross-Check Matrix (Responsive 8-col on XL) -->
-    <div class="col-xl-8 col-lg-7">
+    <div class="col-xl-9 col-lg-8">
         <?php if ($canScanOrEdit): ?>
             <!-- 2. LIVE CROSS-CHECK SCANNER CARD WITH MODE SWITCH -->
             <div class="card border-0 shadow-sm mb-4 border-start border-primary border-4" id="liveScannerCard">
@@ -332,9 +352,9 @@ $canScanOrEdit = $canVerify && ($batch['status'] === 'DISPATCHED' || !$isFullyRe
                 <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <div>
                         <h6 class="card-title mb-0 fw-bold">
-                            <i class="bi bi-box-arrow-in-down me-2 text-primary"></i>Inward Verification &amp; Outward Cross-Check
+                            <i class="bi bi-sliders2 me-2 text-primary"></i>Variant Breakdown &amp; Inward Reconcile Table
                         </h6>
-                        
+                        <span class="text-muted small">Outward cross-check and scanned received/damaged counts</span>
                     </div>
                     <?php if (!empty($damages)): ?>
                        
@@ -576,7 +596,7 @@ $canScanOrEdit = $canVerify && ($batch['status'] === 'DISPATCHED' || !$isFullyRe
                             <?php if ($canEdit || $canDelete): ?>
                                 <div class="mt-2 d-flex justify-content-center align-items-center gap-2">
                                     <?php if ($canEdit): ?>
-                                        <a href="<?= url('warehouse/inward/edit/' . $batch['id']) ?>" class="btn btn-sm btn-outline-warning">
+                                        <a href="<?= url('warehouse/inward/edit/' . $batch['id']) ?>" class="btn btn-warning fw-bold px-3 shadow-sm">
                                             <i class="bi bi-pencil-square me-1"></i> Edit Inward Quantities
                                         </a>
                                     <?php endif; ?>

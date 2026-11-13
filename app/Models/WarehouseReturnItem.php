@@ -6,6 +6,31 @@
 
 class WarehouseReturnItem {
 
+    public static function parseScannedQrCodes(?string $raw): array {
+        $raw = trim((string)$raw);
+        if ($raw === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+        $values = is_array($decoded) ? $decoded : (preg_split('/[,;|\r\n]+/', $raw) ?: []);
+        $tags = [];
+        $seen = [];
+        foreach ($values as $value) {
+            if (is_array($value)) {
+                $value = $value['tag_code'] ?? $value['qr_code'] ?? $value['code'] ?? '';
+            }
+            $tag = trim((string)$value, " \t\n\r\0\x0B\"'");
+            $key = strtoupper($tag);
+            if ($tag !== '' && !isset($seen[$key])) {
+                $tags[] = $tag;
+                $seen[$key] = true;
+            }
+        }
+
+        return $tags;
+    }
+
     public static function getByReturnId(int $returnId): array {
         return Database::fetchAll(
             "SELECT wri.*, 

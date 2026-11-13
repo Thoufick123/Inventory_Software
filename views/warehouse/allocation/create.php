@@ -141,8 +141,8 @@
                         <i class="bi bi-qr-code-scan fs-5"></i>
                     </span>
                     <div>
-                        <h6 class="fw-bold mb-0 text-dark">Live QR Code & Barcode Gun Scanner</h6>
-                        <small class="text-muted">Scan piece tag sticker or enter tag / SKU (e.g. <code>TTS092601</code>, <code>RMT092606</code>) to dynamically add product & allocate stock</small>
+                        <h6 class="fw-bold mb-0 text-dark">Live Warehouse QR Scanner</h6>
+                        <small class="text-muted">Scan an exact QR tag recorded as available stock in the selected warehouse to allocate it</small>
                     </div>
                 </div>
                 <div class="d-flex align-items-center gap-2">
@@ -163,7 +163,7 @@
                 <input type="text" 
                        id="allocation_qr_input" 
                        class="form-control form-control-lg border-primary border-opacity-25 font-monospace fw-bold" 
-                       placeholder="Scan QR Code or Type Piece Tag / SKU (e.g. TTS092601, RMT092606)..." 
+                       placeholder="Scan exact warehouse QR tag..." 
                        autocomplete="off" 
                        autofocus>
                 <button type="button" class="btn btn-primary px-4 fw-bold d-flex align-items-center gap-2" id="triggerScanBtn">
@@ -193,7 +193,7 @@
                 <table class="table table-hover align-middle mb-0" id="itemsTable">
                     <thead class="table-light">
                         <tr>
-                            <th style="width: 14%;">QR NO / SKU</th>
+                            <th style="width: 14%;">QR TAG</th>
                             <th style="width: 14%;">CATEGORY</th>
                             <th style="width: 32%;">PRODUCT NAME / SELECT VARIANT <span class="text-danger">*</span></th>
                             <th style="width: 8%;" class="text-center">SIZE</th>
@@ -1393,22 +1393,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             })
             .catch(err => {
-                // Exact SKU/barcode fallback only; a piece-tag prefix is not proof of inwarded stock.
-                let local = variantsList.find(v => (v.sku || '').toUpperCase() === tagCode || (v.barcode || '').toUpperCase() === tagCode);
-
-                if (local) {
-                    if (parseFloat(local.available_warehouse_stock ?? local.available_stock ?? local.total_warehouse_stock ?? 0) <= 0) {
-                        playDuplicateSound();
-                        showScanAlert('danger', `❌ <strong>Scan Failed:</strong> Product <strong>${local.product_name || local.sku}</strong> is out of stock in this warehouse.`);
-                        clearAndRefocusScanInput();
-                        return;
-                    }
-                    applyScannedVariant(local, tagCode);
-                } else {
-                    playDuplicateSound();
-                    showScanAlert('danger', `❌ <strong>Scan Failed:</strong> No product variant found matching <code>${tagCode}</code>.`);
-                    clearAndRefocusScanInput();
-                }
+                playDuplicateSound();
+                showScanAlert('danger', `❌ <strong>Scan Error:</strong> Could not verify QR code with server (${err.message || 'Network error'}).`);
+                clearAndRefocusScanInput();
             })
             .finally(() => {
                 PENDING_ALLOCATION_TAGS.delete(tagCode);

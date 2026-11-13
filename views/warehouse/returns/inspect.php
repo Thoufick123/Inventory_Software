@@ -61,7 +61,7 @@ $returnQrDate = !empty($return['created_at']) ? date('my', strtotime($return['cr
                                 <div class="my-1"><span class="badge bg-light text-primary border small font-monospace"><i class="bi bi-diagram-3-fill me-1 text-warning"></i><?= htmlspecialchars(implode(' › ', $catParts)) ?></span></div>
                             <?php endif; ?>
                             <code><?= htmlspecialchars($item['sku']) ?></code>
-                            <div class="mt-2 d-flex align-items-center gap-2">
+                            <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
                                 <?php
                                     $initial = static function ($value): string {
                                         $clean = trim((string)$value);
@@ -71,13 +71,26 @@ $returnQrDate = !empty($return['created_at']) ? date('my', strtotime($return['cr
                                         . $initial($item['subcategory_name'] ?? '')
                                         . $initial($item['sub_subcategory_name'] ?? '');
                                     if (strlen($returnQrPrefix) < 2) $returnQrPrefix = 'RTTS';
-                                    $rawTagCode = trim((string)($item['returned_tag_code'] ?? ''));
-                                    $returnQrValue = $rawTagCode !== ''
-                                        ? ((str_starts_with(strtoupper($rawTagCode), 'R') ? '' : 'R') . $rawTagCode)
-                                        : $returnQrPrefix . $returnQrDate . str_pad((string)$item['id'], 3, '0', STR_PAD_LEFT);
+                                    $rawTagCodes = $item['returned_tag_codes'] ?? [];
+                                    if (empty($rawTagCodes)) {
+                                        $rawTagCode = trim((string)($item['returned_tag_code'] ?? ''));
+                                        $rawTagCodes = $rawTagCode !== '' ? [$rawTagCode] : [];
+                                    }
+                                    if (empty($rawTagCodes)) {
+                                        $rawTagCodes[] = $returnQrPrefix . $returnQrDate . str_pad((string)$item['id'], 3, '0', STR_PAD_LEFT);
+                                    }
                                 ?>
-                                <div class="return-item-qr border rounded p-1 bg-white" data-qr-value="<?= htmlspecialchars($returnQrValue) ?>" style="width:58px;height:58px;"></div>
-                                <small class="font-monospace text-dark fw-bold">QR: <?= htmlspecialchars($returnQrValue) ?></small>
+                                <?php foreach ($rawTagCodes as $rawTagCode):
+                                    $rawTagCode = trim((string)$rawTagCode);
+                                    if ($rawTagCode === '') continue;
+                                    $returnQrValue = (str_starts_with(strtoupper($rawTagCode), 'R') ? '' : 'R') . $rawTagCode;
+                                ?>
+                                    <div class="return-item-qr rounded bg-white d-flex align-items-center justify-content-center"
+                                         data-qr-value="<?= htmlspecialchars($returnQrValue) ?>"
+                                         title="<?= htmlspecialchars($returnQrValue) ?>"
+                                         aria-label="Return QR code"
+                                         style="width:58px;height:58px;"></div>
+                                <?php endforeach; ?>
                             </div>
                         </td>
                         <td><span class="badge bg-secondary fs-6"><?= $item['returned_qty'] ?> pcs</span></td>
