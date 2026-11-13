@@ -284,6 +284,11 @@ $currTab = $tab ?? 'overview';
                         <i class="bi bi-clock-history me-1"></i> Shift Registers (<?= count($shifts) ?>)
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link rounded-pill px-3 <?= $currTab === 'shift_logs' ? 'active' : '' ?>" href="<?= url('shop/cash?tab=shift_logs') ?>">
+                        <i class="bi bi-door-open me-1"></i> Open/Close Shift Logs (<?= count($shiftLogs) ?>)
+                    </a>
+                </li>
             </ul>
 
             <!-- Live Search Bar -->
@@ -582,6 +587,73 @@ $currTab = $tab ?? 'overview';
                                                 <i class="bi bi-printer me-1"></i> Thermal Slip
                                             </a>
                                         </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <!-- TAB 5: OPEN/CLOSE SHIFT EVENT LOG -->
+            <?php elseif ($currTab === 'shift_logs'): ?>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="shiftLogsTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-4">Date &amp; Time</th>
+                                <th>Action</th>
+                                <th>Shift #</th>
+                                <th>Cashier / Logged By</th>
+                                <th class="text-end">Cash Amount</th>
+                                <th class="text-end">Expected Cash</th>
+                                <th>Variance</th>
+                                <th class="pe-4">Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody class="cash-table-body" data-empty-colspan="8">
+                            <?php if (empty($shiftLogs)): ?>
+                                <tr>
+                                    <td colspan="8" class="text-center py-5 text-muted">
+                                        <i class="bi bi-door-open fs-1 d-block mb-2 text-secondary opacity-50"></i>
+                                        No shift opening or closing logs found.
+                                    </td>
+                                </tr>
+                            <?php else: ?>
+                                <?php foreach ($shiftLogs as $shiftLog): ?>
+                                    <?php
+                                    $isOpenEvent = $shiftLog['event_type'] === 'OPEN';
+                                    $variance = (float)($shiftLog['variance'] ?? 0);
+                                    $searchData = strtolower(
+                                        $shiftLog['register_number'] . ' ' .
+                                        $shiftLog['event_type'] . ' ' .
+                                        ($shiftLog['cashier_name'] ?? '') . ' ' .
+                                        ($shiftLog['logged_by'] ?? '') . ' ' .
+                                        ($shiftLog['event_notes'] ?? '')
+                                    );
+                                    ?>
+                                    <tr class="cash-row" data-search="<?= e($searchData) ?>">
+                                        <td class="ps-4"><small class="text-muted"><?= formatDateTime($shiftLog['event_time']) ?></small></td>
+                                        <td>
+                                            <span class="badge <?= $isOpenEvent ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary' ?> rounded-pill px-3 py-2">
+                                                <i class="bi <?= $isOpenEvent ? 'bi-door-open' : 'bi-door-closed' ?> me-1"></i><?= $isOpenEvent ? 'SHIFT OPENED' : 'SHIFT CLOSED' ?>
+                                            </span>
+                                        </td>
+                                        <td class="fw-bold font-monospace text-dark"><?= e($shiftLog['register_number']) ?></td>
+                                        <td>
+                                            <div class="fw-semibold"><?= e($shiftLog['cashier_name'] ?? 'Admin') ?></div>
+                                            <small class="text-muted">Logged by <?= e($shiftLog['logged_by'] ?? 'Admin') ?></small>
+                                        </td>
+                                        <td class="text-end fw-semibold">₹<?= number_format((float)($shiftLog['cash_amount'] ?? 0), 2) ?></td>
+                                        <td class="text-end">₹<?= number_format((float)($shiftLog['expected_cash'] ?? 0), 2) ?></td>
+                                        <td>
+                                            <?php if (abs($variance) < 0.01): ?>
+                                                <span class="badge bg-light text-muted border">No variance</span>
+                                            <?php else: ?>
+                                                <span class="fw-semibold <?= $variance > 0 ? 'text-primary' : 'text-danger' ?>">
+                                                    <?= $variance > 0 ? '+' : '-' ?>₹<?= number_format(abs($variance), 2) ?>
+                                                </span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="pe-4 small text-muted"><?= e($shiftLog['event_notes'] ?: '-') ?></td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php endif; ?>
@@ -1292,6 +1364,7 @@ function onCashSearchChange(query) {
     const q = (query || '').toLowerCase().trim();
     const rows = document.querySelectorAll('.cash-table-body .cash-row');
     const tableBody = document.querySelector('.cash-table-body');
+    const emptyColspan = tableBody ? (parseInt(tableBody.getAttribute('data-empty-colspan'), 10) || 10) : 10;
     let visibleCount = 0;
 
     rows.forEach(row => {
@@ -1310,7 +1383,7 @@ function onCashSearchChange(query) {
             emptyRow = document.createElement('tr');
             emptyRow.id = 'noCashMatchRow';
             emptyRow.innerHTML = `
-                <td colspan="10" class="text-center py-5 text-muted">
+                <td colspan="${emptyColspan}" class="text-center py-5 text-muted">
                     <i class="bi bi-search fs-1 d-block mb-2 text-secondary opacity-50"></i>
                     <h6 class="fw-bold text-secondary">No Matching Cash Records</h6>
                     <p class="small text-muted mb-0">No records match "${query}".</p>

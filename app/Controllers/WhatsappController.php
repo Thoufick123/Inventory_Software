@@ -3240,11 +3240,24 @@ class WhatsappController {
      */
     public function whatsappOrdersHistory(): void {
         ShopService::ensureSalesOnlineFlagColumn();
+        ShopService::ensureSalesGstTypeColumn();
         $chan = $this->getChannel();
         $search = trim($_GET['search'] ?? '');
         $status = trim($_GET['status'] ?? '');
         $dateFrom = trim($_GET['date_from'] ?? '');
         $dateTo = trim($_GET['date_to'] ?? '');
+        $gstType = strtoupper(trim((string)($_GET['gst_type'] ?? '')));
+        if (!in_array($gstType, ['CGST_SGST', 'IGST', 'EXEMPT'], true)) {
+            $gstType = '';
+        }
+        $paymentModeFilter = strtoupper(trim((string)($_GET['payment_mode'] ?? '')));
+        if (!in_array($paymentModeFilter, ['CASH', 'UPI', 'CARD', 'CASH_UPI'], true)) {
+            $paymentModeFilter = '';
+        }
+        $paymentSection = strtolower(trim((string)($_GET['payment_section'] ?? 'all')));
+        if (!in_array($paymentSection, ['all', 'cash', 'online'], true)) {
+            $paymentSection = 'all';
+        }
 
         $where = ["(s.sales_channel = 'WHATSAPP' OR s.notes LIKE '%WhatsApp%')"];
         $params = [];
@@ -3272,6 +3285,16 @@ class WhatsappController {
         if (!empty($dateTo)) {
             $where[] = "DATE(s.created_at) <= ?";
             $params[] = $dateTo;
+        }
+
+        if ($gstType !== '') {
+            $where[] = "UPPER(COALESCE(s.gst_type, '')) = ?";
+            $params[] = $gstType;
+        }
+
+        if ($paymentModeFilter !== '') {
+            $where[] = "UPPER(COALESCE(s.payment_mode, '')) = ?";
+            $params[] = $paymentModeFilter;
         }
 
         $whereClause = implode(' AND ', $where);
@@ -3309,6 +3332,8 @@ class WhatsappController {
             $totalPcsSold += (int)($o['total_pcs'] ?? $o['total_items_count'] ?? 0);
             $paidAmount = max(0.0, (float)($o['paid_amount'] ?? 0));
             $paymentMode = strtoupper(trim((string)($o['payment_mode'] ?? $o['payment_method'] ?? '')));
+            $totalAmount = max(0.0, (float)($o['total_amount'] ?? $o['final_amount'] ?? 0));
+            $pendingAmount = max(0.0, $totalAmount - $paidAmount);
             $cashPaidAmount = 0.0;
             $onlinePaidAmount = 0.0;
             $unclassifiedPaidAmount = 0.0;
@@ -3338,6 +3363,33 @@ class WhatsappController {
             $o['cash_paid_amount'] = $cashPaidAmount;
             $o['online_paid_amount'] = $onlinePaidAmount;
             $o['unclassified_paid_amount'] = $unclassifiedPaidAmount;
+            if (!empty($o['is_online_sale'])) {
+                $cashRevenue = 0.0;
+                $onlineRevenue = $totalAmount;
+            } elseif (strtoupper((string)($o['payment_status'] ?? '')) === 'PARTIAL') {
+                $cashRevenue = min($totalAmount, $cashPaidAmount + $pendingAmount);
+                $onlineRevenue = min($totalAmount - $cashRevenue, $onlinePaidAmount);
+                $unallocatedRevenue = max(0.0, $totalAmount - $cashRevenue - $onlineRevenue);
+                if ($paymentMode === 'CASH') {
+                    $cashRevenue += $unallocatedRevenue;
+                } else {
+                    $onlineRevenue += $unallocatedRevenue;
+                }
+            } elseif ($paidAmount <= 0) {
+                $cashRevenue = $paymentMode === 'CASH' ? $totalAmount : 0.0;
+                $onlineRevenue = $paymentMode === 'CASH' ? 0.0 : $totalAmount;
+            } else {
+                $cashRevenue = min($totalAmount, $cashPaidAmount);
+                $onlineRevenue = min($totalAmount - $cashRevenue, $onlinePaidAmount);
+                $unallocatedRevenue = max(0.0, $totalAmount - $cashRevenue - $onlineRevenue);
+                if ($paymentMode === 'CASH') {
+                    $cashRevenue += $unallocatedRevenue;
+                } else {
+                    $onlineRevenue += $unallocatedRevenue;
+                }
+            }
+            $o['cash_revenue'] = $cashRevenue;
+            $o['online_revenue'] = $onlineRevenue;
             $totalCashPaid += $cashPaidAmount;
             $totalOnlinePaid += $onlinePaidAmount;
             $totalUnclassifiedPaid += $unclassifiedPaidAmount;
@@ -3378,6 +3430,9 @@ class WhatsappController {
             'status'             => $status,
             'dateFrom'           => $dateFrom,
             'dateTo'             => $dateTo,
+            'gstType'            => $gstType,
+            'paymentMode'        => $paymentModeFilter,
+            'paymentSection'     => $paymentSection,
         ]);
     }
 

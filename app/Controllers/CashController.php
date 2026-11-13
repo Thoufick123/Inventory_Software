@@ -23,7 +23,10 @@ class CashController {
         $shop = ShopService::getActiveShop();
         $shopId = (int)$shop['id'];
 
-        $tab = $_GET['tab'] ?? 'overview'; // 'overview', 'ledger', 'expenses', 'deposits', 'shifts'
+        $tab = trim((string)($_GET['tab'] ?? 'overview'));
+        if (!in_array($tab, ['overview', 'ledger', 'expenses', 'deposits', 'shifts', 'shift_logs'], true)) {
+            $tab = 'overview';
+        }
         $startDate = $_GET['start_date'] ?? date('Y-m-d');
         $endDate = $_GET['end_date'] ?? date('Y-m-d');
         $searchQuery = trim($_GET['q'] ?? '');
@@ -53,6 +56,42 @@ class CashController {
              WHERE cr.shop_id = ?
              ORDER BY cr.id DESC LIMIT 50",
             [$shopId]
+        );
+
+        // Separate event log for shift opening and closing actions.
+        $shiftLogs = Database::fetchAll(
+            "SELECT *
+             FROM (
+                 SELECT cr.id as register_id, cr.register_number, 'OPEN' as event_type,
+                        cr.opening_time as event_time,
+                        COALESCE(cr.cashier_name, open_user.full_name, 'Admin') as cashier_name,
+                        COALESCE(open_user.full_name, 'Admin') as logged_by,
+                        cr.opening_balance as cash_amount,
+                        cr.opening_expected_float as expected_cash,
+                        cr.opening_difference as variance,
+                        COALESCE(NULLIF(cr.opening_discrepancy_reason, ''), NULLIF(cr.opening_notes, ''), '') as event_notes
+                 FROM cash_registers cr
+                 LEFT JOIN users open_user ON cr.cashier_id = open_user.id
+                 WHERE cr.shop_id = ?
+
+                 UNION ALL
+
+                 SELECT cr.id as register_id, cr.register_number, 'CLOSE' as event_type,
+                        cr.closing_time as event_time,
+                        COALESCE(cr.cashier_name, open_user.full_name, 'Admin') as cashier_name,
+                        COALESCE(close_user.full_name, 'Admin') as logged_by,
+                        cr.closing_cash_counted as cash_amount,
+                        cr.expected_cash as expected_cash,
+                        cr.cash_difference as variance,
+                        COALESCE(NULLIF(cr.discrepancy_reason, ''), NULLIF(cr.notes, ''), '') as event_notes
+                 FROM cash_registers cr
+                 LEFT JOIN users open_user ON cr.cashier_id = open_user.id
+                 LEFT JOIN users close_user ON cr.closed_by = close_user.id
+                 WHERE cr.shop_id = ? AND cr.closing_time IS NOT NULL
+             ) shift_events
+             ORDER BY event_time DESC, register_id DESC
+             LIMIT 100",
+            [$shopId, $shopId]
         );
 
         // 4. Expenses List
@@ -97,6 +136,7 @@ class CashController {
             'currentUserName'    => $currentUserName,
             'ledger'             => $ledger,
             'shifts'             => $shifts,
+            'shiftLogs'          => $shiftLogs,
             'expenses'           => $expenses,
             'deposits'           => $deposits,
             'startDate'          => $startDate,

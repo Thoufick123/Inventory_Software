@@ -16,6 +16,17 @@ if (preg_match('/(\d+)$/', $sale['invoice_number'], $m)) {
 }
 $billId = $sale['id'] ?? '1026';
 $purchasedAt = formatUtcDateTime($sale['created_at'] ?? null);
+$cashTender = null;
+if (($sale['payment_mode'] ?? '') === 'CASH'
+    && preg_match('/\[Cash Tender: (.*?) \| Received ₹([\d,]+(?:\.\d{2})?) \| Payable ₹([\d,]+(?:\.\d{2})?) \| Change ₹([\d,]+(?:\.\d{2})?)(?: \| Change Breakdown: (.*?))?\]/u', (string)($sale['notes'] ?? ''), $cashTenderMatch)) {
+    $cashTender = [
+        'denominations' => $cashTenderMatch[1],
+        'received' => (float)str_replace(',', '', $cashTenderMatch[2]),
+        'payable' => (float)str_replace(',', '', $cashTenderMatch[3]),
+        'change' => (float)str_replace(',', '', $cashTenderMatch[4]),
+        'change_denominations' => $cashTenderMatch[5] ?? '',
+    ];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -344,6 +355,25 @@ $purchasedAt = formatUtcDateTime($sale['created_at'] ?? null);
         <span>To: <?= e(!empty($sale['customer_name']) ? strtoupper($sale['customer_name']) : 'WALK-IN CUSTOMER') ?></span>
         <span>Pay Mode : <?= ($sale['payment_mode'] ?? '') === 'CASH_UPI' ? 'CASH + UPI' : e(strtoupper($sale['payment_mode'] ?? 'CASH')) ?></span>
     </div>
+    <?php if ($cashTender): ?>
+    <div class="meta-row" style="font-size: 9.5px;">
+        <span>Cash Received: ₹<?= number_format($cashTender['received'], 2) ?></span>
+    </div>
+    <div class="meta-row" style="font-size: 9.5px;">
+        <span>Amount Due: ₹<?= number_format($cashTender['payable'], 2) ?></span>
+    </div>
+    <div class="meta-row" style="font-size: 9.5px;">
+        <span>Notes / Coins: <?= e($cashTender['denominations']) ?></span>
+    </div>
+    <div class="meta-row" style="font-size: 9.5px; font-weight: 800;">
+        <span>Change Returned: ₹<?= number_format($cashTender['change'], 2) ?></span>
+    </div>
+    <?php if ($cashTender['change_denominations'] !== ''): ?>
+    <div class="meta-row" style="font-size: 9.5px;">
+        <span>Change Notes / Coins: <?= e($cashTender['change_denominations']) ?></span>
+    </div>
+    <?php endif; ?>
+    <?php endif; ?>
     <?php if (($sale['payment_mode'] ?? '') === 'CASH_UPI' && preg_match('/\[Split Payment:\s*Cash\s*₹([\d\.]+)\s*\+\s*UPI\s*₹([\d\.]+)(?:\s*\(Ref:\s*([^)]+)\))?\]/i', $sale['notes'] ?? '', $spm)): ?>
     <div class="meta-row" style="font-size: 9.5px; font-weight: 700; color: #000;">
         <span>Split: Cash ₹<?= number_format((float)$spm[1], 2) ?> | UPI ₹<?= number_format((float)$spm[2], 2) ?><?= !empty($spm[3]) ? ' (' . e($spm[3]) . ')' : '' ?></span>

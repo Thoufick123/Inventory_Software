@@ -363,6 +363,43 @@
                         </div>
                     </div>
 
+                    <!-- CASH TENDER ANALYSIS -->
+                    <div id="cashTenderSection" class="p-3 rounded-3 mb-3 border pos-split-card" style="background-color: #f0fdf4; border-color: #bbf7d0 !important;">
+                        <div class="mb-2">
+                            <div class="fw-bold text-dark small"><i class="bi bi-cash-stack text-success me-1"></i>Cash Received &amp; Change</div>
+                            <small class="text-muted">Enter the number of notes or coins received from the customer.</small>
+                        </div>
+                        <div class="row g-2">
+                            <?php foreach ([500 => 'notes', 200 => 'notes', 100 => 'notes', 50 => 'notes', 20 => 'notes', 10 => 'notes', 5 => 'notes / coins', 2 => 'coins', 1 => 'coins'] as $denomination => $kind): ?>
+                                <div class="col-4 col-sm-3 col-lg-2">
+                                    <label class="form-label text-secondary mb-1 small fw-semibold" for="cashDenom<?= $denomination ?>">₹<?= $denomination ?> <?= $kind ?></label>
+                                    <input type="number" min="0" step="1" inputmode="numeric" value="0"
+                                           class="form-control form-control-sm text-end font-monospace cash-denomination-input"
+                                           id="cashDenom<?= $denomination ?>" data-denomination="<?= $denomination ?>" aria-label="Count of ₹<?= $denomination ?> <?= $kind ?>">
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="row g-2 mt-2 text-center">
+                            <div class="col-4">
+                                <div class="small text-muted">Customer Gave</div>
+                                <div class="fw-bold text-dark font-monospace" id="cashTenderReceived">₹0.00</div>
+                            </div>
+                            <div class="col-4">
+                                <div class="small text-muted">Amount Due</div>
+                                <div class="fw-bold text-primary font-monospace" id="cashTenderDue">₹0.00</div>
+                            </div>
+                            <div class="col-4">
+                                <div class="small text-muted">Change to Return</div>
+                                <div class="fw-bold text-success font-monospace" id="cashTenderChange">₹0.00</div>
+                            </div>
+                        </div>
+                        <div class="border-top mt-2 pt-2 text-center">
+                            <div class="small text-muted">Suggested change notes / coins</div>
+                            <div class="small fw-semibold text-success font-monospace" id="cashTenderChangeDetails">No change required</div>
+                        </div>
+                        <div id="cashTenderStatus" class="small text-center mt-2 text-muted" aria-live="polite">Enter the cash denominations received.</div>
+                    </div>
+
                     <!-- DYNAMIC SPLIT PAYMENT CONTAINER (CASH + UPI) -->
                     <div id="splitPaymentSection" class="p-3 rounded-3 mb-3 border d-none pos-split-card" style="background-color: #f0fdf4; border-color: #bbf7d0 !important;">
                         <div class="d-flex justify-content-between align-items-center mb-2">
@@ -450,6 +487,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const lblSplitSum = document.getElementById('lblSplitSum');
     const lblSplitDiff = document.getElementById('lblSplitDiff');
     const btnAutoBalanceSplit = document.getElementById('btnAutoBalanceSplit');
+    const cashTenderSection = document.getElementById('cashTenderSection');
+    const cashDenominationInputs = Array.from(document.querySelectorAll('.cash-denomination-input'));
+    const cashTenderReceived = document.getElementById('cashTenderReceived');
+    const cashTenderDue = document.getElementById('cashTenderDue');
+    const cashTenderChange = document.getElementById('cashTenderChange');
+    const cashTenderChangeDetails = document.getElementById('cashTenderChangeDetails');
+    const cashTenderStatus = document.getElementById('cashTenderStatus');
 
     function updateGstBreakdown(cgstAmount, sgstAmount, igstAmount) {
         const gstType = gstTypeSelect ? gstTypeSelect.value : 'CGST_SGST';
@@ -475,6 +519,71 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         return Math.ceil(billedSum);
     }
+
+    function getCashTenderBreakdown() {
+        const denominations = {};
+        let received = 0;
+        cashDenominationInputs.forEach(input => {
+            const denomination = Number(input.dataset.denomination);
+            const count = Number(input.value || 0);
+            denominations[denomination] = count;
+            received += denomination * count;
+        });
+        return { denominations, received };
+    }
+
+    function getChangeDenominations(amount) {
+        let remaining = Math.round(amount);
+        const breakdown = [];
+        const denominations = cashDenominationInputs
+            .map(input => Number(input.dataset.denomination))
+            .sort((a, b) => b - a);
+
+        denominations.forEach(denomination => {
+            const count = Math.floor(remaining / denomination);
+            if (count > 0) {
+                breakdown.push(`₹${denomination} x ${count}`);
+                remaining %= denomination;
+            }
+        });
+        return breakdown;
+    }
+
+    function updateCashTenderSummary() {
+        const due = getNetPayableAmount();
+        const tender = getCashTenderBreakdown();
+        const change = Math.max(0, tender.received - due);
+        const remaining = Math.max(0, due - tender.received);
+
+        if (cashTenderReceived) cashTenderReceived.textContent = `₹${tender.received.toFixed(2)}`;
+        if (cashTenderDue) cashTenderDue.textContent = `₹${due.toFixed(2)}`;
+        if (cashTenderChange) cashTenderChange.textContent = `₹${change.toFixed(2)}`;
+        if (cashTenderChangeDetails) {
+            const changeDenominations = getChangeDenominations(change);
+            cashTenderChangeDetails.textContent = changeDenominations.length
+                ? changeDenominations.join(', ')
+                : 'No change required';
+        }
+        if (cashTenderStatus) {
+            if (due <= 0) {
+                cashTenderStatus.className = 'small text-center mt-2 text-muted';
+                cashTenderStatus.textContent = 'No payment is due.';
+            } else if (remaining > 0) {
+                cashTenderStatus.className = 'small text-center mt-2 text-danger fw-semibold';
+                cashTenderStatus.textContent = `Cash short by ₹${remaining.toFixed(2)}.`;
+            } else if (change > 0) {
+                cashTenderStatus.className = 'small text-center mt-2 text-success fw-semibold';
+                cashTenderStatus.textContent = `Return ₹${change.toFixed(2)} change to the customer.`;
+            } else {
+                cashTenderStatus.className = 'small text-center mt-2 text-success fw-semibold';
+                cashTenderStatus.textContent = 'Exact cash received.';
+            }
+        }
+    }
+
+    cashDenominationInputs.forEach(input => {
+        input.addEventListener('input', updateCashTenderSummary);
+    });
 
     // Split Payment Auto-Balance
     function autoBalanceSplit() {
@@ -539,6 +648,8 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
                 if (splitPaymentSection) splitPaymentSection.classList.add('d-none');
             }
+            if (cashTenderSection) cashTenderSection.classList.toggle('d-none', this.value !== 'CASH');
+            updateCashTenderSummary();
         });
     });
 
@@ -617,6 +728,20 @@ document.addEventListener('DOMContentLoaded', function() {
                     const isComp = (variant.is_complementary == 1 || variant.category_type === 'COMPLEMENTARY');
                     const isSeries = (variant.is_series == 1 || variant.category_type === 'SERIES' || variant.qr_type === 'SERIES_BATCH' || parseInt(variant.pack_quantity) > 1);
                     const isAggregate = isSeries || isComp;
+                    if (isSeries) {
+                        const availableQuantity = Math.max(0, Math.floor(parseFloat(variant.available_stock) || 0));
+                        const cartQuantity = cart.reduce((total, item) => {
+                            return String(item.variant_id) === String(variant.id)
+                                ? total + (parseFloat(item.quantity) || 1)
+                                : total;
+                        }, 0);
+                        if (cartQuantity >= availableQuantity) {
+                            playDuplicateAlert();
+                            scanStatus.innerHTML = `<i class="bi bi-exclamation-triangle-fill text-danger me-1"></i> <strong class="text-danger">SERIES QUANTITY LIMIT:</strong> Only ${availableQuantity} unit(s) are available; ${cartQuantity} already added to this bill.`;
+                            scanStatus.className = 'text-danger fw-bold';
+                            return;
+                        }
+                    }
                     if (variant.already_sold_invoice && !isAggregate) {
                         playDuplicateAlert();
                         scanStatus.innerHTML = `<i class="bi bi-exclamation-triangle-fill text-danger me-1"></i> <strong class="text-danger">ALREADY SOLD:</strong> Piece Tag <code>${escapeHtml(variant.scanned_piece_tag || code)}</code> was already sold in Invoice #<strong>${escapeHtml(variant.already_sold_invoice)}</strong>! Cannot bill again.`;
@@ -761,6 +886,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (displayDiscount) displayDiscount.innerText = `-₹${totalDiscount.toFixed(2)}`;
         if (displayDiscountDetail) displayDiscountDetail.innerText = `₹${totalDiscount.toFixed(2)}`;
         if (displayTotal) displayTotal.innerText = `₹${netTotal.toFixed(2)}`;
+        updateCashTenderSummary();
 
         const roundOffBadge = document.getElementById('roundOffBadge');
         if (roundOffBadge) {
@@ -807,6 +933,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (displayDiscount) displayDiscount.innerText = '-₹0.00';
             if (displayDiscountDetail) displayDiscountDetail.innerText = '₹0.00';
             if (displayTotal) displayTotal.innerText = '₹0.00';
+            updateCashTenderSummary();
             if (cartItemCountBadge) cartItemCountBadge.innerHTML = '<i class="bi bi-bag-check-fill"></i> 0 Items Scanned';
             return;
         }
@@ -1239,8 +1366,28 @@ document.addEventListener('DOMContentLoaded', function() {
         let splitCashVal = 0;
         let splitUpiVal = 0;
         let splitUpiRefVal = '';
+        let cashDenominations = {};
 
-        if (payMode === 'CASH_UPI') {
+        if (payMode === 'CASH') {
+            const cashTender = getCashTenderBreakdown();
+            cashDenominations = cashTender.denominations;
+            if (!cashDenominationInputs.every(input => Number.isInteger(Number(input.value || 0)) && Number(input.value || 0) >= 0)) {
+                alert('Cash note and coin counts must be whole numbers greater than or equal to zero.');
+                const invalidInput = cashDenominationInputs.find(input => !Number.isInteger(Number(input.value || 0)) || Number(input.value || 0) < 0);
+                if (invalidInput) invalidInput.focus();
+                btnCheckout.disabled = false;
+                btnCheckout.innerHTML = `<i class="bi bi-printer-fill me-2"></i> Complete Sale & Print Invoice (F2)`;
+                return;
+            }
+            if (cashTender.received < netPayableTotal) {
+                alert(`Cash received (₹${cashTender.received.toFixed(2)}) is less than the amount due (₹${netPayableTotal.toFixed(2)}).`);
+                const firstDenominationInput = cashDenominationInputs[0];
+                if (firstDenominationInput) firstDenominationInput.focus();
+                btnCheckout.disabled = false;
+                btnCheckout.innerHTML = `<i class="bi bi-printer-fill me-2"></i> Complete Sale & Print Invoice (F2)`;
+                return;
+            }
+        } else if (payMode === 'CASH_UPI') {
             splitCashVal = parseFloat(splitCashInput ? splitCashInput.value : 0) || 0;
             splitUpiVal = parseFloat(splitUpiInput ? splitUpiInput.value : 0) || 0;
             splitUpiRefVal = splitUpiRef ? splitUpiRef.value.trim() : '';
@@ -1278,6 +1425,7 @@ document.addEventListener('DOMContentLoaded', function() {
             total_amount: netPayableTotal,
             payment_mode: payMode,
             is_online_sale: document.getElementById('isOnlineSale').checked,
+            cash_denominations: cashDenominations,
             cash_amount: splitCashVal,
             upi_amount: splitUpiVal,
             upi_reference: splitUpiRefVal
@@ -1308,7 +1456,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (splitCashInput) splitCashInput.value = '';
                 if (splitUpiInput) splitUpiInput.value = '';
                 if (splitUpiRef) splitUpiRef.value = '';
+                cashDenominationInputs.forEach(input => { input.value = '0'; });
+                updateCashTenderSummary();
                 if (splitPaymentSection) splitPaymentSection.classList.add('d-none');
+                if (cashTenderSection) cashTenderSection.classList.remove('d-none');
                 const defaultPayCash = document.getElementById('payCash');
                 if (defaultPayCash) defaultPayCash.checked = true;
 
