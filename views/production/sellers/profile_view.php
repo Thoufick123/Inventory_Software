@@ -18,9 +18,6 @@
         <a href="<?= url('production/sellers') ?>" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i>Suppliers
         </a>
-        <button type="button" class="btn btn-outline-success" onclick="exportReplacedRollsCSV()" title="Export Rolls Replaced Tab Data">
-            <i class="bi bi-file-earmark-excel me-1"></i>Export Replaced Rolls
-        </button>
         <a href="<?= url('production/purchases/create?seller_id=' . (int)$seller['id']) ?>" class="btn btn-outline-primary">
             <i class="bi bi-cart-plus me-1"></i>New Purchase
         </a>
@@ -262,10 +259,21 @@
                                         </td>
                                         <td>
                                             <div class="fw-semibold text-dark"><?= e($entry['item_name']) ?></div>
-                                            <div class="small text-muted">
-                                                <span class="me-2">Color: <strong><?= e($entry['color']) ?></strong></span>
-                                                <span>Design: <strong><?= e($entry['design']) ?></strong></span>
-                                            </div>
+                                            <?php 
+                                                $hasColor = !empty($entry['color']) && $entry['color'] !== '—';
+                                                $hasDesign = !empty($entry['design']) && $entry['design'] !== '—';
+                                                $isSupply = (($entry['item_type'] ?? '') === 'GENERAL_SUPPLY');
+                                            ?>
+                                            <?php if (!$isSupply && ($hasColor || $hasDesign)): ?>
+                                                <div class="small text-muted">
+                                                    <?php if ($hasColor): ?>
+                                                        <span class="me-2">Color: <strong><?= e($entry['color']) ?></strong></span>
+                                                    <?php endif; ?>
+                                                    <?php if ($hasDesign): ?>
+                                                        <span>Design: <strong><?= e($entry['design']) ?></strong></span>
+                                                    <?php endif; ?>
+                                                </div>
+                                            <?php endif; ?>
                                         </td>
                                         <td class="text-center">
                                             <div class="fw-bold text-dark"><?= number_format($entry['quantity']) ?> pcs</div>
@@ -280,14 +288,20 @@
                                             <?php endif; ?>
                                         </td>
                                         <td>
-                                            <?php if (!empty($entry['start_code']) && !empty($entry['end_code'])): ?>
+                                            <?php if (!empty($entry['start_code']) && !empty($entry['end_code']) && $entry['start_code'] !== $entry['end_code']): ?>
                                                 <span class="badge bg-light text-dark border font-monospace" style="font-size: 11px;">
                                                     <?= e($entry['start_code']) ?> → <?= e($entry['end_code']) ?>
                                                 </span>
                                             <?php elseif (!empty($entry['qr_code']) && $entry['qr_code'] !== '—'): ?>
-                                                <span class="badge bg-light text-dark border font-monospace" style="font-size: 11px;">
-                                                    <?= e($entry['qr_code']) ?>
-                                                </span>
+                                                <?php if (($entry['item_type'] ?? '') === 'GENERAL_SUPPLY' && !empty($entry['purchase_id'])): ?>
+                                                    <a href="<?= url('production/purchases/supply-qr/' . (int)$entry['purchase_id'] . '?item_id=' . (int)$entry['supply_id']) ?>" target="_blank" rel="noopener" class="badge bg-light text-primary border font-monospace text-decoration-none" style="font-size: 11px;" title="Print Supply QR Label">
+                                                        <i class="bi bi-qr-code me-0.5"></i><?= e($entry['qr_code']) ?>
+                                                    </a>
+                                                <?php else: ?>
+                                                    <span class="badge bg-light text-dark border font-monospace" style="font-size: 11px;">
+                                                        <?= e($entry['qr_code']) ?>
+                                                    </span>
+                                                <?php endif; ?>
                                             <?php else: ?>
                                                 <span class="text-muted">—</span>
                                             <?php endif; ?>
@@ -355,7 +369,7 @@
                                         <td class="text-muted"><?= $idx + 1 ?></td>
                                         <td>
                                             <div class="fw-bold text-dark font-monospace fs-6">
-                                                <?= e($pr['roll_number'] ?: ($pr['sr_roll_number'] ?: '—')) ?>
+                                                <?= e($pr['product_code'] ?: ($pr['roll_number'] ?: ($pr['sr_roll_number'] ?: '—'))) ?>
                                             </div>
                                             <div class="small text-muted"><?= e($pr['item_name']) ?></div>
                                             <?php if (!empty($pr['is_replacement_inward'])): ?>
@@ -373,8 +387,19 @@
                                             </div>
                                         </td>
                                         <td>
-                                            <div>Color: <strong class="text-dark"><?= e($pr['color'] ?: '—') ?></strong></div>
-                                            <div class="small text-muted">Design: <strong class="text-dark"><?= e($pr['design_name'] ?: '—') ?></strong></div>
+                                            <?php 
+                                                $hasColorPr = !empty($pr['color']) && $pr['color'] !== '—';
+                                                $hasDesignPr = !empty($pr['design_name']) && $pr['design_name'] !== '—';
+                                                $isSupplyPr = (($pr['item_type'] ?? '') === 'GENERAL_SUPPLY');
+                                            ?>
+                                            <?php if (!$isSupplyPr && ($hasColorPr || $hasDesignPr)): ?>
+                                                <?php if ($hasColorPr): ?>
+                                                    <div>Color: <strong class="text-dark"><?= e($pr['color']) ?></strong></div>
+                                                <?php endif; ?>
+                                                <?php if ($hasDesignPr): ?>
+                                                    <div class="small text-muted">Design: <strong class="text-dark"><?= e($pr['design_name']) ?></strong></div>
+                                                <?php endif; ?>
+                                            <?php endif; ?>
                                             <?php if (!empty($pr['hsn_code'])): ?>
                                                 <div class="small text-muted font-monospace">HSN: <?= e($pr['hsn_code']) ?></div>
                                             <?php endif; ?>
@@ -384,10 +409,18 @@
                                         <td class="text-end font-monospace">₹<?= number_format((float)($pr['unit_price'] ?? 0), 2) ?></td>
                                         <td class="text-end fw-bold font-monospace text-dark">₹<?= number_format((float)($pr['total_price'] ?? 0), 2) ?></td>
                                         <td>
-                                            <?php if (!empty($pr['start_code']) && !empty($pr['end_code'])): ?>
+                                            <?php if (!empty($pr['start_code']) && !empty($pr['end_code']) && $pr['start_code'] !== $pr['end_code']): ?>
                                                 <div class="badge bg-light text-dark border font-monospace" style="font-size: 11px;">
                                                     <?= e($pr['start_code']) ?> → <?= e($pr['end_code']) ?>
                                                 </div>
+                                            <?php elseif (!empty($pr['qr_code']) && $pr['qr_code'] !== '—'): ?>
+                                                <?php if (($pr['item_type'] ?? '') === 'GENERAL_SUPPLY'): ?>
+                                                    <a href="<?= url('production/purchases/supply-qr/' . (int)$pr['purchase_id'] . '?item_id=' . (int)$pr['id']) ?>" target="_blank" rel="noopener" class="badge bg-light text-primary border font-monospace text-decoration-none" style="font-size: 11px;" title="Print Supply QR Label">
+                                                        <i class="bi bi-qr-code me-0.5"></i><?= e($pr['qr_code']) ?>
+                                                    </a>
+                                                <?php else: ?>
+                                                    <span class="badge bg-light text-dark border font-monospace" style="font-size: 11px;"><?= e($pr['qr_code']) ?></span>
+                                                <?php endif; ?>
                                             <?php elseif (!empty($pr['sr_qr_code'])): ?>
                                                 <span class="badge bg-light text-dark border font-monospace" style="font-size: 11px;"><?= e($pr['sr_qr_code']) ?></span>
                                             <?php else: ?>

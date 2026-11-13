@@ -51,14 +51,9 @@
 </div>
 
 <div class="card border shadow-sm">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
         <h5 class="mb-0 fw-bold"><i class="bi bi-person-vcard me-2 text-primary"></i>Supplier Profiles</h5>
-        <div class="d-flex align-items-center gap-2">
-            <a href="<?= url('production/sellers/export-replaced') ?>" class="btn btn-sm btn-outline-success" title="Export Replaced Rolls Log (CSV)">
-                <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export Replaced (CSV)
-            </a>
-            <span class="badge bg-primary-subtle text-primary" id="supplierCount"><?= number_format(count($sellers)) ?> suppliers</span>
-        </div>
+        <span class="badge bg-primary-subtle text-primary" id="supplierCount"><?= number_format(count($sellers)) ?> suppliers</span>
     </div>
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
