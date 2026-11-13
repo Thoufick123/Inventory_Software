@@ -23,6 +23,7 @@ $customerName = trim((string)($po['display_customer_name'] ?? ''));
 if ($customerName === '') {
     $customerName = 'Walk-in Customer';
 }
+$customerPhone = trim((string)($po['display_customer_phone'] ?? $po['customer_phone'] ?? ''));
 $customerGst = trim((string)($po['customer_gst'] ?? ''));
 $staffName = trim((string)($po['created_by_name'] ?? ''));
 $paymentMethod = trim((string)($po['payment_method'] ?? 'CASH'));
@@ -115,7 +116,24 @@ foreach ($items as $item) {
 
         .store-header,
         .customer-header {
-            text-align: center;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            align-items: start;
+            gap: 3mm;
+            text-align: left;
+        }
+
+        .customer-left,
+        .customer-right {
+            min-width: 0;
+        }
+
+        .customer-right {
+            text-align: right;
+        }
+
+        .customer-payment-mode {
+            overflow-wrap: anywhere;
         }
 
         .store-brand {
@@ -185,12 +203,23 @@ foreach ($items as $item) {
         }
 
         .customer-name {
-            margin: 3px 0;
+            margin: 0 0 2px;
             font-weight: 700;
+            overflow-wrap: anywhere;
+        }
+
+        .customer-phone {
+            overflow-wrap: anywhere;
         }
 
         .customer-date {
             font-size: 10px;
+            margin-top: 2px;
+        }
+
+        .customer-status {
+            font-size: 9px;
+            font-weight: 700;
         }
 
         table {
@@ -324,19 +353,25 @@ foreach ($items as $item) {
         <hr class="rule">
         <div class="meta-row">
             <span>Bill No: <strong><?= e($billNumber) ?></strong></span>
-            <span>BID: <strong><?= e((string)($po['id'] ?? '')) ?></strong></span>
-        </div>
-        <div class="meta-row staff-row">
-            <span>Staff: <?= e($staffName !== '' ? $staffName : '-') ?></span>
+            <span class="staff-row">Staff: <?= e($staffName !== '' ? $staffName : '-') ?></span>
         </div>
 
         <hr class="rule">
         <section class="customer-header">
-            <div class="customer-name"><?= e($customerName) ?></div>
-            <div class="customer-date">Date: <?= e(formatDateTime($po['created_at'] ?? null)) ?></div>
-            <?php if ($customerGst !== ''): ?>
-                <div>GST No: <?= e($customerGst) ?></div>
-            <?php endif; ?>
+            <div class="customer-left">
+                <div class="customer-name"><?= e($customerName) ?></div>
+                <?php if ($customerPhone !== ''): ?>
+                    <div class="customer-phone">Ph: <?= e($customerPhone) ?></div>
+                <?php endif; ?>
+                <?php if ($customerGst !== ''): ?>
+                    <div>GST No: <?= e($customerGst) ?></div>
+                <?php endif; ?>
+            </div>
+            <div class="customer-right">
+                <div class="customer-payment-mode">Pay Mode: <strong><?= e($paymentMethod) ?></strong></div>
+                <div class="customer-date">Date: <?= e(formatDateTime($po['created_at'] ?? null, 'd/m/y h:i A')) ?></div>
+                <div class="customer-status"><?= e($paymentStatus) ?></div>
+            </div>
         </section>
 
         <hr class="rule">
@@ -444,14 +479,6 @@ foreach ($items as $item) {
 
         <hr class="rule">
         <section class="payment-details">
-            <div class="meta-row">
-                <span>Pay Mode: <strong><?= e($paymentMethod) ?></strong></span>
-                <span><?= e($paymentStatus) ?></span>
-            </div>
-            <div class="meta-row">
-                <span>Amount Received (Applied to Bill)</span>
-                <strong>₹ <?= e(number_format($paidAmount, 2)) ?></strong>
-            </div>
             <?php if ($cashTendered > $paidAmount): ?>
                 <div class="meta-row">
                     <span>Cash Given by Customer</span>
@@ -462,10 +489,6 @@ foreach ($items as $item) {
                     <strong>₹ <?= e(number_format($changeAmount, 2)) ?></strong>
                 </div>
             <?php endif; ?>
-            <div class="meta-row">
-                <span>Balance Due</span>
-                <strong>₹ <?= e(number_format($balanceDue, 2)) ?></strong>
-            </div>
             <?php if ($cashAmount !== null && $upiAmount !== null): ?>
                 <div class="meta-row">
                     <span>Cash: ₹ <?= e(number_format($cashAmount, 2)) ?></span>

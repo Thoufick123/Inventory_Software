@@ -32,11 +32,14 @@ class WarehouseReturnItem {
     }
 
     public static function getByReturnId(int $returnId): array {
-        return Database::fetchAll(
+        $items = Database::fetchAll(
             "SELECT wri.*, 
                     pv.sku, pv.qr_code as barcode, pv.mrp, pv.selling_price,
                     p.name as product_name, p.code as product_code, p.qr_code_prefix,
                     p.category_code, p.subcategory_code, p.sub_subcategory_code,
+                    COALESCE(wcat.category_type, 'NORMAL') as warehouse_category_type,
+                    GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) as is_complementary,
+                    pv.qr_type, pv.pack_quantity,
                     COALESCE(wcat.name, cat.name) as category_name,
                     COALESCE(wsub.name, subcat.name) as subcategory_name,
                     COALESCE(wsubsub.name, subsubcat.name) as sub_subcategory_name,
@@ -48,7 +51,10 @@ class WarehouseReturnItem {
              LEFT JOIN categories cat ON p.category_id = cat.id
              LEFT JOIN subcategories subcat ON p.subcategory_id = subcat.id
              LEFT JOIN sub_subcategories subsubcat ON p.sub_subcategory_id = subsubcat.id
-             LEFT JOIN warehouse_categories wcat ON p.warehouse_category_id = wcat.id
+             LEFT JOIN warehouse_sub_subcategories wssc ON p.warehouse_sub_subcategory_id = wssc.id
+             LEFT JOIN warehouse_subcategories wssc_parent ON wssc.subcategory_id = wssc_parent.id
+             LEFT JOIN warehouse_subcategories wsc ON COALESCE(p.warehouse_subcategory_id, wssc.subcategory_id) = wsc.id
+             LEFT JOIN warehouse_categories wcat ON COALESCE(p.warehouse_category_id, wsc.category_id, wssc_parent.category_id) = wcat.id
              LEFT JOIN warehouse_subcategories wsub ON p.warehouse_subcategory_id = wsub.id
              LEFT JOIN warehouse_sub_subcategories wsubsub ON p.warehouse_sub_subcategory_id = wsubsub.id
              LEFT JOIN sizes sz ON pv.size_id = sz.id
@@ -57,6 +63,16 @@ class WarehouseReturnItem {
              ORDER BY wri.id ASC",
             [$returnId]
         );
+        foreach ($items as &$item) {
+            $item['is_series_or_complementary'] =
+                in_array(strtoupper((string)($item['warehouse_category_type'] ?? '')), ['SERIES', 'COMPLEMENTARY'], true)
+                || !empty($item['is_complementary'])
+                || strtoupper((string)($item['qr_type'] ?? '')) === 'SERIES_BATCH'
+                || (int)($item['pack_quantity'] ?? 1) > 1;
+        }
+        unset($item);
+
+        return $items;
     }
 
     public static function create(array $data): int {
