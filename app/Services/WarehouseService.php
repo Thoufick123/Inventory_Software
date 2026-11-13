@@ -3298,10 +3298,14 @@ class WarehouseService {
                       AND restock_return.status NOT IN ('CANCELLED', 'REJECTED')
                       AND ri.item_condition = 'GOOD'
                       AND ri.destination = 'AVAILABLE'
-                      AND ri.reason LIKE 'Piece Tags:%'
+                      AND ri.reason IS NOT NULL
                       AND FIND_IN_SET(
                           UPPER(?),
-                          REPLACE(UPPER(SUBSTRING_INDEX(ri.reason, 'Piece Tags: ', -1)), ' ', '')
+                          REPLACE(
+                              SUBSTRING_INDEX(UPPER(ri.reason), 'PIECE TAGS:', -1),
+                              ' ',
+                              ''
+                          )
                       ) > 0
                )";
         $params = [$pieceTag, $pieceTag];
