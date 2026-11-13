@@ -18,7 +18,7 @@
 
 <!-- Summary Metrics Chips -->
 <div class="row g-3 mb-4">
-    <div class="col-sm-6 col-xl-3">
+    <div class="col-sm-6 col-xl">
         <div class="card border-0 shadow-sm rounded-3 p-3 bg-white h-100">
             <div class="d-flex align-items-center">
                 <div class="flex-shrink-0 p-3 rounded-3 me-3" style="background-color: rgba(13, 110, 253, 0.12); color: #0d6efd;">
@@ -32,7 +32,7 @@
             </div>
         </div>
     </div>
-    <div class="col-sm-6 col-xl-3">
+    <div class="col-sm-6 col-xl">
         <div class="card border-0 shadow-sm rounded-3 p-3 bg-white h-100">
             <div class="d-flex align-items-center">
                 <div class="flex-shrink-0 p-3 rounded-3 me-3" style="background-color: rgba(25, 135, 84, 0.15); color: #198754;">
@@ -46,7 +46,7 @@
             </div>
         </div>
     </div>
-    <div class="col-sm-6 col-xl-3">
+    <div class="col-sm-6 col-xl">
         <div class="card border-0 shadow-sm rounded-3 p-3 bg-white h-100">
             <div class="d-flex align-items-center">
                 <div class="flex-shrink-0 p-3 rounded-3 me-3" style="background-color: rgba(255, 193, 7, 0.2); color: #856404;">
@@ -56,6 +56,35 @@
                     <div class="text-muted small fw-semibold">Total Units Sold</div>
                     <h4 class="fw-bold mb-0 text-dark"><?= number_format($totalUnitsSold ?? 0) ?> <span class="fs-7 fw-normal text-muted">pcs</span></h4>
                     <small class="text-muted">Garments &amp; Products</small>
+                </div>
+            </div>
+        </div>
+    </div>
+        <div class="col-sm-6 col-xl">
+            <div class="card border-0 shadow-sm rounded-3 p-3 bg-white h-100">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0 p-3 rounded-3 me-3" style="background-color: rgba(25, 135, 84, 0.15); color: #198754;">
+                        <i class="bi bi-cash-stack fs-3"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted small fw-semibold">Cash Paid</div>
+                        <h4 class="fw-bold mb-0 text-success">₹<?= number_format($totalCashPaid ?? 0, 2) ?></h4>
+                        <small class="text-muted">Actual cash payments</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-xl">
+            <div class="card border-0 shadow-sm rounded-3 p-3 bg-white h-100">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0 p-3 rounded-3 me-3" style="background-color: rgba(13, 110, 253, 0.12); color: #0d6efd;">
+                        <i class="bi bi-qr-code-scan fs-3"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted small fw-semibold">Online Paid</div>
+                        <h4 class="fw-bold mb-0 text-primary">₹<?= number_format($totalOnlinePaid ?? 0, 2) ?></h4>
+                        <small class="text-muted">UPI, card &amp; other online payments</small>
+                    </div>
                 </div>
             </div>
         </div>
@@ -108,6 +137,12 @@
         <div>
             <h5 class="mb-0 fw-bold text-dark"><i class="bi bi-list-check me-2 text-success"></i>Customer Sales Orders</h5>
             <small class="text-muted">Showing <?= count($orders ?? []) ?> orders matching filter criteria</small>
+            <?php if ((float)($totalUnclassifiedPaid ?? 0) > 0): ?>
+                <div class="small text-warning mt-1">
+                    <i class="bi bi-exclamation-circle me-1"></i>
+                    Cash/online split unavailable for <?= number_format((int)($unclassifiedPaidOrderCount ?? 0)) ?> paid order(s): ₹<?= number_format((float)$totalUnclassifiedPaid, 2) ?>.
+                </div>
+            <?php endif; ?>
         </div>
         <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-1.5 fw-semibold">
             Total Value: ₹<?= number_format($totalRevenueAmount ?? 0, 2) ?>
@@ -206,11 +241,35 @@
                         <!-- Payment Mode / Status -->
                         <td class="text-center">
                             <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1 small">
-                                <?= htmlspecialchars($o['payment_mode'] ?? $o['payment_method'] ?? 'UPI') ?>
+                                <?= htmlspecialchars(strtoupper((string)($o['payment_mode'] ?? $o['payment_method'] ?? 'UPI')) === 'CASH_UPI' ? 'Cash + UPI' : ($o['payment_mode'] ?? $o['payment_method'] ?? 'UPI')) ?>
                             </span>
+                            <div class="small mt-1 text-success" style="font-size: 0.72rem;">
+                                Cash: <strong>₹<?= number_format((float)($o['cash_paid_amount'] ?? 0), 2) ?></strong>
+                            </div>
+                            <div class="small text-primary" style="font-size: 0.72rem;">
+                                Online: <strong>₹<?= number_format((float)($o['online_paid_amount'] ?? 0), 2) ?></strong>
+                            </div>
+                            <?php
+                            $orderTotal = (float)($o['total_amount'] ?? $o['final_amount'] ?? 0);
+                            $amountPaid = max(0.0, (float)($o['paid_amount'] ?? 0));
+                            $pendingAmount = max(0.0, $orderTotal - $amountPaid);
+                            ?>
+                            <?php if ($pendingAmount > 0): ?>
+                                <div class="small text-muted" style="font-size: 0.7rem;">
+                                    Advance: ₹<?= number_format($amountPaid, 2) ?> · Pending/COD: <strong class="text-danger">₹<?= number_format($pendingAmount, 2) ?></strong>
+                                </div>
+                            <?php endif; ?>
+                            <?php if ((float)($o['unclassified_paid_amount'] ?? 0) > 0): ?>
+                                <div class="small text-warning" style="font-size: 0.7rem;">
+                                    Split unavailable: ₹<?= number_format((float)$o['unclassified_paid_amount'], 2) ?>
+                                </div>
+                            <?php endif; ?>
+                            <?php if (!empty($o['is_online_sale'])): ?>
+                                <div class="mt-1"><span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size: 0.68rem;">Online section</span></div>
+                            <?php endif; ?>
                             <div class="small mt-0.5" style="font-size: 0.72rem;">
                                 <span class="badge bg-<?= ($o['payment_status'] ?? '') === 'PAID' ? 'success' : 'warning text-dark' ?>-subtle text-<?= ($o['payment_status'] ?? '') === 'PAID' ? 'success' : 'warning' ?>">
-                                    <?= htmlspecialchars($o['payment_status'] ?? 'PAID') ?>
+                                    <?= strtoupper((string)($o['payment_status'] ?? 'PAID')) === 'PARTIAL' ? 'Partially Paid / COD' : htmlspecialchars($o['payment_status'] ?? 'PAID') ?>
                                 </span>
                             </div>
                         </td>
@@ -238,6 +297,11 @@
                                 <a href="<?= url('sales/whatsapp/view/' . $o['id']) ?>" class="btn btn-xs btn-outline-success px-2 py-1" title="View Order Details">
                                     <i class="bi bi-eye"></i> View
                                 </a>
+                                <?php if (hasPermission('whatsapp_orders', 'edit')): ?>
+                                    <a href="<?= url('sales/whatsapp/edit/' . $o['id']) ?>" class="btn btn-xs btn-outline-primary px-2 py-1" title="Edit WhatsApp Order">
+                                        <i class="bi bi-pencil-square"></i> Edit
+                                    </a>
+                                <?php endif; ?>
                             </div>
                         </td>
                     </tr>

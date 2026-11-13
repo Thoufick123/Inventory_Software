@@ -353,6 +353,7 @@ input[type=number] {
                                 </div>
                             </div>
                             <div>
+                                <span id="whatsappCustomerOrderCount" class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-1 d-none" style="font-size: 10.5px;"></span>
                                 <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2.5 py-1" style="font-size: 10.5px;">
                                     <i class="bi bi-asterisk me-1"></i>Phone, Name, Address Required
                                 </span>
@@ -610,6 +611,13 @@ input[type=number] {
                             </div>
                         </div>
 
+                        <div class="form-check form-switch mt-2 p-2 ps-5 bg-white border rounded-3">
+                            <input type="hidden" name="is_online_sale" value="0">
+                            <input class="form-check-input" type="checkbox" role="switch" id="isOnlineSale" name="is_online_sale" value="1">
+                            <label class="form-check-label fw-semibold" for="isOnlineSale">Show this sale in the Online section</label>
+                            <div class="form-text mt-0">Classification only; the selected payment method and payment records stay unchanged.</div>
+                        </div>
+
                         <!-- Payment Mode Interactive Tiles (4 Options) -->
                         <div class="mb-3">
                             <label class="pos-field-label mb-2 d-flex align-items-center justify-content-between">
@@ -701,9 +709,9 @@ input[type=number] {
                             <div class="col-6 col-md-6" id="paymentStatusCol">
                                 <div class="bg-white p-2 rounded-3 border h-100 d-flex flex-column justify-content-between">
                                     <label class="pos-field-label mb-1"><i class="bi bi-check2-circle text-success me-1"></i>Payment Status</label>
-                                    <select name="payment_status" class="form-select form-select-sm fw-bold font-monospace border-0 bg-light">
+                                    <select name="payment_status" id="paymentStatusSelect" class="form-select form-select-sm fw-bold font-monospace border-0 bg-light" onchange="onPaymentStatusChange()">
                                         <option value="PAID" selected>Paid</option>
-                                        <option value="UNPAID">Unpaid / Pending</option>
+                                        <option value="PARTIAL">Partially Paid / COD</option>
                                     </select>
                                 </div>
                             </div>
@@ -713,6 +721,23 @@ input[type=number] {
                                     <label class="pos-field-label mb-1"><i class="bi bi-camera text-info me-1"></i>Payment Screenshot</label>
                                     <input type="file" name="payment_screenshot" id="paymentScreenshotInput" accept="image/*" class="form-control form-control-sm" onchange="previewPaymentScreenshot(this)">
                                 </div>
+                            </div>
+                        </div>
+                        <div id="partialPaymentSection" class="row g-2 mb-3 d-none">
+                            <div class="col-6">
+                                <div class="bg-white p-2 rounded-3 border h-100">
+                                    <label class="pos-field-label mb-1" for="advanceAmount"><i class="bi bi-cash-coin text-success me-1"></i>Advance Paid (₹)</label>
+                                    <input type="number" step="0.01" min="0" name="advance_amount" id="advanceAmount" class="form-control form-control-sm text-end fw-bold font-monospace" value="200.00" oninput="onAdvanceAmountChange()">
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="bg-white p-2 rounded-3 border h-100">
+                                    <label class="pos-field-label mb-1" for="pendingAmount"><i class="bi bi-clock-history text-warning me-1"></i>Pending / COD (₹)</label>
+                                    <input type="number" step="0.01" id="pendingAmount" class="form-control form-control-sm text-end fw-bold font-monospace bg-light" value="0.00" readonly>
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <small class="text-muted">Pending is calculated automatically: order total minus advance paid.</small>
                             </div>
                         </div>
 
@@ -1059,6 +1084,7 @@ function updateSummaryTotals() {
     if (fGstAmt) fGstAmt.value = totalGst.toFixed(2);
     const fTotal = document.getElementById('formTotalAmount');
     if (fTotal) fTotal.value = netTotal.toFixed(2);
+    updatePartialPaymentSummary();
 
     const shipBadge = document.getElementById('shippingBadge');
     if (shipBadge) {
@@ -1337,8 +1363,52 @@ function onPaymentModeChange(mode) {
     }
 }
 
+function getExpectedCollectedAmount() {
+    const total = parseFloat(document.getElementById('formTotalAmount')?.value) || 0;
+    const status = document.getElementById('paymentStatusSelect')?.value || 'PAID';
+    if (status === 'PARTIAL') {
+        return Math.max(0, parseFloat(document.getElementById('advanceAmount')?.value) || 0);
+    }
+    if (status === 'PENDING') return 0;
+    return total;
+}
+
+function updatePartialPaymentSummary() {
+    const total = parseFloat(document.getElementById('formTotalAmount')?.value) || 0;
+    const advanceInput = document.getElementById('advanceAmount');
+    const pendingInput = document.getElementById('pendingAmount');
+    if (!advanceInput || !pendingInput) return;
+
+    let advance = parseFloat(advanceInput.value);
+    if (!Number.isFinite(advance) || advance < 0) advance = 0;
+    if (total > 0) {
+        advanceInput.max = total.toFixed(2);
+        if (advance > total) {
+            advance = total;
+            advanceInput.value = advance.toFixed(2);
+        }
+    }
+    pendingInput.value = Math.max(0, total - advance).toFixed(2);
+}
+
+function onPaymentStatusChange() {
+    const status = document.getElementById('paymentStatusSelect')?.value || 'PAID';
+    const partialSection = document.getElementById('partialPaymentSection');
+    if (partialSection) partialSection.classList.toggle('d-none', status !== 'PARTIAL');
+    updatePartialPaymentSummary();
+
+    const activePayMode = document.querySelector('input[name="payment_mode"]:checked')?.value;
+    if (activePayMode === 'CASH_UPI') autoBalanceSplit();
+}
+
+function onAdvanceAmountChange() {
+    updatePartialPaymentSummary();
+    const activePayMode = document.querySelector('input[name="payment_mode"]:checked')?.value;
+    if (activePayMode === 'CASH_UPI') onSplitCashChange();
+}
+
 function autoBalanceSplit() {
-    const netTotal = parseFloat(document.getElementById('formTotalAmount')?.value) || 0;
+    const netTotal = getExpectedCollectedAmount();
     if (!splitCashInput || !splitUpiInput) return;
     const cashVal = parseFloat(splitCashInput.value) || 0;
     if (cashVal > 0 && cashVal < netTotal) {
@@ -1352,7 +1422,7 @@ function autoBalanceSplit() {
 }
 
 function onSplitCashChange() {
-    const netTotal = parseFloat(document.getElementById('formTotalAmount')?.value) || 0;
+    const netTotal = getExpectedCollectedAmount();
     const cashVal = parseFloat(splitCashInput ? splitCashInput.value : 0) || 0;
     if (splitUpiInput) {
         splitUpiInput.value = Math.max(0, netTotal - cashVal).toFixed(2);
@@ -1361,7 +1431,7 @@ function onSplitCashChange() {
 }
 
 function updateSplitSummary() {
-    const netTotal = parseFloat(document.getElementById('formTotalAmount')?.value) || 0;
+    const netTotal = getExpectedCollectedAmount();
     const cashVal = parseFloat(splitCashInput ? splitCashInput.value : 0) || 0;
     const upiVal = parseFloat(splitUpiInput ? splitUpiInput.value : 0) || 0;
     const splitSum = cashVal + upiVal;
@@ -1554,6 +1624,31 @@ function validateWhatsappForm(e) {
         e.preventDefault();
         return false;
     }
+
+    const paymentStatus = document.getElementById('paymentStatusSelect')?.value || 'PAID';
+    const orderTotal = parseFloat(document.getElementById('formTotalAmount')?.value) || 0;
+    if (paymentStatus === 'PARTIAL') {
+        const advanceAmount = parseFloat(document.getElementById('advanceAmount')?.value);
+        if (!Number.isFinite(advanceAmount) || advanceAmount < 0 || advanceAmount > orderTotal) {
+            alert('Advance paid must be between ₹0.00 and the order total.');
+            document.getElementById('advanceAmount')?.focus();
+            e.preventDefault();
+            return false;
+        }
+    }
+
+    const paymentMode = document.querySelector('input[name="payment_mode"]:checked')?.value;
+    if (paymentMode === 'CASH_UPI') {
+        const cashAmount = parseFloat(splitCashInput?.value);
+        const upiAmount = parseFloat(splitUpiInput?.value);
+        if (!Number.isFinite(cashAmount) || !Number.isFinite(upiAmount)
+            || Math.abs(cashAmount + upiAmount - getExpectedCollectedAmount()) > 0.01) {
+            alert('Cash + UPI amounts must equal the amount being collected now.');
+            splitCashInput?.focus();
+            e.preventDefault();
+            return false;
+        }
+    }
     return true;
 }
 
@@ -1562,11 +1657,28 @@ document.addEventListener('DOMContentLoaded', function() {
     const phoneInput = document.getElementById('custPhone');
     const suggestions = document.getElementById('whatsappCustomerSuggestions');
     const customerIdInput = document.getElementById('customerIdInput');
+    const customerOrderCountBadge = document.getElementById('whatsappCustomerOrderCount');
     let customerSearchTimer = null;
     let customerSearchSequence = 0;
+    const setCustomerOrderCount = (count) => {
+        if (!customerOrderCountBadge) return;
+        const orderCount = Number(count) || 0;
+        customerOrderCountBadge.textContent = `${orderCount} previous ${orderCount === 1 ? 'order' : 'orders'}`;
+        customerOrderCountBadge.classList.remove('d-none');
+        customerOrderCountBadge.classList.toggle('bg-secondary-subtle', orderCount === 0);
+        customerOrderCountBadge.classList.toggle('text-secondary', orderCount === 0);
+        customerOrderCountBadge.classList.toggle('border-secondary-subtle', orderCount === 0);
+        customerOrderCountBadge.classList.toggle('bg-success-subtle', orderCount > 0);
+        customerOrderCountBadge.classList.toggle('text-success', orderCount > 0);
+        customerOrderCountBadge.classList.toggle('border-success-subtle', orderCount > 0);
+    };
+    const clearCustomerOrderCount = () => {
+        if (customerOrderCountBadge) customerOrderCountBadge.classList.add('d-none');
+    };
     if (phoneInput && suggestions) {
         phoneInput.addEventListener('input', function() {
             if (customerIdInput) customerIdInput.value = '0';
+            clearCustomerOrderCount();
             clearTimeout(customerSearchTimer);
             const query = this.value.trim();
             const sequence = ++customerSearchSequence;
@@ -1577,12 +1689,25 @@ document.addEventListener('DOMContentLoaded', function() {
                     const result = await response.json();
                     if (sequence !== customerSearchSequence || phoneInput.value.trim() !== query) return;
                     const customers = result.data || result.customers || [];
-                    if (!result.success || !customers.length) { suggestions.style.display = 'none'; return; }
-                    suggestions.innerHTML = customers.map(customer => `<button type="button" class="list-group-item list-group-item-action py-2 text-start" data-customer='${escapeHtml(JSON.stringify(customer))}'><strong>${escapeHtml(customer.name || '')}</strong><span class="badge bg-light text-primary ms-2">${escapeHtml(customer.phone || '')}</span>${customer.address ? `<small class="d-block text-muted text-truncate">${escapeHtml(customer.address)}</small>` : ''}</button>`).join('');
+                    const queryDigits = query.replace(/\D/g, '');
+                    if (!result.success || !customers.length) {
+                        if (queryDigits.length === 10) setCustomerOrderCount(0);
+                        suggestions.style.display = 'none';
+                        return;
+                    }
+                    if (queryDigits.length === 10) {
+                        const matchingPhone = customers.find(customer => String(customer.phone || '').replace(/\D/g, '').slice(-10) === queryDigits);
+                        setCustomerOrderCount(matchingPhone ? matchingPhone.previous_order_count : 0);
+                    }
+                    suggestions.innerHTML = customers.map(customer => {
+                        const orderCount = Number(customer.previous_order_count) || 0;
+                        return `<button type="button" class="list-group-item list-group-item-action py-2 text-start" data-customer='${escapeHtml(JSON.stringify(customer))}'><strong>${escapeHtml(customer.name || '')}</strong><span class="badge bg-light text-primary ms-2">${escapeHtml(customer.phone || '')}</span>${customer.address ? `<small class="d-block text-muted text-truncate">${escapeHtml(customer.address)}</small>` : ''}<small class="d-block text-success fw-semibold">${orderCount} previous ${orderCount === 1 ? 'order' : 'orders'}</small></button>`;
+                    }).join('');
                     suggestions.style.display = 'block';
                     suggestions.querySelectorAll('button[data-customer]').forEach(button => button.addEventListener('click', function() {
                         const customer = JSON.parse(this.dataset.customer || '{}');
                         if (customerIdInput) customerIdInput.value = customer.id || '0';
+                        setCustomerOrderCount(customer.previous_order_count);
                         document.getElementById('custName').value = customer.name || '';
                         phoneInput.value = customer.phone || '';
                         document.getElementById('custAddress').value = customer.address || '';
@@ -1598,6 +1723,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     const initMode = document.querySelector('input[name="payment_mode"]:checked')?.value || 'CASH';
+    onPaymentStatusChange();
     onPaymentModeChange(initMode);
 
     // Auto-prefill variant from URL parameters if opened from product inventory

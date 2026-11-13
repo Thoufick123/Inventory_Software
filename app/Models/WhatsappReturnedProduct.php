@@ -20,6 +20,8 @@ class WhatsappReturnedProduct {
                 item_condition varchar(30) NOT NULL DEFAULT 'GOOD',
                 printed_at datetime DEFAULT NULL,
                 printed_by int(10) unsigned DEFAULT NULL,
+                voided_at datetime DEFAULT NULL,
+                voided_by int(10) unsigned DEFAULT NULL,
                 created_at datetime NOT NULL DEFAULT current_timestamp(),
                 PRIMARY KEY (id),
                 UNIQUE KEY uq_whatsapp_returned_tag (returned_tag),
@@ -30,6 +32,12 @@ class WhatsappReturnedProduct {
                 KEY idx_whatsapp_return_printed (printed_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
+        if (!Database::fetchOne("SHOW COLUMNS FROM whatsapp_returned_products LIKE 'voided_at'")) {
+            Database::execute("ALTER TABLE whatsapp_returned_products ADD COLUMN voided_at datetime DEFAULT NULL");
+        }
+        if (!Database::fetchOne("SHOW COLUMNS FROM whatsapp_returned_products LIKE 'voided_by'")) {
+            Database::execute("ALTER TABLE whatsapp_returned_products ADD COLUMN voided_by int(10) unsigned DEFAULT NULL");
+        }
         self::$tableReady = true;
     }
 
@@ -75,7 +83,7 @@ class WhatsappReturnedProduct {
              LEFT JOIN returns r ON r.id = wrp.return_id
              LEFT JOIN sales s ON s.id = r.sale_id
              LEFT JOIN users u ON u.id = wrp.printed_by
-             WHERE wrp.channel_id IN ($placeholders)
+             WHERE wrp.channel_id IN ($placeholders) AND wrp.voided_at IS NULL
              ORDER BY wrp.created_at DESC, wrp.id DESC",
             array_map('intval', $channelIds)
         );
@@ -100,6 +108,7 @@ class WhatsappReturnedProduct {
              LEFT JOIN returns r ON r.id = wrp.return_id
              LEFT JOIN sales s ON s.id = r.sale_id
              WHERE wrp.id = ? AND wrp.channel_id IN ($placeholders)
+               AND wrp.voided_at IS NULL
              LIMIT 1" . ($forUpdate ? ' FOR UPDATE' : ''),
             array_merge([$id], array_map('intval', $channelIds))
         );
@@ -110,7 +119,8 @@ class WhatsappReturnedProduct {
         $rows = Database::fetchAll(
             "SELECT original_piece_tag
              FROM whatsapp_returned_products
-             WHERE sale_item_id = ? AND original_piece_tag IS NOT NULL AND original_piece_tag <> ''",
+             WHERE sale_item_id = ? AND voided_at IS NULL
+               AND original_piece_tag IS NOT NULL AND original_piece_tag <> ''",
             [$saleItemId]
         );
         return array_values(array_filter(array_map(
@@ -131,6 +141,7 @@ class WhatsappReturnedProduct {
              LEFT JOIN returns r ON r.id = wrp.return_id
              LEFT JOIN sales s ON s.id = r.sale_id
              WHERE wrp.variant_id = ? AND wrp.channel_id IN ($placeholders)
+               AND wrp.voided_at IS NULL
              ORDER BY wrp.created_at DESC, wrp.id DESC",
             array_merge([$variantId], array_map('intval', $channelIds))
         );
@@ -153,8 +164,19 @@ class WhatsappReturnedProduct {
         return Database::execute(
             "UPDATE whatsapp_returned_products
              SET printed_at = NOW(), printed_by = ?
-             WHERE id = ? AND channel_id IN ($placeholders) AND printed_at IS NULL",
+             WHERE id = ? AND channel_id IN ($placeholders)
+               AND printed_at IS NULL AND voided_at IS NULL",
             array_merge([$userId, $id], array_map('intval', $channelIds))
         ) > 0;
+    }
+
+    public static function voidForReturn(int $returnId, int $userId): void {
+        self::ensureTable();
+        Database::execute(
+            "UPDATE whatsapp_returned_products
+             SET voided_at = NOW(), voided_by = ?
+             WHERE return_id = ? AND voided_at IS NULL",
+            [$userId, $returnId]
+        );
     }
 }

@@ -88,7 +88,7 @@ $onlineRecordCount = count(array_filter($invoices, static fn($invoice) => (float
     <!-- Payment Type Tabs -->
     <div class="card border-0 shadow-sm rounded-4 mb-3 bg-white">
         <div class="card-body p-2">
-            <div class="nav nav-pills gap-2" role="tablist" aria-label="Filter sold products by payment type">
+            <div class="nav nav-pills gap-2" role="tablist" aria-label="Filter sold products by payment type or online classification">
                 <button type="button" class="nav-link active rounded-3 d-flex align-items-center gap-2"
                         id="allPaymentTab" data-payment-tab="all" role="tab" aria-selected="true">
                     <i class="bi bi-list-ul"></i>
@@ -154,11 +154,40 @@ $onlineRecordCount = count(array_filter($invoices, static fn($invoice) => (float
                     <button type="submit" class="btn btn-primary rounded-3 w-100" title="Apply Filter">
                         <i class="bi bi-funnel-fill"></i>
                     </button>
-                    <?php if (!empty($filters['search']) || !empty($filters['start_date']) || !empty($filters['end_date']) || ($filters['category_id'] ?? 'ALL') !== 'ALL'): ?>
+                    <?php if (!empty($filters['search']) || !empty($filters['start_date']) || !empty($filters['end_date']) || ($filters['category_id'] ?? 'ALL') !== 'ALL' || ($filters['payment_mode'] ?? 'ALL') !== 'ALL' || ($filters['gst_type'] ?? 'ALL') !== 'ALL'): ?>
                         <a href="<?= url('shop/sales') ?>" class="btn btn-light border rounded-3" title="Clear Filters">
                             <i class="bi bi-arrow-clockwise"></i>
                         </a>
                     <?php endif; ?>
+                </div>
+                <div class="col-12">
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <select name="payment_mode" id="salesPaymentMode" class="form-select bg-light" aria-label="Filter by payment or online mode">
+                                <option value="ALL" <?= ($filters['payment_mode'] ?? 'ALL') === 'ALL' ? 'selected' : '' ?>>All payment / online modes</option>
+                                <?php foreach ([
+                                    'CASH' => 'Cash',
+                                    'UPI' => 'UPI / QR',
+                                    'CARD' => 'Card / POS',
+                                    'CASH_UPI' => 'Cash + UPI',
+                                    'MIXED' => 'Mixed',
+                                    'ONLINE' => 'Online',
+                                    'BANK_TRANSFER' => 'Bank Transfer',
+                                    'OTHER' => 'Other',
+                                ] as $value => $label): ?>
+                                    <option value="<?= e($value) ?>" <?= ($filters['payment_mode'] ?? 'ALL') === $value ? 'selected' : '' ?>><?= e($label) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <select name="gst_type" id="salesGstType" class="form-select bg-light" aria-label="Filter by GST method">
+                                <option value="ALL" <?= ($filters['gst_type'] ?? 'ALL') === 'ALL' ? 'selected' : '' ?>>All GST methods</option>
+                                <option value="CGST_SGST" <?= ($filters['gst_type'] ?? 'ALL') === 'CGST_SGST' ? 'selected' : '' ?>>CGST + SGST</option>
+                                <option value="IGST" <?= ($filters['gst_type'] ?? 'ALL') === 'IGST' ? 'selected' : '' ?>>IGST</option>
+                                <option value="EXEMPT" <?= ($filters['gst_type'] ?? 'ALL') === 'EXEMPT' ? 'selected' : '' ?>>GST Exempt</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
             </form>
         </div>
@@ -183,14 +212,15 @@ $onlineRecordCount = count(array_filter($invoices, static fn($invoice) => (float
                         <th class="text-center">Qty</th>
                         <th class="text-end">Discount</th>
                         <th class="text-end">Invoice Total</th>
-                        <th class="text-center">Mode</th>
+                        <th class="text-center">Payment / Online Mode</th>
+                        <th class="text-center">GST Method</th>
                         <th class="text-end pe-4">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="salesTableBody">
                     <?php if (empty($invoices)): ?>
                         <tr id="emptySalesRow">
-                            <td colspan="9" class="text-center py-5 text-muted">
+                            <td colspan="10" class="text-center py-5 text-muted">
                                 <div class="py-4">
                                     <i class="bi bi-inbox fs-1 text-secondary d-block mb-2"></i>
                                     <h6>No sales invoices found matching your search criteria.</h6>
@@ -214,6 +244,9 @@ $onlineRecordCount = count(array_filter($invoices, static fn($invoice) => (float
                                 data-cat="<?= e($invoice['category_ids'] ?? '') ?>"
                                 data-date="<?= e($saleDateFormatted) ?>"
                                 data-quantity="<?= (int)($invoice['total_qty'] ?? 0) ?>"
+                                data-is-online-sale="<?= !empty($invoice['is_online_sale']) ? '1' : '0' ?>"
+                                data-payment-mode="<?= e(strtoupper((string)($invoice['payment_mode'] ?? ''))) ?>"
+                                data-gst-type="<?= e(strtoupper((string)($invoice['gst_type'] ?? ''))) ?>"
                                 data-cash-revenue="<?= number_format((float)($invoice['cash_revenue'] ?? 0), 2, '.', '') ?>"
                                 data-online-revenue="<?= number_format((float)($invoice['online_revenue'] ?? 0), 2, '.', '') ?>">
                                 <td class="ps-4 text-muted small fw-bold sales-idx"><?= $idx + 1 ?></td>
@@ -250,7 +283,8 @@ $onlineRecordCount = count(array_filter($invoices, static fn($invoice) => (float
                                 <td class="text-end fw-bold text-success">₹<?= number_format((float)($invoice['total_amount'] ?? 0), 2) ?></td>
                                 <td class="text-center">
                                     <?php
-                                        $modeBadge = match($invoice['payment_mode']) {
+                                        $mode = strtoupper((string)($invoice['payment_mode'] ?? ''));
+                                        $modeBadge = match($mode) {
                                             'CASH'     => 'bg-secondary',
                                             'UPI'      => 'bg-success',
                                             'CARD'     => 'bg-info text-dark',
@@ -258,9 +292,27 @@ $onlineRecordCount = count(array_filter($invoices, static fn($invoice) => (float
                                             'MIXED'    => 'bg-warning text-dark',
                                             default    => 'bg-secondary'
                                         };
+                                        $modeLabel = match($mode) {
+                                            'CASH' => 'Cash',
+                                            'UPI' => 'UPI / QR',
+                                            'CARD' => 'Card / POS',
+                                            'CASH_UPI' => 'Cash + UPI',
+                                            'BANK_TRANSFER' => 'Bank Transfer',
+                                            default => $mode !== '' ? $mode : '—'
+                                        };
+                                        $gstLabel = match(strtoupper((string)($invoice['gst_type'] ?? ''))) {
+                                            'CGST_SGST' => 'CGST + SGST',
+                                            'IGST' => 'IGST',
+                                            'EXEMPT' => 'Exempt',
+                                            default => '—'
+                                        };
                                     ?>
-                                    <span class="badge <?= $modeBadge ?> rounded-pill px-2" style="font-size: 10px;"><?= ($invoice['payment_mode'] ?? '') === 'CASH_UPI' ? 'Cash+UPI' : e($invoice['payment_mode'] ?? '—') ?></span>
+                                    <span class="badge <?= $modeBadge ?> rounded-pill px-2" style="font-size: 10px;"><?= e($modeLabel) ?></span>
+                                    <?php if (!empty($invoice['is_online_sale'])): ?>
+                                        <small class="d-block text-primary fw-semibold mt-1"><i class="bi bi-globe2 me-1"></i>Online section</small>
+                                    <?php endif; ?>
                                 </td>
+                                <td class="text-center"><span class="badge bg-light text-dark border rounded-pill px-2"><?= e($gstLabel) ?></span></td>
                                 <td class="text-end pe-4">
                                     <div class="d-inline-flex align-items-center gap-1">
                                         <button type="button" class="btn btn-sm btn-outline-primary" title="View invoice" onclick="openSoldProductModal(<?= (int)$invoice['id'] ?>, 'thermal', 'sale')">
@@ -1305,6 +1357,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const startDateInput = document.getElementById('salesStartDate');
     const endDateInput = document.getElementById('salesEndDate');
     const catSelect = document.getElementById('salesCatSelect');
+    const paymentModeSelect = document.getElementById('salesPaymentMode');
+    const gstTypeSelect = document.getElementById('salesGstType');
     const tableBody = document.getElementById('salesTableBody');
     const countBadge = document.getElementById('salesCountBadge');
     const btnClear = document.getElementById('btnClearSalesSearch');
@@ -1315,6 +1369,8 @@ document.addEventListener('DOMContentLoaded', function() {
     window.applySalesFilters = function() {
         const query = (searchInput ? searchInput.value : '').trim().toLowerCase();
         const catId = (catSelect ? catSelect.value : 'ALL');
+        const paymentMode = paymentModeSelect ? paymentModeSelect.value : 'ALL';
+        const gstType = gstTypeSelect ? gstTypeSelect.value : 'ALL';
         const startDate = (startDateInput ? startDateInput.value : '');
         const endDate = (endDateInput ? endDateInput.value : '');
 
@@ -1338,6 +1394,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const rowCat = row.getAttribute('data-cat') || '';
             const rowDate = row.getAttribute('data-date') || '';
             const rowQuantity = parseInt(row.getAttribute('data-quantity'), 10) || 0;
+            const isOnlineSale = row.getAttribute('data-is-online-sale') === '1';
+            const rowPaymentMode = row.getAttribute('data-payment-mode') || '';
+            const rowGstType = row.getAttribute('data-gst-type') || '';
             const rowCashRevenue = parseFloat(row.getAttribute('data-cash-revenue')) || 0;
             const rowOnlineRevenue = parseFloat(row.getAttribute('data-online-revenue')) || 0;
 
@@ -1345,7 +1404,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const matchCat = (catId === 'ALL') || rowCat.split(',').includes(catId);
             const matchStart = !startDate || (rowDate >= startDate);
             const matchEnd = !endDate || (rowDate <= endDate);
-            const matchesOtherFilters = matchQuery && matchCat && matchStart && matchEnd;
+            const matchPaymentMode = paymentMode === 'ALL' || rowPaymentMode === paymentMode;
+            const matchGstType = gstType === 'ALL' || rowGstType === gstType;
+            const matchesOtherFilters = matchQuery && matchCat && matchStart && matchEnd && matchPaymentMode && matchGstType;
 
             if (matchesOtherFilters) {
                 allCount++;
@@ -1354,11 +1415,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 cashRevenue += rowCashRevenue;
                 onlineRevenue += rowOnlineRevenue;
                 if (rowCashRevenue > 0) cashCount++;
-                if (rowOnlineRevenue > 0) onlineCount++;
+                if (rowOnlineRevenue > 0 || isOnlineSale) onlineCount++;
             }
 
             const matchesPaymentTab = activePaymentTab === 'all'
-                || (activePaymentTab === 'cash' ? rowCashRevenue > 0 : rowOnlineRevenue > 0);
+                || (activePaymentTab === 'cash'
+                    ? rowCashRevenue > 0
+                    : rowOnlineRevenue > 0 || isOnlineSale);
             if (matchesOtherFilters && matchesPaymentTab) {
                 row.style.display = '';
                 visibleCount++;
@@ -1407,7 +1470,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 emptyRow = document.createElement('tr');
                 emptyRow.id = 'noSalesMatchRow';
                 emptyRow.innerHTML = `
-                    <td colspan="9" class="text-center py-5 text-muted">
+                    <td colspan="10" class="text-center py-5 text-muted">
                         <i class="bi bi-search fs-1 d-block mb-2 text-secondary opacity-50"></i>
                         <h6 class="fw-bold text-secondary">No Matching Invoices Found</h6>
                         <p class="small text-muted mb-2">No transactions match your live search criteria.</p>
@@ -1436,6 +1499,12 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     if (catSelect) {
         catSelect.addEventListener('change', applySalesFilters);
+    }
+    if (paymentModeSelect) {
+        paymentModeSelect.addEventListener('change', applySalesFilters);
+    }
+    if (gstTypeSelect) {
+        gstTypeSelect.addEventListener('change', applySalesFilters);
     }
     if (startDateInput) {
         startDateInput.addEventListener('change', applySalesFilters);

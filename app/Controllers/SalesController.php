@@ -60,25 +60,107 @@ class SalesController {
         return $stockByVariant;
     }
 
-    private function findPreviousSaleForPieceTag(string $tag): ?array {
+    private function getEditableWhatsappSaleMovements(int $saleId): array {
+        $movements = Database::fetchAll(
+            "SELECT variant_id, location_id, stock_state, SUM(quantity) AS net_quantity, MAX(id) AS latest_id
+             FROM stock_transactions
+             WHERE reference_type = 'sales' AND reference_id = ?
+               AND location_type = 'CHANNEL' AND stock_state = 'AVAILABLE'
+             GROUP BY variant_id, location_id, stock_state",
+            [$saleId]
+        );
+        $saleItems = Database::fetchAll(
+            "SELECT variant_id, SUM(quantity) AS quantity
+             FROM sale_items
+             WHERE sale_id = ?
+             GROUP BY variant_id",
+            [$saleId]
+        );
+        if ($saleItems && !$movements) {
+            throw new RuntimeException('This WhatsApp order has no linked stock ledger entries, so its inventory cannot be safely reconciled.');
+        }
+
+        $expectedByVariant = [];
+        foreach ($saleItems as $item) {
+            $expectedByVariant[(int)$item['variant_id']] = (int)$item['quantity'];
+        }
+        $netByVariant = [];
+        foreach ($movements as $movement) {
+            $netQuantity = (float)$movement['net_quantity'];
+            if ($netQuantity > 0) {
+                throw new RuntimeException('The WhatsApp order stock ledger is inconsistent and cannot be edited safely.');
+            }
+            $variantId = (int)$movement['variant_id'];
+            $netByVariant[$variantId] = ($netByVariant[$variantId] ?? 0.0) + abs($netQuantity);
+
+            $laterMovement = Database::fetchOne(
+                "SELECT id
+                 FROM stock_transactions
+                 WHERE variant_id = ? AND location_type = 'CHANNEL'
+                   AND location_id = ? AND stock_state = ?
+                   AND id > ?
+                   AND (COALESCE(reference_type, '') <> 'sales' OR COALESCE(reference_id, 0) <> ?)
+                 LIMIT 1",
+                [
+                    $variantId,
+                    (int)$movement['location_id'],
+                    (string)$movement['stock_state'],
+                    (int)$movement['latest_id'],
+                    $saleId,
+                ]
+            );
+            if ($laterMovement) {
+                throw new RuntimeException('This WhatsApp order cannot be edited because later stock activity has affected its channel inventory.');
+            }
+        }
+
+        foreach ($expectedByVariant as $variantId => $quantity) {
+            if (abs(($netByVariant[$variantId] ?? 0.0) - $quantity) > 0.0001) {
+                throw new RuntimeException('The WhatsApp order stock ledger no longer matches its billed items, so it cannot be edited safely.');
+            }
+        }
+        foreach ($netByVariant as $variantId => $quantity) {
+            if (abs(($expectedByVariant[$variantId] ?? 0.0) - $quantity) > 0.0001) {
+                throw new RuntimeException('The WhatsApp order stock ledger no longer matches its billed items, so it cannot be edited safely.');
+            }
+        }
+
+        return $movements;
+    }
+
+    private function getWhatsappSaleStockCredits(array $movements): array {
+        $credits = [];
+        foreach ($movements as $movement) {
+            $variantId = (int)$movement['variant_id'];
+            $credits[$variantId] = ($credits[$variantId] ?? 0.0) + abs((float)$movement['net_quantity']);
+        }
+        return $credits;
+    }
+
+    private function findPreviousSaleForPieceTag(string $tag, ?int $ignoreSaleId = null): ?array {
+        $excludeCurrentSale = $ignoreSaleId !== null ? ' AND s.id <> ?' : '';
+        $params = [$tag];
+        if ($ignoreSaleId !== null) {
+            $params[] = $ignoreSaleId;
+        }
         return Database::fetchOne(
             "SELECT s.invoice_number
              FROM sale_items si
              JOIN sales s ON s.id = si.sale_id
              WHERE COALESCE(s.status, '') != 'CANCELLED'
-               AND FIND_IN_SET(?, REPLACE(si.scanned_qr_codes, ', ', ',')) > 0
+               AND FIND_IN_SET(?, REPLACE(si.scanned_qr_codes, ', ', ',')) > 0{$excludeCurrentSale}
              LIMIT 1",
-            [$tag]
+            $params
         );
     }
 
-    private function assertSalesChannelTagsAvailable(array $tags, bool $isSeries): void {
+    private function assertSalesChannelTagsAvailable(array $tags, bool $isSeries, ?int $ignoreSaleId = null): void {
         if ($isSeries) {
             return;
         }
 
         foreach ($tags as $tag) {
-            $alreadySold = $this->findPreviousSaleForPieceTag($tag);
+            $alreadySold = $this->findPreviousSaleForPieceTag($tag, $ignoreSaleId);
             if ($alreadySold) {
                 throw new RuntimeException("Piece Serial Tag '{$tag}' was already sold in Invoice #{$alreadySold['invoice_number']}. It cannot be billed again.");
             }
@@ -162,7 +244,13 @@ class SalesController {
         }
     }
 
-    private function validateSalesChannelItems(array $items, string $channelType, array $channelIds): array {
+    private function validateSalesChannelItems(
+        array $items,
+        string $channelType,
+        array $channelIds,
+        ?int $ignoreSaleId = null,
+        array $stockCreditsByVariant = []
+    ): array {
         if (empty($items)) {
             throw new RuntimeException('Please select at least one item for the order.');
         }
@@ -172,6 +260,9 @@ class SalesController {
         $seenPieceTags = [];
         $damageTagsByVariant = [];
         $availableStockByVariant = $this->getSalesChannelAvailableStock($channelIds);
+        foreach ($stockCreditsByVariant as $variantId => $credit) {
+            $availableStockByVariant[(int)$variantId] = ($availableStockByVariant[(int)$variantId] ?? 0.0) + (float)$credit;
+        }
 
         foreach ($items as $item) {
             if (!is_array($item)) {
@@ -256,7 +347,7 @@ class SalesController {
                 }
 
                 if (!$isAggregateStock) {
-                    $alreadySold = $this->findPreviousSaleForPieceTag($tag);
+                    $alreadySold = $this->findPreviousSaleForPieceTag($tag, $ignoreSaleId);
                     if ($alreadySold) {
                         throw new RuntimeException("Piece Serial Tag '{$tag}' was already sold in Invoice #{$alreadySold['invoice_number']}. It cannot be billed again.");
                     }
@@ -293,6 +384,7 @@ class SalesController {
                 'gst_percentage'    => $gstRate,
                 'is_series'         => $isSeries,
                 'scanned_qr_codes' => $tags ? implode(',', $tags) : '',
+                'hsn_code'         => trim((string)($item['hsn_code'] ?? '')),
             ];
         }
 
@@ -966,6 +1058,7 @@ class SalesController {
             return;
         }
 
+        ShopService::ensureSalesOnlineFlagColumn();
         $customers = Database::fetchAll("SELECT * FROM customers ORDER BY name ASC");
         $users = Database::fetchAll("SELECT id, full_name, username FROM users WHERE is_active = 1 ORDER BY full_name ASC");
         $variants = Database::fetchAll(
@@ -1042,6 +1135,105 @@ class SalesController {
         ]);
     }
 
+    public function editWhatsappOrder(int $id): void {
+        if (!hasPermission('whatsapp_orders', 'edit')) {
+            Session::flash('error', 'Access denied: You do not have permission to edit WhatsApp orders.');
+            Response::redirect(url('sales/whatsapp/view/' . $id));
+            return;
+        }
+
+        ShopService::ensureSaleItemHsnColumn();
+        ShopService::ensureSalesGstTypeColumn();
+        ShopService::ensureSalesOnlineFlagColumn();
+        $sale = Database::fetchOne(
+            "SELECT s.*, COALESCE(c.name, s.customer_name, 'WhatsApp Customer') AS customer_name,
+                    COALESCE(c.phone, s.customer_phone, '') AS customer_phone,
+                    c.address AS customer_db_address, c.state AS customer_state,
+                    c.pincode AS customer_pincode
+             FROM sales s
+             LEFT JOIN customers c ON c.id = s.customer_id
+             WHERE s.id = ?
+               AND (s.sales_channel = 'WHATSAPP' OR s.notes LIKE '%WhatsApp%')",
+            [$id]
+        );
+        if (!$sale) {
+            Session::flash('error', 'WhatsApp order not found.');
+            Response::redirect(url('warehouse/whatsapp-orders/history'));
+            return;
+        }
+        if (strtoupper((string)($sale['status'] ?? '')) === 'CANCELLED') {
+            Session::flash('error', 'Cancelled WhatsApp orders cannot be edited.');
+            Response::redirect(url('sales/whatsapp/view/' . $id));
+            return;
+        }
+        if (Database::fetchOne("SELECT id FROM returns WHERE sale_id = ? LIMIT 1", [$id])) {
+            Session::flash('error', 'This WhatsApp order cannot be edited because it already has a return or exchange record.');
+            Response::redirect(url('sales/whatsapp/view/' . $id));
+            return;
+        }
+        try {
+            $movements = $this->getEditableWhatsappSaleMovements($id);
+        } catch (RuntimeException $e) {
+            Session::flash('error', $e->getMessage());
+            Response::redirect(url('sales/whatsapp/view/' . $id));
+            return;
+        }
+
+        $items = Database::fetchAll(
+            "SELECT si.*, pv.sku, pv.qr_code, pv.mrp AS variant_mrp,
+                    p.name AS product_name, p.is_complementary,
+                    COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), '') AS resolved_hsn_code,
+                    COALESCE(sz.name, 'Standard') AS size_name,
+                    COALESCE(clr.name, '') AS color_name
+             FROM sale_items si
+             JOIN product_variants pv ON pv.id = si.variant_id
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN sizes sz ON sz.id = pv.size_id
+             LEFT JOIN colors clr ON clr.id = pv.color_id
+             WHERE si.sale_id = ?
+             ORDER BY si.id",
+            [$id]
+        );
+        $channelIds = $this->getSalesChannelLocationIds('WHATSAPP');
+        $channelPlaceholders = implode(',', array_fill(0, count($channelIds), '?'));
+        $variants = Database::fetchAll(
+            "SELECT pv.id, pv.sku, pv.mrp, pv.selling_price, p.name AS product_name,
+                    COALESCE(sz.name, 'Standard') AS size_name,
+                    COALESCE(clr.name, '') AS color_name,
+                    COALESCE((SELECT SUM(sb.quantity) FROM stock_balances sb
+                              WHERE sb.variant_id = pv.id AND sb.location_type = 'CHANNEL'
+                                AND sb.location_id IN ($channelPlaceholders)
+                                AND sb.stock_state = 'AVAILABLE'), 0) AS available_stock
+             FROM product_variants pv
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN sizes sz ON sz.id = pv.size_id
+             LEFT JOIN colors clr ON clr.id = pv.color_id
+             WHERE pv.is_active = 1
+             ORDER BY p.name, pv.sku",
+            $channelIds
+        );
+
+        Response::view('sales.whatsapp.edit', [
+            'pageTitle' => 'Edit WhatsApp Order: ' . $sale['invoice_number'],
+            'activeModule' => 'whatsapp',
+            'activeMenu' => 'wh-whatsapp-history',
+            'breadcrumb' => [
+                ['label' => 'WhatsApp Orders', 'url' => url('warehouse/whatsapp-orders')],
+                ['label' => $sale['invoice_number'], 'url' => url('sales/whatsapp/view/' . $id)],
+                ['label' => 'Edit'],
+            ],
+            'sale' => $sale,
+            'items' => $items,
+            'variants' => $variants,
+            'stockCredits' => $this->getWhatsappSaleStockCredits($movements),
+        ]);
+    }
+
+    public function updateWhatsappOrder(int $id): void {
+        $_POST['edit_sale_id'] = $id;
+        $this->storeWhatsappOrder();
+    }
+
     public function lookupWhatsappCustomer(): void {
         $query = trim((string)($_GET['q'] ?? ''));
         if (strlen($query) < 2) {
@@ -1049,14 +1241,48 @@ class SalesController {
             return;
         }
         $wild = '%' . $query . '%';
+        $phoneDigits = preg_replace('/\D+/', '', $query);
+        $phoneLast10 = strlen($phoneDigits) >= 10 ? substr($phoneDigits, -10) : '';
         $customers = Database::fetchAll(
-            "SELECT id, name, phone, address, state, pincode
-             FROM customers
-             WHERE phone LIKE ? OR name LIKE ?
-             ORDER BY CASE WHEN phone = ? THEN 0 ELSE 1 END, id DESC
+            "SELECT c.id, c.name, c.phone, c.address, c.state, c.pincode,
+                    (SELECT COUNT(DISTINCT s.id)
+                     FROM sales s
+                     WHERE (
+                            s.customer_id = c.id
+                            OR (
+                                ? <> '' AND c.phone IS NOT NULL AND c.phone <> ''
+                                AND RIGHT(REGEXP_REPLACE(s.customer_phone, '[^0-9]', ''), 10) = ?
+                                AND RIGHT(REGEXP_REPLACE(c.phone, '[^0-9]', ''), 10) = ?
+                            )
+                     )
+                       AND (s.sales_channel = 'WHATSAPP' OR s.sale_type = 'WHATSAPP' OR s.notes LIKE '%WhatsApp%')
+                       AND UPPER(COALESCE(s.status, '')) <> 'CANCELLED'
+                    ) AS previous_order_count
+             FROM customers c
+             WHERE c.phone LIKE ? OR c.name LIKE ?
+                OR (? <> '' AND RIGHT(REGEXP_REPLACE(c.phone, '[^0-9]', ''), 10) = ?)
+             ORDER BY CASE WHEN c.phone = ? THEN 0 ELSE 1 END, c.id DESC
              LIMIT 10",
-            [$wild, $wild, $query]
+            [$phoneLast10, $phoneLast10, $phoneLast10, $wild, $wild, $phoneLast10, $phoneLast10, $query]
         );
+        if (!$customers && $phoneLast10 !== '') {
+            $historicalCustomer = Database::fetchOne(
+                "SELECT MAX(customer_name) AS name, MAX(customer_phone) AS phone,
+                        MAX(customer_address) AS address, COUNT(DISTINCT id) AS previous_order_count
+                 FROM sales
+                 WHERE (sales_channel = 'WHATSAPP' OR sale_type = 'WHATSAPP' OR notes LIKE '%WhatsApp%')
+                   AND UPPER(COALESCE(status, '')) <> 'CANCELLED'
+                   AND RIGHT(REGEXP_REPLACE(customer_phone, '[^0-9]', ''), 10) = ?",
+                [$phoneLast10]
+            );
+            if ((int)($historicalCustomer['previous_order_count'] ?? 0) > 0) {
+                $customers[] = array_merge([
+                    'id' => null,
+                    'state' => null,
+                    'pincode' => null,
+                ], $historicalCustomer);
+            }
+        }
         Response::jsonSuccess('Customer matches loaded', $customers);
     }
 
@@ -1079,15 +1305,26 @@ class SalesController {
     }
 
     public function storeWhatsappOrder(): void {
-        if (!hasPermission('whatsapp_orders', 'create') && !hasPermission('whatsapp', 'create')) {
-            Session::flash('error', 'Access denied: You do not have permission to create WhatsApp orders.');
-            Response::redirect(url('warehouse/whatsapp-orders/history'));
+        $editSaleId = (int)($_POST['edit_sale_id'] ?? 0);
+        $canCreate = hasPermission('whatsapp_orders', 'create') || hasPermission('whatsapp', 'create');
+        if (($editSaleId > 0 && !hasPermission('whatsapp_orders', 'edit'))
+            || ($editSaleId === 0 && !$canCreate)) {
+            Session::flash('error', $editSaleId > 0
+                ? 'Access denied: You do not have permission to edit WhatsApp orders.'
+                : 'Access denied: You do not have permission to create WhatsApp orders.');
+            Response::redirect($editSaleId > 0
+                ? url('sales/whatsapp/view/' . $editSaleId)
+                : url('warehouse/whatsapp-orders/history'));
             return;
         }
 
         CSRF::verify();
+        $formUrl = $editSaleId > 0
+            ? url('sales/whatsapp/edit/' . $editSaleId)
+            : url('sales/whatsapp/create');
         ShopService::ensureSaleItemHsnColumn();
         ShopService::ensureSalesGstTypeColumn();
+        ShopService::ensureSalesOnlineFlagColumn();
         $channel = SalesChannel::getForType('WHATSAPP');
         $channelId = !empty($channel['id']) ? (int)$channel['id'] : null;
 
@@ -1127,37 +1364,37 @@ class SalesController {
 
         if (!in_array($gstType, ['CGST_SGST', 'IGST', 'EXEMPT'], true)) {
             Session::flash('error', 'Please select a valid GST type.');
-            Response::redirect(url('sales/whatsapp/create'));
+            Response::redirect($formUrl);
             return;
         }
 
         if (empty($customerName) || empty($customerPhone) || empty($customerAddress)) {
             Session::flash('error', 'Customer Name, Mobile Number, and Customer Address are required.');
-            Response::redirect(url('sales/whatsapp/create'));
+            Response::redirect($formUrl);
             return;
         }
 
         if (!preg_match('/^[a-zA-Z\s.]+$/', $customerName)) {
             Session::flash('error', 'Customer Name must contain only alphabets.');
-            Response::redirect(url('sales/whatsapp/create'));
+            Response::redirect($formUrl);
             return;
         }
 
         if (!preg_match('/^\d{10}$/', $customerPhone)) {
             Session::flash('error', 'Customer Phone Number must contain only numbers and be exactly 10 digits.');
-            Response::redirect(url('sales/whatsapp/create'));
+            Response::redirect($formUrl);
             return;
         }
 
         if (!empty($customerPincode) && !preg_match('/^\d{6}$/', $customerPincode)) {
             Session::flash('error', 'Pincode must contain only numbers and be exactly 6 digits.');
-            Response::redirect(url('sales/whatsapp/create'));
+            Response::redirect($formUrl);
             return;
         }
 
         if (empty($items) || !is_array($items)) {
             Session::flash('error', 'Please select at least one item for the order.');
-            Response::redirect(url('sales/whatsapp/create'));
+            Response::redirect($formUrl);
             return;
         }
 
@@ -1166,64 +1403,77 @@ class SalesController {
         }
 
         $channelIds = $this->getSalesChannelLocationIds('WHATSAPP');
+        $editSale = null;
+        $editStockMovements = [];
+        $stockCreditsByVariant = [];
+        if ($editSaleId > 0) {
+            $editSale = Database::fetchOne(
+                "SELECT * FROM sales
+                 WHERE id = ? AND (sales_channel = 'WHATSAPP' OR notes LIKE '%WhatsApp%')",
+                [$editSaleId]
+            );
+            if (!$editSale) {
+                Session::flash('error', 'WhatsApp order not found.');
+                Response::redirect(url('warehouse/whatsapp-orders/history'));
+                return;
+            }
+            if (strtoupper((string)($editSale['status'] ?? '')) === 'CANCELLED') {
+                Session::flash('error', 'Cancelled WhatsApp orders cannot be edited.');
+                Response::redirect(url('sales/whatsapp/view/' . $editSaleId));
+                return;
+            }
+            if (Database::fetchOne("SELECT id FROM returns WHERE sale_id = ? LIMIT 1", [$editSaleId])) {
+                Session::flash('error', 'This WhatsApp order cannot be edited because it already has a return or exchange record.');
+                Response::redirect(url('sales/whatsapp/view/' . $editSaleId));
+                return;
+            }
+            try {
+                $editStockMovements = $this->getEditableWhatsappSaleMovements($editSaleId);
+                $stockCreditsByVariant = $this->getWhatsappSaleStockCredits($editStockMovements);
+            } catch (RuntimeException $e) {
+                Session::flash('error', $e->getMessage());
+                Response::redirect(url('sales/whatsapp/view/' . $editSaleId));
+                return;
+            }
+            $customerId = (int)($editSale['customer_id'] ?? 0);
+            if ($customerId > 0 && !Database::fetchOne("SELECT id FROM customers WHERE id = ?", [$customerId])) {
+                $customerId = 0;
+            }
+        }
+        $isOnlineSale = array_key_exists('is_online_sale', $_POST)
+            ? filter_var($_POST['is_online_sale'], FILTER_VALIDATE_BOOLEAN)
+            : !empty($editSale['is_online_sale']);
         try {
-            $items = $this->validateSalesChannelItems($items, 'WHATSAPP', $channelIds);
+            $items = $this->validateSalesChannelItems(
+                $items,
+                'WHATSAPP',
+                $channelIds,
+                $editSaleId > 0 ? $editSaleId : null,
+                $stockCreditsByVariant
+            );
         } catch (\PDOException $e) {
             error_log("WhatsApp order validation failed: " . $e->getMessage());
             Session::flash('error', 'Unable to verify WhatsApp order stock right now. Please try again.');
-            Response::redirect(url('sales/whatsapp/create'));
+            Response::redirect($formUrl);
             return;
         } catch (RuntimeException $e) {
             Session::flash('error', $e->getMessage());
-            Response::redirect(url('sales/whatsapp/create'));
+            Response::redirect($formUrl);
             return;
-        }
-
-        if (!$customerId && !empty($customerName) && !empty($customerPhone)) {
-            Database::execute(
-                "INSERT INTO customers (name, phone, address, state, pincode, source_channel, created_at) VALUES (?, ?, ?, ?, ?, 'WHATSAPP', NOW())",
-                [$customerName, $customerPhone, $customerAddress, $customerState, $customerPincode]
-            );
-            $customerId = (int)Database::lastInsertId();
-        } elseif ($customerId > 0) {
-            Database::execute(
-                "UPDATE customers SET address = ?, state = ?, pincode = ? WHERE id = ?",
-                [$customerAddress, $customerState, $customerPincode, $customerId]
-            );
         }
 
         $fullAddress = $customerAddress;
         if (!empty($customerState)) $fullAddress .= ', ' . $customerState;
         if (!empty($customerPincode)) $fullAddress .= ' - ' . $customerPincode;
 
-        // Upload payment screenshot to Cloudinary only
-        $screenshotUrl = null;
-        if (isset($_FILES['payment_screenshot']) && ($_FILES['payment_screenshot']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
-            $screenshotUrl = CloudinaryService::upload(
-                $_FILES['payment_screenshot'],
-                'grm_inventory/whatsapp_sales/screenshots'
-            );
+        if ($editSaleId > 0) {
+            $invoiceNumber = (string)$editSale['invoice_number'];
+        } else {
+            $prefix = 'WA-' . date('Ymd') . '-';
+            $last = Database::fetchOne("SELECT invoice_number FROM sales WHERE invoice_number LIKE ? ORDER BY id DESC LIMIT 1", [$prefix . '%']);
+            $seq = $last ? ((int)substr($last['invoice_number'], -4) + 1) : 1;
+            $invoiceNumber = $prefix . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
         }
-
-        // Build payment notes & split details
-        $paymentDetails = [];
-        if ($paymentMode === 'CASH_UPI') {
-            $cashAmt = (float)($_POST['cash_amount'] ?? 0);
-            $upiAmt  = (float)($_POST['upi_amount'] ?? 0);
-            $upiRef  = trim($_POST['upi_reference'] ?? '');
-            $paymentDetails[] = "Split Payment [Cash: ₹{$cashAmt}, UPI: ₹{$upiAmt}" . ($upiRef ? ", Ref: {$upiRef}" : "") . "]";
-        }
-        if (!empty($screenshotUrl)) {
-            $paymentDetails[] = "Screenshot (Cloudinary): {$screenshotUrl}";
-        }
-        if (!empty($paymentDetails)) {
-            $notes = implode(" | ", $paymentDetails) . (!empty($notes) ? " -- {$notes}" : "");
-        }
-
-        $prefix = 'WA-' . date('Ymd') . '-';
-        $last = Database::fetchOne("SELECT invoice_number FROM sales WHERE invoice_number LIKE ? ORDER BY id DESC LIMIT 1", [$prefix . '%']);
-        $seq = $last ? ((int)substr($last['invoice_number'], -4) + 1) : 1;
-        $invoiceNumber = $prefix . str_pad((string)$seq, 4, '0', STR_PAD_LEFT);
 
         $grossTotal = 0.0;
         $totalMrp = 0.0;
@@ -1251,7 +1501,7 @@ class SalesController {
                     : trim((string)($vRow['resolved_hsn_code'] ?? ''));
                 if (strlen($hsnCode) > 20) {
                     Session::flash('error', 'HSN code cannot exceed 20 characters.');
-                    Response::redirect(url('sales/whatsapp/create'));
+                    Response::redirect($formUrl);
                     return;
                 }
 
@@ -1268,7 +1518,7 @@ class SalesController {
                 $rawItemGstPercentage = $itm['gst_percentage'] ?? 5.0;
                 if (!is_numeric($rawItemGstPercentage) || (float)$rawItemGstPercentage < 0 || (float)$rawItemGstPercentage > 100) {
                     Session::flash('error', 'GST percentage must be between 0 and 100.');
-                    Response::redirect(url('sales/whatsapp/create'));
+                    Response::redirect($formUrl);
                     return;
                 }
                 $itemGstPercentage = ($isComp || $gstType === 'EXEMPT') ? 0.0 : (float)$rawItemGstPercentage;
@@ -1310,6 +1560,85 @@ class SalesController {
         $igstAmount = array_sum(array_column($orderItems, 'igst_amount'));
         $gstPercentage = $taxableSubtotal > 0 ? round(($gstAmount / $taxableSubtotal) * 100, 2) : 0.0;
         $grandTotalAmount = (float)ceil($grossTotal + $shippingCost);
+        $paidAmount = 0.0;
+        if ($editSaleId > 0) {
+            $previouslyPaid = (float)($editSale['paid_amount'] ?? 0);
+            $paidAmount = max(0.0, $previouslyPaid);
+            $paymentStatus = $previouslyPaid <= 0
+                ? 'PENDING'
+                : ($previouslyPaid + 0.0001 >= $grandTotalAmount ? 'PAID' : 'PARTIAL');
+        } elseif ($paymentStatus === 'PARTIAL') {
+            $rawAdvanceAmount = trim((string)($_POST['advance_amount'] ?? ''));
+            if ($rawAdvanceAmount === '' || !is_numeric($rawAdvanceAmount)) {
+                Session::flash('error', 'Enter a valid advance paid amount.');
+                Response::redirect($formUrl);
+                return;
+            }
+            $paidAmount = round((float)$rawAdvanceAmount, 2);
+            if ($paidAmount < 0 || $paidAmount > $grandTotalAmount + 0.01) {
+                Session::flash('error', 'Advance paid cannot be greater than the order total.');
+                Response::redirect($formUrl);
+                return;
+            }
+            $paidAmount = min($paidAmount, $grandTotalAmount);
+            $paymentStatus = $paidAmount + 0.0001 >= $grandTotalAmount ? 'PAID' : 'PARTIAL';
+        } elseif ($paymentStatus === 'PAID') {
+            $paidAmount = $grandTotalAmount;
+        }
+
+        $cashAmt = 0.0;
+        $upiAmt = 0.0;
+        $upiRef = '';
+        if ($editSaleId === 0 && $paymentMode === 'CASH_UPI') {
+            $rawCashAmount = trim((string)($_POST['cash_amount'] ?? ''));
+            $rawUpiAmount = trim((string)($_POST['upi_amount'] ?? ''));
+            if ($rawCashAmount === '' || !is_numeric($rawCashAmount) || $rawUpiAmount === '' || !is_numeric($rawUpiAmount)) {
+                Session::flash('error', 'Enter valid cash and UPI amounts for the split payment.');
+                Response::redirect($formUrl);
+                return;
+            }
+            $cashAmt = round((float)$rawCashAmount, 2);
+            $upiAmt = round((float)$rawUpiAmount, 2);
+            if ($cashAmt < 0 || $upiAmt < 0 || abs(($cashAmt + $upiAmt) - $paidAmount) > 0.01) {
+                Session::flash('error', 'Cash and UPI amounts must add up to the amount being collected now.');
+                Response::redirect($formUrl);
+                return;
+            }
+            $upiRef = trim((string)($_POST['upi_reference'] ?? ''));
+        }
+
+        if ($editSaleId === 0 && !$customerId && !empty($customerName) && !empty($customerPhone)) {
+            Database::execute(
+                "INSERT INTO customers (name, phone, address, state, pincode, source_channel, created_at) VALUES (?, ?, ?, ?, ?, 'WHATSAPP', NOW())",
+                [$customerName, $customerPhone, $customerAddress, $customerState, $customerPincode]
+            );
+            $customerId = (int)Database::lastInsertId();
+        } elseif ($editSaleId === 0 && $customerId > 0) {
+            Database::execute(
+                "UPDATE customers SET address = ?, state = ?, pincode = ? WHERE id = ?",
+                [$customerAddress, $customerState, $customerPincode, $customerId]
+            );
+        }
+
+        // Payment screenshots are not replaced during an order edit.
+        $screenshotUrl = null;
+        if ($editSaleId === 0 && isset($_FILES['payment_screenshot']) && ($_FILES['payment_screenshot']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
+            $screenshotUrl = CloudinaryService::upload(
+                $_FILES['payment_screenshot'],
+                'grm_inventory/whatsapp_sales/screenshots'
+            );
+        }
+
+        $paymentDetails = [];
+        if ($editSaleId === 0 && $paymentMode === 'CASH_UPI') {
+            $paymentDetails[] = "Split Payment [Cash: ₹{$cashAmt}, UPI: ₹{$upiAmt}" . ($upiRef ? ", Ref: {$upiRef}" : "") . "]";
+        }
+        if ($editSaleId === 0 && !empty($screenshotUrl)) {
+            $paymentDetails[] = "Screenshot (Cloudinary): {$screenshotUrl}";
+        }
+        if (!empty($paymentDetails)) {
+            $notes = implode(" | ", $paymentDetails) . (!empty($notes) ? " -- {$notes}" : "");
+        }
 
         $shop = Database::fetchOne("SELECT id FROM shops LIMIT 1");
         $shopId = $shop ? (int)$shop['id'] : null;
@@ -1318,13 +1647,92 @@ class SalesController {
             ? $billerId
             : null;
         try {
-            Database::beginTransaction();
-            Database::execute(
-                "INSERT INTO sales (invoice_number, sale_type, shop_id, channel_id, customer_id, customer_address, subtotal, discount_amount, taxable_amount, gst_percentage, gst_amount, cgst_amount, sgst_amount, igst_amount, gst_type, shipping_cost, total_amount, paid_amount, payment_mode, payment_status, status, sales_channel, biller_id, billing_staff_id, employee_name, employee_code, biller_name, notes, created_at)
-                 VALUES (?, 'WHATSAPP', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DELIVERED', 'WHATSAPP', ?, ?, ?, ?, ?, ?, NOW())",
-                [$invoiceNumber, $shopId, $channelId, $customerId ?: null, $fullAddress, $taxableSubtotal, $discountAmount, $taxableSubtotal, $gstPercentage, $gstAmount, $cgstAmount, $sgstAmount, $igstAmount, $gstType, $shippingCost, $grandTotalAmount, ($paymentStatus === 'PAID' ? $grandTotalAmount : 0.0), $paymentMode, $paymentStatus, $billerId ?: null, $billingStaffId ?: null, $employeeName, $employeeCode, $billerName, $notes]
-            );
-            $saleId = (int)Database::lastInsertId();
+            if (!Database::beginTransaction()) {
+                throw new RuntimeException('Unable to start the WhatsApp order transaction. Please try again.');
+            }
+            $editSnapshot = null;
+            if ($editSaleId > 0) {
+                $lockedSale = Database::fetchOne(
+                    "SELECT * FROM sales WHERE id = ? AND (sales_channel = 'WHATSAPP' OR notes LIKE '%WhatsApp%') FOR UPDATE",
+                    [$editSaleId]
+                );
+                if (!$lockedSale || strtoupper((string)($lockedSale['status'] ?? '')) === 'CANCELLED') {
+                    throw new RuntimeException('This WhatsApp order is no longer available for editing.');
+                }
+                if (Database::fetchOne("SELECT id FROM returns WHERE sale_id = ? LIMIT 1 FOR UPDATE", [$editSaleId])) {
+                    throw new RuntimeException('This WhatsApp order cannot be edited because it already has a return or exchange record.');
+                }
+                $currentMovements = $this->getEditableWhatsappSaleMovements($editSaleId);
+                $oldSaleItems = Database::fetchAll("SELECT * FROM sale_items WHERE sale_id = ? FOR UPDATE", [$editSaleId]);
+                $oldCustomer = !empty($lockedSale['customer_id'])
+                    ? Database::fetchOne("SELECT * FROM customers WHERE id = ?", [(int)$lockedSale['customer_id']])
+                    : null;
+                $editSnapshot = [
+                    'sale' => $lockedSale,
+                    'customer' => $oldCustomer,
+                    'sale_items' => $oldSaleItems,
+                ];
+                foreach ($currentMovements as $movement) {
+                    $quantityToRestore = abs((float)$movement['net_quantity']);
+                    if ($quantityToRestore <= 0) {
+                        continue;
+                    }
+                    StockService::increase(
+                        (int)$movement['variant_id'],
+                        'CHANNEL',
+                        (int)$movement['location_id'],
+                        (string)$movement['stock_state'],
+                        $quantityToRestore,
+                        'SALE_EDIT_REVERSAL',
+                        'sales',
+                        $editSaleId,
+                        $stockUserId,
+                        "Restore WhatsApp order stock before editing {$invoiceNumber}"
+                    );
+                }
+
+                if ($customerId > 0) {
+                    Database::execute(
+                        "UPDATE customers SET name = ?, phone = ?, address = ?, state = ?, pincode = ? WHERE id = ?",
+                        [$customerName, $customerPhone, $customerAddress, $customerState, $customerPincode, $customerId]
+                    );
+                } else {
+                    Database::execute(
+                        "INSERT INTO customers (name, phone, address, state, pincode, source_channel, created_at) VALUES (?, ?, ?, ?, ?, 'WHATSAPP', NOW())",
+                        [$customerName, $customerPhone, $customerAddress, $customerState, $customerPincode]
+                    );
+                    $customerId = (int)Database::lastInsertId();
+                }
+
+                Database::execute(
+                    "UPDATE sales
+                     SET customer_id = ?, customer_address = ?, subtotal = ?, discount_amount = ?,
+                         taxable_amount = ?, gst_percentage = ?, gst_amount = ?, cgst_amount = ?,
+                         sgst_amount = ?, igst_amount = ?, gst_type = ?, shipping_cost = ?,
+                         total_amount = ?, payment_mode = ?, is_online_sale = ?, payment_status = ?, biller_id = ?,
+                         billing_staff_id = ?, employee_name = ?, employee_code = ?, biller_name = ?, notes = ?
+                     WHERE id = ?",
+                    [
+                        $customerId ?: null, $fullAddress, $taxableSubtotal, $discountAmount,
+                        $taxableSubtotal, $gstPercentage, $gstAmount, $cgstAmount, $sgstAmount,
+                        $igstAmount, $gstType, $shippingCost, $grandTotalAmount, $paymentMode, (int)$isOnlineSale,
+                        $paymentStatus,
+                        $billerId ?: ($editSale['biller_id'] ?? null),
+                        $billingStaffId ?: ($editSale['billing_staff_id'] ?? null),
+                        $employeeName,
+                        $employeeCode, $billerName, $notes, $editSaleId,
+                    ]
+                );
+                Database::execute("DELETE FROM sale_items WHERE sale_id = ?", [$editSaleId]);
+                $saleId = $editSaleId;
+            } else {
+                Database::execute(
+                    "INSERT INTO sales (invoice_number, sale_type, is_online_sale, shop_id, channel_id, customer_id, customer_address, subtotal, discount_amount, taxable_amount, gst_percentage, gst_amount, cgst_amount, sgst_amount, igst_amount, gst_type, shipping_cost, total_amount, paid_amount, payment_mode, payment_status, status, sales_channel, biller_id, billing_staff_id, employee_name, employee_code, biller_name, notes, created_at)
+                     VALUES (?, 'WHATSAPP', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DELIVERED', 'WHATSAPP', ?, ?, ?, ?, ?, ?, NOW())",
+                    [$invoiceNumber, (int)$isOnlineSale, $shopId, $channelId, $customerId ?: null, $fullAddress, $taxableSubtotal, $discountAmount, $taxableSubtotal, $gstPercentage, $gstAmount, $cgstAmount, $sgstAmount, $igstAmount, $gstType, $shippingCost, $grandTotalAmount, $paidAmount, $paymentMode, $paymentStatus, $billerId ?: null, $billingStaffId ?: null, $employeeName, $employeeCode, $billerName, $notes]
+                );
+                $saleId = (int)Database::lastInsertId();
+            }
 
             foreach ($orderItems as $oi) {
                 $tagNote = !empty($oi['scanned_qr_codes']) ? " [Piece Tags: {$oi['scanned_qr_codes']}]" : "";
@@ -1339,11 +1747,29 @@ class SalesController {
                 );
                 $this->assertSalesChannelTagsAvailable(
                     array_filter(array_map('trim', explode(',', (string)$oi['scanned_qr_codes']))),
-                    (bool)$oi['is_series']
+                    (bool)$oi['is_series'],
+                    $editSaleId > 0 ? $editSaleId : null
                 );
                 Database::execute(
                     "INSERT INTO sale_items (sale_id, variant_id, quantity, unit_price, mrp, gst_percentage, hsn_code, cgst_amount, sgst_amount, igst_amount, total_amount, scanned_qr_codes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     [$saleId, $oi['variant_id'], $oi['quantity'], $oi['unit_price'], $oi['mrp'], $oi['gst_percentage'], $oi['hsn_code'], $oi['cgst_amount'], $oi['sgst_amount'], $oi['igst_amount'], $oi['total'], $oi['scanned_qr_codes']]
+                );
+            }
+            if ($editSaleId > 0) {
+                AuditService::logStrict(
+                    'whatsapp_orders',
+                    'EDIT_ORDER',
+                    'sales',
+                    $saleId,
+                    $editSnapshot,
+                    [
+                        'sale' => Database::fetchOne("SELECT * FROM sales WHERE id = ?", [$saleId]),
+                        'customer' => $customerId > 0
+                            ? Database::fetchOne("SELECT * FROM customers WHERE id = ?", [$customerId])
+                            : null,
+                        'sale_items' => Database::fetchAll("SELECT * FROM sale_items WHERE sale_id = ? ORDER BY id", [$saleId]),
+                    ],
+                    Auth::id() ?? Session::userId() ?? 1
                 );
             }
             Database::commit();
@@ -1351,17 +1777,19 @@ class SalesController {
             Database::rollback();
             error_log("WhatsApp order creation failed: " . $e->getMessage());
             Session::flash('error', 'A database error prevented the WhatsApp order from being saved. Please try again.');
-            Response::redirect(url('sales/whatsapp/create'));
+            Response::redirect($formUrl);
             return;
         } catch (\Throwable $e) {
             Database::rollback();
             error_log("WhatsApp order creation failed: " . $e->getMessage());
             Session::flash('error', $e->getMessage());
-            Response::redirect(url('sales/whatsapp/create'));
+            Response::redirect($formUrl);
             return;
         }
 
-        Session::flash('success', "WhatsApp Order #{$invoiceNumber} created successfully.");
+        Session::flash('success', $editSaleId > 0
+            ? "WhatsApp Order #{$invoiceNumber} updated successfully."
+            : "WhatsApp Order #{$invoiceNumber} created successfully.");
         Response::redirect(url('sales/whatsapp/view/' . $saleId));
     }
 

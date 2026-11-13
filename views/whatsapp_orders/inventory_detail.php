@@ -924,9 +924,16 @@ usort($pieceTags, static function ($a, $b) {
                                             <?= date('d M Y, h:i A', strtotime($sale['sale_date'])) ?>
                                         </td>
                                         <td class="text-end">
-                                            <a href="<?= url('sales/whatsapp/view/' . $sale['sale_id']) ?>" class="btn btn-xs btn-outline-success px-2 py-1">
-                                                <i class="bi bi-eye"></i> View Order
-                                            </a>
+                                            <div class="d-inline-flex gap-1">
+                                                <a href="<?= url('sales/whatsapp/view/' . $sale['sale_id']) ?>" class="btn btn-xs btn-outline-success px-2 py-1">
+                                                    <i class="bi bi-eye"></i> View Order
+                                                </a>
+                                                <?php if (hasPermission('whatsapp_orders', 'edit')): ?>
+                                                    <a href="<?= url('sales/whatsapp/edit/' . $sale['sale_id']) ?>" class="btn btn-xs btn-outline-primary px-2 py-1">
+                                                        <i class="bi bi-pencil-square"></i> Edit
+                                                    </a>
+                                                <?php endif; ?>
+                                            </div>
                                         </td>
                                     </tr>
                                 <?php endforeach; endif; ?>
