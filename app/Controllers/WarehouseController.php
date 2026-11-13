@@ -519,56 +519,13 @@ class WarehouseController {
     }
 
     /**
-     * Show the QR-only editor for an inward batch.
-     */
-    public function editInwardQr(string $id): void {
-        if (!hasPermission('inward', 'edit')) {
-            Session::flash('error', 'Access denied: You do not have permission to edit inward QR codes.');
-            Response::redirect(url('warehouse/inward/view/' . $id));
-            return;
-        }
-
-        $batchId = (int)$id;
-        $batch = ProductionBatch::find($batchId);
-        if (!$batch) {
-            Session::flash('error', 'Production batch not found.');
-            Response::redirect(url('warehouse/inward'));
-            return;
-        }
-
-        $items = ProductionBatch::getItems($batchId);
-        $hasEditableQrItems = false;
-        foreach ($items as $item) {
-            if (!empty($item['is_series']) || !empty($item['is_complementary'])) {
-                $hasEditableQrItems = true;
-                break;
-            }
-        }
-
-        Response::view('warehouse.inward.edit_qr', [
-            'pageTitle'        => 'Edit Inward QR Codes #' . $batch['batch_number'],
-            'activeModule'     => 'warehouse',
-            'activeMenu'       => 'wh-inward',
-            'batch'            => $batch,
-            'items'            => $items,
-            'hasEditableQrItems' => $hasEditableQrItems,
-            'breadcrumb'       => [
-                ['label' => 'Warehouse', 'url' => url('warehouse/dashboard')],
-                ['label' => 'Inward / GRN', 'url' => url('warehouse/inward')],
-                ['label' => 'Batch #' . $batch['batch_number'], 'url' => url('warehouse/inward/view/' . $batchId)],
-                ['label' => 'Edit QR Codes'],
-            ],
-        ]);
-    }
-
-    /**
      * Update inward QR mappings only; quantity and stock records are untouched.
      */
     public function updateInwardQr(string $id): void {
         $batchId = (int)$id;
         if (!CSRF::validateRequest()) {
             Session::flash('error', 'Invalid security token or session expired. Please try again.');
-            Response::redirect(url('warehouse/inward/edit-qr/' . $batchId));
+            Response::redirect(url('warehouse/inward/view/' . $batchId));
             return;
         }
 
@@ -589,7 +546,7 @@ class WarehouseController {
             Response::redirect(url('warehouse/inward/view/' . $batchId));
         } catch (Throwable $e) {
             Session::flash('error', 'Failed to update inward QR codes: ' . $e->getMessage());
-            Response::redirect(url('warehouse/inward/edit-qr/' . $batchId));
+            Response::redirect(url('warehouse/inward/view/' . $batchId));
         }
     }
 

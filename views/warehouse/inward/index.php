@@ -394,8 +394,8 @@ $canDelete = hasPermission('inward', 'delete');
                                                         <i class="bi bi-clock-history"></i>
                                                     </button>
                                                     <?php if ($canEdit): ?>
-                                                        <a href="<?= url('warehouse/inward/edit-qr/' . $b['id']) ?>" class="btn btn-sm btn-warning p-0" style="width:36px;height:36px;" title="Edit inward QR codes" aria-label="Edit inward QR codes">
-                                                            <i class="bi bi-upc-scan"></i>
+                                                        <a href="<?= url('warehouse/inward/view/' . $b['id']) ?>" class="btn btn-sm btn-warning p-0" style="width:36px;height:36px;" title="Edit / verify inward batch" aria-label="Edit or verify inward batch">
+                                                            <i class="bi bi-pencil-square"></i>
                                                         </a>
                                                     <?php endif; ?>
                                                     <?php if ($canDelete): ?>
@@ -612,8 +612,8 @@ $canDelete = hasPermission('inward', 'delete');
                                                     <i class="bi bi-clock-history"></i>
                                                 </button>
                                                 <?php if ($canEdit): ?>
-                                                    <a href="<?= url('warehouse/inward/edit-qr/' . $b['id']) ?>" class="btn btn-sm btn-warning p-0" style="width:36px;height:36px;" title="Edit inward QR codes" aria-label="Edit inward QR codes">
-                                                        <i class="bi bi-upc-scan"></i>
+                                                    <a href="<?= url('warehouse/inward/view/' . $b['id']) ?>" class="btn btn-sm btn-warning p-0" style="width:36px;height:36px;" title="Edit / verify inward batch" aria-label="Edit or verify inward batch">
+                                                        <i class="bi bi-pencil-square"></i>
                                                     </a>
                                                 <?php endif; ?>
                                                 <?php if ($canDelete): ?>

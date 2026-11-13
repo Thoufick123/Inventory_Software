@@ -97,9 +97,6 @@ $inwardPageTitle = $batch['status'] === 'DISPATCHED'
     </div>
     <div class="d-flex align-items-center gap-2 flex-wrap">
         <?php if ($canEdit): ?>
-            <a href="<?= url('warehouse/inward/edit-qr/' . $batch['id']) ?>" class="btn btn-outline-primary fw-semibold px-3 shadow-sm">
-                <i class="bi bi-upc-scan me-1"></i> Edit QR Codes
-            </a>
             <a href="<?= url('warehouse/inward/edit/' . $batch['id']) ?>" class="btn btn-warning fw-bold px-3 shadow-sm">
                 <i class="bi bi-pencil-square me-1"></i> Edit Inward Quantities
             </a>
