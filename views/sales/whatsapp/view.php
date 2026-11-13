@@ -241,7 +241,7 @@
                         <?= htmlspecialchars($sale['status']) ?>
                     </span>
                     <span class="badge bg-info bg-opacity-75 text-white px-2 py-1 font-monospace">
-                        <?= htmlspecialchars($sale['payment_status'] ?? 'PAID') ?>
+                        <?= strtoupper((string)($sale['payment_status'] ?? 'PAID')) === 'PARTIAL' ? 'Partially Paid / COD' : htmlspecialchars($sale['payment_status'] ?? 'PAID') ?>
                     </span>
                 </div>
                 <small class="text-light opacity-75">Order Date &amp; Time: <?= date('d M Y, h:i A', strtotime($sale['created_at'])) ?></small>
@@ -407,7 +407,7 @@
                         <?php endif; ?>
                     </div>
                     <div class="small text-muted">
-                        Payment Mode: <strong class="text-dark"><?= htmlspecialchars($sale['payment_mode'] ?? 'UPI') ?></strong> | Status: <strong class="text-success"><?= htmlspecialchars($sale['payment_status'] ?? 'PAID') ?></strong>
+                        Payment Mode: <strong class="text-dark"><?= htmlspecialchars($sale['payment_mode'] ?? 'UPI') ?></strong> | Status: <strong class="text-success"><?= strtoupper((string)($sale['payment_status'] ?? 'PAID')) === 'PARTIAL' ? 'Partially Paid / COD' : htmlspecialchars($sale['payment_status'] ?? 'PAID') ?></strong>
                     </div>
                 </div>
             </div>
@@ -435,6 +435,14 @@
                         <tr class="border-top border-2">
                             <td class="pt-2 text-success fw-bold text-uppercase fs-6">Net Payable Amount:</td>
                             <td class="pt-2 text-end fw-bolder text-success fs-4 font-monospace">₹<?= number_format($sale['total_amount'], 2) ?></td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted fw-semibold">Advance / Amount Paid:</td>
+                            <td class="text-end fw-semibold text-dark">₹<?= number_format(max(0, (float)($sale['paid_amount'] ?? 0)), 2) ?></td>
+                        </tr>
+                        <tr>
+                            <td class="text-danger fw-semibold">Pending / COD:</td>
+                            <td class="text-end fw-bold text-danger">₹<?= number_format(max(0, (float)$sale['total_amount'] - (float)($sale['paid_amount'] ?? 0)), 2) ?></td>
                         </tr>
                     </table>
                 </div>

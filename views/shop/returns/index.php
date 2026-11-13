@@ -161,12 +161,13 @@
                         <th>Amount / Balance</th>
                         <th>Status</th>
                         <th>Processed At</th>
+                        <th class="text-end pe-3">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($returns)): ?>
                         <tr>
-                            <td colspan="8" class="text-center py-5 text-muted">
+                            <td colspan="9" class="text-center py-5 text-muted">
                                 <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary opacity-50"></i>
                                 No Shop returns or exchanges found matching your criteria.
                             </td>
@@ -236,6 +237,16 @@
                                 <td>
                                     <div class="small text-dark"><?= date('d M Y', strtotime($row['created_at'])) ?></div>
                                     <small class="text-muted"><?= date('h:i A', strtotime($row['created_at'])) ?></small>
+                                </td>
+                                <td class="text-end pe-3">
+                                    <a href="<?= url('shop/returns/view/' . $row['id']) ?>" class="btn btn-sm btn-outline-primary" title="View return details" aria-label="View return details">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                    <?php if (hasPermission('shop_returns', 'edit')): ?>
+                                        <a href="<?= url('shop/returns/edit/' . $row['id']) ?>" class="btn btn-sm btn-outline-secondary" title="Edit return" aria-label="Edit return">
+                                            <i class="bi bi-pencil-square"></i>
+                                        </a>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                         <?php endforeach; ?>

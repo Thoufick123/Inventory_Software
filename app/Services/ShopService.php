@@ -20,6 +20,7 @@ require_once BASE_PATH . '/app/Models/ShopReturnedProduct.php';
 class ShopService {
     private static bool $saleItemHsnColumnEnsured = false;
     private static bool $salesGstTypeColumnEnsured = false;
+    private static bool $salesOnlineFlagColumnEnsured = false;
 
     public static function ensureSaleItemHsnColumn(): void {
         if (self::$saleItemHsnColumnEnsured) {
@@ -41,6 +42,17 @@ class ShopService {
             Database::execute("ALTER TABLE sales ADD COLUMN gst_type VARCHAR(20) NOT NULL DEFAULT 'CGST_SGST' AFTER gst_percentage");
         }
         self::$salesGstTypeColumnEnsured = true;
+    }
+
+    public static function ensureSalesOnlineFlagColumn(): void {
+        if (self::$salesOnlineFlagColumnEnsured) {
+            return;
+        }
+
+        if (!Database::fetchOne("SHOW COLUMNS FROM sales LIKE 'is_online_sale'")) {
+            Database::execute("ALTER TABLE sales ADD COLUMN is_online_sale TINYINT(1) NOT NULL DEFAULT 0 AFTER sale_type");
+        }
+        self::$salesOnlineFlagColumnEnsured = true;
     }
 
     /**
@@ -977,6 +989,7 @@ class ShopService {
     public static function processPOSSale(array $payload, int $userId): array {
         self::ensureSaleItemHsnColumn();
         self::ensureSalesGstTypeColumn();
+        self::ensureSalesOnlineFlagColumn();
         $shopId = (int)($payload['shop_id'] ?? 1);
         $editingSaleId = (int)($payload['sale_id'] ?? 0);
         $existingSale = null;
@@ -995,6 +1008,7 @@ class ShopService {
         $employeeInput = trim($payload['employee_name'] ?? $payload['employee_id'] ?? '');
         $discountAmount = (float)($payload['discount_amount'] ?? 0);
         $notes = $payload['notes'] ?? 'POS In-Store Sale';
+        $isOnlineSale = filter_var($payload['is_online_sale'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         if ($paymentMode === 'CASH_UPI') {
             $splitSummary = "[Split Payment: Cash ₹" . number_format($splitCash, 2) . " + UPI ₹" . number_format($splitUpi, 2) . ($splitUpiRef !== '' ? " (Ref: " . $splitUpiRef . ")" : "") . "]";
@@ -1031,6 +1045,9 @@ class ShopService {
                 );
                 if (!$existingSale || $existingSale['status'] === 'CANCELLED' || $existingSale['payment_status'] === 'REFUNDED') {
                     throw new RuntimeException('This invoice is no longer available for editing.');
+                }
+                if (!array_key_exists('is_online_sale', $payload)) {
+                    $isOnlineSale = !empty($existingSale['is_online_sale']);
                 }
                 self::assertSaleHasNoReturns($editingSaleId);
 
@@ -1349,7 +1366,7 @@ class ShopService {
                      SET customer_id = ?, customer_name = ?, customer_phone = ?, customer_address = ?,
                          subtotal = ?, discount_amount = ?, gst_percentage = ?, gst_amount = ?, cgst_amount = ?,
                          sgst_amount = ?, igst_amount = ?, gst_type = ?, total_amount = ?, paid_amount = ?,
-                         payment_mode = ?, payment_status = 'PAID', status = 'PAID', billing_staff_id = ?,
+                         payment_mode = ?, is_online_sale = ?, payment_status = 'PAID', status = 'PAID', billing_staff_id = ?,
                          employee_name = ?, notes = ?, updated_at = NOW()
                      WHERE id = ?",
                     [
@@ -1368,6 +1385,7 @@ class ShopService {
                         $totalAmount,
                         $totalAmount,
                         $paymentMode,
+                        $isOnlineSale ? 1 : 0,
                         $billingStaffId,
                         $employeeInput,
                         $notes,
@@ -1377,12 +1395,13 @@ class ShopService {
                 Database::execute("DELETE FROM sale_items WHERE sale_id = ?", [$saleId]);
             } else {
                 Database::execute(
-                    "INSERT INTO sales (invoice_number, sale_type, shop_id, customer_id, customer_name, customer_phone, customer_address, subtotal, discount_amount, 
+                    "INSERT INTO sales (invoice_number, sale_type, is_online_sale, shop_id, customer_id, customer_name, customer_phone, customer_address, subtotal, discount_amount, 
                                         gst_percentage, gst_amount, cgst_amount, sgst_amount, igst_amount, gst_type, total_amount, payment_mode, 
                                         payment_status, status, billing_staff_id, employee_name, notes, created_at)
-                     VALUES (?, 'SHOP', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PAID', 'PAID', ?, ?, ?, ?)",
+                     VALUES (?, 'SHOP', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PAID', 'PAID', ?, ?, ?, ?)",
                     [
                         $invoiceNumber,
+                        $isOnlineSale ? 1 : 0,
                         $shopId,
                         $customerId,
                         $customerName ?: 'Retail Customer',
@@ -4012,6 +4031,7 @@ class ShopService {
      * Get one row per shop invoice with filters that can match invoice items.
      */
     public static function getSoldInvoices(int $shopId, array $filters = []): array {
+        self::ensureSalesOnlineFlagColumn();
         $whereSql = "s.shop_id = ? AND s.sale_type = 'SHOP' AND s.status <> 'CANCELLED'";
         $params = [$shopId];
 
@@ -4051,8 +4071,21 @@ class ShopService {
             )";
             $params[] = (int)$filters['category_id'];
         }
+        $allowedPaymentModes = ['CASH', 'UPI', 'CARD', 'CASH_UPI', 'MIXED', 'ONLINE', 'BANK_TRANSFER', 'OTHER'];
+        $paymentMode = strtoupper(trim((string)($filters['payment_mode'] ?? 'ALL')));
+        if (in_array($paymentMode, $allowedPaymentModes, true)) {
+            $whereSql .= " AND UPPER(COALESCE(s.payment_mode, '')) = ?";
+            $params[] = $paymentMode;
+        }
+        $allowedGstTypes = ['CGST_SGST', 'IGST', 'EXEMPT'];
+        $gstType = strtoupper(trim((string)($filters['gst_type'] ?? 'ALL')));
+        if (in_array($gstType, $allowedGstTypes, true)) {
+            $whereSql .= " AND UPPER(COALESCE(s.gst_type, '')) = ?";
+            $params[] = $gstType;
+        }
 
         $invoiceSql = "SELECT s.id, s.invoice_number, s.status, s.payment_status, s.payment_mode,
+                              s.is_online_sale,
                               s.subtotal, s.discount_amount, s.gst_amount, s.cgst_amount, s.sgst_amount,
                               s.igst_amount, s.gst_type, s.total_amount, s.notes, s.created_at,
                               COALESCE(c.name, s.customer_name, 'Retail Customer') as customer_name,
@@ -4108,6 +4141,11 @@ class ShopService {
 
         foreach ($invoices as &$invoice) {
             $invoice['sale_date_display'] = formatUtcDateTime($invoice['created_at'] ?? null);
+            if (!empty($invoice['is_online_sale'])) {
+                $invoice['cash_revenue'] = 0.0;
+                $invoice['online_revenue'] = (float)$invoice['total_amount'];
+                continue;
+            }
             $cashPaid = (float)$invoice['cash_paid'];
             $onlinePaid = (float)$invoice['online_paid'];
             if ($cashPaid + $onlinePaid <= 0) {

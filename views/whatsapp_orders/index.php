@@ -252,9 +252,16 @@
                         </td>
                         <td><small class="text-muted"><?= date('d M Y, h:i A', strtotime((string)$oDate)) ?></small></td>
                         <td class="text-end">
-                            <a href="<?= url('sales/whatsapp/view/' . ($o['id'] ?? '')) ?>" class="btn btn-sm btn-outline-success">
-                                <i class="bi bi-eye"></i> View Order
-                            </a>
+                            <div class="d-inline-flex gap-1">
+                                <a href="<?= url('sales/whatsapp/view/' . ($o['id'] ?? '')) ?>" class="btn btn-sm btn-outline-success">
+                                    <i class="bi bi-eye"></i> View Order
+                                </a>
+                                <?php if (hasPermission('whatsapp_orders', 'edit') && !empty($o['id'])): ?>
+                                    <a href="<?= url('sales/whatsapp/edit/' . $o['id']) ?>" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-pencil-square"></i> Edit
+                                    </a>
+                                <?php endif; ?>
+                            </div>
                         </td>
                     </tr>
                 <?php endforeach; endif; ?>

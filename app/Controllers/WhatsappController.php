@@ -3239,6 +3239,7 @@ class WhatsappController {
      * Orders History for WhatsApp Channel
      */
     public function whatsappOrdersHistory(): void {
+        ShopService::ensureSalesOnlineFlagColumn();
         $chan = $this->getChannel();
         $search = trim($_GET['search'] ?? '');
         $status = trim($_GET['status'] ?? '');
@@ -3296,12 +3297,53 @@ class WhatsappController {
         $totalOrdersCount = count($orders);
         $totalRevenue = 0.0;
         $totalPcsSold = 0;
+        $totalCashPaid = 0.0;
+        $totalOnlinePaid = 0.0;
+        $totalUnclassifiedPaid = 0.0;
+        $unclassifiedPaidOrderCount = 0;
         $completedCount = 0;
         $pendingCount = 0;
 
-        foreach ($orders as $o) {
+        foreach ($orders as &$o) {
             $totalRevenue += (float)($o['total_amount'] ?? $o['final_amount'] ?? 0);
             $totalPcsSold += (int)($o['total_pcs'] ?? $o['total_items_count'] ?? 0);
+            $paidAmount = max(0.0, (float)($o['paid_amount'] ?? 0));
+            $paymentMode = strtoupper(trim((string)($o['payment_mode'] ?? $o['payment_method'] ?? '')));
+            $cashPaidAmount = 0.0;
+            $onlinePaidAmount = 0.0;
+            $unclassifiedPaidAmount = 0.0;
+
+            if ($paymentMode === 'CASH') {
+                $cashPaidAmount = $paidAmount;
+            } elseif (in_array($paymentMode, ['CASH_UPI', 'CASH + UPI', 'CASH+UPI'], true)) {
+                $notes = (string)($o['notes'] ?? '');
+                if (preg_match('/Split\s+Payment.*?Cash\s*:?\s*\D*([\d,]+(?:\.\d{1,2})?).*?UPI\s*:?\s*\D*([\d,]+(?:\.\d{1,2})?)/i', $notes, $splitMatch)) {
+                    $splitCashPaid = (float)str_replace(',', '', $splitMatch[1]);
+                    $splitOnlinePaid = (float)str_replace(',', '', $splitMatch[2]);
+                    if (abs(($splitCashPaid + $splitOnlinePaid) - $paidAmount) <= 0.02) {
+                        $cashPaidAmount = $splitCashPaid;
+                        $onlinePaidAmount = $splitOnlinePaid;
+                    } else {
+                        $unclassifiedPaidAmount = $paidAmount;
+                    }
+                } else {
+                    $unclassifiedPaidAmount = $paidAmount;
+                }
+            } elseif (preg_match('/UPI|CARD|ONLINE|BANK|NEFT|RTGS|IMPS|WALLET/', $paymentMode)) {
+                $onlinePaidAmount = $paidAmount;
+            } else {
+                $unclassifiedPaidAmount = $paidAmount;
+            }
+
+            $o['cash_paid_amount'] = $cashPaidAmount;
+            $o['online_paid_amount'] = $onlinePaidAmount;
+            $o['unclassified_paid_amount'] = $unclassifiedPaidAmount;
+            $totalCashPaid += $cashPaidAmount;
+            $totalOnlinePaid += $onlinePaidAmount;
+            $totalUnclassifiedPaid += $unclassifiedPaidAmount;
+            if ($unclassifiedPaidAmount > 0) {
+                $unclassifiedPaidOrderCount++;
+            }
             $st = strtoupper($o['status'] ?? '');
             if (in_array($st, ['COMPLETED', 'PAID', 'DELIVERED'])) {
                 $completedCount++;
@@ -3309,6 +3351,7 @@ class WhatsappController {
                 $pendingCount++;
             }
         }
+        unset($o);
 
         Response::view('whatsapp_orders.history', [
             'pageTitle'          => 'WhatsApp Orders History',
@@ -3325,6 +3368,10 @@ class WhatsappController {
             'totalRevenueAmount' => $totalRevenue,
             'totalPcsSold'       => $totalPcsSold,
             'totalUnitsSold'     => $totalPcsSold,
+            'totalCashPaid'      => $totalCashPaid,
+            'totalOnlinePaid'    => $totalOnlinePaid,
+            'totalUnclassifiedPaid' => $totalUnclassifiedPaid,
+            'unclassifiedPaidOrderCount' => $unclassifiedPaidOrderCount,
             'completedCount'     => $completedCount,
             'pendingCount'       => $pendingCount,
             'search'             => $search,
@@ -3455,6 +3502,733 @@ class WhatsappController {
             'dateFrom'            => $dateFrom,
             'dateTo'              => $dateTo,
         ]);
+    }
+
+    private function getReversibleWhatsappReturnLabelMovements(int $returnId, bool $forUpdate = false): array {
+        WhatsappReturnedProduct::ensureReady();
+        $lockClause = $forUpdate ? ' FOR UPDATE' : '';
+        $products = Database::fetchAll(
+            "SELECT * FROM whatsapp_returned_products
+             WHERE return_id = ? AND printed_at IS NOT NULL AND voided_at IS NULL
+             ORDER BY id" . $lockClause,
+            [$returnId]
+        );
+        if (!$products) {
+            return [];
+        }
+
+        $productIds = array_map(static fn(array $product): int => (int)$product['id'], $products);
+        $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+        $reversibleMovements = [];
+        foreach ($products as $product) {
+            $movements = Database::fetchAll(
+                "SELECT * FROM stock_transactions
+                 WHERE reference_type = 'whatsapp_returned_products' AND reference_id = ?
+                 ORDER BY id" . $lockClause,
+                [(int)$product['id']]
+            );
+            $isGood = strtoupper((string)($product['item_condition'] ?? 'GOOD')) === 'GOOD';
+            $expectedType = $isGood ? 'RETURN_REINWARD' : 'RETURN_DAMAGED';
+            $expectedState = $isGood ? 'AVAILABLE' : 'DAMAGED';
+            if (count($movements) !== 1
+                || (int)$movements[0]['variant_id'] !== (int)$product['variant_id']
+                || strtoupper((string)$movements[0]['location_type']) !== 'CHANNEL'
+                || (int)$movements[0]['location_id'] !== (int)$product['channel_id']
+                || strtoupper((string)$movements[0]['stock_state']) !== $expectedState
+                || strtoupper((string)$movements[0]['transaction_type']) !== $expectedType
+                || abs((float)$movements[0]['quantity'] - 1.0) > 0.0001) {
+                throw new RuntimeException('This return cannot be edited safely because the printed label stock movement cannot be reconciled.');
+            }
+
+            $movement = $movements[0];
+            $laterMovement = Database::fetchOne(
+                "SELECT id
+                 FROM stock_transactions
+                 WHERE variant_id = ? AND location_type = 'CHANNEL'
+                   AND location_id = ? AND stock_state = ? AND id > ?
+                   AND NOT (
+                       COALESCE(reference_type, '') = 'whatsapp_returned_products'
+                       AND reference_id IN ($placeholders)
+                   )
+                 LIMIT 1",
+                array_merge(
+                    [
+                        (int)$product['variant_id'],
+                        (int)$product['channel_id'],
+                        $expectedState,
+                        (int)$movement['id'],
+                    ],
+                    $productIds
+                )
+            );
+            if ($laterMovement) {
+                throw new RuntimeException('This return cannot be edited because later stock activity has affected the printed returned products.');
+            }
+            $reversibleMovements[] = [
+                'product' => $product,
+                'movement' => $movement,
+            ];
+        }
+        return $reversibleMovements;
+    }
+
+    private function assertWhatsappReturnEditable(int $returnId, bool $forUpdate = false): array {
+        WhatsappReturnedProduct::ensureReady();
+        $return = Database::fetchOne(
+            "SELECT r.*, s.invoice_number, s.customer_id, s.customer_address,
+                    COALESCE(c.name, s.customer_name, 'WhatsApp Customer') AS customer_name,
+                    COALESCE(c.phone, s.customer_phone, '-') AS customer_phone,
+                    s.created_at AS sale_date
+             FROM returns r
+             JOIN sales s ON s.id = r.sale_id
+             LEFT JOIN customers c ON c.id = s.customer_id
+             WHERE r.id = ? AND r.source_type = 'WHATSAPP'
+               AND (s.sales_channel = 'WHATSAPP' OR s.notes LIKE '%WhatsApp%')",
+            [$returnId]
+        );
+        if (!$return) {
+            throw new RuntimeException('WhatsApp return or exchange was not found.');
+        }
+        if (in_array(strtoupper((string)($return['status'] ?? '')), ['CANCELLED', 'REJECTED'], true)) {
+            throw new RuntimeException('Cancelled or rejected WhatsApp returns cannot be edited.');
+        }
+
+        $reversibleLabelMovements = $this->getReversibleWhatsappReturnLabelMovements($returnId, $forUpdate);
+        $reversibleMovementIds = array_fill_keys(array_map(
+            static fn(array $entry): int => (int)$entry['movement']['id'],
+            $reversibleLabelMovements
+        ), true);
+        $activeLabelMovements = Database::fetchAll(
+            "SELECT id FROM stock_transactions
+             WHERE reference_type = 'whatsapp_returned_products'
+               AND reference_id IN (
+                   SELECT id FROM whatsapp_returned_products
+                   WHERE return_id = ? AND voided_at IS NULL
+               )",
+            [$returnId]
+        );
+        foreach ($activeLabelMovements as $movement) {
+            if (!isset($reversibleMovementIds[(int)$movement['id']])) {
+                throw new RuntimeException('This return cannot be edited because stock movements are already linked to its returned-product labels.');
+            }
+        }
+        $linkedMovement = Database::fetchOne(
+            "SELECT id FROM stock_transactions
+             WHERE (reference_type = 'returns' AND reference_id = ?)
+                OR (reference_type = 'exchanges' AND reference_id = ?)
+             LIMIT 1",
+            [$returnId, $returnId]
+        );
+        if ($linkedMovement) {
+            throw new RuntimeException('This return cannot be edited because stock movements are already linked to it.');
+        }
+        return $return;
+    }
+
+    public function editWhatsappReturn(int $id): void {
+        if (!hasPermission('whatsapp_returns', 'edit')) {
+            Session::flash('error', 'Access denied: You do not have permission to edit WhatsApp returns.');
+            Response::redirect(url('warehouse/whatsapp-orders/returns'));
+            return;
+        }
+        try {
+            $return = $this->assertWhatsappReturnEditable($id);
+        } catch (RuntimeException $e) {
+            Session::flash('error', $e->getMessage());
+            Response::redirect(url('warehouse/whatsapp-orders/returns'));
+            return;
+        }
+        $hasPrintedLabels = (bool)Database::fetchOne(
+            "SELECT id FROM whatsapp_returned_products
+             WHERE return_id = ? AND printed_at IS NOT NULL AND voided_at IS NULL
+             LIMIT 1",
+            [$id]
+        );
+
+        $saleItems = Database::fetchAll(
+            "SELECT si.*, pv.sku, pv.qr_code, p.name AS product_name,
+                    COALESCE(sz.name, 'Free Size') AS size_name,
+                    COALESCE(clr.name, 'Standard') AS color_name,
+                    COALESCE(ri.quantity, 0) AS edit_quantity,
+                    COALESCE(ri.item_condition, 'GOOD') AS edit_condition,
+                    COALESCE((
+                        SELECT GROUP_CONCAT(wrp.original_piece_tag ORDER BY wrp.id SEPARATOR ',')
+                        FROM whatsapp_returned_products wrp
+                        WHERE wrp.return_id = ? AND wrp.sale_item_id = si.id
+                          AND wrp.voided_at IS NULL
+                          AND wrp.original_piece_tag IS NOT NULL AND wrp.original_piece_tag <> ''
+                    ), '') AS edit_piece_tags,
+                    COALESCE((
+                        SELECT SUM(other_ri.quantity)
+                        FROM return_items other_ri
+                        WHERE other_ri.sale_item_id = si.id AND other_ri.return_id <> ?
+                    ), 0) AS other_returned_quantity
+             FROM sale_items si
+             JOIN product_variants pv ON pv.id = si.variant_id
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN sizes sz ON sz.id = pv.size_id
+             LEFT JOIN colors clr ON clr.id = pv.color_id
+             LEFT JOIN return_items ri ON ri.sale_item_id = si.id AND ri.return_id = ?
+             WHERE si.sale_id = ?
+             ORDER BY si.id",
+            [$id, $id, $id, (int)$return['sale_id']]
+        );
+        foreach ($saleItems as &$saleItem) {
+            $saleItem['max_return_quantity'] = max(
+                0,
+                (int)$saleItem['quantity'] - (int)$saleItem['other_returned_quantity']
+            );
+        }
+        unset($saleItem);
+
+        $exchange = Database::fetchOne("SELECT * FROM exchanges WHERE return_id = ? LIMIT 1", [$id]);
+        $exchangeItems = $exchange
+            ? Database::fetchAll(
+                "SELECT ei.*, pv.sku, p.name AS product_name,
+                        COALESCE(sz.name, 'Free Size') AS size_name,
+                        COALESCE(clr.name, 'Standard') AS color_name
+                 FROM exchange_items ei
+                 JOIN product_variants pv ON pv.id = ei.variant_id
+                 JOIN products p ON p.id = pv.product_id
+                 LEFT JOIN sizes sz ON sz.id = pv.size_id
+                 LEFT JOIN colors clr ON clr.id = pv.color_id
+                 WHERE ei.exchange_id = ? ORDER BY ei.id",
+                [(int)$exchange['id']]
+            )
+            : [];
+        $channelIds = $this->getWhatsappChannelIds();
+        $channelPlaceholders = implode(',', array_fill(0, count($channelIds), '?'));
+        $catalogVariants = Database::fetchAll(
+            "SELECT pv.id, pv.sku, pv.qr_code, pv.mrp,
+                    COALESCE(NULLIF(pv.selling_price, 0), pv.mrp) AS selling_price,
+                    p.name AS product_name, p.code AS product_code,
+                    COALESCE(sz.name, 'Free Size') AS size_name,
+                    COALESCE(clr.name, 'Standard') AS color_name,
+                    COALESCE((SELECT SUM(sb.quantity) FROM stock_balances sb
+                              WHERE sb.variant_id = pv.id AND sb.location_type = 'CHANNEL'
+                                AND sb.location_id IN ($channelPlaceholders)
+                                AND sb.stock_state = 'AVAILABLE'), 0) AS available_stock
+             FROM product_variants pv
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN sizes sz ON sz.id = pv.size_id
+             LEFT JOIN colors clr ON clr.id = pv.color_id
+             WHERE pv.is_active = 1
+             ORDER BY p.name, pv.sku",
+            $channelIds
+        );
+        Response::view('whatsapp_orders.return_edit', [
+            'pageTitle' => 'Edit WhatsApp Return: ' . $return['return_number'],
+            'activeModule' => 'whatsapp',
+            'activeMenu' => 'wh-whatsapp-returns',
+            'breadcrumb' => [
+                ['label' => 'WhatsApp Orders', 'url' => url('warehouse/whatsapp-orders')],
+                ['label' => 'Returns & Exchanges', 'url' => url('warehouse/whatsapp-orders/returns')],
+                ['label' => $return['return_number'], 'url' => url('warehouse/whatsapp-orders/returns/view/' . $id)],
+                ['label' => 'Edit'],
+            ],
+            'return' => $return,
+            'hasPrintedLabels' => $hasPrintedLabels,
+            'saleItems' => $saleItems,
+            'exchange' => $exchange,
+            'exchangeItems' => $exchangeItems,
+            'catalogVariants' => $catalogVariants,
+        ]);
+    }
+
+    public function updateWhatsappReturn(int $id): void {
+        if (!hasPermission('whatsapp_returns', 'edit')) {
+            Session::flash('error', 'Access denied: You do not have permission to edit WhatsApp returns.');
+            Response::redirect(url('warehouse/whatsapp-orders/returns'));
+            return;
+        }
+        CSRF::verify();
+        WhatsappReturnedProduct::ensureReady();
+        $editUrl = url('warehouse/whatsapp-orders/returns/edit/' . $id);
+        $items = $_POST['items'] ?? [];
+        $replacements = $_POST['replacement_items'] ?? [];
+        $returnType = strtoupper(trim((string)($_POST['return_type'] ?? 'RETURN')));
+        $reason = trim((string)($_POST['reason'] ?? 'WhatsApp Customer Request'));
+        $refundMode = strtoupper(trim((string)($_POST['refund_mode'] ?? 'CASH')));
+        if (!in_array($returnType, ['RETURN', 'EXCHANGE'], true)) {
+            Session::flash('error', 'Please select a valid return or exchange type.');
+            Response::redirect($editUrl);
+            return;
+        }
+        if (!is_array($items) || !$items) {
+            Session::flash('error', 'Select at least one billed item to return.');
+            Response::redirect($editUrl);
+            return;
+        }
+
+        try {
+            $return = $this->assertWhatsappReturnEditable($id);
+            $saleId = (int)$return['sale_id'];
+            $sale = Database::fetchOne("SELECT * FROM sales WHERE id = ?", [$saleId]);
+            if (!$sale) {
+                throw new RuntimeException('The original WhatsApp sale was not found.');
+            }
+            $allowedRefundModes = ['CASH', 'UPI', 'CARD', 'ONLINE', 'CREDIT_NOTE'];
+            if (!in_array($refundMode, $allowedRefundModes, true)) {
+                throw new RuntimeException('Please select a valid settlement method.');
+            }
+
+            $normalizedItems = [];
+            $totalReturnValue = 0.0;
+            $submittedSourceTags = [];
+            foreach ($items as $itemKey => $item) {
+                if (!is_array($item)) {
+                    throw new RuntimeException('Invalid return item data.');
+                }
+                $saleItemId = (int)($item['sale_item_id'] ?? (is_numeric($itemKey) ? $itemKey : 0));
+                $quantity = filter_var($item['qty'] ?? 0, FILTER_VALIDATE_INT);
+                if ($saleItemId <= 0 || $quantity === false || $quantity < 0) {
+                    throw new RuntimeException('Each return line must have a valid billed item and quantity.');
+                }
+                if ($quantity === 0) {
+                    continue;
+                }
+                $saleItem = Database::fetchOne(
+                    "SELECT si.*, pv.qr_code
+                     FROM sale_items si
+                     JOIN product_variants pv ON pv.id = si.variant_id
+                     WHERE si.id = ? AND si.sale_id = ?",
+                    [$saleItemId, $saleId]
+                );
+                if (!$saleItem) {
+                    throw new RuntimeException('A selected return line does not belong to the original WhatsApp invoice.');
+                }
+                $priorQty = (int)(Database::fetchOne(
+                    "SELECT COALESCE(SUM(quantity), 0) AS total
+                     FROM return_items WHERE sale_item_id = ? AND return_id <> ?",
+                    [$saleItemId, $id]
+                )['total'] ?? 0);
+                if ($quantity > max(0, (int)$saleItem['quantity'] - $priorQty)) {
+                    throw new RuntimeException('Return quantity exceeds the remaining quantity on the original invoice line.');
+                }
+                $condition = strtoupper(trim((string)($item['condition'] ?? 'GOOD')));
+                if (!in_array($condition, ['GOOD', 'DAMAGED', 'DEFECTIVE'], true)) {
+                    throw new RuntimeException('Select a valid condition for every returned product.');
+                }
+                $pieceTags = $item['piece_tags'] ?? [];
+                if (!is_array($pieceTags)) {
+                    $pieceTags = preg_split('/[,|]/', (string)$pieceTags) ?: [];
+                }
+                $billedTags = [];
+                $decodedTags = json_decode((string)($saleItem['scanned_qr_codes'] ?? ''), true);
+                $rawTags = is_array($decodedTags)
+                    ? $decodedTags
+                    : (preg_split('/[,|]/', (string)($saleItem['scanned_qr_codes'] ?? '')) ?: []);
+                foreach ($rawTags as $billedTag) {
+                    if (is_array($billedTag)) {
+                        $billedTag = $billedTag['tag_code'] ?? $billedTag['qr_code'] ?? '';
+                    }
+                    $billedTag = strtoupper(trim((string)$billedTag));
+                    if ($billedTag !== '') {
+                        $billedTags[$billedTag] = true;
+                    }
+                }
+                $saleQr = strtoupper(trim((string)($saleItem['qr_code'] ?? '')));
+                if ($saleQr !== '') {
+                    $billedTags[$saleQr] = true;
+                }
+                $cleanTags = [];
+                foreach ($pieceTags as $pieceTag) {
+                    if (is_array($pieceTag)) {
+                        $pieceTag = $pieceTag['tag_code'] ?? $pieceTag['qr_code'] ?? '';
+                    }
+                    $pieceTag = trim((string)$pieceTag, " \t\n\r\0\x0B\"'");
+                    if ($pieceTag === '') {
+                        continue;
+                    }
+                    $tagKey = strtoupper($pieceTag);
+                    if (!isset($billedTags[$tagKey])) {
+                        throw new RuntimeException("Piece tag '{$pieceTag}' is not billed on the selected WhatsApp invoice line.");
+                    }
+                    if (isset($submittedSourceTags[$tagKey])) {
+                        throw new RuntimeException("Piece tag '{$pieceTag}' is selected more than once.");
+                    }
+                    $usedElsewhere = Database::fetchOne(
+                        "SELECT id FROM whatsapp_returned_products
+                         WHERE sale_item_id = ? AND return_id <> ? AND voided_at IS NULL
+                           AND UPPER(original_piece_tag) = ?
+                         LIMIT 1",
+                        [$saleItemId, $id, $tagKey]
+                    );
+                    if ($usedElsewhere) {
+                        throw new RuntimeException("Piece tag '{$pieceTag}' was already returned.");
+                    }
+                    $submittedSourceTags[$tagKey] = true;
+                    $cleanTags[] = $pieceTag;
+                }
+                if (count($cleanTags) > $quantity) {
+                    throw new RuntimeException('The number of scanned piece tags cannot exceed the return quantity.');
+                }
+                $unitPrice = (float)$saleItem['unit_price'];
+                $normalizedItems[] = [
+                    'sale_item_id' => $saleItemId,
+                    'variant_id' => (int)$saleItem['variant_id'],
+                    'quantity' => (int)$quantity,
+                    'unit_price' => $unitPrice,
+                    'condition' => $condition,
+                    'piece_tags' => $cleanTags,
+                ];
+                $totalReturnValue += $unitPrice * (int)$quantity;
+            }
+            if (!$normalizedItems) {
+                throw new RuntimeException('Select at least one billed item to return.');
+            }
+
+            $normalizedReplacements = [];
+            $totalReplacementValue = 0.0;
+            $replacementStockRequirements = [];
+            $usedReplacementTags = [];
+            if ($returnType === 'EXCHANGE') {
+                if (!is_array($replacements)) {
+                    throw new RuntimeException('Add at least one replacement item for an exchange.');
+                }
+                foreach ($replacements as $replacement) {
+                    if (!is_array($replacement)) {
+                        throw new RuntimeException('Invalid replacement item data.');
+                    }
+                    $variantId = (int)($replacement['variant_id'] ?? 0);
+                    $quantity = filter_var($replacement['quantity'] ?? 0, FILTER_VALIDATE_INT);
+                    $unitPrice = $replacement['unit_price'] ?? null;
+                    $pieceTag = trim((string)($replacement['piece_tag'] ?? ''));
+                    if ($variantId <= 0 || $quantity === false || $quantity <= 0
+                        || !is_numeric($unitPrice) || !is_finite((float)$unitPrice) || (float)$unitPrice < 0) {
+                        throw new RuntimeException('Each replacement must have a valid product, positive quantity, and non-negative price.');
+                    }
+                    $variant = Database::fetchOne(
+                        "SELECT pv.sku, pv.qr_code, pv.pack_quantity, pv.qr_type, pv.is_complementary,
+                                p.is_complementary AS product_is_complementary, wc.category_type
+                         FROM product_variants pv
+                         JOIN products p ON p.id = pv.product_id
+                         LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+                         WHERE pv.id = ? AND pv.is_active = 1",
+                        [$variantId]
+                    );
+                    if (!$variant) {
+                        throw new RuntimeException('A selected replacement product is not an active variant.');
+                    }
+                    $isAggregate = in_array(strtoupper((string)($variant['category_type'] ?? 'NORMAL')), ['SERIES', 'COMPLEMENTARY'], true)
+                        || !empty($variant['is_complementary'])
+                        || !empty($variant['product_is_complementary'])
+                        || in_array(strtoupper((string)($variant['qr_type'] ?? '')), ['SERIES_BATCH', 'SERIES'], true)
+                        || (int)($variant['pack_quantity'] ?? 1) > 1;
+                    if (!$isAggregate) {
+                        if ($quantity !== 1 || $pieceTag === '') {
+                            throw new RuntimeException('Normal replacement products must be selected one scanned WhatsApp piece at a time.');
+                        }
+                        $availableTags = $this->resolveChannelPieceTags(
+                            (int)$this->getChannel()['id'],
+                            $variantId,
+                            $this->getWhatsappChannelIds(),
+                            'WHATSAPP'
+                        )['available'];
+                        if (!in_array(strtoupper($pieceTag), array_map('strtoupper', $availableTags), true)) {
+                            throw new RuntimeException("Replacement piece '{$pieceTag}' is not currently available in WhatsApp stock.");
+                        }
+                        if (isset($usedReplacementTags[strtoupper($pieceTag)])) {
+                            throw new RuntimeException("Replacement piece '{$pieceTag}' cannot be assigned more than once.");
+                        }
+                        $usedReplacementTags[strtoupper($pieceTag)] = true;
+                    } else {
+                        $validCodes = array_filter([
+                            strtoupper(trim((string)($variant['sku'] ?? ''))),
+                            strtoupper(trim((string)($variant['qr_code'] ?? ''))),
+                        ]);
+                        if ($pieceTag === '' || !in_array(strtoupper($pieceTag), $validCodes, true)) {
+                            throw new RuntimeException('Series and complementary replacements require a valid product code.');
+                        }
+                    }
+                    $normalizedReplacements[] = [
+                        'variant_id' => $variantId,
+                        'quantity' => (int)$quantity,
+                        'unit_price' => (float)$unitPrice,
+                        'piece_tag' => $pieceTag,
+                    ];
+                    $replacementStockRequirements[$variantId] = ($replacementStockRequirements[$variantId] ?? 0) + (int)$quantity;
+                    $totalReplacementValue += (float)$unitPrice * (int)$quantity;
+                }
+                if (!$normalizedReplacements) {
+                    throw new RuntimeException('Add at least one replacement item for an exchange.');
+                }
+            }
+
+            $channelIds = $this->getWhatsappChannelIds();
+            $replacementStockPlan = [];
+            foreach ($replacementStockRequirements as $variantId => $requestedQty) {
+                $remaining = $requestedQty;
+                $plan = [];
+                foreach ($channelIds as $stockChannelId) {
+                    $available = (int)StockService::getBalance((int)$variantId, 'CHANNEL', (int)$stockChannelId, 'AVAILABLE');
+                    $allocated = min($available, $remaining);
+                    if ($allocated > 0) {
+                        $plan[(int)$stockChannelId] = $allocated;
+                        $remaining -= $allocated;
+                    }
+                    if ($remaining === 0) {
+                        break;
+                    }
+                }
+                if ($remaining > 0) {
+                    throw new RuntimeException('There is not enough available WhatsApp stock for the replacement items.');
+                }
+                $replacementStockPlan[(int)$variantId] = $plan;
+            }
+
+            $differenceAmount = $totalReplacementValue - $totalReturnValue;
+            $refundAmount = $differenceAmount < 0
+                ? abs($differenceAmount)
+                : ($returnType === 'RETURN' ? $totalReturnValue : 0.0);
+            $userId = Auth::id() ?? Session::userId() ?? 1;
+            $channel = $this->getChannel();
+            $channelId = (int)$channel['id'];
+            if (!Database::beginTransaction()) {
+                throw new RuntimeException('Unable to start the WhatsApp return update transaction. Please try again.');
+            }
+            $lockedReturn = Database::fetchOne(
+                "SELECT * FROM returns WHERE id = ? AND source_type = 'WHATSAPP' FOR UPDATE",
+                [$id]
+            );
+            if (!$lockedReturn) {
+                throw new RuntimeException('WhatsApp return or exchange was not found.');
+            }
+            $this->assertWhatsappReturnEditable($id, true);
+            $oldReturnItems = Database::fetchAll("SELECT * FROM return_items WHERE return_id = ? FOR UPDATE", [$id]);
+            $oldExchange = Database::fetchOne("SELECT * FROM exchanges WHERE return_id = ? FOR UPDATE", [$id]);
+            $oldExchangeItems = $oldExchange
+                ? Database::fetchAll("SELECT * FROM exchange_items WHERE exchange_id = ? FOR UPDATE", [(int)$oldExchange['id']])
+                : [];
+            $oldReturnedProducts = Database::fetchAll("SELECT * FROM whatsapp_returned_products WHERE return_id = ? FOR UPDATE", [$id]);
+            $labelStockReversals = $this->getReversibleWhatsappReturnLabelMovements($id, true);
+            $hadPrintedLabels = count($labelStockReversals) > 0;
+            $auditBefore = [
+                'return' => $lockedReturn,
+                'return_items' => $oldReturnItems,
+                'exchange' => $oldExchange,
+                'exchange_items' => $oldExchangeItems,
+                'returned_products' => $oldReturnedProducts,
+            ];
+            foreach ($labelStockReversals as $reversal) {
+                $product = $reversal['product'];
+                $movement = $reversal['movement'];
+                StockService::decrease(
+                    (int)$movement['variant_id'],
+                    'CHANNEL',
+                    (int)$movement['location_id'],
+                    (string)$movement['stock_state'],
+                    (float)$movement['quantity'],
+                    'RETURN_EDIT_REVERSAL',
+                    'whatsapp_return_edits',
+                    $id,
+                    $userId,
+                    'Reverse printed WhatsApp returned-product label stock before editing'
+                );
+            }
+            WhatsappReturnedProduct::voidForReturn($id, $userId);
+            Database::execute("DELETE FROM return_items WHERE return_id = ?", [$id]);
+            if ($oldExchange) {
+                Database::execute("DELETE FROM exchange_items WHERE exchange_id = ?", [(int)$oldExchange['id']]);
+                Database::execute("DELETE FROM exchanges WHERE id = ?", [(int)$oldExchange['id']]);
+            }
+            $payAction = $differenceAmount > 0 ? 'COLLECT' : ($differenceAmount < 0 ? 'REFUND' : 'NONE');
+            Database::execute(
+                "UPDATE returns
+                 SET return_type = ?, reason = ?, inspection_status = 'APPROVED',
+                     refund_amount = ?, refund_mode = ?, refund_status = 'COMPLETED',
+                     total_amount = ?, status = ?, notes = ?, updated_at = NOW()
+                 WHERE id = ?",
+                [
+                    $returnType,
+                    $reason,
+                    $refundAmount,
+                    $refundMode,
+                    $totalReturnValue,
+                    $refundAmount > 0 ? 'REFUNDED' : 'APPROVED',
+                    $reason,
+                    $id,
+                ]
+            );
+
+            foreach ($normalizedItems as $item) {
+                Database::execute(
+                    "INSERT INTO return_items
+                        (return_id, sale_item_id, variant_id, quantity, item_condition, destination,
+                         refund_amount, condition_type, reason)
+                     VALUES (?, ?, ?, ?, ?, 'REWORK', ?, ?, ?)",
+                    [
+                        $id,
+                        $item['sale_item_id'],
+                        $item['variant_id'],
+                        $item['quantity'],
+                        $item['condition'],
+                        $item['quantity'] * $item['unit_price'],
+                        $item['condition'],
+                        $reason,
+                    ]
+                );
+                $sourceTags = $item['piece_tags'];
+                $saleItem = Database::fetchOne(
+                    "SELECT si.scanned_qr_codes, pv.qr_code, pv.sku
+                     FROM sale_items si JOIN product_variants pv ON pv.id = si.variant_id
+                     WHERE si.id = ?",
+                    [$item['sale_item_id']]
+                );
+                $decodedSaleTags = json_decode((string)($saleItem['scanned_qr_codes'] ?? ''), true);
+                $allSaleTags = is_array($decodedSaleTags)
+                    ? $decodedSaleTags
+                    : (preg_split('/[,|]/', (string)($saleItem['scanned_qr_codes'] ?? '')) ?: []);
+                $sourceTagKeys = array_fill_keys(array_map('strtoupper', $sourceTags), true);
+                if (count($sourceTags) < $item['quantity']) {
+                    foreach ($allSaleTags as $saleTag) {
+                        if (is_array($saleTag)) {
+                            $saleTag = $saleTag['tag_code'] ?? $saleTag['qr_code'] ?? '';
+                        }
+                        $saleTag = trim((string)$saleTag, " \t\n\r\0\x0B\"'");
+                        $saleTagKey = strtoupper($saleTag);
+                        if ($saleTag !== '' && !isset($sourceTagKeys[$saleTagKey]) && !isset($submittedSourceTags[$saleTagKey])) {
+                            $sourceTags[] = $saleTag;
+                            $sourceTagKeys[$saleTagKey] = true;
+                            $submittedSourceTags[$saleTagKey] = true;
+                        }
+                        if (count($sourceTags) >= $item['quantity']) {
+                            break;
+                        }
+                    }
+                }
+                $saleQr = trim((string)($saleItem['qr_code'] ?? ''));
+                $saleQrKey = strtoupper($saleQr);
+                if ($saleQr !== '' && !isset($sourceTagKeys[$saleQrKey])
+                    && !isset($submittedSourceTags[$saleQrKey])
+                    && count($sourceTags) < $item['quantity']) {
+                    $sourceTags[] = $saleQr;
+                    $sourceTagKeys[$saleQrKey] = true;
+                    $submittedSourceTags[$saleQrKey] = true;
+                }
+                for ($pieceIndex = 0; $pieceIndex < $item['quantity']; $pieceIndex++) {
+                    $originalTag = $sourceTags[$pieceIndex] ?? '';
+                    $baseTag = $originalTag !== ''
+                        ? 'R' . $originalTag
+                        : 'R' . preg_replace('/[^A-Za-z0-9_-]/', '', (string)($saleItem['sku'] ?? 'ITEM'))
+                            . '-' . $return['return_number'] . '-' . ($pieceIndex + 1);
+                    $returnedTag = $baseTag;
+                    $collision = 1;
+                    while (WhatsappReturnedProduct::tagExists($returnedTag)) {
+                        $returnedTag = $baseTag . '-' . $id . '-' . $collision++;
+                    }
+                    WhatsappReturnedProduct::create([
+                        'channel_id' => $channelId,
+                        'return_id' => $id,
+                        'sale_item_id' => $item['sale_item_id'],
+                        'variant_id' => $item['variant_id'],
+                        'original_piece_tag' => $originalTag,
+                        'returned_tag' => $returnedTag,
+                        'item_condition' => $item['condition'],
+                    ]);
+                }
+            }
+
+            if ($returnType === 'EXCHANGE') {
+                $exchangeNumber = $oldExchange['exchange_number'] ?? ('EXC-WA-' . date('Ymd') . '-' . mt_rand(1000, 9999));
+                Database::execute(
+                    "INSERT INTO exchanges
+                        (exchange_number, return_id, source_type, sale_id, original_amount, new_amount,
+                         difference_amount, settlement_mode, payment_action, status, payment_status, notes,
+                         created_at, updated_at)
+                     VALUES (?, ?, 'WHATSAPP', ?, ?, ?, ?, ?, ?, 'COMPLETED', 'PAID', ?, NOW(), NOW())",
+                    [
+                        $exchangeNumber, $id, $saleId, $totalReturnValue, $totalReplacementValue,
+                        $differenceAmount, $refundMode, $payAction, 'WhatsApp Product Exchange',
+                    ]
+                );
+                $exchangeId = (int)Database::lastInsertId();
+                $replacementStockDispatched = [];
+                foreach ($normalizedItems as $item) {
+                    Database::execute(
+                        "INSERT INTO exchange_items (exchange_id, item_type, variant_id, quantity, unit_price, total_amount, piece_tag)
+                         VALUES (?, 'OLD', ?, ?, ?, ?, ?)",
+                        [
+                            $exchangeId, $item['variant_id'], $item['quantity'], $item['unit_price'],
+                            $item['quantity'] * $item['unit_price'],
+                            $item['piece_tags'] ? implode(',', $item['piece_tags']) : null,
+                        ]
+                    );
+                }
+                foreach ($normalizedReplacements as $replacement) {
+                    Database::execute(
+                        "INSERT INTO exchange_items (exchange_id, item_type, variant_id, quantity, unit_price, total_amount, piece_tag)
+                         VALUES (?, 'NEW', ?, ?, ?, ?, ?)",
+                        [
+                            $exchangeId, $replacement['variant_id'], $replacement['quantity'],
+                            $replacement['unit_price'], $replacement['quantity'] * $replacement['unit_price'],
+                            $replacement['piece_tag'] ?: null,
+                        ]
+                    );
+                    $remainingQty = $replacement['quantity'];
+                    foreach ($replacementStockPlan[$replacement['variant_id']] ?? [] as $stockChannelId => $plannedQty) {
+                        $alreadyDispatched = $replacementStockDispatched[$replacement['variant_id']][$stockChannelId] ?? 0;
+                        $dispatchQty = min($remainingQty, $plannedQty - $alreadyDispatched);
+                        if ($dispatchQty <= 0) {
+                            continue;
+                        }
+                        StockService::decrease(
+                            $replacement['variant_id'],
+                            'CHANNEL',
+                            (int)$stockChannelId,
+                            'AVAILABLE',
+                            (float)$dispatchQty,
+                            'EXCHANGE_DISPATCH',
+                            'exchanges',
+                            $id,
+                            $userId,
+                            'WhatsApp Exchange Replacement Dispatch'
+                        );
+                        $replacementStockDispatched[$replacement['variant_id']][$stockChannelId] = $alreadyDispatched + $dispatchQty;
+                        $remainingQty -= $dispatchQty;
+                        if ($remainingQty === 0) {
+                            break;
+                        }
+                    }
+                    if ($remainingQty > 0) {
+                        throw new RuntimeException('WhatsApp replacement stock changed while the exchange was being updated.');
+                    }
+                }
+            }
+
+            AuditService::logStrict(
+                'whatsapp_returns',
+                'EDIT_RETURN',
+                'returns',
+                $id,
+                $auditBefore,
+                [
+                    'return' => Database::fetchOne("SELECT * FROM returns WHERE id = ?", [$id]),
+                    'return_items' => Database::fetchAll("SELECT * FROM return_items WHERE return_id = ?", [$id]),
+                    'exchange' => Database::fetchOne("SELECT * FROM exchanges WHERE return_id = ?", [$id]),
+                    'exchange_items' => Database::fetchAll(
+                        "SELECT ei.* FROM exchange_items ei JOIN exchanges e ON e.id = ei.exchange_id WHERE e.return_id = ?",
+                        [$id]
+                    ),
+                    'returned_products' => Database::fetchAll("SELECT * FROM whatsapp_returned_products WHERE return_id = ?", [$id]),
+                ],
+                $userId
+            );
+            Database::commit();
+            Session::flash(
+                'success',
+                $hadPrintedLabels
+                    ? "WhatsApp Return/Exchange #{$return['return_number']} updated. Previously printed labels are void; print the replacement labels before returning these products to inventory."
+                    : "WhatsApp Return/Exchange #{$return['return_number']} updated successfully."
+            );
+            Response::redirect(url('warehouse/whatsapp-orders/returns'));
+        } catch (Throwable $e) {
+            if (Database::inTransaction()) {
+                Database::rollback();
+            }
+            Session::flash('error', $e->getMessage());
+            Response::redirect($editUrl);
+        }
     }
 
     public function whatsappReturnsLookup(): void {

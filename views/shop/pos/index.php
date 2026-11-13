@@ -356,6 +356,11 @@
                                 </label>
                             </div>
                         </div>
+                        <div class="form-check form-switch mt-2 p-2 ps-5 bg-white border rounded-3">
+                            <input class="form-check-input" type="checkbox" role="switch" id="isOnlineSale">
+                            <label class="form-check-label fw-semibold" for="isOnlineSale">Show this sale in the Online section</label>
+                            <div class="form-text mt-0">Classification only; the selected payment method and payment records stay unchanged.</div>
+                        </div>
                     </div>
 
                     <!-- DYNAMIC SPLIT PAYMENT CONTAINER (CASH + UPI) -->
@@ -1046,7 +1051,17 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     let searchTimeout = null;
+    let customerLookupRequest = 0;
+    const normalizePhone = value => String(value || '').replace(/\D/g, '');
+    function showCustomerOrderCount(orderCount) {
+        const count = Math.max(0, parseInt(orderCount, 10) || 0);
+        if (!custBadge) return;
+        custBadge.className = 'badge bg-success-subtle text-success';
+        custBadge.innerHTML = `<i class="bi bi-check-circle me-1"></i>Saved · ${count} previous ${count === 1 ? 'order' : 'orders'}`;
+    }
+
     function queryCustomer(q) {
+        const requestId = ++customerLookupRequest;
         if (!q || q.length < 2) {
             if (custSuggestions) custSuggestions.style.display = 'none';
             return;
@@ -1055,6 +1070,22 @@ document.addEventListener('DOMContentLoaded', function() {
         fetch(`<?= url('shop/pos/customer-lookup') ?>?q=${encodeURIComponent(q)}`)
             .then(res => res.json())
             .then(res => {
+                if (requestId !== customerLookupRequest) return;
+                const enteredPhone = normalizePhone(custPhoneInput ? custPhoneInput.value : '');
+                const enteredPhoneKey = enteredPhone.length >= 10 ? enteredPhone.slice(-10) : '';
+                const hasCustomerResults = res.success && Array.isArray(res.data);
+                const matchingPhoneCustomer = enteredPhoneKey && hasCustomerResults
+                    ? res.data.find(customer => normalizePhone(customer.phone).slice(-10) === enteredPhoneKey)
+                    : null;
+                if (matchingPhoneCustomer) {
+                    showCustomerOrderCount(matchingPhoneCustomer.previous_order_count);
+                } else if (hasCustomerResults && enteredPhoneKey && custPhoneInput && enteredPhone === normalizePhone(q)) {
+                    if (custBadge) {
+                        custBadge.className = 'badge bg-secondary-subtle text-secondary';
+                        custBadge.innerHTML = '<i class="bi bi-person-plus me-1"></i>New · 0 previous orders';
+                    }
+                }
+
                 if (res.success && res.data && res.data.length > 0) {
                     let html = '';
                     res.data.forEach(c => {
@@ -1063,12 +1094,14 @@ document.addEventListener('DOMContentLoaded', function() {
                                     data-name="${escapeHtml(c.name)}" 
                                     data-phone="${escapeHtml(c.phone || '')}" 
                                     data-address="${escapeHtml(c.address || '')}" 
-                                    data-email="${escapeHtml(c.email || '')}">
+                                    data-email="${escapeHtml(c.email || '')}"
+                                    data-order-count="${Number(c.previous_order_count) || 0}">
                                 <div class="d-flex justify-content-between align-items-center">
                                     <strong class="text-dark small">${escapeHtml(c.name)}</strong>
                                     <span class="badge bg-primary-subtle text-primary font-monospace">${escapeHtml(c.phone || '')}</span>
                                 </div>
                                 ${c.address ? `<small class="text-muted text-truncate d-block" style="font-size:10px;">${escapeHtml(c.address)}</small>` : ''}
+                                <small class="text-success fw-semibold d-block" style="font-size:10px;">${Number(c.previous_order_count) || 0} previous ${(Number(c.previous_order_count) || 0) === 1 ? 'order' : 'orders'}</small>
                             </button>
                         `;
                     });
@@ -1088,8 +1121,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             });
 
                             custSuggestions.style.display = 'none';
-                            custBadge.className = 'badge bg-success-subtle text-success';
-                            custBadge.innerHTML = '<i class="bi bi-check-circle me-1"></i>Saved Customer';
+                            showCustomerOrderCount(this.getAttribute('data-order-count'));
                             focusQR();
                         });
                     });
@@ -1104,6 +1136,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (custPhoneInput) {
         custPhoneInput.addEventListener('input', function() {
+            customerLookupRequest++;
             clearTimeout(searchTimeout);
             const val = this.value.trim();
             if (val.length >= 1) {
@@ -1120,6 +1153,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (custNameInput) {
         custNameInput.addEventListener('input', function() {
+            customerLookupRequest++;
             clearTimeout(searchTimeout);
             const val = this.value.trim();
             if (val.length >= 2 && (!custPhoneInput || !custPhoneInput.value)) {
@@ -1243,6 +1277,7 @@ document.addEventListener('DOMContentLoaded', function() {
             subtotal: totalTaxable,
             total_amount: netPayableTotal,
             payment_mode: payMode,
+            is_online_sale: document.getElementById('isOnlineSale').checked,
             cash_amount: splitCashVal,
             upi_amount: splitUpiVal,
             upi_reference: splitUpiRefVal
@@ -1268,6 +1303,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (custNameInput) custNameInput.value = '';
                 if (custAddressInput) custAddressInput.value = '';
                 if (custEmailInput) custEmailInput.value = '';
+                const isOnlineSaleInput = document.getElementById('isOnlineSale');
+                if (isOnlineSaleInput) isOnlineSaleInput.checked = false;
                 if (splitCashInput) splitCashInput.value = '';
                 if (splitUpiInput) splitUpiInput.value = '';
                 if (splitUpiRef) splitUpiRef.value = '';
