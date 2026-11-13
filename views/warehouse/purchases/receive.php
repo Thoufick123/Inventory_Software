@@ -1,3 +1,8 @@
+<?php
+$paidAmount = PurchaseOrder::getEffectivePaidAmount($po);
+$balanceDue = max(0, (float)$po['total_amount'] - $paidAmount);
+$paymentStatus = $balanceDue <= 0 ? 'PAID' : ($paidAmount > 0 ? 'PARTIAL' : 'PENDING');
+?>
 <div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4 no-print">
     <div>
         <h2 class="mb-1"><i class="bi bi-receipt me-2 text-success"></i>Customer Purchase Tax Invoice #<?= e($po['po_number']) ?></h2>
@@ -63,7 +68,7 @@
             $billingTimestamp = date('d M Y, h:i:s A', strtotime($rawTimestamp));
             ?>
             <div class="small text-muted mt-1">Invoice Date &amp; Time: <strong class="text-dark"><i class="bi bi-clock me-1 text-primary"></i><?= $billingTimestamp ?></strong></div>
-            <div class="small text-muted mt-0.5">Payment Mode: <strong class="text-dark"><?= e($po['payment_method'] ?? 'CASH') ?></strong> (<span class="text-success fw-semibold"><?= e($po['payment_status'] ?? 'PAID') ?></span>)</div>
+            <div class="small text-muted mt-0.5">Payment Mode: <strong class="text-dark"><?= e($po['payment_method'] ?? 'CASH') ?></strong> (<span class="text-success fw-semibold"><?= e($paymentStatus) ?></span>)</div>
         </div>
     </div>
 
@@ -209,6 +214,14 @@
                 <div class="d-flex justify-content-between fs-5 fw-bold text-success">
                     <span>Net Total Payable:</span>
                     <span class="font-monospace">₹<?= number_format($po['total_amount'], 2) ?></span>
+                </div>
+                <div class="d-flex justify-content-between mt-2 small text-success">
+                    <span>Amount Received:</span>
+                    <span class="font-monospace fw-semibold">₹<?= number_format($paidAmount, 2) ?></span>
+                </div>
+                <div class="d-flex justify-content-between small text-danger">
+                    <span>Balance Due:</span>
+                    <span class="font-monospace fw-semibold">₹<?= number_format($balanceDue, 2) ?></span>
                 </div>
             </div>
 

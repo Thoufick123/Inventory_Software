@@ -1041,6 +1041,31 @@ class WarehouseService {
     /**
      * Create Direct Customer Purchase / Order with tax & discount calculation.
      */
+    private static function applyCustomerPurchasePayment(array &$poData, float $grandTotal, ?float $defaultPaidAmount = null): void {
+        if (!array_key_exists('paid_amount', $poData)) {
+            return;
+        }
+
+        $paymentMethod = strtoupper(trim((string)($poData['payment_method'] ?? 'CASH')));
+        $rawPaidAmount = $paymentMethod === 'CREDIT'
+            ? 0
+            : ($poData['paid_amount'] ?? $defaultPaidAmount ?? $grandTotal);
+        if (!is_numeric($rawPaidAmount)) {
+            throw new InvalidArgumentException('Payment received must be a valid amount.');
+        }
+
+        $paidAmount = round((float)$rawPaidAmount, 2);
+        $grandTotal = round($grandTotal, 2);
+        if ($paidAmount < 0 || $paidAmount > $grandTotal) {
+            throw new InvalidArgumentException('Payment received cannot be negative or greater than the bill total.');
+        }
+
+        $poData['paid_amount'] = $paidAmount;
+        $poData['payment_status'] = $paidAmount >= $grandTotal
+            ? 'PAID'
+            : ($paidAmount > 0 ? 'PARTIAL' : 'PENDING');
+    }
+
     public static function createPurchaseOrder(array $poData, array $items, int $userId): int {
         Database::beginTransaction();
         try {
@@ -1157,6 +1182,7 @@ class WarehouseService {
             $poData['igst_amount'] = $totalIgst;
             $poData['tax_amount'] = $totalCgst + $totalSgst + $totalIgst;
             $poData['total_amount'] = $grandTotal;
+            self::applyCustomerPurchasePayment($poData, $grandTotal);
 
             $poId = PurchaseOrder::create($poData);
 
@@ -1307,6 +1333,11 @@ class WarehouseService {
             $poData['igst_amount'] = $totalIgst;
             $poData['tax_amount'] = $totalCgst + $totalSgst + $totalIgst;
             $poData['total_amount'] = $grandTotal;
+            self::applyCustomerPurchasePayment(
+                $poData,
+                $grandTotal,
+                isset($existing['paid_amount']) ? (float)$existing['paid_amount'] : 0.0
+            );
 
             if (!$lockProductItems) {
                 $previousStockTransactions = Database::fetchAll(

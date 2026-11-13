@@ -42,6 +42,9 @@ $totalGst = (float)($po['cgst_amount'] ?? 0) + (float)($po['sgst_amount'] ?? 0) 
 $taxableAmount = (float)($po['subtotal'] ?? 0);
 $netAmount = (float)($po['total_amount'] ?? 0);
 $discountAmount = (float)($po['discount_amount'] ?? 0);
+$paidAmount = PurchaseOrder::getEffectivePaidAmount($po);
+$balanceDue = max(0, $netAmount - $paidAmount);
+$paymentStatus = $balanceDue <= 0 ? 'PAID' : ($paidAmount > 0 ? 'PARTIAL' : 'PENDING');
 $roundOff = round($netAmount - ($taxableAmount + $totalGst), 2);
 $gstType = (float)($po['igst_amount'] ?? 0) > 0
     ? 'IGST'
@@ -430,9 +433,15 @@ foreach ($items as $item) {
         <section class="payment-details">
             <div class="meta-row">
                 <span>Pay Mode: <strong><?= e($paymentMethod) ?></strong></span>
-                <?php if ($paymentStatus !== ''): ?>
-                    <span><?= e($paymentStatus) ?></span>
-                <?php endif; ?>
+                <span><?= e($paymentStatus) ?></span>
+            </div>
+            <div class="meta-row">
+                <span>Amount Received</span>
+                <strong>₹ <?= e(number_format($paidAmount, 2)) ?></strong>
+            </div>
+            <div class="meta-row">
+                <span>Balance Due</span>
+                <strong>₹ <?= e(number_format($balanceDue, 2)) ?></strong>
             </div>
             <?php if ($cashAmount !== null && $upiAmount !== null): ?>
                 <div class="meta-row">
