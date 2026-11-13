@@ -164,9 +164,14 @@
 
                     <!-- History link when customer selected -->
                     <div id="custHistorySection" class="d-none pt-1 mb-2.5">
-                        <button type="button" class="btn btn-xs btn-outline-primary w-100 py-1 fw-semibold" onclick="openSelectedCustomerHistory()" title="View products and previous orders bought by this customer">
-                            <i class="bi bi-clock-history me-1"></i> View Bought Products &amp; History
-                        </button>
+                        <div class="d-flex gap-1">
+                            <button type="button" class="btn btn-xs btn-light border text-secondary py-1 fw-semibold" id="btnCustPurchaseCount" disabled>
+                                <i class="bi bi-receipt me-1"></i><span id="custPurchaseCount">0</span> Purchases
+                            </button>
+                            <button type="button" class="btn btn-xs btn-outline-primary flex-grow-1 py-1 fw-semibold" onclick="openSelectedCustomerHistory()" title="View this customer's previous purchases">
+                                <i class="bi bi-clock-history me-1"></i> Logs
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Source Warehouse -->
@@ -201,6 +206,20 @@
                             </select>
                         </div>
                         <input type="hidden" name="payment_status" id="paymentStatusInput" value="PAID">
+                    </div>
+
+                    <div class="mb-2.5" id="cashTenderSection">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="form-label small fw-semibold mb-1 text-secondary" for="cashTenderInput">Cash Given by Customer (₹)</label>
+                                <input type="number" step="0.01" min="0" name="cash_tendered" id="cashTenderInput" class="form-control form-control-sm text-end fw-bold" placeholder="0.00" data-auto-value="1" oninput="onCashTenderInput()" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-semibold mb-1 text-secondary" for="changeToReturnInput">Change to Return (₹)</label>
+                                <input type="number" id="changeToReturnInput" class="form-control form-control-sm text-end fw-bold text-success" value="0.00" readonly>
+                            </div>
+                        </div>
+                        <small class="text-muted">Any cash above the bill total is calculated as change to return.</small>
                     </div>
 
                     <div class="mb-2.5" id="paymentAmountSection">
@@ -320,6 +339,10 @@
                     <div class="d-flex justify-content-between mb-1.5 small">
                         <span class="text-muted">Amount Received:</span>
                         <span class="fw-semibold text-success font-monospace" id="lblPaidAmount">₹0.00</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-1.5 small d-none" id="changeSummaryRow">
+                        <span class="text-muted">Change to Return:</span>
+                        <span class="fw-semibold text-success font-monospace" id="lblChangeToReturn">₹0.00</span>
                     </div>
                     <div class="d-flex justify-content-between mb-3 small">
                         <span class="text-muted">Balance Due:</span>
@@ -792,15 +815,22 @@ function onPaymentMethodChange() {
     const splitSec = document.getElementById('splitPaymentSection');
     const amountSec = document.getElementById('paymentAmountSection');
     const amountInput = document.getElementById('paidAmountInput');
+    const cashTenderSec = document.getElementById('cashTenderSection');
+    const cashTenderInput = document.getElementById('cashTenderInput');
+    const changeSummaryRow = document.getElementById('changeSummaryRow');
     const screenshotSec = document.getElementById('paymentScreenshotSection');
     if (!sel) return;
 
+    const isCash = sel.value === 'CASH';
     if (sel.value === 'CASH_UPI') {
         if (splitSec) splitSec.classList.remove('d-none');
     } else {
         if (splitSec) splitSec.classList.add('d-none');
     }
-    if (amountSec) amountSec.classList.toggle('d-none', sel.value === 'CASH_UPI');
+    if (amountSec) amountSec.classList.toggle('d-none', isCash || sel.value === 'CASH_UPI' || sel.value === 'CREDIT');
+    if (cashTenderSec) cashTenderSec.classList.toggle('d-none', !isCash);
+    if (changeSummaryRow) changeSummaryRow.classList.toggle('d-none', !isCash);
+    if (cashTenderInput) cashTenderInput.disabled = !isCash;
     if (amountInput) {
         amountInput.disabled = sel.value === 'CASH_UPI' || sel.value === 'CREDIT';
         if (sel.value === 'CREDIT') amountInput.value = '0.00';
@@ -820,11 +850,29 @@ function onPaidAmountInput() {
     updatePaidSummary();
 }
 
+function onCashTenderInput() {
+    const cashTenderInput = document.getElementById('cashTenderInput');
+    const amountInput = document.getElementById('paidAmountInput');
+    if (cashTenderInput) cashTenderInput.dataset.autoValue = '0';
+    if (amountInput) amountInput.dataset.autoValue = '0';
+    updatePaidSummary();
+}
+
 function updatePaidSummary(grandTotal = getGrandTotalValue()) {
     const paymentMethod = document.getElementById('paymentMethodSelect')?.value || 'CASH';
     const amountInput = document.getElementById('paidAmountInput');
+    const cashTenderInput = document.getElementById('cashTenderInput');
+    let changeAmount = 0;
     let paidAmount = 0;
-    if (paymentMethod === 'CASH_UPI') {
+    if (paymentMethod === 'CASH') {
+        if (cashTenderInput?.dataset.autoValue === '1') {
+            cashTenderInput.value = grandTotal.toFixed(2);
+        }
+        const tendered = parseFloat(cashTenderInput?.value) || 0;
+        paidAmount = Math.min(tendered, grandTotal);
+        changeAmount = Math.max(0, tendered - grandTotal);
+        if (amountInput) amountInput.value = paidAmount.toFixed(2);
+    } else if (paymentMethod === 'CASH_UPI') {
         paidAmount = (parseFloat(document.getElementById('splitCashInput')?.value) || 0)
             + (parseFloat(document.getElementById('splitUpiInput')?.value) || 0);
     } else if (paymentMethod !== 'CREDIT') {
@@ -840,8 +888,12 @@ function updatePaidSummary(grandTotal = getGrandTotalValue()) {
     }
     const paidLabel = document.getElementById('lblPaidAmount');
     const balanceLabel = document.getElementById('lblBalanceDue');
+    const changeInput = document.getElementById('changeToReturnInput');
+    const changeLabel = document.getElementById('lblChangeToReturn');
     if (paidLabel) paidLabel.textContent = '₹' + paidAmount.toFixed(2);
     if (balanceLabel) balanceLabel.textContent = '₹' + Math.max(0, grandTotal - paidAmount).toFixed(2);
+    if (changeInput) changeInput.value = changeAmount.toFixed(2);
+    if (changeLabel) changeLabel.textContent = '₹' + changeAmount.toFixed(2);
 }
 
 // ---- Payment Screenshot Functions ----
@@ -975,6 +1027,16 @@ function onCustPhoneInput(val) {
     if (counter) {
         counter.textContent = clean.length === 10 ? '✓ 10 Digits' : `${clean.length}/10 Digits`;
         counter.className = clean.length === 10 ? 'text-success fw-bold' : 'text-muted';
+    }
+
+    const selectedId = document.getElementById('selectedCustomerId')?.value;
+    const selectedCustomer = CUSTOMERS_LIST.find(customer => String(customer.id) === String(selectedId));
+    if (selectedId && selectedCustomer && (selectedCustomer.phone || '').replace(/[^0-9]/g, '') !== clean) {
+        document.getElementById('selectedCustomerId').value = '';
+        document.getElementById('custHistorySection')?.classList.add('d-none');
+        const purchaseCount = document.getElementById('custPurchaseCount');
+        if (purchaseCount) purchaseCount.textContent = '0';
+        updateCustBadge(clean ? 'New Customer' : 'Walk-in Customer', clean ? 'info' : 'secondary');
     }
 
     const btnClear = document.getElementById('btnClearCustomer');
@@ -1221,6 +1283,29 @@ function selectCustomer(cust) {
     if (histSec) histSec.classList.remove('d-none');
 
     updateCustBadge('Saved Customer', 'success');
+    loadCustomerPurchaseCount(cust.id);
+}
+
+function loadCustomerPurchaseCount(customerId) {
+    const countLabel = document.getElementById('custPurchaseCount');
+    if (countLabel) countLabel.textContent = '...';
+
+    fetch('<?= url("api/warehouse/customers") ?>/' + encodeURIComponent(customerId) + '/purchase-count')
+        .then(response => {
+            if (!response.ok) throw new Error('Unable to load customer purchase count.');
+            return response.json();
+        })
+        .then(data => {
+            if (String(document.getElementById('selectedCustomerId')?.value) !== String(customerId)) return;
+            if (!data.success) throw new Error(data.message || 'Unable to load customer purchase count.');
+            if (countLabel) countLabel.textContent = String(data.purchase_count || 0);
+        })
+        .catch(error => {
+            console.error('Error fetching customer purchase count:', error);
+            if (String(document.getElementById('selectedCustomerId')?.value) === String(customerId) && countLabel) {
+                countLabel.textContent = '—';
+            }
+        });
 }
 
 function clearCustomerInputs() {
@@ -1245,6 +1330,8 @@ function clearCustomerInputs() {
     if (stateInput) stateInput.value = 'Tamil Nadu';
     if (btnClear) btnClear.style.display = 'none';
     if (histSec) histSec.classList.add('d-none');
+    const purchaseCount = document.getElementById('custPurchaseCount');
+    if (purchaseCount) purchaseCount.textContent = '0';
     if (counter) {
         counter.textContent = '10 Digits';
         counter.className = 'text-muted';
@@ -1926,7 +2013,7 @@ function doLiveSearch(q) {
             dropdown.classList.remove('d-none');
 
             const whId = document.getElementById('warehouseSelect')?.value || 1;
-            fetch('<?= url("api/warehouse/purchases/lookup-scan") ?>?code=' + encodeURIComponent(q) + '&warehouse_id=' + encodeURIComponent(whId))
+            fetch('<?= url("api/warehouse/purchases/lookup-scan") ?>?purpose=direct_purchase&code=' + encodeURIComponent(q) + '&warehouse_id=' + encodeURIComponent(whId))
                 .then(r => r.json())
                 .then(data => {
                     if (data.success && data.variant) {
@@ -2050,7 +2137,7 @@ function handleScanInput(rawCode) {
     const whId = document.getElementById('warehouseSelect')?.value || 1;
 
     // Strict Backend Stock Verification & Piece Resolver with selected warehouse_id
-    fetch('<?= url("api/warehouse/purchases/lookup-scan") ?>?code=' + encodeURIComponent(clean) + '&warehouse_id=' + encodeURIComponent(whId))
+    fetch('<?= url("api/warehouse/purchases/lookup-scan") ?>?purpose=direct_purchase&code=' + encodeURIComponent(clean) + '&warehouse_id=' + encodeURIComponent(whId))
         .then(res => res.json())
         .then(data => {
             if (data.success && data.variant) {

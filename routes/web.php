@@ -327,6 +327,7 @@ class Router {
         $this->post('api/warehouse/customers/search', 'WarehouseController', 'ajaxSearchCustomers', ['AuthMiddleware']);
         $this->get('api/warehouse/customers/purchase-history', 'WarehouseController', 'ajaxCustomerPurchaseHistory', ['AuthMiddleware']);
         $this->post('api/warehouse/customers/purchase-history', 'WarehouseController', 'ajaxCustomerPurchaseHistory', ['AuthMiddleware']);
+        $this->get('api/warehouse/customers/{id}/purchase-count', 'WarehouseController', 'ajaxCustomerPurchaseCount', ['AuthMiddleware']);
         $this->get('api/warehouse/customers/{id}/purchase-history', 'WarehouseController', 'ajaxCustomerPurchaseHistory', ['AuthMiddleware']);
         $this->post('api/warehouse/customers/{id}/purchase-history', 'WarehouseController', 'ajaxCustomerPurchaseHistory', ['AuthMiddleware']);
         $this->get('api/warehouse/warehouse-variant-stock', 'WarehouseController', 'ajaxGetWarehouseStock', ['AuthMiddleware']);

@@ -1913,7 +1913,7 @@ function doLiveSearch(q) {
             dropdown.classList.remove('d-none');
 
             const whId = document.getElementById('warehouseSelect')?.value || 1;
-            fetch('<?= url("api/warehouse/purchases/lookup-scan") ?>?code=' + encodeURIComponent(q) + '&warehouse_id=' + encodeURIComponent(whId))
+            fetch('<?= url("api/warehouse/purchases/lookup-scan") ?>?purpose=direct_purchase&code=' + encodeURIComponent(q) + '&warehouse_id=' + encodeURIComponent(whId))
                 .then(r => r.json())
                 .then(data => {
                     if (data.success && data.variant) {
@@ -2037,7 +2037,7 @@ function handleScanInput(rawCode) {
     const whId = document.getElementById('warehouseSelect')?.value || 1;
 
     // Strict Backend Stock Verification & Piece Resolver with selected warehouse_id
-    fetch('<?= url("api/warehouse/purchases/lookup-scan") ?>?code=' + encodeURIComponent(clean) + '&warehouse_id=' + encodeURIComponent(whId))
+    fetch('<?= url("api/warehouse/purchases/lookup-scan") ?>?purpose=direct_purchase&code=' + encodeURIComponent(clean) + '&warehouse_id=' + encodeURIComponent(whId))
         .then(res => res.json())
         .then(data => {
             if (data.success && data.variant) {
