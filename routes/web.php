@@ -559,7 +559,7 @@ class Router {
         $this->post('warehouse/inward/store', 'WarehouseController', 'storeInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'create']]);
         $this->get('warehouse/inward/view/{id}', 'WarehouseController', 'viewInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'view']]);
         $this->post('warehouse/inward/verify/{id}', 'WarehouseController', 'verifyInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'create']]);
-        $this->get('warehouse/inward/edit-qr/{id}', 'WarehouseController', 'editInwardQr', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'edit']]);
+        $this->get('warehouse/inward/edit-qr/{id}', 'WarehouseController', 'viewInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'edit']]);
         $this->post('warehouse/inward/update-qr/{id}', 'WarehouseController', 'updateInwardQr', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'edit']]);
         $this->get('warehouse/inward/edit/{id}', 'WarehouseController', 'editInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'edit']]);
         $this->post('warehouse/inward/update/{id}', 'WarehouseController', 'updateInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'edit']]);
@@ -682,7 +682,7 @@ class Router {
         $this->post('warehouse/returns/classify/{id}', 'WarehouseController', 'classifyReturn', ['AuthMiddleware', ['PermissionMiddleware', 'returns', 'classify']]);
 
         // Labels/QR Codes
-        $this->get('warehouse/labels', 'WarehouseController', 'labels', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'view']]);
+        $this->get('warehouse/labels', 'WarehouseController', 'labels', ['AuthMiddleware']);
         $this->get('warehouse/labels/ajax-source/{type}/{id}', 'WarehouseController', 'ajaxLabelSourceData', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'view']]);
         $this->post('warehouse/labels/generate', 'WarehouseController', 'generateLabels', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'create']]);
         $this->post('warehouse/labels/produce-new-qr', 'WarehouseController', 'produceNewQrAjax', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'edit']]);

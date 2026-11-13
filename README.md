@@ -64,6 +64,7 @@ An enterprise-grade, end-to-end apparel manufacturing, central warehousing, mult
      mysql -h 127.0.0.1 -P 3307 -u root -p grm_inventory < database/migrations/2026_11_11_add_production_supplier_archive.sql
      mysql -h 127.0.0.1 -P 3307 -u root -p grm_inventory < database/migrations/2026_11_13_add_damage_resolution_audit_fields.sql
      ```
+   - Damage replacement supports either an existing product variant or manual catalog entry. The generated replacement QR remains pending until it is inwarded from Warehouse Labels.
    - Database changes are not applied by deploying application files. Run the corresponding additive SQL migration against the production database before using the affected feature.
 
 4. Launch Application:

@@ -1010,17 +1010,25 @@ if ($currentSourceType === 'po' || $currentSourceType === 'tp_purchase') {
         if ($activeVar) {
             $sourceName = 'Customer Return';
             $returnRef = 'RET-' . date('ymd');
+            $returnQrReason = null;
+            $isReturnComp = !empty($activeVar['is_complementary'])
+                || !empty($activeVar['product_is_comp'])
+                || !empty($selectedPurchaseReturnItem['is_complementary'])
+                || strtoupper((string)($activeVar['warehouse_category_type'] ?? '')) === 'COMPLEMENTARY';
+            $isReturnSeriesOrComp = $isReturnComp
+                || strtoupper((string)($activeVar['qr_type'] ?? '')) === 'SERIES_BATCH'
+                || strtoupper((string)($activeVar['qr_type'] ?? '')) === 'SERIES'
+                || strtoupper((string)($activeVar['warehouse_category_type'] ?? '')) === 'SERIES'
+                || (int)($activeVar['pack_quantity'] ?? 1) > 1;
             if ($isDirectPurchaseReturn && !empty($selectedPurchaseReturnItem)) {
                 $sourceName = 'Direct Purchase ' . ($selectedPurchaseReturnItem['return_number'] ?? 'Return');
                 $returnRef = (string)($selectedPurchaseReturnItem['return_number'] ?? $returnRef);
+                $returnQrReason = 'Direct purchase return item ' . (int)$selectedPurchaseReturnItem['id'];
                 $tagType = 'GOOD';
-                $isReturnSeriesOrComp = strtoupper((string)($activeVar['qr_type'] ?? '')) === 'SERIES_BATCH'
-                    || strtoupper((string)($activeVar['qr_type'] ?? '')) === 'SERIES'
-                    || !empty($activeVar['is_complementary'])
-                    || !empty($activeVar['product_is_comp'])
-                    || strtoupper((string)($activeVar['warehouse_category_type'] ?? '')) === 'SERIES'
-                    || strtoupper((string)($activeVar['warehouse_category_type'] ?? '')) === 'COMPLEMENTARY'
-                    || strtoupper((string)($selectedPurchaseReturnItem['warehouse_category_type'] ?? '')) === 'SERIES'
+                $isReturnSeriesOrComp = $isReturnSeriesOrComp
+                    || strtoupper((string)($selectedPurchaseReturnItem['warehouse_category_type'] ?? '')) === 'COMPLEMENTARY'
+                    || strtoupper((string)($selectedPurchaseReturnItem['warehouse_category_type'] ?? '')) === 'SERIES';
+                $isReturnComp = $isReturnComp
                     || strtoupper((string)($selectedPurchaseReturnItem['warehouse_category_type'] ?? '')) === 'COMPLEMENTARY';
                 $copiesCount = $isReturnSeriesOrComp
                     ? 1
@@ -1038,12 +1046,22 @@ if ($currentSourceType === 'po' || $currentSourceType === 'tp_purchase') {
                 ? array_map($returnTagPayload, WarehouseReturnItem::parseScannedQrCodes($selectedWarehouseReturnItem['scanned_qr_codes'] ?? null))
                 : [];
             if ($selectedWarehouseReturnItem) {
+                $returnQrReason = 'Warehouse return item ' . (int)$selectedWarehouseReturnItem['id'];
                 $isReturnSeriesOrComp = strtoupper((string)($activeVar['qr_type'] ?? '')) === 'SERIES_BATCH'
                     || strtoupper((string)($activeVar['qr_type'] ?? '')) === 'SERIES'
                     || !empty($activeVar['is_complementary'])
                     || !empty($activeVar['product_is_comp'])
                     || strtoupper((string)($activeVar['warehouse_category_type'] ?? '')) === 'SERIES'
-                    || strtoupper((string)($activeVar['warehouse_category_type'] ?? '')) === 'COMPLEMENTARY';
+                    || strtoupper((string)($activeVar['warehouse_category_type'] ?? '')) === 'COMPLEMENTARY'
+                    || (int)($activeVar['pack_quantity'] ?? 1) > 1
+                    || !empty($selectedWarehouseReturnItem['is_complementary']);
+                $isReturnComp = !empty($activeVar['is_complementary'])
+                    || !empty($activeVar['product_is_comp'])
+                    || strtoupper((string)($activeVar['warehouse_category_type'] ?? '')) === 'COMPLEMENTARY'
+                    || !empty($selectedWarehouseReturnItem['is_complementary']);
+                if ($isReturnSeriesOrComp) {
+                    $returnTagCodes = [];
+                }
                 $copiesCount = $isReturnSeriesOrComp
                     ? 1
                     : max(1, (int)$selectedWarehouseReturnItem['returned_qty'], count($returnTagCodes));
@@ -1066,6 +1084,16 @@ if ($currentSourceType === 'po' || $currentSourceType === 'tp_purchase') {
             $badgeClass = $tagType === 'DAMAGED' ? 'bg-danger' : ($tagType === 'DEFECTIVE' ? 'bg-warning text-dark' : ($tagType === 'WRONG_SIZE' ? 'bg-info text-dark' : 'bg-success'));
             $fmtMrp = ($activeVar['mrp'] == (int)$activeVar['mrp']) ? (int)$activeVar['mrp'] : number_format($activeVar['mrp'], 2, '.', '');
             $returnBrand = !empty($selectedCustomBrand) ? $selectedCustomBrand : (!empty($activeVar['brand_name']) && $activeVar['brand_name'] !== 'Third-Party Brand' ? $activeVar['brand_name'] : 'GRM RETURN');
+            $pendingAggregateReturnQr = null;
+            if ($isReturnSeriesOrComp && $returnQrReason !== null) {
+                $pendingAggregateReturnQr = Database::fetchOne(
+                    "SELECT qr_code FROM warehouse_qr_codes
+                     WHERE extra_reason = ? AND variant_id = ? AND warehouse_id = ?
+                       AND inwarded_at IS NULL AND UPPER(qr_code) LIKE 'R%'
+                     ORDER BY id DESC LIMIT 1",
+                    [$returnQrReason, (int)$activeVar['id'], (int)$targetWarehouseId]
+                );
+            }
 
             $sizeVal = trim($activeVar['size_name'] ?? '');
             $colorVal = trim($activeVar['color_name'] ?? '');
@@ -1080,18 +1108,31 @@ if ($currentSourceType === 'po' || $currentSourceType === 'tp_purchase') {
             $fmtCost = ($activeVar['selling_price'] == (int)$activeVar['selling_price']) ? (int)$activeVar['selling_price'] : number_format($activeVar['selling_price'], 2, '.', '');
 
             for ($i = 1; $i <= $copiesCount; $i++) {
-                $isExactReturnTag = isset($returnTagCodes[$i - 1]);
-                $tagCode = $isExactReturnTag
-                    ? $returnTagCodes[$i - 1]
-                    : $retTagPrefix . $monthStr . $yearStr . sprintf("%02d", $sequenceByPrefix++);
+                $isAggregateReturnQr = $isReturnSeriesOrComp;
+                $hasScannedReturnTag = !$isAggregateReturnQr && isset($returnTagCodes[$i - 1]);
+                $tagCode = $isAggregateReturnQr && !empty($pendingAggregateReturnQr['qr_code'])
+                    ? (string)$pendingAggregateReturnQr['qr_code']
+                    : ($hasScannedReturnTag
+                        ? $returnTagCodes[$i - 1]
+                        : $retTagPrefix . $monthStr . $yearStr . sprintf("%02d", $sequenceByPrefix++));
                 $catH = implode(' › ', array_filter([$activeVar['category_name'] ?? '', $activeVar['subcategory_name'] ?? '', $activeVar['sub_subcategory_name'] ?? '']));
+                $returnPackQuantity = $isDirectPurchaseReturn && !empty($selectedPurchaseReturnItem)
+                    ? (int)$selectedPurchaseReturnItem['quantity']
+                    : (int)($selectedWarehouseReturnItem['returned_qty'] ?? 1);
                 $generatedItems[] = [
                     'piece_no'           => $i,
                     'total_count'        => $copiesCount,
                     'variant_id'         => (int)$activeVar['id'],
                     'qr_prefix'          => $retTagPrefix,
                     'tag_code'           => $tagCode,
-                    'is_exact_return_tag' => $isExactReturnTag,
+                    'is_exact_return_tag' => $hasScannedReturnTag,
+                    'is_return_aggregate_qr' => $isAggregateReturnQr,
+                    'return_qr_reason'  => $isAggregateReturnQr ? $returnQrReason : null,
+                    'is_series'          => $isAggregateReturnQr,
+                    'is_complementary'   => $isAggregateReturnQr && $isReturnComp,
+                    'pack_quantity'      => $isAggregateReturnQr ? max(1, $returnPackQuantity) : 1,
+                    'series_start_code'  => $isAggregateReturnQr ? $tagCode : null,
+                    'series_end_code'    => $isAggregateReturnQr ? $tagCode : null,
                     'product_name'       => $activeVar['product_name'],
                     'sku'                => $activeVar['sku'],
                     'clean_sku'          => $cleanSku,
@@ -1138,13 +1179,30 @@ if ($currentSourceType === 'po' || $currentSourceType === 'tp_purchase') {
             $itemIsComp = !empty($ri['is_complementary']) || strtoupper((string)($ri['warehouse_category_type'] ?? '')) === 'COMPLEMENTARY';
             $itemIsSeries = !$itemIsComp && (strtoupper((string)($ri['warehouse_category_type'] ?? '')) === 'SERIES'
                 || strtoupper((string)($ri['qr_type'] ?? '')) === 'SERIES_BATCH'
+                || strtoupper((string)($ri['qr_type'] ?? '')) === 'SERIES'
                 || (int)($ri['pack_quantity'] ?? 1) > 1);
+            $isAggregateReturnQr = $itemIsComp || $itemIsSeries;
             $count = ($itemIsComp || $itemIsSeries) ? 1 : max(1, (int)$ri['returned_qty']);
             $class = !empty($ri['classification']) ? $ri['classification'] : $tagType;
             $returnBrand = !empty($selectedCustomBrand) ? $selectedCustomBrand : (!empty($ri['brand_name']) && $ri['brand_name'] !== 'Third-Party Brand' ? $ri['brand_name'] : 'GRM RETURN');
             $returnTagCodes = array_map($returnTagPayload, WarehouseReturnItem::parseScannedQrCodes($ri['scanned_qr_codes'] ?? null));
             if (!($itemIsComp || $itemIsSeries)) {
                 $count = max($count, count($returnTagCodes));
+            } else {
+                $returnTagCodes = [];
+            }
+            $returnQrReason = $isAggregateReturnQr
+                ? 'Warehouse return item ' . (int)$ri['id']
+                : null;
+            $pendingAggregateReturnQr = null;
+            if ($returnQrReason !== null) {
+                $pendingAggregateReturnQr = Database::fetchOne(
+                    "SELECT qr_code FROM warehouse_qr_codes
+                     WHERE extra_reason = ? AND variant_id = ? AND warehouse_id = ?
+                       AND inwarded_at IS NULL AND UPPER(qr_code) LIKE 'R%'
+                     ORDER BY id DESC LIMIT 1",
+                    [$returnQrReason, (int)$ri['variant_id'], (int)$targetWarehouseId]
+                );
             }
 
             $sizeVal = trim($ri['size_name'] ?? '');
@@ -1159,10 +1217,12 @@ if ($currentSourceType === 'po' || $currentSourceType === 'tp_purchase') {
             }
 
             for ($i = 1; $i <= $count; $i++) {
-                $isExactReturnTag = isset($returnTagCodes[$i - 1]);
-                $tagCode = $isExactReturnTag
-                    ? $returnTagCodes[$i - 1]
-                    : $retTagPrefix . $monthStr . $yearStr . sprintf("%02d", $sequenceByPrefix[$retTagPrefix]++);
+                $isExactReturnTag = !$isAggregateReturnQr && isset($returnTagCodes[$i - 1]);
+                $tagCode = $isAggregateReturnQr && !empty($pendingAggregateReturnQr['qr_code'])
+                    ? (string)$pendingAggregateReturnQr['qr_code']
+                    : ($isExactReturnTag
+                        ? $returnTagCodes[$i - 1]
+                        : $retTagPrefix . $monthStr . $yearStr . sprintf("%02d", $sequenceByPrefix[$retTagPrefix]++));
                 $fmtMrp = ($ri['mrp'] == (int)$ri['mrp']) ? (int)$ri['mrp'] : number_format($ri['mrp'], 2, '.', '');
                 $fmtCost = ($ri['selling_price'] == (int)$ri['selling_price']) ? (int)$ri['selling_price'] : number_format($ri['selling_price'], 2, '.', '');
                 $badgeClass = $class === 'DAMAGED' ? 'bg-danger' : ($class === 'DEFECTIVE' ? 'bg-warning text-dark' : ($class === 'WRONG_SIZE' ? 'bg-info text-dark' : 'bg-success'));
@@ -1174,6 +1234,13 @@ if ($currentSourceType === 'po' || $currentSourceType === 'tp_purchase') {
                     'qr_prefix'          => $retTagPrefix,
                     'tag_code'           => $tagCode,
                     'is_exact_return_tag' => $isExactReturnTag,
+                    'is_return_aggregate_qr' => $isAggregateReturnQr,
+                    'return_qr_reason'  => $returnQrReason,
+                    'is_series'          => $isAggregateReturnQr,
+                    'is_complementary'   => $itemIsComp,
+                    'pack_quantity'      => $isAggregateReturnQr ? max(1, (int)$ri['returned_qty']) : 1,
+                    'series_start_code'  => $isAggregateReturnQr ? $tagCode : null,
+                    'series_end_code'    => $isAggregateReturnQr ? $tagCode : null,
                     'product_name'       => $ri['product_name'],
                     'sku'                => $ri['sku'],
                     'clean_sku'          => $cleanSku,
@@ -1294,7 +1361,7 @@ if (!empty($generatedItems) && !$isViewingExisting) {
         $reservedExactQrCodes = [];
         foreach ($generatedItems as $item) {
             $itemVariantId = (int)($item['variant_id'] ?? 0);
-            if (!empty($item['is_exact_return_tag'])) {
+            if (!empty($item['is_exact_return_tag']) || !empty($item['is_return_aggregate_qr'])) {
                 $exactQrCodesByVariant[$itemVariantId][] = (string)$item['tag_code'];
             } elseif (empty($item['is_series'])) {
                 $requestedQrCountByVariant[$itemVariantId] = ($requestedQrCountByVariant[$itemVariantId] ?? 0) + 1;
@@ -1304,15 +1371,16 @@ if (!empty($generatedItems) && !$isViewingExisting) {
         foreach ($generatedItems as &$generatedItem) {
             $variantId = (int)($generatedItem['variant_id'] ?? 0);
             $qrPrefix = (string)($generatedItem['qr_prefix'] ?? '');
-            $tagCode = !empty($generatedItem['is_exact_return_tag'])
+            $isReservedReturnQr = !empty($generatedItem['is_exact_return_tag']) || !empty($generatedItem['is_return_aggregate_qr']);
+            $tagCode = $isReservedReturnQr
                 ? trim((string)($generatedItem['tag_code'] ?? ''))
                 : strtoupper((string)($generatedItem['tag_code'] ?? ''));
-            if ($variantId <= 0 || $tagCode === '' || (empty($generatedItem['is_exact_return_tag'])
+            if ($variantId <= 0 || $tagCode === '' || (!$isReservedReturnQr
                 && ($qrPrefix === '' || !preg_match('/^' . preg_quote($qrPrefix, '/') . '\d{4}(\d+)$/i', $tagCode, $sequenceMatch)))) {
                 throw new RuntimeException('Unable to reserve a generated warehouse QR code because its product or sequence is invalid.');
             }
 
-            if (!empty($generatedItem['is_exact_return_tag'])) {
+            if ($isReservedReturnQr) {
                 $exactTagKey = strtoupper($tagCode);
                 if (isset($reservedExactQrCodes[$exactTagKey])) {
                     throw new RuntimeException("Return QR {$tagCode} is assigned to more than one returned product.");
@@ -1325,7 +1393,7 @@ if (!empty($generatedItems) && !$isViewingExisting) {
                     throw new RuntimeException("Return QR {$tagCode} has been deleted from the warehouse QR registry and cannot be reused.");
                 }
                 $existingQr = Database::fetchOne(
-                    "SELECT id, variant_id, warehouse_id, inwarded_at
+                    "SELECT id, variant_id, warehouse_id, inwarded_at, pack_quantity
                      FROM warehouse_qr_codes WHERE qr_code = ? FOR UPDATE",
                     [$tagCode]
                 );
@@ -1333,19 +1401,43 @@ if (!empty($generatedItems) && !$isViewingExisting) {
                     if ((int)$existingQr['variant_id'] !== $variantId || (int)$existingQr['warehouse_id'] !== $targetWarehouseId) {
                         throw new RuntimeException("Return QR {$tagCode} is already assigned to a different product or warehouse.");
                     }
+                    if (!empty($generatedItem['is_return_aggregate_qr'])) {
+                        if (!empty($existingQr['inwarded_at'])) {
+                            throw new RuntimeException("Return QR {$tagCode} has already been inwarded.");
+                        }
+                        Database::execute(
+                            "UPDATE warehouse_qr_codes SET pack_quantity = ?, series_end_code = ? WHERE id = ?",
+                            [
+                                max(1, (int)$generatedItem['pack_quantity']),
+                                $generatedItem['series_end_code'] ?? $tagCode,
+                                (int)$existingQr['id'],
+                            ]
+                        );
+                    }
                 } else {
                     if (Database::fetchOne("SELECT id FROM product_variants WHERE qr_code = ? LIMIT 1", [$tagCode])) {
                         throw new RuntimeException("Return QR {$tagCode} is already assigned to a product variant.");
                     }
-                    Database::execute(
-                        "INSERT INTO warehouse_qr_codes (qr_code, variant_id, warehouse_id, inwarded_at) VALUES (?, ?, ?, ?)",
-                        [
-                            $tagCode,
-                            $variantId,
-                            $targetWarehouseId,
-                            null,
-                        ]
-                    );
+                    if (!empty($generatedItem['is_return_aggregate_qr'])) {
+                        Database::execute(
+                            "INSERT INTO warehouse_qr_codes
+                                (qr_code, variant_id, warehouse_id, pack_quantity, series_end_code, extra_reason, inwarded_at)
+                             VALUES (?, ?, ?, ?, ?, ?, NULL)",
+                            [
+                                $tagCode,
+                                $variantId,
+                                $targetWarehouseId,
+                                max(1, (int)$generatedItem['pack_quantity']),
+                                $generatedItem['series_end_code'] ?? $tagCode,
+                                $generatedItem['return_qr_reason'] ?? 'Customer return aggregate QR',
+                            ]
+                        );
+                    } else {
+                        Database::execute(
+                            "INSERT INTO warehouse_qr_codes (qr_code, variant_id, warehouse_id, inwarded_at) VALUES (?, ?, ?, ?)",
+                            [$tagCode, $variantId, $targetWarehouseId, null]
+                        );
+                    }
                 }
                 $generatedItem['tag_code'] = $tagCode;
                 $generatedItem['qr_payload'] = $tagCode;
@@ -1785,6 +1877,88 @@ ksort($distinctCatalogCodes);
 }
 </style>
 
+<?php if (!empty($damageReplacementLabel)): ?>
+<style>
+@media print {
+    body * { visibility: hidden !important; }
+    #damageReplacementPrintArea, #damageReplacementPrintArea * { visibility: visible !important; }
+    #damageReplacementPrintArea { position: absolute; left: 0; top: 0; width: 100%; }
+    .no-print { display: none !important; }
+}
+</style>
+<div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4 no-print">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-qr-code-scan me-2 text-success"></i>Damage Replacement QR Label</h2>
+        <p class="text-muted small mb-0">Case <?= e($damageReplacementLabel['damage_number']) ?> · <?= e($damageReplacementLabel['warehouse_name']) ?></p>
+    </div>
+    <a href="<?= url('warehouse/damage/resolve/' . (int)$damageReplacementLabel['damage_id']) ?>" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i> Back to Damage Case
+    </a>
+</div>
+<div class="card border-0 shadow-sm rounded-3">
+    <div class="card-body p-4">
+        <div id="damageReplacementPrintArea" class="row g-4 align-items-center">
+            <div class="col-md-4 text-center">
+                <div id="damageReplacementQr" class="d-inline-flex bg-white border rounded p-3"></div>
+                <div class="font-monospace fw-bold text-dark mt-2"><?= e($damageReplacementLabel['replacement_qr_code']) ?></div>
+            </div>
+            <div class="col-md-8">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <h4 class="fw-bold mb-0"><?= e($damageReplacementLabel['product_name']) ?></h4>
+                    <span class="badge bg-success-subtle text-success"><?= e($damageReplacementLabel['category_type']) ?></span>
+                </div>
+                <div class="font-monospace text-primary fw-semibold"><?= e($damageReplacementLabel['sku']) ?></div>
+                <div class="text-muted small mt-1"><?= e($damageReplacementLabel['category_name']) ?><?= !empty($damageReplacementLabel['subcategory_name']) ? ' › ' . e($damageReplacementLabel['subcategory_name']) : '' ?><?= !empty($damageReplacementLabel['sub_subcategory_name']) ? ' › ' . e($damageReplacementLabel['sub_subcategory_name']) : '' ?></div>
+                <div class="row g-2 mt-2 small">
+                    <div class="col-sm-6"><strong>Variant:</strong> <?= e($damageReplacementLabel['size_name'] ?? 'Free') ?> / <?= e($damageReplacementLabel['color_name'] ?? 'Std') ?></div>
+                    <div class="col-sm-6"><strong>HSN:</strong> <?= e($damageReplacementLabel['hsn_code'] ?: ($damageReplacementLabel['product_hsn_code'] ?? '—')) ?></div>
+                    <div class="col-sm-6"><strong>GST:</strong> <?= number_format((float)($damageReplacementLabel['gst_rate'] ?? $damageReplacementLabel['gst_percentage'] ?? 5), 2) ?>%</div>
+                    <div class="col-sm-6"><strong>Weight:</strong> <?= number_format((float)($damageReplacementLabel['variant_weight'] ?? $damageReplacementLabel['product_weight'] ?? 0), 3) ?> kg</div>
+                    <div class="col-sm-6"><strong>Base MRP:</strong> ₹<?= number_format((float)$damageReplacementLabel['mrp'], 2) ?></div>
+                    <div class="col-sm-6"><strong>Selling price:</strong> ₹<?= number_format((float)$damageReplacementLabel['selling_price'], 2) ?></div>
+                    <div class="col-sm-6"><strong>Supplier cost:</strong> ₹<?= number_format((float)$damageReplacementLabel['purchase_price'], 2) ?></div>
+                    <div class="col-sm-6"><strong>Supplier:</strong> <?= e($damageReplacementLabel['supplier_name']) ?></div>
+                    <div class="col-sm-6"><strong>Quantity:</strong> <?= number_format((int)$damageReplacementLabel['replacement_quantity']) ?> pcs</div>
+                    <div class="col-sm-6"><strong>Line retail value:</strong> ₹<?= number_format((float)$damageReplacementLabel['mrp'] * (int)$damageReplacementLabel['replacement_quantity'], 2) ?></div>
+                </div>
+                <div class="mt-3 no-print">
+                    <?php if (!empty($damageReplacementLabel['replacement_inwarded_at']) || !empty($damageReplacementLabel['qr_inwarded_at'])): ?>
+                        <div class="alert alert-success mb-0">
+                            <i class="bi bi-check-circle-fill me-1"></i>
+                            Replacement stock was inwarded on <?= e($damageReplacementLabel['replacement_inwarded_at'] ?? $damageReplacementLabel['qr_inwarded_at']) ?>.
+                        </div>
+                    <?php else: ?>
+                        <div class="d-flex flex-wrap gap-2">
+                            <button type="button" class="btn btn-outline-primary" onclick="window.print()">
+                                <i class="bi bi-printer me-1"></i> Print QR Label
+                            </button>
+                            <form method="POST" action="<?= url('warehouse/damage/inward-replacement/' . (int)$damageReplacementLabel['damage_id']) ?>" onsubmit="return confirm('Inward this replacement QR and update warehouse stock?');">
+                                <?= CSRF::input() ?>
+                                <button type="submit" class="btn btn-success fw-semibold">
+                                    <i class="bi bi-box-arrow-in-down me-1"></i> Confirm QR &amp; Inward Stock
+                                </button>
+                            </form>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const qrContainer = document.getElementById('damageReplacementQr');
+    if (qrContainer && typeof QRCode !== 'undefined') {
+        new QRCode(qrContainer, {
+            text: <?= json_encode($damageReplacementLabel['replacement_qr_code']) ?>,
+            width: 160,
+            height: 160,
+            correctLevel: QRCode.CorrectLevel.M
+        });
+    }
+});
+</script>
+<?php else: ?>
 <!-- Page Header -->
 <div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
     <div>
@@ -3278,6 +3452,17 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                     $isFullyInwarded = $totalExpectedQty > 0 && $remainingQty === 0;
                     $isPartiallyInwarded = $alreadyInwardedQty > 0 && !$isFullyInwarded;
                     $inwardPieceQty = $remainingQty;
+                } elseif (
+                    $currentSourceType === 'returns'
+                    && $isSeriesOrComp
+                    && !empty($selectedWarehouseReturnItem)
+                ) {
+                    $totalExpectedQty = (int)$selectedWarehouseReturnItem['returned_qty'];
+                    $alreadyInwardedQty = 0;
+                    $remainingQty = $totalExpectedQty;
+                    $isFullyInwarded = false;
+                    $isPartiallyInwarded = false;
+                    $inwardPieceQty = $totalExpectedQty;
                 }
                 ?>
                 <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
@@ -6227,3 +6412,4 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 </script>
+<?php endif; ?>

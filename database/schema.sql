@@ -1,10 +1,11 @@
 -- =================================================
 -- GRM Inventory Management System Canonical Database Schema
--- Updated: 2026-11-12
+-- Updated: 2026-11-13
 -- Total Tables: 112
 -- Full rebuild only: DROP TABLE statements make this unsafe for live databases.
 -- Includes the 2026-11-11 migrations for product_price_logs and
 -- sellers.production_deleted_at, plus current production supply-inward columns.
+-- Includes the 2026-11-13 warehouse damage resolution and audit fields.
 -- Use additive migrations for existing databases.
 -- =================================================
 
@@ -2833,6 +2834,15 @@ CREATE TABLE `warehouse_damages` (
   `defect_notes` text DEFAULT NULL,
   `photo_url` varchar(500) DEFAULT NULL,
   `status` enum('LOGGED','INSPECTED','SALVAGED','WRITTEN_OFF','REPAIRED','REWORK') DEFAULT 'LOGGED',
+  `resolution_action` varchar(32) DEFAULT NULL,
+  `resolution_reason` varchar(255) DEFAULT NULL,
+  `resolution_notes` text DEFAULT NULL,
+  `resolution_amount` decimal(10,2) DEFAULT NULL,
+  `replacement_variant_id` int(10) unsigned DEFAULT NULL,
+  `replacement_qr_code` varchar(100) DEFAULT NULL,
+  `replacement_inwarded_at` datetime DEFAULT NULL,
+  `deleted_at` datetime DEFAULT NULL,
+  `deleted_by` int(10) unsigned DEFAULT NULL,
   `reported_by` int(10) unsigned NOT NULL,
   `created_at` datetime DEFAULT current_timestamp(),
   `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp(),
@@ -2855,6 +2865,8 @@ CREATE TABLE `warehouse_damages` (
   KEY `reported_by` (`reported_by`),
   KEY `idx_warehouse_damages_tag_code` (`tag_code`),
   KEY `idx_warehouse_damages_status` (`status`),
+  KEY `idx_warehouse_damages_deleted_at` (`deleted_at`),
+  KEY `idx_warehouse_damages_replacement_variant` (`replacement_variant_id`),
   CONSTRAINT `warehouse_damages_ibfk_1` FOREIGN KEY (`warehouse_id`) REFERENCES `warehouses` (`id`),
   CONSTRAINT `warehouse_damages_ibfk_2` FOREIGN KEY (`variant_id`) REFERENCES `product_variants` (`id`),
   CONSTRAINT `warehouse_damages_ibfk_3` FOREIGN KEY (`reported_by`) REFERENCES `users` (`id`)

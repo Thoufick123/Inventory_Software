@@ -519,56 +519,13 @@ class WarehouseController {
     }
 
     /**
-     * Show the QR-only editor for an inward batch.
-     */
-    public function editInwardQr(string $id): void {
-        if (!hasPermission('inward', 'edit')) {
-            Session::flash('error', 'Access denied: You do not have permission to edit inward QR codes.');
-            Response::redirect(url('warehouse/inward/view/' . $id));
-            return;
-        }
-
-        $batchId = (int)$id;
-        $batch = ProductionBatch::find($batchId);
-        if (!$batch) {
-            Session::flash('error', 'Production batch not found.');
-            Response::redirect(url('warehouse/inward'));
-            return;
-        }
-
-        $items = ProductionBatch::getItems($batchId);
-        $hasEditableQrItems = false;
-        foreach ($items as $item) {
-            if (!empty($item['is_series']) || !empty($item['is_complementary'])) {
-                $hasEditableQrItems = true;
-                break;
-            }
-        }
-
-        Response::view('warehouse.inward.edit_qr', [
-            'pageTitle'        => 'Edit Inward QR Codes #' . $batch['batch_number'],
-            'activeModule'     => 'warehouse',
-            'activeMenu'       => 'wh-inward',
-            'batch'            => $batch,
-            'items'            => $items,
-            'hasEditableQrItems' => $hasEditableQrItems,
-            'breadcrumb'       => [
-                ['label' => 'Warehouse', 'url' => url('warehouse/dashboard')],
-                ['label' => 'Inward / GRN', 'url' => url('warehouse/inward')],
-                ['label' => 'Batch #' . $batch['batch_number'], 'url' => url('warehouse/inward/view/' . $batchId)],
-                ['label' => 'Edit QR Codes'],
-            ],
-        ]);
-    }
-
-    /**
      * Update inward QR mappings only; quantity and stock records are untouched.
      */
     public function updateInwardQr(string $id): void {
         $batchId = (int)$id;
         if (!CSRF::validateRequest()) {
             Session::flash('error', 'Invalid security token or session expired. Please try again.');
-            Response::redirect(url('warehouse/inward/edit-qr/' . $batchId));
+            Response::redirect(url('warehouse/inward/view/' . $batchId));
             return;
         }
 
@@ -589,7 +546,7 @@ class WarehouseController {
             Response::redirect(url('warehouse/inward/view/' . $batchId));
         } catch (Throwable $e) {
             Session::flash('error', 'Failed to update inward QR codes: ' . $e->getMessage());
-            Response::redirect(url('warehouse/inward/edit-qr/' . $batchId));
+            Response::redirect(url('warehouse/inward/view/' . $batchId));
         }
     }
 
@@ -3474,11 +3431,27 @@ class WarehouseController {
 
         $variants = Database::fetchAll(
             "SELECT pv.id, pv.sku, pv.mrp, pv.selling_price, pv.purchase_price,
-                    p.name AS product_name, p.warehouse_supplier_id,
+                    pv.hsn_code AS variant_hsn_code, pv.gst_rate, pv.weight AS variant_weight,
+                    p.name AS product_name, p.warehouse_supplier_id, p.hsn_code AS product_hsn_code,
+                    p.gst_percentage, p.weight AS product_weight,
+                    COALESCE(cat.name, c_old.name, '') AS category_name,
+                    COALESCE(subcat.name, sc_old.name, '') AS subcategory_name,
+                    COALESCE(subsubcat.name, ssc_old.name, '') AS sub_subcategory_name,
+                    CASE
+                        WHEN GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) = 1 THEN 'COMPLEMENTARY'
+                        WHEN pv.qr_type = 'SERIES_BATCH' THEN 'SERIES'
+                        ELSE 'NORMAL'
+                    END AS category_type,
                     COALESCE(ws.company, ws.name, 'No supplier') AS supplier_name,
                     sz.name AS size_name, col.name AS color_name
              FROM product_variants pv
              JOIN products p ON p.id = pv.product_id
+             LEFT JOIN warehouse_categories cat ON cat.id = p.warehouse_category_id
+             LEFT JOIN warehouse_subcategories subcat ON subcat.id = p.warehouse_subcategory_id
+             LEFT JOIN warehouse_sub_subcategories subsubcat ON subsubcat.id = p.warehouse_sub_subcategory_id
+             LEFT JOIN categories c_old ON c_old.id = p.category_id
+             LEFT JOIN subcategories sc_old ON sc_old.id = p.subcategory_id
+             LEFT JOIN sub_subcategories ssc_old ON ssc_old.id = p.sub_subcategory_id
              LEFT JOIN warehouse_suppliers ws ON ws.id = p.warehouse_supplier_id
              LEFT JOIN sizes sz ON sz.id = pv.size_id
              LEFT JOIN colors col ON col.id = pv.color_id
@@ -3488,6 +3461,18 @@ class WarehouseController {
         $productionUnits = Database::fetchAll(
             "SELECT id, name, code FROM production_units WHERE is_active = 1 ORDER BY code ASC, name ASC"
         );
+        $replacementCategories = Database::fetchAll(
+            "SELECT id, name, category_type, hsn_code, gst_rate
+             FROM warehouse_categories WHERE is_active = 1 ORDER BY sort_order ASC, name ASC"
+        );
+        $replacementSubcategories = Database::fetchAll(
+            "SELECT id, category_id, name
+             FROM warehouse_subcategories WHERE is_active = 1 ORDER BY sort_order ASC, name ASC"
+        );
+        $replacementSubSubcategories = Database::fetchAll(
+            "SELECT id, subcategory_id, name
+             FROM warehouse_sub_subcategories WHERE is_active = 1 ORDER BY sort_order ASC, name ASC"
+        );
 
         Response::view('warehouse.damage.resolve', [
             'pageTitle' => 'Resolve Damage Case: ' . $damage['damage_number'],
@@ -3496,6 +3481,9 @@ class WarehouseController {
             'damage' => $damage,
             'variants' => $variants,
             'productionUnits' => $productionUnits,
+            'replacementCategories' => $replacementCategories,
+            'replacementSubcategories' => $replacementSubcategories,
+            'replacementSubSubcategories' => $replacementSubSubcategories,
             'breadcrumb' => [
                 ['label' => 'Warehouse', 'url' => url('warehouse/dashboard')],
                 ['label' => 'Damage Management', 'url' => url('warehouse/damage')],
@@ -3547,23 +3535,125 @@ class WarehouseController {
         }
 
         if ($action === 'REPLACEMENT') {
-            $replacementVariantId = filter_var($_POST['replacement_variant_id'] ?? null, FILTER_VALIDATE_INT);
-            if (!$replacementVariantId || (int)$damage['quantity'] < 1) {
-                Session::flash('error', 'Select a replacement product before generating its QR.');
+            $replacementChoice = trim((string)($_POST['replacement_variant_id'] ?? ''));
+            $isManualReplacement = $replacementChoice === '__MANUAL__';
+            $replacementVariantId = null;
+            $replacementVariant = null;
+            $manualReplacement = null;
+            if ($replacementChoice === '' || (int)$damage['quantity'] < 1) {
+                Session::flash('error', 'Choose an existing replacement product or enter a new product manually.');
                 Response::redirect(url('warehouse/damage/resolve/' . $damageId));
                 return;
             }
-            $replacementVariant = Database::fetchOne(
-                "SELECT pv.id, pv.sku, p.name AS product_name
-                 FROM product_variants pv
-                 JOIN products p ON p.id = pv.product_id
-                 WHERE pv.id = ? AND pv.is_active = 1",
-                [(int)$replacementVariantId]
-            );
-            if (!$replacementVariant) {
-                Session::flash('error', 'The selected replacement product is not active.');
-                Response::redirect(url('warehouse/damage/resolve/' . $damageId));
-                return;
+            if ($isManualReplacement) {
+                $categoryId = filter_var($_POST['manual_category_id'] ?? null, FILTER_VALIDATE_INT);
+                $subcategoryRaw = trim((string)($_POST['manual_subcategory_id'] ?? ''));
+                $subSubcategoryRaw = trim((string)($_POST['manual_sub_subcategory_id'] ?? ''));
+                $subcategoryId = $subcategoryRaw === '' ? null : filter_var($subcategoryRaw, FILTER_VALIDATE_INT);
+                $subSubcategoryId = $subSubcategoryRaw === '' ? null : filter_var($subSubcategoryRaw, FILTER_VALIDATE_INT);
+                $productName = mb_strtoupper(trim((string)($_POST['manual_product_name'] ?? '')));
+                $hsnCode = mb_strtoupper(trim((string)($_POST['manual_hsn_code'] ?? '')));
+                $categoryType = strtoupper(trim((string)($_POST['manual_category_type'] ?? '')));
+                $gstRateRaw = $_POST['manual_gst_percentage'] ?? null;
+                $weightRaw = $_POST['manual_weight'] ?? null;
+                $mrpRaw = $_POST['manual_mrp'] ?? null;
+                $sellingPriceRaw = $_POST['manual_selling_price'] ?? null;
+                $purchasePriceRaw = $_POST['manual_purchase_price'] ?? null;
+                $sizeName = trim((string)($_POST['manual_size_name'] ?? ''));
+
+                if (
+                    !$categoryId || ($subcategoryRaw !== '' && !$subcategoryId)
+                    || ($subSubcategoryRaw !== '' && !$subSubcategoryId)
+                    || $productName === '' || strlen($productName) > 300
+                    || $hsnCode === '' || strlen($hsnCode) > 20
+                    || !in_array($categoryType, ['NORMAL', 'SERIES', 'COMPLEMENTARY'], true)
+                    || !is_numeric($gstRateRaw) || (float)$gstRateRaw < 0 || (float)$gstRateRaw > 100
+                    || !is_numeric($weightRaw) || round((float)$weightRaw, 3) < 0.001
+                    || !is_numeric($mrpRaw) || round((float)$mrpRaw, 2) <= 0
+                    || !is_numeric($sellingPriceRaw) || round((float)$sellingPriceRaw, 2) <= 0
+                    || !is_numeric($purchasePriceRaw) || round((float)$purchasePriceRaw, 2) <= 0
+                    || round((float)$sellingPriceRaw, 2) <= round((float)$purchasePriceRaw, 2)
+                    || round((float)$sellingPriceRaw, 2) >= round((float)$mrpRaw, 2)
+                    || strlen($sizeName) > 50
+                ) {
+                    Session::flash('error', 'Complete the manual product details with valid HSN, weight, GST, and pricing before generating its QR.');
+                    Response::redirect(url('warehouse/damage/resolve/' . $damageId));
+                    return;
+                }
+
+                $categoryRow = Database::fetchOne(
+                    "SELECT id, category_type FROM warehouse_categories WHERE id = ? AND is_active = 1",
+                    [(int)$categoryId]
+                );
+                $subcategoryRow = $subcategoryId
+                    ? Database::fetchOne(
+                        "SELECT id FROM warehouse_subcategories WHERE id = ? AND category_id = ? AND is_active = 1",
+                        [(int)$subcategoryId, (int)$categoryId]
+                    )
+                    : null;
+                $subSubcategoryRow = $subSubcategoryId
+                    ? Database::fetchOne(
+                        "SELECT id FROM warehouse_sub_subcategories WHERE id = ? AND subcategory_id = ? AND is_active = 1",
+                        [(int)$subSubcategoryId, (int)$subcategoryId]
+                    )
+                    : null;
+                if (
+                    !$categoryRow || ($subcategoryId && !$subcategoryRow)
+                    || ($subSubcategoryId && (!$subcategoryId || !$subSubcategoryRow))
+                    || strtoupper((string)($categoryRow['category_type'] ?? 'NORMAL')) !== $categoryType
+                ) {
+                    Session::flash('error', 'Choose a valid category hierarchy for the manual replacement product.');
+                    Response::redirect(url('warehouse/damage/resolve/' . $damageId));
+                    return;
+                }
+
+                $replacementSource = Database::fetchOne(
+                    "SELECT p.brand_id, p.warehouse_supplier_id
+                     FROM product_variants pv
+                     JOIN products p ON p.id = pv.product_id
+                     WHERE pv.id = ?",
+                    [(int)$damage['variant_id']]
+                );
+                if (!$replacementSource) {
+                    Session::flash('error', 'Could not load the supplier details for this damage case.');
+                    Response::redirect(url('warehouse/damage/resolve/' . $damageId));
+                    return;
+                }
+                $manualReplacement = [
+                    'category_id' => (int)$categoryId,
+                    'subcategory_id' => $subcategoryId ? (int)$subcategoryId : null,
+                    'sub_subcategory_id' => $subSubcategoryId ? (int)$subSubcategoryId : null,
+                    'category_type' => $categoryType,
+                    'product_name' => $productName,
+                    'hsn_code' => $hsnCode,
+                    'gst_rate' => (float)$gstRateRaw,
+                    'weight' => round((float)$weightRaw, 3),
+                    'mrp' => round((float)$mrpRaw, 2),
+                    'selling_price' => round((float)$sellingPriceRaw, 2),
+                    'purchase_price' => round((float)$purchasePriceRaw, 2),
+                    'size_name' => $sizeName,
+                    'brand_id' => !empty($replacementSource['brand_id']) ? (int)$replacementSource['brand_id'] : null,
+                    'warehouse_supplier_id' => !empty($replacementSource['warehouse_supplier_id']) ? (int)$replacementSource['warehouse_supplier_id'] : null,
+                ];
+            } else {
+                $replacementVariantId = filter_var($replacementChoice, FILTER_VALIDATE_INT);
+                if (!$replacementVariantId) {
+                    Session::flash('error', 'Select an active replacement product or choose manual entry.');
+                    Response::redirect(url('warehouse/damage/resolve/' . $damageId));
+                    return;
+                }
+                $replacementVariant = Database::fetchOne(
+                    "SELECT pv.id, pv.sku, p.name AS product_name
+                     FROM product_variants pv
+                     JOIN products p ON p.id = pv.product_id
+                     WHERE pv.id = ? AND pv.is_active = 1",
+                    [(int)$replacementVariantId]
+                );
+                if (!$replacementVariant) {
+                    Session::flash('error', 'The selected replacement product is not active.');
+                    Response::redirect(url('warehouse/damage/resolve/' . $damageId));
+                    return;
+                }
             }
 
             Database::beginTransaction();
@@ -3589,6 +3679,110 @@ class WarehouseController {
                     throw new DomainException('A replacement QR has already been generated for this case.');
                 }
 
+                if ($isManualReplacement) {
+                    $sizeId = null;
+                    if ($manualReplacement['size_name'] !== '') {
+                        $sizeUpper = mb_strtoupper($manualReplacement['size_name']);
+                        $sizeRow = Database::fetchOne(
+                            "SELECT id FROM sizes WHERE UPPER(name) = ? OR UPPER(code) = ? LIMIT 1",
+                            [$sizeUpper, $sizeUpper]
+                        );
+                        if ($sizeRow) {
+                            $sizeId = (int)$sizeRow['id'];
+                        } else {
+                            $sizeCode = substr(preg_replace('/[^A-Z0-9]/', '', $sizeUpper), 0, 20) ?: 'SIZE';
+                            Database::execute(
+                                "INSERT INTO sizes (name, code, is_active, created_at) VALUES (?, ?, 1, NOW())",
+                                [$sizeUpper, $sizeCode]
+                            );
+                            $sizeId = (int)Database::lastInsertId();
+                        }
+                    }
+
+                    $productSequence = (int)(Database::fetchOne("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM products")['next_id'] ?? 1);
+                    $productCode = 'DREP-PROD-' . $damageId . '-' . str_pad((string)$productSequence, 4, '0', STR_PAD_LEFT);
+                    $productCodeAttempt = 0;
+                    while (Database::fetchOne("SELECT id FROM products WHERE code = ? OR catalog_code = ?", [$productCode, $productCode])) {
+                        $productCodeAttempt++;
+                        $productCode = 'DREP-PROD-' . $damageId . '-' . str_pad((string)($productSequence + $productCodeAttempt), 4, '0', STR_PAD_LEFT);
+                    }
+
+                    $isComplementary = $manualReplacement['category_type'] === 'COMPLEMENTARY' ? 1 : 0;
+                    $isSeriesOrComplementary = in_array($manualReplacement['category_type'], ['SERIES', 'COMPLEMENTARY'], true);
+                    $variantQrType = $manualReplacement['category_type'] === 'SERIES' ? 'SERIES_BATCH' : 'INDIVIDUAL';
+                    $variantPackQuantity = $isSeriesOrComplementary ? (int)$damage['quantity'] : 1;
+                    $sizeSuffix = $manualReplacement['size_name'] !== ''
+                        ? '-' . substr(strtoupper(preg_replace('/[^A-Z0-9]/', '', $manualReplacement['size_name'])), 0, 10)
+                        : '';
+                    $baseSku = 'SKU-' . $productCode . $sizeSuffix;
+                    $variantSku = $baseSku;
+                    $skuAttempt = 0;
+                    while (Database::fetchOne("SELECT id FROM product_variants WHERE sku = ?", [$variantSku])) {
+                        $skuAttempt++;
+                        $variantSku = $baseSku . '-' . $skuAttempt;
+                    }
+                    $seriesStartCode = $isSeriesOrComplementary ? $variantSku . '-001' : null;
+                    $seriesEndCode = $isSeriesOrComplementary
+                        ? $variantSku . '-' . sprintf('%03d', $variantPackQuantity)
+                        : null;
+
+                    Database::execute(
+                        "INSERT INTO products
+                            (name, code, catalog_code, warehouse_category_id, warehouse_subcategory_id,
+                             warehouse_sub_subcategory_id, brand_id, warehouse_supplier_id, source_type,
+                             hsn_code, weight, gst_percentage, quantity, min_stock, max_stock,
+                             is_complementary, is_active, created_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'EXTERNAL_PURCHASE', ?, ?, ?, 0, 0, 9999, ?, 1, NOW())",
+                        [
+                            $manualReplacement['product_name'],
+                            $productCode,
+                            $productCode,
+                            $manualReplacement['category_id'],
+                            $manualReplacement['subcategory_id'],
+                            $manualReplacement['sub_subcategory_id'],
+                            $manualReplacement['brand_id'],
+                            $manualReplacement['warehouse_supplier_id'],
+                            $manualReplacement['hsn_code'],
+                            $manualReplacement['weight'],
+                            $manualReplacement['gst_rate'],
+                            $isComplementary,
+                        ]
+                    );
+                    $productId = (int)Database::lastInsertId();
+                    Database::execute(
+                        "INSERT INTO product_variants
+                            (product_id, size_id, sku, hsn_code, gst_rate, qr_code, mrp, purchase_price,
+                             production_cost, selling_price, weight, qr_type, series_start_code,
+                             series_end_code, pack_quantity, is_complementary, is_active, created_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())",
+                        [
+                            $productId,
+                            $sizeId,
+                            $variantSku,
+                            $manualReplacement['hsn_code'],
+                            $manualReplacement['gst_rate'],
+                            $variantSku,
+                            $manualReplacement['mrp'],
+                            $manualReplacement['purchase_price'],
+                            $manualReplacement['purchase_price'],
+                            $manualReplacement['selling_price'],
+                            $manualReplacement['weight'],
+                            $variantQrType,
+                            $seriesStartCode,
+                            $seriesEndCode,
+                            $variantPackQuantity,
+                            $isComplementary,
+                        ]
+                    );
+                    $replacementVariantId = (int)Database::lastInsertId();
+                    $replacementVariant = [
+                        'id' => $replacementVariantId,
+                        'sku' => $variantSku,
+                        'product_name' => $manualReplacement['product_name'],
+                        'product_id' => $productId,
+                    ];
+                }
+
                 $qrCode = '';
                 for ($attempt = 0; $attempt < 5; $attempt++) {
                     $candidate = 'DREP-' . $damageId . '-' . random_int(100000, 999999);
@@ -3611,7 +3805,7 @@ class WarehouseController {
                 Database::execute(
                     "INSERT INTO warehouse_qr_codes
                         (qr_code, variant_id, warehouse_id, created_by, pack_quantity, is_extra, extra_reason)
-                     VALUES (?, ?, ?, ?, ?, 1, ?)",
+                     VALUES (?, ?, ?, ?, ?, 0, ?)",
                     [
                         $qrCode,
                         (int)$replacementVariantId,
@@ -3632,14 +3826,16 @@ class WarehouseController {
                     'damage_number' => $damage['damage_number'],
                     'replacement_variant_id' => (int)$replacementVariantId,
                     'replacement_sku' => $replacementVariant['sku'],
+                    'replacement_product_id' => $replacementVariant['product_id'] ?? null,
+                    'replacement_product_created_manually' => $isManualReplacement,
                     'replacement_qr_code' => $qrCode,
                     'quantity' => (int)$damage['quantity'],
                     'reason' => $reason,
                     'notes' => $notes,
                 ], $userId);
                 Database::commit();
-                Session::flash('success', 'Replacement QR generated. Scan and confirm it to inward the replacement stock.');
-                Response::redirect(url('warehouse/damage/resolve/' . $damageId));
+                Session::flash('success', 'Replacement QR generated. Review the label and inward it from Warehouse Labels.');
+                Response::redirect(url('warehouse/labels?damage_id=' . $damageId));
                 return;
             } catch (Throwable $e) {
                 if (Database::inTransaction()) {
@@ -3903,7 +4099,7 @@ class WarehouseController {
             ], $userId);
             Database::commit();
             Session::flash('success', 'Replacement QR inwarded and stock updated successfully.');
-            Response::redirect(url('warehouse/damage/view/' . $damageId));
+            Response::redirect(url('warehouse/labels?damage_id=' . $damageId));
         } catch (Throwable $e) {
             if (Database::inTransaction()) {
                 Database::rollback();
@@ -12990,7 +13186,13 @@ class WarehouseController {
     // =========================================================================
 
     public function labels(): void {
-        if (!hasPermission('wh_labels', 'view') && !(function_exists('isAdmin') && isAdmin())) {
+        $damageReplacementId = filter_var($_GET['damage_id'] ?? null, FILTER_VALIDATE_INT);
+        $isDamageReplacementRequest = $damageReplacementId !== false && $damageReplacementId !== null && $damageReplacementId > 0;
+        if (
+            !hasPermission('wh_labels', 'view')
+            && !($isDamageReplacementRequest && hasPermission('damage', 'resolve'))
+            && !(function_exists('isAdmin') && isAdmin())
+        ) {
             Session::flash('error', 'Access denied.');
             Response::redirect(url('warehouse/dashboard'));
             return;
@@ -13008,6 +13210,60 @@ class WarehouseController {
             $subSubcategories = Database::fetchAll("SELECT id, subcategory_id, name FROM sub_subcategories WHERE is_active = 1 ORDER BY name ASC");
         }
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Database::fetchAll("SELECT * FROM warehouses WHERE is_active = 1 ORDER BY name ASC");
+
+        $damageReplacementLabel = null;
+        if ($isDamageReplacementRequest) {
+            $damageReplacementLabel = Database::fetchOne(
+                "SELECT wd.id AS damage_id, wd.damage_number, wd.warehouse_id,
+                        wd.quantity AS replacement_quantity,
+                        wd.replacement_qr_code, wd.replacement_inwarded_at, wd.resolution_reason,
+                        w.name AS warehouse_name, pv.id AS variant_id, pv.sku,
+                        pv.hsn_code, pv.gst_rate, pv.weight AS variant_weight, pv.mrp,
+                        pv.selling_price, pv.purchase_price, p.name AS product_name,
+                        p.hsn_code AS product_hsn_code, p.gst_percentage, p.weight AS product_weight,
+                        COALESCE(cat.name, c_old.name, '') AS category_name,
+                        COALESCE(subcat.name, sc_old.name, '') AS subcategory_name,
+                        COALESCE(subsubcat.name, ssc_old.name, '') AS sub_subcategory_name,
+                        CASE
+                            WHEN GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) = 1 THEN 'COMPLEMENTARY'
+                            WHEN pv.qr_type = 'SERIES_BATCH' THEN 'SERIES'
+                            ELSE 'NORMAL'
+                        END AS category_type,
+                        sz.name AS size_name, col.name AS color_name,
+                        COALESCE(ws.company, ws.name, 'No supplier') AS supplier_name,
+                        wqc.inwarded_at AS qr_inwarded_at
+                 FROM warehouse_damages wd
+                 JOIN warehouses w ON w.id = wd.warehouse_id
+                 JOIN product_variants pv ON pv.id = wd.replacement_variant_id
+                 JOIN products p ON p.id = pv.product_id
+                 JOIN warehouse_qr_codes wqc
+                   ON wqc.qr_code = wd.replacement_qr_code
+                  AND wqc.variant_id = wd.replacement_variant_id
+                  AND wqc.warehouse_id = wd.warehouse_id
+                 LEFT JOIN warehouse_categories cat ON cat.id = p.warehouse_category_id
+                 LEFT JOIN warehouse_subcategories subcat ON subcat.id = p.warehouse_subcategory_id
+                 LEFT JOIN warehouse_sub_subcategories subsubcat ON subsubcat.id = p.warehouse_sub_subcategory_id
+                 LEFT JOIN categories c_old ON c_old.id = p.category_id
+                 LEFT JOIN subcategories sc_old ON sc_old.id = p.subcategory_id
+                 LEFT JOIN sub_subcategories ssc_old ON ssc_old.id = p.sub_subcategory_id
+                 LEFT JOIN sizes sz ON sz.id = pv.size_id
+                 LEFT JOIN colors col ON col.id = pv.color_id
+                 LEFT JOIN warehouse_suppliers ws ON ws.id = p.warehouse_supplier_id
+                 WHERE wd.id = ? AND wd.deleted_at IS NULL
+                   AND wd.resolution_action = 'REPLACEMENT'
+                   AND wd.replacement_qr_code IS NOT NULL",
+                [(int)$damageReplacementId]
+            );
+            $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+            if (
+                !$damageReplacementLabel
+                || ($scopedWarehouseId !== null && (int)$damageReplacementLabel['warehouse_id'] !== (int)$scopedWarehouseId)
+            ) {
+                Session::flash('error', 'The damage replacement QR is not available in your warehouse.');
+                Response::redirect(url('warehouse/labels'));
+                return;
+            }
+        }
 
         // Brands list for Brand dropdown
         $brands = Database::fetchAll("SELECT id, name FROM brands WHERE is_active = 1 ORDER BY name ASC");
@@ -13087,6 +13343,7 @@ class WarehouseController {
              LEFT JOIN colors c ON pv.color_id = c.id
              WHERE pv.is_active = 1
                AND p.warehouse_supplier_id IS NOT NULL
+               AND p.code NOT LIKE 'DREP-%'
              ORDER BY brand_name ASC, p.name ASC, pv.sku ASC"
         );
 
@@ -13478,6 +13735,7 @@ class WarehouseController {
             'classifiedReturns' => $classifiedReturns,
             'directPurchaseReturns' => $directPurchaseReturns,
             'selectedPurchaseReturnItem' => $selectedPurchaseReturnItem,
+            'damageReplacementLabel' => $damageReplacementLabel,
             'qrBatches'         => $qrBatches,
             'inwardedVariantIds'=> $inwardedVariantIds,
             'extraQrSupplierGroups' => $extraQrSupplierGroups,
@@ -13687,7 +13945,8 @@ class WarehouseController {
                 || strtoupper((string)$purchaseReturnItem['qr_type']) === 'SERIES'
                 || !empty($purchaseReturnItem['is_complementary'])
                 || strtoupper((string)$purchaseReturnItem['warehouse_category_type']) === 'SERIES'
-                || strtoupper((string)$purchaseReturnItem['warehouse_category_type']) === 'COMPLEMENTARY';
+                || strtoupper((string)$purchaseReturnItem['warehouse_category_type']) === 'COMPLEMENTARY'
+                || (int)($purchaseReturnItem['pack_quantity'] ?? 1) > 1;
             $copies = $isSeriesOrComp ? 1 : max(1, (int)$purchaseReturnItem['quantity']);
             $tagType = 'GOOD';
         } elseif ($returnItemId > 0) {
@@ -13769,8 +14028,8 @@ class WarehouseController {
                 Response::json(['success' => false, 'message' => 'The selected QR sticker list contains an invalid QR code.'], 400);
                 return;
             }
-            if ($isDirectPurchaseReturnInward && !str_starts_with($tagCode, 'R')) {
-                Response::json(['success' => false, 'message' => 'Direct customer return labels must use an R-prefixed QR code.'], 400);
+            if ($isReturnInward && !str_starts_with($tagCode, 'R')) {
+                Response::json(['success' => false, 'message' => 'Customer return labels must use an R-prefixed QR code.'], 400);
                 return;
             }
             if (isset($normalizedTagCodes[$tagCode])) {
@@ -13812,7 +14071,12 @@ class WarehouseController {
 
         $categoryType = strtoupper($variant['warehouse_category_type'] ?? '');
         $isComp = !empty($variant['is_complementary']) || !empty($variant['p_is_comp']) || $categoryType === 'COMPLEMENTARY';
-        $isSeries = (strtoupper($variant['qr_type'] ?? '') === 'SERIES_BATCH' || strtoupper($variant['qr_type'] ?? '') === 'SERIES' || $categoryType === 'SERIES');
+        $isSeries = (
+            strtoupper($variant['qr_type'] ?? '') === 'SERIES_BATCH'
+            || strtoupper($variant['qr_type'] ?? '') === 'SERIES'
+            || $categoryType === 'SERIES'
+            || (int)($variant['pack_quantity'] ?? 1) > 1
+        );
         $isSeriesOrComp = $isSeries || $isComp;
 
         // Return QR generation creates one aggregate sticker for a Series or
@@ -13844,14 +14108,16 @@ class WarehouseController {
                     [$poId, $variantId]
                 );
                 if ($returnItem && $isSeriesOrComp) {
-                    $quantity = max($quantity, (float)($returnItem['returned_qty'] ?? 0));
+                    $quantity = (float)($returnItem['returned_qty'] ?? 0);
                 }
             }
         }
-
         $packTransactionStarted = false;
         $packQuantityDefault = 1;
         $aggregatePackQuantity = 0;
+        if ($isReturnInward && $isSeriesOrComp) {
+            $packQuantityDefault = max(1, (int)$quantity);
+        }
         try {
         if ($isSeriesOrComp && !$isReturnInward) {
             Database::beginTransaction();
@@ -13996,7 +14262,7 @@ class WarehouseController {
                     ? "Direct Purchase Return QR Inward (+{$quantity} pcs) for {$returnItem['return_number']} SKU {$variant['sku']}. Tags: {$tagSummary}"
                     : "Third-Party Stickered QR Inward (+{$quantity} pcs) for {$typeLabel} SKU {$variant['sku']}. Tags: {$tagSummary}");
 
-            if ($isSeriesOrComp) {
+            if ($isSeriesOrComp && !$isReturnInward) {
                 $allInwarded = Database::fetchAll(
                     "SELECT qr_code, series_end_code FROM warehouse_qr_codes WHERE variant_id = ? AND inwarded_at IS NOT NULL ORDER BY id ASC",
                     [$variantId]
