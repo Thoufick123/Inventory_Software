@@ -5499,7 +5499,7 @@ class WarehouseController {
 
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
         $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
-        $customers = Database::fetchAll("SELECT * FROM customers WHERE is_active = 1 ORDER BY name ASC");
+        $customers = Database::fetchAll("SELECT * FROM customers WHERE is_active = 1 AND source_channel = 'WAREHOUSE' ORDER BY name ASC");
 
         // Summary Stats
         $stats = [
@@ -5629,7 +5629,7 @@ class WarehouseController {
         }
         Warehouse::ensureSchema();
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
-        $customers = Database::fetchAll("SELECT * FROM customers WHERE is_active = 1 ORDER BY name ASC");
+        $customers = Database::fetchAll("SELECT * FROM customers WHERE is_active = 1 AND source_channel = 'WAREHOUSE' ORDER BY name ASC");
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
         $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $variants = Database::fetchAll(
@@ -5869,9 +5869,19 @@ class WarehouseController {
             $customerState = !empty($_POST['customer_state']) ? trim($_POST['customer_state']) : 'Tamil Nadu';
             $customerGst = !empty($_POST['customer_gst']) ? strtoupper(trim($_POST['customer_gst'])) : '';
 
+            if ($customerId && !Database::fetchOne(
+                "SELECT id FROM customers WHERE id = ? AND source_channel = 'WAREHOUSE'",
+                [$customerId]
+            )) {
+                $customerId = null;
+            }
+
             if (!$customerId) {
                 if (!empty($customerPhone)) {
-                    $existingCust = Database::fetchOne("SELECT * FROM customers WHERE phone = ? LIMIT 1", [$customerPhone]);
+                    $existingCust = Database::fetchOne(
+                        "SELECT * FROM customers WHERE phone = ? AND source_channel = 'WAREHOUSE' LIMIT 1",
+                        [$customerPhone]
+                    );
                     if ($existingCust) {
                         $customerId = (int)$existingCust['id'];
                         Database::execute(
@@ -5991,7 +6001,7 @@ class WarehouseController {
             && PurchaseOrder::hasPriorEdit($poId);
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
         $items = PurchaseOrder::getItems($poId);
-        $customers = Database::fetchAll("SELECT * FROM customers WHERE is_active = 1 ORDER BY name ASC");
+        $customers = Database::fetchAll("SELECT * FROM customers WHERE is_active = 1 AND source_channel = 'WAREHOUSE' ORDER BY name ASC");
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
         $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $variants = Database::fetchAll(
@@ -6208,9 +6218,19 @@ class WarehouseController {
             $customerState = !empty($_POST['customer_state']) ? trim($_POST['customer_state']) : 'Tamil Nadu';
             $customerGst = !empty($_POST['customer_gst']) ? strtoupper(trim($_POST['customer_gst'])) : '';
 
+            if ($customerId && !Database::fetchOne(
+                "SELECT id FROM customers WHERE id = ? AND source_channel = 'WAREHOUSE'",
+                [$customerId]
+            )) {
+                $customerId = null;
+            }
+
             if (!$customerId) {
                 if (!empty($customerPhone)) {
-                    $existingCust = Database::fetchOne("SELECT * FROM customers WHERE phone = ? LIMIT 1", [$customerPhone]);
+                    $existingCust = Database::fetchOne(
+                        "SELECT * FROM customers WHERE phone = ? AND source_channel = 'WAREHOUSE' LIMIT 1",
+                        [$customerPhone]
+                    );
                     if ($existingCust) {
                         $customerId = (int)$existingCust['id'];
                         Database::execute(
@@ -7104,12 +7124,15 @@ class WarehouseController {
         header('Content-Type: application/json');
         $q = trim($_REQUEST['q'] ?? $_REQUEST['query'] ?? $_REQUEST['search'] ?? '');
         if ($q === '') {
-            $customers = Database::fetchAll("SELECT * FROM customers WHERE is_active = 1 ORDER BY name ASC LIMIT 25");
+            $customers = Database::fetchAll(
+                "SELECT * FROM customers WHERE is_active = 1 AND source_channel = 'WAREHOUSE' ORDER BY name ASC LIMIT 25"
+            );
         } else {
             $like = '%' . $q . '%';
             $customers = Database::fetchAll(
                 "SELECT * FROM customers 
-                 WHERE is_active = 1 AND (name LIKE ? OR phone LIKE ? OR city LIKE ? OR gst_number LIKE ?)
+                 WHERE is_active = 1 AND source_channel = 'WAREHOUSE'
+                   AND (name LIKE ? OR phone LIKE ? OR city LIKE ? OR gst_number LIKE ?)
                  ORDER BY 
                     CASE 
                         WHEN name = ? OR phone = ? THEN 1
@@ -7136,7 +7159,10 @@ class WarehouseController {
         }
 
         $customerId = (int)$id;
-        if ($customerId <= 0 || !Database::fetchOne("SELECT id FROM customers WHERE id = ?", [$customerId])) {
+        if ($customerId <= 0 || !Database::fetchOne(
+            "SELECT id FROM customers WHERE id = ? AND source_channel = 'WAREHOUSE'",
+            [$customerId]
+        )) {
             Response::json(['success' => false, 'message' => 'Customer not found.'], 404);
             return;
         }
@@ -7167,10 +7193,15 @@ class WarehouseController {
 
         $customer = null;
         if ($customerId > 0) {
-            $customer = Database::fetchOne("SELECT * FROM customers WHERE id = ?", [$customerId]);
+            $customer = Database::fetchOne(
+                "SELECT * FROM customers WHERE id = ? AND source_channel = 'WAREHOUSE'",
+                [$customerId]
+            );
         } elseif ($query !== '') {
             $customer = Database::fetchOne(
-                "SELECT * FROM customers WHERE (phone = ? OR name = ? OR email = ?) AND is_active = 1 LIMIT 1",
+                "SELECT * FROM customers
+                 WHERE source_channel = 'WAREHOUSE' AND (phone = ? OR name = ? OR email = ?) AND is_active = 1
+                 LIMIT 1",
                 [$query, $query, $query]
             );
             if ($customer) {
@@ -7178,26 +7209,12 @@ class WarehouseController {
             }
         }
 
-        if (!$customer && $customerId <= 0) {
+        if (!$customer) {
             echo json_encode([
                 'success' => false,
                 'message' => 'Customer profile not found or invalid customer ID.'
             ]);
             exit;
-        }
-
-        // If customer record not in table but queried by id
-        if (!$customer && $customerId > 0) {
-            $customer = [
-                'id'         => $customerId,
-                'name'       => 'Customer #' . $customerId,
-                'phone'      => '',
-                'email'      => '',
-                'city'       => 'Local',
-                'state'      => '',
-                'address'    => '',
-                'gst_number' => ''
-            ];
         }
 
         // Query all Purchase Orders by this customer
@@ -7811,7 +7828,11 @@ class WarehouseController {
         }
 
         try {
-            $existing = Database::fetchOne("SELECT id, name, phone, address, city, state, gst_number FROM customers WHERE phone = ?", [$phone]);
+            $existing = Database::fetchOne(
+                "SELECT id, name, phone, address, city, state, gst_number
+                 FROM customers WHERE phone = ? AND source_channel = 'WAREHOUSE'",
+                [$phone]
+            );
             if ($existing) {
                 Response::json([
                     'success'   => true,
@@ -7824,7 +7845,7 @@ class WarehouseController {
             Database::execute(
                 "INSERT INTO customers (name, phone, email, address, city, state, gst_number, source_channel, is_active, created_at) 
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())",
-                [$name, $phone, $email ?: null, $address ?: null, $city ?: null, $state ?: null, $gstNumber ?: null, (!empty($_POST['source_channel']) ? trim($_POST['source_channel']) : 'WAREHOUSE')]
+                [$name, $phone, $email ?: null, $address ?: null, $city ?: null, $state ?: null, $gstNumber ?: null, 'WAREHOUSE']
             );
             $id = (int)Database::lastInsertId();
 

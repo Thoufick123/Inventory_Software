@@ -264,8 +264,9 @@ class ShopController {
                        )
                     ) AS previous_order_count
              FROM customers c
-             WHERE c.phone LIKE ? OR c.name LIKE ?
-                OR (? <> '' AND RIGHT(REGEXP_REPLACE(c.phone, '[^0-9]', ''), 10) = ?)
+             WHERE COALESCE(c.source_channel, 'SHOP') <> 'WAREHOUSE'
+               AND (c.phone LIKE ? OR c.name LIKE ?
+                OR (? <> '' AND RIGHT(REGEXP_REPLACE(c.phone, '[^0-9]', ''), 10) = ?))
              ORDER BY c.id DESC LIMIT 10",
             [$shopId, $phoneLast10, $phoneLast10, $phoneLast10, '%' . $query . '%', '%' . $query . '%', $phoneLast10, $phoneLast10]
         );

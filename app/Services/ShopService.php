@@ -1086,6 +1086,12 @@ class ShopService {
 
             // 1. Resolve or Create Customer if phone or name is given
             $customerId = !empty($existingSale['customer_id']) ? (int)$existingSale['customer_id'] : null;
+            if ($customerId && !Database::fetchOne(
+                "SELECT id FROM customers WHERE id = ? AND COALESCE(source_channel, 'SHOP') <> 'WAREHOUSE'",
+                [$customerId]
+            )) {
+                $customerId = null;
+            }
             $customerAddress = trim($payload['customer_address'] ?? '');
             $customerGst = trim($payload['customer_gst'] ?? '');
             $customerEmail = trim($payload['customer_email'] ?? '');
@@ -1094,7 +1100,13 @@ class ShopService {
             if (!empty($customerPhone)) {
                 $cleanPhone = preg_replace('/[^0-9]/', '', $customerPhone);
                 $last10 = strlen($cleanPhone) >= 10 ? substr($cleanPhone, -10) : $cleanPhone;
-                $cust = Database::fetchOne("SELECT id FROM customers WHERE phone = ? OR (phone IS NOT NULL AND phone != '' AND RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) = ?)", [$customerPhone, $last10]);
+                $cust = Database::fetchOne(
+                    "SELECT id FROM customers
+                     WHERE COALESCE(source_channel, 'SHOP') <> 'WAREHOUSE'
+                       AND (phone = ? OR (phone IS NOT NULL AND phone != '' AND RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) = ?))
+                     ORDER BY id DESC LIMIT 1",
+                    [$customerPhone, $last10]
+                );
                 if ($cust) {
                     $customerId = $cust['id'];
                     $updateFields = [];
@@ -4738,7 +4750,7 @@ class ShopService {
         $sort = $filters['sort'] ?? 'recent';
         $channel = $filters['channel'] ?? 'all';
 
-        $where = ["1=1"];
+        $where = ["COALESCE(c.source_channel, 'SHOP') <> 'WAREHOUSE'"];
         $params = [];
 
         if (!empty($q)) {
@@ -4842,7 +4854,8 @@ class ShopService {
      */
     public static function getCustomerSummaryMetrics(?string $channel = 'SHOP'): array {
         if ($channel === 'SHOP') {
-            $chanWhere = " WHERE (source_channel = 'SHOP' OR id IN (SELECT DISTINCT customer_id FROM sales WHERE sale_type = 'SHOP' AND customer_id IS NOT NULL))";
+            $chanWhere = " WHERE COALESCE(source_channel, 'SHOP') <> 'WAREHOUSE'
+                           AND (source_channel = 'SHOP' OR id IN (SELECT DISTINCT customer_id FROM sales WHERE sale_type = 'SHOP' AND customer_id IS NOT NULL))";
             $chanParams = [];
         } elseif (!empty($channel) && $channel !== 'all') {
             $chanWhere = " WHERE source_channel = ?";
@@ -4894,7 +4907,10 @@ class ShopService {
      * Get 360-Degree Customer Details with Invoices, Items Bought, and Returns History (Isolated to Shop)
      */
     public static function getCustomerDetails(int $customerId): ?array {
-        $customer = Database::fetchOne("SELECT * FROM customers WHERE id = ?", [$customerId]);
+        $customer = Database::fetchOne(
+            "SELECT * FROM customers WHERE id = ? AND COALESCE(source_channel, 'SHOP') <> 'WAREHOUSE'",
+            [$customerId]
+        );
         if (!$customer) return null;
 
         // Clean 10-digit phone for cross-channel / duplicate aggregation
@@ -4905,7 +4921,9 @@ class ShopService {
         $matchingIds = [$customerId];
         if (!empty($last10)) {
             $otherCusts = Database::fetchAll(
-                "SELECT * FROM customers WHERE RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) = ?",
+                "SELECT * FROM customers
+                 WHERE COALESCE(source_channel, 'SHOP') <> 'WAREHOUSE'
+                   AND RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) = ?",
                 [$last10]
             );
             foreach ($otherCusts as $oc) {
@@ -5107,13 +5125,23 @@ class ShopService {
 
         $previousCustomer = null;
         if ($id) {
-            $previousCustomer = Database::fetchOne("SELECT * FROM customers WHERE id = ?", [$id]);
+            $previousCustomer = Database::fetchOne(
+                "SELECT * FROM customers WHERE id = ? AND COALESCE(source_channel, 'SHOP') <> 'WAREHOUSE'",
+                [$id]
+            );
             if (!$previousCustomer) {
                 throw new RuntimeException('Customer not found.');
             }
-            $existing = Database::fetchOne("SELECT id FROM customers WHERE phone = ? AND id != ?", [$phone, $id]);
+            $existing = Database::fetchOne(
+                "SELECT id FROM customers
+                 WHERE phone = ? AND id != ? AND COALESCE(source_channel, 'SHOP') <> 'WAREHOUSE'",
+                [$phone, $id]
+            );
         } else {
-            $existing = Database::fetchOne("SELECT id FROM customers WHERE phone = ?", [$phone]);
+            $existing = Database::fetchOne(
+                "SELECT id FROM customers WHERE phone = ? AND COALESCE(source_channel, 'SHOP') <> 'WAREHOUSE'",
+                [$phone]
+            );
         }
         if ($existing) {
             throw new InvalidArgumentException("A customer with phone number '{$phone}' already exists.");
@@ -5139,7 +5167,7 @@ class ShopService {
             );
             $customerId = $id;
         } else {
-            $sourceChannel = $data['source_channel'] ?? 'SHOP';
+            $sourceChannel = 'SHOP';
             Database::execute(
                 "INSERT INTO customers (name, phone, email, address, city, state, gst_number, source_channel, is_active, created_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
@@ -5174,7 +5202,10 @@ class ShopService {
      * Toggle Customer Active Status
      */
     public static function toggleCustomerStatus(int $customerId): bool {
-        $cust = Database::fetchOne("SELECT * FROM customers WHERE id = ?", [$customerId]);
+        $cust = Database::fetchOne(
+            "SELECT * FROM customers WHERE id = ? AND COALESCE(source_channel, 'SHOP') <> 'WAREHOUSE'",
+            [$customerId]
+        );
         if (!$cust) {
             throw new RuntimeException('Customer not found.');
         }
