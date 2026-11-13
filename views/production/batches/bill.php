@@ -159,37 +159,6 @@
         </table>
     </div>
 
-    <!-- Piece QR Tag Code Summary -->
-    <div class="p-3 bg-light rounded border mb-4">
-        <div class="fw-bold small text-uppercase text-muted mb-2"><i class="bi bi-qr-code me-1"></i>Piece QR Codes Contained in this Batch Transfer</div>
-        <div class="d-flex flex-wrap gap-1" style="max-height: 120px; overflow-y: auto;">
-            <?php 
-                $allTags = [];
-                foreach ($items as $it) {
-                    $raw = $it['packed_piece_tags'] ?? $it['piece_tags'] ?? [];
-                    $arr = is_array($raw) ? $raw : (json_decode($raw, true) ?: explode(',', (string)$raw));
-                    foreach ($arr as $t) {
-                        $ct = trim((string)$t);
-                        if ($ct !== '') $allTags[] = $ct;
-                    }
-                }
-            ?>
-            <?php if (empty($allTags)): ?>
-                <span class="text-muted small">No specific piece tags attached</span>
-            <?php else: ?>
-                <?php foreach ($allTags as $t): ?>
-                    <span class="badge bg-white text-dark border font-monospace" style="font-size: 10px;"><?= htmlspecialchars($t) ?></span>
-                <?php endforeach; ?>
-            <?php endif; ?>
-        </div>
-        <div class="small text-muted mt-2">Total Verified Tags: <strong><?= count($allTags) ?> QR Codes</strong></div>
-    </div>
-
-    <!-- Notes & Terms -->
-    <div class="small text-muted mb-4">
-        <strong>Terms of Transfer:</strong> These goods have passed quality inspection and are packed into sealed cartons for transfer to the central warehouse. Any seal tamper or carton count discrepancy must be reported immediately upon receipt.
-    </div>
-
     <!-- Signatures -->
     <div class="row text-center mt-5">
         <div class="col-4">

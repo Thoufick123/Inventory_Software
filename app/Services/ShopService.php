@@ -1190,6 +1190,7 @@ class ShopService {
 
             $processedItems = [];
             $scannedTagsInInvoice = [];
+            $seriesQuantityByVariant = [];
             foreach ($items as $item) {
                 $variantId = (int)$item['variant_id'];
                 $qty = (int)($item['quantity'] ?? 1);
@@ -1313,6 +1314,15 @@ class ShopService {
                     $sku = $variantInfo['sku'] ?? "#$variantId";
                     throw new RuntimeException("Insufficient stock in shop for item '$sku'. Available: $currentStock, Required: $qty");
                 }
+                if ($isSeries) {
+                    $seriesQuantityByVariant[$variantId] = ($seriesQuantityByVariant[$variantId] ?? 0) + $qty;
+                    if ($seriesQuantityByVariant[$variantId] > $currentStock) {
+                        $sku = $vRow['sku'] ?? "#$variantId";
+                        throw new RuntimeException(
+                            "Series product '$sku' can only be scanned up to the available quantity ($currentStock)."
+                        );
+                    }
+                }
 
                 $lineBilledTotal = $isComp ? 0.00 : ($qty * $billedPrice);
                 // Inclusive GST Calculation on Billed Amount: Taxable Base = Billed Total / (1 + GST%)
@@ -1353,6 +1363,66 @@ class ShopService {
             $gstPercentage = $subtotal > 0 ? round(($gstAmountTotal / $subtotal) * 100, 2) : 0.0;
             if (empty($processedItems)) {
                 throw new InvalidArgumentException('An invoice must contain at least one item with a positive quantity.');
+            }
+            if ($paymentMode === 'CASH') {
+                $allowedDenominations = [500, 200, 100, 50, 20, 10, 5, 2, 1];
+                $cashDenominationInput = $payload['cash_denominations'] ?? [];
+                if (!is_array($cashDenominationInput)) {
+                    throw new InvalidArgumentException('Cash denomination counts must be provided as a list.');
+                }
+
+                foreach ($cashDenominationInput as $denomination => $count) {
+                    if (!in_array((int)$denomination, $allowedDenominations, true)) {
+                        throw new InvalidArgumentException('An unsupported cash denomination was provided.');
+                    }
+                }
+
+                $cashDenominations = [];
+                $cashReceived = 0.0;
+                $denominationSummary = [];
+                foreach ($allowedDenominations as $denomination) {
+                    $count = $cashDenominationInput[(string)$denomination] ?? $cashDenominationInput[$denomination] ?? 0;
+                    if ($count === '' || $count === null) {
+                        $count = 0;
+                    }
+                    if (!is_int($count) && !is_string($count)) {
+                        throw new InvalidArgumentException('Cash note and coin counts must be whole numbers.');
+                    }
+                    $validatedCount = filter_var($count, FILTER_VALIDATE_INT);
+                    if ($validatedCount === false || $validatedCount < 0) {
+                        throw new InvalidArgumentException('Cash note and coin counts must be whole numbers greater than or equal to zero.');
+                    }
+
+                    $cashDenominations[$denomination] = $validatedCount;
+                    $cashReceived += $denomination * $validatedCount;
+                    if ($validatedCount > 0) {
+                        $denominationSummary[] = '₹' . $denomination . ' x ' . $validatedCount;
+                    }
+                }
+
+                $cashReceived = round($cashReceived, 2);
+                if ($cashReceived + 0.001 < $totalAmount) {
+                    throw new InvalidArgumentException(
+                        'Cash received (₹' . number_format($cashReceived, 2) . ') is less than the amount due (₹' . number_format($totalAmount, 2) . ').'
+                    );
+                }
+                $cashChange = round($cashReceived - $totalAmount, 2);
+                $changeRemaining = (int)round($cashChange);
+                $changeDenominationSummary = [];
+                foreach ($allowedDenominations as $denomination) {
+                    $count = intdiv($changeRemaining, $denomination);
+                    if ($count > 0) {
+                        $changeDenominationSummary[] = '₹' . $denomination . ' x ' . $count;
+                        $changeRemaining %= $denomination;
+                    }
+                }
+                $tenderNote = '[Cash Tender: ' . (!empty($denominationSummary) ? implode(', ', $denominationSummary) : 'No denominations')
+                    . ' | Received ₹' . number_format($cashReceived, 2)
+                    . ' | Payable ₹' . number_format($totalAmount, 2)
+                    . ' | Change ₹' . number_format($cashChange, 2)
+                    . ' | Change Breakdown: ' . (!empty($changeDenominationSummary) ? implode(', ', $changeDenominationSummary) : 'No change required') . ']';
+                $notes = trim((string)$notes);
+                $notes = ($notes !== '' ? $notes . ' | ' : '') . $tenderNote;
             }
             if ($editingSaleId > 0 && $paymentMode === 'CASH_UPI' && abs(($splitCash + $splitUpi) - $totalAmount) > 0.50) {
                 throw new InvalidArgumentException('Cash and UPI split amounts must match the updated invoice total.');

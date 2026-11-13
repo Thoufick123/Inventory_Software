@@ -124,6 +124,7 @@ class ProductionOutward {
      */
     public static function getAll(array $filters = []): array {
         $sql = "SELECT po.*, 
+                       COALESCE(po.warehouse_id, pb.destination_warehouse_id) as warehouse_id,
                        pb.batch_number, pb.total_qty, pb.box_count, pb.status as batch_status,
                        pp.program_number,
                        COALESCE(p.name, pp.name) as product_name,

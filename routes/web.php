@@ -531,6 +531,7 @@ class Router {
         $this->post('production/outward/dispatch/{id}', 'ProductionController', 'dispatchOutward', ['AuthMiddleware', ['PermissionMiddleware', 'outward', 'create']]);
         $this->get('production/outward/view-ajax/{id}', 'ProductionController', 'outwardDetailsAjax', ['AuthMiddleware', ['PermissionMiddleware', 'outward', 'view']]);
         $this->post('production/outward/update/{id}', 'ProductionController', 'updateOutward', ['AuthMiddleware', ['PermissionMiddleware', 'outward', 'edit']]);
+        $this->post('production/outward/delete/{id}', 'ProductionController', 'deleteOutward', ['AuthMiddleware', ['PermissionMiddleware', 'outward', 'delete']]);
 
         // Rework from Warehouse
         $this->get('production/warehouse-rework', 'ProductionController', 'warehouseReworkList', ['AuthMiddleware', ['PermissionMiddleware', 'warehouse_rework', 'view']]);
