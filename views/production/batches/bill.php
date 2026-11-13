@@ -14,7 +14,7 @@
             font-size: 13px;
         }
         .bill-container {
-            max-width: 850px;
+            max-width: 960px;
             margin: 20px auto;
             background: #fff;
             padding: 30px;
@@ -114,25 +114,39 @@
         <table class="table table-bordered table-bill align-middle mb-0">
             <thead>
                 <tr>
-                    <th class="text-center" style="width: 5%;">#</th>
+                    <th class="text-center" style="width: 4%;">#</th>
                     <th>Product &amp; SKU</th>
-                    <th class="text-center" style="width: 12%;">Size</th>
-                    <th class="text-center" style="width: 12%;">Color</th>
-                    <th class="text-center" style="width: 15%;">Quantity</th>
-                    <th class="text-end" style="width: 15%;">Rate (₹)</th>
-                    <th class="text-end" style="width: 18%;">Valuation (₹)</th>
+                    <th class="text-center" style="width: 10%;">HSN Code</th>
+                    <th class="text-center" style="width: 8%;">Size</th>
+                    <th class="text-center" style="width: 9%;">Color</th>
+                    <th class="text-center" style="width: 10%;">Quantity</th>
+                    <th class="text-end" style="width: 11%;">Rate (₹)</th>
+                    <th class="text-center" style="width: 8%;">GST</th>
+                    <th class="text-end" style="width: 12%;">Tax Amount (₹)</th>
+                    <th class="text-end" style="width: 14%;">Valuation (₹)</th>
                 </tr>
             </thead>
             <tbody>
                 <?php 
                     $totalQty = 0;
-                    $totalAmt = 0.0;
+                    $totalTaxable = 0.0;
+                    $totalTax = 0.0;
+                    $totalValuation = 0.0;
                     foreach ($items as $idx => $it):
                         $qty = (int)($it['quantity'] ?? 0);
                         $rate = (float)($it['qc_discount_price'] ?: ($it['qc_base_price'] ?: ($it['selling_price'] ?: ($it['mrp'] ?: 0))));
-                        $amt = $qty * $rate;
+                        $taxable = $qty * $rate;
+                        $hsn = !empty($it['hsn_code']) ? $it['hsn_code'] : '6109';
+                        $gstPercent = isset($it['gst_rate']) && (float)$it['gst_rate'] > 0 
+                            ? (float)$it['gst_rate'] 
+                            : (isset($it['gst_percentage']) && (float)$it['gst_percentage'] > 0 ? (float)$it['gst_percentage'] : 5.0);
+                        $taxAmount = round($taxable * ($gstPercent / 100), 2);
+                        $valuation = $taxable + $taxAmount;
+
                         $totalQty += $qty;
-                        $totalAmt += $amt;
+                        $totalTaxable += $taxable;
+                        $totalTax += $taxAmount;
+                        $totalValuation += $valuation;
                 ?>
                     <tr>
                         <td class="text-center"><?= $idx + 1 ?></td>
@@ -140,20 +154,25 @@
                             <div class="fw-bold"><?= htmlspecialchars($it['product_name'] ?? 'Finished Product') ?></div>
                             <div class="small text-muted font-monospace"><?= htmlspecialchars($it['sku'] ?? '—') ?></div>
                         </td>
+                        <td class="text-center font-monospace small"><?= htmlspecialchars($hsn) ?></td>
                         <td class="text-center fw-semibold"><?= htmlspecialchars($it['size_name'] ?: 'Std') ?></td>
                         <td class="text-center fw-semibold"><?= htmlspecialchars($it['color_name'] ?: 'Std') ?></td>
                         <td class="text-center fw-bold text-dark fs-6"><?= number_format($qty) ?> pcs</td>
                         <td class="text-end font-monospace">₹<?= number_format($rate, 2) ?></td>
-                        <td class="text-end fw-bold font-monospace">₹<?= number_format($amt, 2) ?></td>
+                        <td class="text-center font-monospace"><?= rtrim(rtrim(number_format($gstPercent, 2), '0'), '.') ?>%</td>
+                        <td class="text-end font-monospace text-muted">₹<?= number_format($taxAmount, 2) ?></td>
+                        <td class="text-end fw-bold font-monospace">₹<?= number_format($valuation, 2) ?></td>
                     </tr>
                 <?php endforeach; ?>
             </tbody>
             <tfoot>
                 <tr class="fw-bold" style="background-color: #f8fafc;">
-                    <td colspan="4" class="text-end text-uppercase">Total Packed Goods:</td>
+                    <td colspan="5" class="text-end text-uppercase">Total Packed Goods:</td>
                     <td class="text-center text-primary fs-6"><?= number_format($totalQty) ?> pcs</td>
-                    <td class="text-end">Est. Valuation:</td>
-                    <td class="text-end text-success fs-6">₹<?= number_format($totalAmt, 2) ?></td>
+                    <td class="text-end font-monospace">₹<?= number_format($totalTaxable, 2) ?></td>
+                    <td class="text-center">—</td>
+                    <td class="text-end font-monospace text-primary">₹<?= number_format($totalTax, 2) ?></td>
+                    <td class="text-end text-success fs-6 font-monospace">₹<?= number_format($totalValuation, 2) ?></td>
                 </tr>
             </tfoot>
         </table>
@@ -175,7 +194,8 @@
         </div>
         <div class="col-4">
             <div class="signature-box">
-                <div class="fw-bold text-dark">Warehouse Receiver Sign &amp; Date</div>
+                <div class="fw-bold text-dark">___________________</div>
+                <div class="small text-muted">Warehouse Receiver Sign &amp; Date</div>
             </div>
         </div>
     </div>
