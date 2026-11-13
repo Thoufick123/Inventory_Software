@@ -3,6 +3,9 @@
         <h2 class="mb-1"><i class="bi bi-truck-flatbed me-2 text-primary"></i>Production Suppliers</h2>
         </div>
     <div class="d-flex gap-2">
+        <a href="<?= url('production/sellers/export-replaced') ?>" class="btn btn-outline-success" title="Export All Replaced Rolls (CSV)">
+            <i class="bi bi-file-earmark-arrow-down me-1"></i>Export Replaced Rolls
+        </a>
         <?php if (hasPermission('sellers', 'create')): ?>
             <a href="<?= url('production/sellers/create') ?>" class="btn btn-primary"><i class="bi bi-plus-circle me-1"></i>Add Supplier</a>
         <?php endif; ?>
@@ -12,7 +15,7 @@
 <div class="card border shadow-sm mb-4">
     <div class="card-body">
         <form method="GET" action="<?= url('production/sellers') ?>" class="row g-3 align-items-end">
-            <div class="col-lg-5 col-md-6">
+            <div class="col-lg-4 col-md-5">
                 <label class="form-label" for="supplierSearch">Search supplier details</label>
                 <input type="search" class="form-control" id="supplierSearch" name="search" value="<?= e($search) ?>" placeholder="Name, company, phone, address or GSTIN" oninput="filterSuppliersLive(this.value)">
             </div>
@@ -27,10 +30,19 @@
                     <?php endforeach; ?>
                 </select>
             </div>
+            <div class="col-lg-3 col-md-4">
+                <label class="form-label" for="damageFilter">Defects &amp; Replacements</label>
+                <select class="form-select" id="damageFilter" name="damage_filter">
+                    <option value="">All Suppliers</option>
+                    <option value="damage" <?= ($damageFilter ?? '') === 'damage' ? 'selected' : '' ?>>Has Damaged Products / Rolls</option>
+                    <option value="replaced" <?= ($damageFilter ?? '') === 'replaced' ? 'selected' : '' ?>>Has Replaced Products / Rolls</option>
+                    <option value="clean" <?= ($damageFilter ?? '') === 'clean' ? 'selected' : '' ?>>Clean (No Reported Defects)</option>
+                </select>
+            </div>
           
             <div class="col-lg-2 d-flex gap-2">
                 <button type="submit" class="btn btn-primary flex-grow-1"><i class="bi bi-search me-1"></i>Filter</button>
-                <?php if ($search !== '' || $city !== ''): ?>
+                <?php if ($search !== '' || $city !== '' || !empty($damageFilter)): ?>
                     <a href="<?= url('production/sellers') ?>" class="btn btn-outline-secondary" aria-label="Clear filters"><i class="bi bi-x-lg"></i></a>
                 <?php endif; ?>
             </div>
@@ -39,14 +51,26 @@
 </div>
 
 <div class="card border shadow-sm">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
         <h5 class="mb-0 fw-bold"><i class="bi bi-person-vcard me-2 text-primary"></i>Supplier Profiles</h5>
-        <span class="badge bg-primary-subtle text-primary" id="supplierCount"><?= number_format(count($sellers)) ?> suppliers</span>
+        <div class="d-flex align-items-center gap-2">
+            <a href="<?= url('production/sellers/export-replaced') ?>" class="btn btn-sm btn-outline-success" title="Export Replaced Rolls Log (CSV)">
+                <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export Replaced (CSV)
+            </a>
+            <span class="badge bg-primary-subtle text-primary" id="supplierCount"><?= number_format(count($sellers)) ?> suppliers</span>
+        </div>
     </div>
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
-                <tr><th>Supplier / Contact</th><th>Company</th><th>Contact Details</th><th>Location</th><th class="text-end">Actions</th></tr>
+                <tr>
+                    <th>Supplier / Contact</th>
+                    <th>Company</th>
+                    <th>Contact Details</th>
+                    <th>Location</th>
+                    <th>Damages &amp; Replacements</th>
+                    <th class="text-end">Actions</th>
+                </tr>
             </thead>
             <tbody>
                 <?php if (empty($sellers)): ?>
@@ -69,9 +93,33 @@
                             <?= e($seller['city'] ?: '—') ?><?= !empty($seller['state']) ? ', ' . e($seller['state']) : '' ?>
                             <?php if (!empty($seller['gst_number'])): ?><small class="d-block text-muted">GSTIN: <?= e($seller['gst_number']) ?></small><?php endif; ?>
                         </td>
+                        <td>
+                            <div class="d-flex flex-wrap gap-1 align-items-center">
+                                <?php $dmgCount = (int)($seller['damages_count'] ?? 0); ?>
+                                <?php $replCount = (int)($seller['replaced_count'] ?? 0); ?>
+                                <?php if ($dmgCount > 0): ?>
+                                    <a href="<?= url('production/sellers/view/' . $seller['id']) ?>" class="badge bg-danger-subtle text-danger border border-danger-subtle text-decoration-none px-2 py-1" title="<?= $dmgCount ?> reported defect(s)">
+                                        <i class="bi bi-exclamation-triangle me-1"></i><?= $dmgCount ?> Damaged
+                                    </a>
+                                <?php endif; ?>
+                                <?php if ($replCount > 0): ?>
+                                    <a href="<?= url('production/sellers/view/' . $seller['id']) ?>" class="badge bg-info-subtle text-info border border-info-subtle text-decoration-none px-2 py-1" title="<?= $replCount ?> replacement roll(s) received">
+                                        <i class="bi bi-arrow-repeat me-1"></i><?= $replCount ?> Replaced
+                                    </a>
+                                <?php endif; ?>
+                                <?php if ($dmgCount === 0 && $replCount === 0): ?>
+                                    <span class="badge bg-light text-muted border px-2 py-1" style="font-size: 11px;">
+                                        <i class="bi bi-check-circle me-1 text-success"></i>Clean
+                                    </span>
+                                <?php endif; ?>
+                            </div>
+                        </td>
                         
                         <td class="text-end text-nowrap">
                             <div class="action-btns-group justify-content-end">
+                                <?php if ($replCount > 0): ?>
+                                    <a href="<?= url('production/sellers/export-replaced?seller_id=' . $seller['id']) ?>" class="btn btn-action-icon btn-outline-success" title="Export <?= $replCount ?> Replaced Rolls for <?= e($seller['name']) ?> (CSV)"><i class="bi bi-file-earmark-arrow-down"></i></a>
+                                <?php endif; ?>
                                 <?php if (hasPermission('sellers', 'view')): ?>
                                     <a href="<?= url('production/sellers/view/' . $seller['id']) ?>" class="btn btn-action-icon btn-outline-info" title="View supplier"><i class="bi bi-eye"></i></a>
                                 <?php endif; ?>
@@ -291,6 +339,10 @@ function filterSuppliersLive(query) {
 
 document.getElementById('supplierCity')?.addEventListener('change', event => {
     filterSuppliersLive(document.getElementById('supplierSearch')?.value || '');
+    event.currentTarget.form?.requestSubmit();
+});
+
+document.getElementById('damageFilter')?.addEventListener('change', event => {
     event.currentTarget.form?.requestSubmit();
 });
 </script>
