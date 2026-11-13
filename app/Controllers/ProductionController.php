@@ -2570,7 +2570,7 @@ class ProductionController {
         $sequence = (int)$codeParts[3];
         $supplySql =
             "SELECT ppi.id, ppi.purchase_id, ppi.item_name, ppi.quantity, ppi.unit,
-                    ppi.weight_kg, ppi.unit_price, ppi.total_price,
+                    ppi.weight_kg, ppi.unit_price, ppi.total_price, ppi.hsn_code,
                     ppi.product_id, ppi.variant_id, pp.seller_id,
                     pp.purchase_number, s.name AS supplier_name, s.company AS supplier_company
              FROM production_purchase_items ppi
@@ -2649,6 +2649,12 @@ class ProductionController {
         $supply['supplier_name'] = $supply['supplier_company'] ?: $supply['supplier_name'];
         $supply['sku'] = $supply['purchase_number'] . '-ITEM-' . $supply['id'];
         $supply['_damage_supply'] = true;
+
+        $pieceCount = (!$isPackage && $isWholeQuantity && $wholeQuantity > 1 && $wholeQuantity <= 100) ? $wholeQuantity : 1;
+        $pieceNum = $pieceCount > 1 ? min($pieceCount, max(1, $sequence)) : 1;
+        $supply['display_title'] = $isPackage ? $supply['item_name'] : ($supply['item_name'] . ($pieceCount > 1 ? " ({$pieceNum}/{$pieceCount})" : ' (1/1)'));
+        $supply['hsn_code'] = !empty($supply['hsn_code']) ? $supply['hsn_code'] : '—';
+
         $supply['damage_quantity_label'] = $isPackage
             ? rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.') . ' ' . $unit
             : '1 ' . $unit;
@@ -15361,41 +15367,96 @@ class ProductionController {
         $qrCodeVal = !empty($damage['qr_code']) ? $damage['qr_code'] : (!empty($damage['roll_number']) ? $damage['roll_number'] : ('DMG-' . ($damage['damage_number'] ?? $damage['id'])));
         $prodDisplayName = !empty($damage['product_name']) ? $damage['product_name'] : ($damage['catalog_product_name'] ?: 'Garment Product');
 
-        $this->renderProductionRecord(
-            'Damage Record ' . ($damage['damage_number'] ?? ('#' . $damage['id'])),
-            'damages',
-            'Damages',
-            url('production/damages'),
-            [
+        $isSupply = (bool)preg_match('/^SP(\d{2})(\d{2})(\d{2,})$/i', (string)$qrCodeVal);
+        $supplyInfo = null;
+        if ($isSupply) {
+            $supplyLookup = $this->resolveDamageLabelCode($qrCodeVal);
+            if ($supplyLookup['status'] === 'found') {
+                $supplyInfo = $supplyLookup['item'];
+            }
+        }
+
+        if ($isSupply) {
+            $supplierName = !empty($supplyInfo['supplier_name']) ? $supplyInfo['supplier_name'] : ($damage['seller_company'] ?: ($damage['seller_name'] ?? 'Direct Supplier'));
+            $itemDisplayTitle = !empty($supplyInfo['display_title']) ? $supplyInfo['display_title'] : ($damage['product_name'] ?: 'Garment Supply');
+            $poNumber = !empty($supplyInfo['purchase_number']) ? $supplyInfo['purchase_number'] : '—';
+            $hsnCode = !empty($supplyInfo['hsn_code']) ? $supplyInfo['hsn_code'] : '—';
+            $unitPrice = (float)(!empty($supplyInfo['unit_price']) ? $supplyInfo['unit_price'] : ($damage['loss_amount'] ?? 0));
+
+            $fields = [
+                'Item Type'         => 'Garment Supply Item',
+                'Supplier / Vendor' => $supplierName,
+                'Supply Item'       => $itemDisplayTitle,
+                'Scanned QR Label'  => $qrCodeVal,
+                'Purchase PO #'     => $poNumber,
+                'HSN Code'          => $hsnCode,
+                'Unit Price'        => '₹ ' . number_format($unitPrice, 2),
+                'Damaged Quantity'  => number_format((int)($damage['damaged_quantity'] ?? 1)) . ' piece',
+                'Loss Amount'       => '₹ ' . number_format((float)($damage['loss_amount'] ?? $unitPrice), 2),
+                'Defect Reason'     => $damage['damage_reason'] ?? '—',
+                'Defect Notes'      => $damage['defect_notes'] ?? '—',
+                'Status'            => $damage['status'] ?? '—',
+                'Resolution'        => $damage['resolution_type'] ?? '—',
+                'Debit Note'        => $damage['debit_note_number'] ?? '—',
+                'Reported By'       => $damage['reported_by_name'] ?? '—',
+                'Resolved By'       => $damage['resolved_by_name'] ?? '—',
+                'Created At'        => $damage['created_at'] ?? '—',
+            ];
+
+            $qrLabelData = [
+                'code'            => $qrCodeVal,
+                'is_supply'       => true,
+                'supplier_name'   => $supplierName,
+                'display_title'   => $itemDisplayTitle,
+                'po_number'       => $poNumber,
+                'item_type_label' => 'GARMENT SUPPLY',
+                'hsn_code'        => $hsnCode !== '—' ? $hsnCode : '',
+                'price'           => $unitPrice,
+                'defect_reason'   => $damage['damage_reason'] ?? '',
+                'weight'          => 0.00,
+            ];
+        } else {
+            $fields = [
                 'Item Type'         => $isProd ? 'Finished Garment Product' : 'Fabric Roll Piece',
-            'Origin / Supplier' => $isProd ? 'Own Production Unit' : ($damage['seller_company'] ?: ($damage['seller_name'] ?? '—')),
-            'Item / Roll'       => $isProd ? $prodDisplayName : ($damage['roll_number'] ?? '—'),
-            'Scanned QR Label'  => $qrCodeVal,
-            'Variant / Color'   => $isProd ? trim(($damage['variant_size_name'] ? 'Size: ' . $damage['variant_size_name'] . ' ' : '') . ($damage['variant_color_name'] ? 'Color: ' . $damage['variant_color_name'] : '')) : ($damage['roll_color'] ?? '—'),
-            'SKU / Design'      => $isProd ? ($damage['variant_sku'] ?? '—') : ($damage['roll_design'] ?? '—'),
-            'Damaged Quantity'  => number_format((int)($damage['damaged_quantity'] ?? 0)) . ($isProd ? ' piece(s)' : ' roll(s)'),
-            'Damaged Weight'    => number_format((float)($damage['damaged_weight'] ?? 0), 2) . ' kg',
-            'Loss Amount'       => '₹ ' . number_format((float)($damage['loss_amount'] ?? 0), 2),
-            'Reason'            => $damage['damage_reason'] ?? '—',
-            'Notes'             => $damage['defect_notes'] ?? '—',
-            'Status'            => $damage['status'] ?? '—',
+                'Origin / Supplier' => $isProd ? 'Own Production Unit' : ($damage['seller_company'] ?: ($damage['seller_name'] ?? '—')),
+                'Item / Roll'       => $isProd ? $prodDisplayName : ($damage['roll_number'] ?? '—'),
+                'Scanned QR Label'  => $qrCodeVal,
+                'Variant / Color'   => $isProd ? trim(($damage['variant_size_name'] ? 'Size: ' . $damage['variant_size_name'] . ' ' : '') . ($damage['variant_color_name'] ? 'Color: ' . $damage['variant_color_name'] : '')) : ($damage['roll_color'] ?? '—'),
+                'SKU / Design'      => $isProd ? ($damage['variant_sku'] ?? '—') : ($damage['roll_design'] ?? '—'),
+                'Damaged Quantity'  => number_format((int)($damage['damaged_quantity'] ?? 0)) . ($isProd ? ' piece(s)' : ' roll(s)'),
+                'Damaged Weight'    => number_format((float)($damage['damaged_weight'] ?? 0), 2) . ' kg',
+                'Loss Amount'       => '₹ ' . number_format((float)($damage['loss_amount'] ?? 0), 2),
+                'Reason'            => $damage['damage_reason'] ?? '—',
+                'Notes'             => $damage['defect_notes'] ?? '—',
+                'Status'            => $damage['status'] ?? '—',
                 'Resolution'        => $damage['resolution_type'] ?? '—',
                 'Debit Note'        => $damage['debit_note_number'] ?? '—',
                 'Replacement Roll'  => $damage['replacement_roll_code'] ?? ($damage['replacement_roll_number'] ?? '—'),
                 'Reported By'       => $damage['reported_by_name'] ?? '—',
                 'Resolved By'       => $damage['resolved_by_name'] ?? '—',
                 'Created At'        => $damage['created_at'] ?? '—',
-            ],
+            ];
+
+            $qrLabelData = [
+                'code'        => $qrCodeVal,
+                'is_supply'   => false,
+                'roll_number' => $damage['roll_number'] ?? ($isProd ? $prodDisplayName : ''),
+                'color'       => $damage['roll_color'] ?? ($damage['variant_color_name'] ?? ''),
+                'design'      => $damage['roll_design'] ?? ($damage['variant_sku'] ?? ''),
+                'weight'      => (float)($damage['damaged_weight'] ?? 0),
+            ];
+        }
+
+        $this->renderProductionRecord(
+            'Damage Record ' . ($damage['damage_number'] ?? ('#' . $damage['id'])),
+            'damages',
+            'Damages',
+            url('production/damages'),
+            $fields,
             [],
             [],
             'Damage Details',
-            [
-                'code'        => $qrCodeVal,
-                'roll_number' => $damage['roll_number'] ?? '',
-                'color'       => $damage['roll_color'] ?? '',
-                'design'      => $damage['roll_design'] ?? '',
-                'weight'      => (float)($damage['damaged_weight'] ?? 0),
-            ]
+            $qrLabelData
         );
     }
 

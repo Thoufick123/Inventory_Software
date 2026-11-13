@@ -977,7 +977,7 @@ function handleRollRowChange(selectElement, counterId, autoPopulate = true) {
         if (cIdx !== counterId) {
             const sel = c.querySelector('.roll-select');
             const qInp = c.querySelector('.roll-qty-input');
-            if (sel && String(sel.value) === String(selectedRollId)) {
+            if (sel && String(sel.value) === String(currentSelectedRollId)) {
                 otherUsed += parseInt(qInp?.value) || 0;
             }
         }
@@ -988,7 +988,7 @@ function handleRollRowChange(selectElement, counterId, autoPopulate = true) {
     const supSpan = document.getElementById('roll_supplier_' + counterId);
     const colSpan = document.getElementById('roll_color_' + counterId);
     const desSpan = document.getElementById('roll_design_' + counterId);
-    if (supSpan) supSpan.innerText = rollObj.seller_name ? (rollObj.seller_name + (rollObj.seller_company ? ` (${rollObj.seller_company})` : '')) : 'Seller';
+    if (supSpan) supSpan.innerText = rollObj.seller_name ? (rollObj.seller_name + (rollObj.seller_company ? ` (${rollObj.seller_company})` : '')) : (rollObj.seller_company || 'Supplier');
     if (colSpan) colSpan.innerText = rollObj.color || 'Plain';
     if (desSpan) desSpan.innerText = rollObj.design_name || 'Standard Design';
     if (specsDiv) specsDiv.classList.remove('d-none');
@@ -1052,6 +1052,16 @@ function syncRollStockAllocations() {
         const totalAvail = (rollObj.available_quantity !== undefined && rollObj.available_quantity !== null) ? parseInt(rollObj.available_quantity) : origQty;
         const origWeight = parseFloat(rollObj.weight || 0);
         const origPrice = parseFloat(rollObj.price || 0);
+
+        // Keep supplier, color and design in sync
+        const supSpan = document.getElementById('roll_supplier_' + counterId);
+        const colSpan = document.getElementById('roll_color_' + counterId);
+        const desSpan = document.getElementById('roll_design_' + counterId);
+        const specsDiv = document.getElementById('roll_specs_' + counterId);
+        if (supSpan) supSpan.innerText = rollObj.seller_name ? (rollObj.seller_name + (rollObj.seller_company ? ` (${rollObj.seller_company})` : '')) : (rollObj.seller_company || 'Supplier');
+        if (colSpan) colSpan.innerText = rollObj.color || 'Plain';
+        if (desSpan) desSpan.innerText = rollObj.design_name || 'Standard Design';
+        if (specsDiv) specsDiv.classList.remove('d-none');
 
         const thisRowQty = parseInt(qtyInp?.value) || 0;
         const totalUsed = rollUsageMap[rollId] || 0;
@@ -1788,6 +1798,8 @@ function processScannedRollCode(rawCode) {
     if (String(select.value) !== String(matchedRoll.id)) {
         select.value = String(matchedRoll.id);
         handleRollRowChange(select, counterId, true);
+    } else {
+        handleRollRowChange(select, counterId, false);
     }
 
     if (matchedPiece) {

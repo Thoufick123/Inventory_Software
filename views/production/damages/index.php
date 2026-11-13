@@ -2108,8 +2108,8 @@ async function saveDamageReason() {
 
                 <div class="bg-light p-3 rounded text-start small border">
                     <div class="row g-2">
-                        <div class="col-6"><span class="text-muted d-block">Roll Number:</span><strong id="modalDamageRoll"></strong></div>
-                        <div class="col-6"><span class="text-muted d-block">Damaged Weight:</span><strong id="modalDamageWeight" class="text-danger"></strong></div>
+                        <div class="col-6"><span class="text-muted d-block" id="modalDamageRollLabel">Roll Number:</span><strong id="modalDamageRoll"></strong></div>
+                        <div class="col-6"><span class="text-muted d-block" id="modalDamageWeightLabel">Damaged Weight:</span><strong id="modalDamageWeight" class="text-danger"></strong></div>
                         <div class="col-6"><span class="text-muted d-block">Supplier:</span><strong id="modalDamageSupplier"></strong></div>
                         <div class="col-6"><span class="text-muted d-block">Defect Reason:</span><strong id="modalDamageReason" class="text-danger"></strong></div>
                     </div>
@@ -2152,11 +2152,18 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function showDamageQrModal(damageNumber, qrCode, rollNumber, reason, weight, supplier) {
+    const isSupply = /^SP\d+/i.test(String(qrCode).trim());
+    const rollLabel = document.getElementById('modalDamageRollLabel');
+    const weightLabel = document.getElementById('modalDamageWeightLabel');
+
+    if (rollLabel) rollLabel.textContent = isSupply ? 'Supply Item:' : 'Roll Number:';
+    if (weightLabel) weightLabel.textContent = isSupply ? 'Item Type:' : 'Damaged Weight:';
+
     document.getElementById('modalDamageNum').textContent = 'Damage Record: ' + damageNumber;
     document.getElementById('modalDamageQrText').textContent = qrCode;
     document.getElementById('modalDamageRoll').textContent = rollNumber;
     document.getElementById('modalDamageReason').textContent = reason;
-    document.getElementById('modalDamageWeight').textContent = weight;
+    document.getElementById('modalDamageWeight').textContent = isSupply ? 'GARMENT SUPPLY' : weight;
     document.getElementById('modalDamageSupplier').textContent = supplier;
 
     const qrBox = document.getElementById('modalDamageQrBox');
