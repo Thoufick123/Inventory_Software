@@ -1,4 +1,26 @@
-<?php $canCreateOrder = hasPermission('whatsapp_orders', 'create'); ?>
+<?php
+$canCreateOrder = hasPermission('whatsapp_orders', 'create');
+$cashSectionRevenue = 0.0;
+$onlineSectionRevenue = 0.0;
+$cashSectionCount = 0;
+$onlineSectionCount = 0;
+foreach (($orders ?? []) as $sectionOrder) {
+    $cashRevenue = (float)($sectionOrder['cash_revenue'] ?? 0);
+    $onlineRevenue = (float)($sectionOrder['online_revenue'] ?? 0);
+    $cashSectionRevenue += $cashRevenue;
+    $onlineSectionRevenue += $onlineRevenue;
+    if ($cashRevenue > 0) {
+        $cashSectionCount++;
+    }
+    if ($onlineRevenue > 0) {
+        $onlineSectionCount++;
+    }
+}
+$paymentSection = $paymentSection ?? 'all';
+if (!in_array($paymentSection, ['all', 'cash', 'online'], true)) {
+    $paymentSection = 'all';
+}
+?>
 <div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
     <div>
         <h2 class="mb-1"><i class="bi bi-clock-history me-2 text-success"></i>WhatsApp Customer Orders History</h2>
@@ -91,12 +113,42 @@
     </div>
 </div>
 
+<!-- Payment Type Tabs -->
+<div class="card border-0 shadow-sm rounded-4 mb-3 bg-white">
+    <div class="card-body p-2">
+        <div class="nav nav-pills gap-2 flex-wrap" role="tablist" aria-label="Filter WhatsApp orders by payment section">
+            <button type="button" class="nav-link <?= $paymentSection === 'all' ? 'active' : 'text-dark' ?> rounded-3 d-flex align-items-center gap-2"
+                    data-payment-tab="all" role="tab" aria-selected="<?= $paymentSection === 'all' ? 'true' : 'false' ?>">
+                <i class="bi bi-list-ul"></i>
+                <span>All</span>
+                <span class="badge <?= $paymentSection === 'all' ? 'bg-white text-dark' : 'bg-light text-primary' ?>">₹<?= number_format($cashSectionRevenue + $onlineSectionRevenue, 2) ?></span>
+                <span class="small opacity-75"><?= number_format(count($orders ?? [])) ?> orders</span>
+            </button>
+            <button type="button" class="nav-link <?= $paymentSection === 'cash' ? 'active' : 'text-dark' ?> rounded-3 d-flex align-items-center gap-2"
+                    data-payment-tab="cash" role="tab" aria-selected="<?= $paymentSection === 'cash' ? 'true' : 'false' ?>">
+                <i class="bi bi-cash-stack"></i>
+                <span>Cash</span>
+                <span class="badge <?= $paymentSection === 'cash' ? 'bg-white text-success' : 'bg-light text-primary' ?>">₹<?= number_format($cashSectionRevenue, 2) ?></span>
+                <span class="small opacity-75"><?= number_format($cashSectionCount) ?> orders</span>
+            </button>
+            <button type="button" class="nav-link <?= $paymentSection === 'online' ? 'active' : 'text-dark' ?> rounded-3 d-flex align-items-center gap-2"
+                    data-payment-tab="online" role="tab" aria-selected="<?= $paymentSection === 'online' ? 'true' : 'false' ?>">
+                <i class="bi bi-globe2"></i>
+                <span>Online</span>
+                <span class="badge <?= $paymentSection === 'online' ? 'bg-white text-primary' : 'bg-light text-primary' ?>">₹<?= number_format($onlineSectionRevenue, 2) ?></span>
+                <span class="small opacity-75"><?= number_format($onlineSectionCount) ?> orders</span>
+            </button>
+        </div>
+    </div>
+</div>
+
 <!-- Search & Filter Card -->
 <div class="card border-0 shadow-sm rounded-3 mb-4 bg-white">
     <div class="card-body p-3">
         <form method="GET" action="<?= url('warehouse/whatsapp-orders/history') ?>" class="row g-2 align-items-end">
+            <input type="hidden" name="payment_section" id="paymentSectionInput" value="<?= htmlspecialchars($paymentSection) ?>">
             <!-- Search Keyword -->
-            <div class="col-lg-4 col-md-6">
+            <div class="col-lg-2 col-md-6">
                 <label class="form-label small fw-semibold text-secondary mb-1">Search Orders</label>
                 <div class="input-group input-group-sm">
                     <span class="input-group-text bg-light text-muted"><i class="bi bi-search"></i></span>
@@ -116,12 +168,33 @@
                 <input type="date" name="date_to" class="form-control form-control-sm" value="<?= htmlspecialchars($dateTo ?? '') ?>">
             </div>
 
+            <div class="col-lg-2 col-md-4 col-6">
+                <label class="form-label small fw-semibold text-secondary mb-1">GST Method</label>
+                <select name="gst_type" class="form-select form-select-sm">
+                    <option value="">All GST Methods</option>
+                    <option value="CGST_SGST" <?= ($gstType ?? '') === 'CGST_SGST' ? 'selected' : '' ?>>CGST + SGST</option>
+                    <option value="IGST" <?= ($gstType ?? '') === 'IGST' ? 'selected' : '' ?>>IGST</option>
+                    <option value="EXEMPT" <?= ($gstType ?? '') === 'EXEMPT' ? 'selected' : '' ?>>Exempt</option>
+                </select>
+            </div>
+
+            <div class="col-lg-2 col-md-4 col-6">
+                <label class="form-label small fw-semibold text-secondary mb-1">Payment Method</label>
+                <select name="payment_mode" class="form-select form-select-sm">
+                    <option value="">All Payment Methods</option>
+                    <option value="CASH" <?= ($paymentMode ?? '') === 'CASH' ? 'selected' : '' ?>>Cash</option>
+                    <option value="UPI" <?= ($paymentMode ?? '') === 'UPI' ? 'selected' : '' ?>>UPI / QR</option>
+                    <option value="CARD" <?= ($paymentMode ?? '') === 'CARD' ? 'selected' : '' ?>>Card / POS</option>
+                    <option value="CASH_UPI" <?= ($paymentMode ?? '') === 'CASH_UPI' ? 'selected' : '' ?>>Cash + UPI Split</option>
+                </select>
+            </div>
+
             <!-- Action Buttons -->
-            <div class="col-lg-2 col-md-3 col-6 d-flex gap-2">
+            <div class="col-lg-2 col-md-4 col-12 d-flex gap-2">
                 <button type="submit" class="btn btn-sm btn-primary w-100 fw-semibold">
                     <i class="bi bi-funnel me-1"></i> Filter
                 </button>
-                <?php if (!empty($search) || !empty($status) || !empty($dateFrom) || !empty($dateTo)): ?>
+                <?php if (!empty($search) || !empty($status) || !empty($dateFrom) || !empty($dateTo) || !empty($gstType) || !empty($paymentMode) || $paymentSection !== 'all'): ?>
                     <a href="<?= url('warehouse/whatsapp-orders/history') ?>" class="btn btn-sm btn-outline-secondary" title="Clear Filters">
                         <i class="bi bi-x-lg"></i>
                     </a>
@@ -136,7 +209,7 @@
     <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2 border-bottom">
         <div>
             <h5 class="mb-0 fw-bold text-dark"><i class="bi bi-list-check me-2 text-success"></i>Customer Sales Orders</h5>
-            <small class="text-muted">Showing <?= count($orders ?? []) ?> orders matching filter criteria</small>
+            <small class="text-muted" id="whatsappOrdersCountLabel">Showing <?= count($orders ?? []) ?> orders matching filter criteria</small>
             <?php if ((float)($totalUnclassifiedPaid ?? 0) > 0): ?>
                 <div class="small text-warning mt-1">
                     <i class="bi bi-exclamation-circle me-1"></i>
@@ -156,7 +229,11 @@
                     <th>Customer Details</th>
                     <th class="text-center">Items (Qty)</th>
                     <th class="text-end">Total Amount</th>
-                    <th class="text-center">Payment</th>
+                    <th class="text-center">Payment Method</th>
+                    <th class="text-center">GST Method</th>
+                    <th class="text-end">Cash Paid</th>
+                    <th class="text-end">Online Paid</th>
+                    <th class="text-end">Pending / COD</th>
                     <th class="text-center">Status</th>
                     <th>Date &amp; Time</th>
                     <th class="text-end" style="width: 120px;">Actions</th>
@@ -165,7 +242,7 @@
             <tbody>
                 <?php if (empty($orders)): ?>
                     <tr>
-                        <td colspan="8" class="text-center py-5 text-muted">
+                        <td colspan="12" class="text-center py-5 text-muted">
                             <i class="bi bi-chat-left-dots fs-1 d-block mb-2 text-success opacity-50"></i>
                             <div class="fw-semibold">No WhatsApp customer orders found.</div>
                             <small class="text-muted">Try adjusting your search criteria<?= $canCreateOrder ? ' or click below to create a new order' : '' ?>.</small>
@@ -180,6 +257,17 @@
                     </tr>
                 <?php else: foreach ($orders as $o): 
                     $cleanPhone = preg_replace('/[^0-9]/', '', $o['customer_phone'] ?? '');
+                    $paymentModeCode = strtoupper((string)($o['payment_mode'] ?? $o['payment_method'] ?? 'UPI'));
+                    $paymentModeLabel = $paymentModeCode === 'CASH_UPI'
+                        ? 'Cash + UPI'
+                        : ($paymentModeCode === 'UPI' ? 'UPI / QR' : ($paymentModeCode === 'CARD' ? 'Card / POS' : ($paymentModeCode === 'CASH' ? 'Cash' : $paymentModeCode)));
+                    $gstTypeCode = strtoupper((string)($o['gst_type'] ?? ''));
+                    $gstTypeLabel = $gstTypeCode === 'CGST_SGST'
+                        ? 'CGST + SGST'
+                        : ($gstTypeCode === 'IGST' ? 'IGST' : ($gstTypeCode === 'EXEMPT' ? 'Exempt' : 'Not recorded'));
+                    $orderTotal = (float)($o['total_amount'] ?? $o['final_amount'] ?? 0);
+                    $amountPaid = max(0.0, (float)($o['paid_amount'] ?? 0));
+                    $pendingAmount = max(0.0, $orderTotal - $amountPaid);
                     if (strlen($cleanPhone) === 10) {
                         $waLink = 'https://wa.me/91' . $cleanPhone;
                     } else if (strlen($cleanPhone) > 10) {
@@ -188,7 +276,9 @@
                         $waLink = '';
                     }
                 ?>
-                    <tr>
+                    <tr class="whatsapp-order-row"
+                        data-cash-revenue="<?= number_format((float)($o['cash_revenue'] ?? 0), 2, '.', '') ?>"
+                        data-online-revenue="<?= number_format((float)($o['online_revenue'] ?? 0), 2, '.', '') ?>">
                         <!-- Order Number -->
                         <td>
                             <div class="fw-bold text-dark font-monospace" style="font-size: 0.9rem;">
@@ -241,37 +331,37 @@
                         <!-- Payment Mode / Status -->
                         <td class="text-center">
                             <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1 small">
-                                <?= htmlspecialchars(strtoupper((string)($o['payment_mode'] ?? $o['payment_method'] ?? 'UPI')) === 'CASH_UPI' ? 'Cash + UPI' : ($o['payment_mode'] ?? $o['payment_method'] ?? 'UPI')) ?>
+                                <?= htmlspecialchars($paymentModeLabel) ?>
                             </span>
-                            <div class="small mt-1 text-success" style="font-size: 0.72rem;">
-                                Cash: <strong>₹<?= number_format((float)($o['cash_paid_amount'] ?? 0), 2) ?></strong>
-                            </div>
-                            <div class="small text-primary" style="font-size: 0.72rem;">
-                                Online: <strong>₹<?= number_format((float)($o['online_paid_amount'] ?? 0), 2) ?></strong>
-                            </div>
-                            <?php
-                            $orderTotal = (float)($o['total_amount'] ?? $o['final_amount'] ?? 0);
-                            $amountPaid = max(0.0, (float)($o['paid_amount'] ?? 0));
-                            $pendingAmount = max(0.0, $orderTotal - $amountPaid);
-                            ?>
-                            <?php if ($pendingAmount > 0): ?>
-                                <div class="small text-muted" style="font-size: 0.7rem;">
-                                    Advance: ₹<?= number_format($amountPaid, 2) ?> · Pending/COD: <strong class="text-danger">₹<?= number_format($pendingAmount, 2) ?></strong>
-                                </div>
-                            <?php endif; ?>
-                            <?php if ((float)($o['unclassified_paid_amount'] ?? 0) > 0): ?>
-                                <div class="small text-warning" style="font-size: 0.7rem;">
-                                    Split unavailable: ₹<?= number_format((float)$o['unclassified_paid_amount'], 2) ?>
-                                </div>
-                            <?php endif; ?>
                             <?php if (!empty($o['is_online_sale'])): ?>
                                 <div class="mt-1"><span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size: 0.68rem;">Online section</span></div>
+                            <?php endif; ?>
+                            <?php if ((float)($o['unclassified_paid_amount'] ?? 0) > 0): ?>
+                                <div class="small text-warning mt-1" style="font-size: 0.7rem;">
+                                    Split unavailable: ₹<?= number_format((float)$o['unclassified_paid_amount'], 2) ?>
+                                </div>
                             <?php endif; ?>
                             <div class="small mt-0.5" style="font-size: 0.72rem;">
                                 <span class="badge bg-<?= ($o['payment_status'] ?? '') === 'PAID' ? 'success' : 'warning text-dark' ?>-subtle text-<?= ($o['payment_status'] ?? '') === 'PAID' ? 'success' : 'warning' ?>">
                                     <?= strtoupper((string)($o['payment_status'] ?? 'PAID')) === 'PARTIAL' ? 'Partially Paid / COD' : htmlspecialchars($o['payment_status'] ?? 'PAID') ?>
                                 </span>
                             </div>
+                        </td>
+
+                        <td class="text-center">
+                            <span class="badge bg-light text-dark border"><?= htmlspecialchars($gstTypeLabel) ?></span>
+                        </td>
+
+                        <td class="text-end fw-semibold text-success font-monospace">
+                            ₹<?= number_format((float)($o['cash_paid_amount'] ?? 0), 2) ?>
+                        </td>
+
+                        <td class="text-end fw-semibold text-primary font-monospace">
+                            ₹<?= number_format((float)($o['online_paid_amount'] ?? 0), 2) ?>
+                        </td>
+
+                        <td class="text-end fw-semibold <?= $pendingAmount > 0 ? 'text-danger' : 'text-muted' ?> font-monospace">
+                            ₹<?= number_format($pendingAmount, 2) ?>
                         </td>
 
                         <!-- Order Status -->
@@ -306,7 +396,70 @@
                         </td>
                     </tr>
                 <?php endforeach; endif; ?>
+                <tr id="emptyPaymentFilterRow" class="d-none">
+                    <td colspan="12" class="text-center py-4 text-muted">
+                        No orders in the selected payment section.
+                    </td>
+                </tr>
             </tbody>
         </table>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const tabs = Array.from(document.querySelectorAll('[data-payment-tab]'));
+    const rows = Array.from(document.querySelectorAll('.whatsapp-order-row'));
+    const sectionInput = document.getElementById('paymentSectionInput');
+    const countLabel = document.getElementById('whatsappOrdersCountLabel');
+    const emptyRow = document.getElementById('emptyPaymentFilterRow');
+    let activeSection = sectionInput ? sectionInput.value : 'all';
+
+    function applyPaymentSection() {
+        let visibleCount = 0;
+        rows.forEach(function(row) {
+            const cashRevenue = parseFloat(row.getAttribute('data-cash-revenue')) || 0;
+            const onlineRevenue = parseFloat(row.getAttribute('data-online-revenue')) || 0;
+            const isVisible = activeSection === 'all'
+                || (activeSection === 'cash' && cashRevenue > 0)
+                || (activeSection === 'online' && onlineRevenue > 0);
+            row.classList.toggle('d-none', !isVisible);
+            if (isVisible) {
+                visibleCount++;
+            }
+        });
+
+        if (emptyRow) {
+            emptyRow.classList.toggle('d-none', rows.length === 0 || visibleCount > 0);
+        }
+        if (countLabel) {
+            countLabel.textContent = `Showing ${visibleCount} ${activeSection === 'all' ? 'orders' : activeSection + ' orders'} matching filter criteria`;
+        }
+        tabs.forEach(function(tab) {
+            const tabSection = tab.getAttribute('data-payment-tab');
+            const isActive = tabSection === activeSection;
+            tab.classList.toggle('active', isActive);
+            tab.classList.toggle('text-dark', !isActive);
+            tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            const badge = tab.querySelector('.badge');
+            if (badge) {
+                badge.className = isActive
+                    ? (tabSection === 'cash' ? 'badge bg-white text-success' : (tabSection === 'online' ? 'badge bg-white text-primary' : 'badge bg-white text-dark'))
+                    : 'badge bg-light text-primary';
+            }
+        });
+        if (sectionInput) {
+            sectionInput.value = activeSection;
+        }
+    }
+
+    tabs.forEach(function(tab) {
+        tab.addEventListener('click', function() {
+            activeSection = tab.getAttribute('data-payment-tab') || 'all';
+            applyPaymentSection();
+        });
+    });
+
+    applyPaymentSection();
+});
+</script>

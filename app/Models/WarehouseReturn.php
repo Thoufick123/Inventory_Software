@@ -69,12 +69,22 @@ class WarehouseReturn {
             $allocationOffsets = [];
             foreach ($return['items'] as &$returnItem) {
                 $variantId = (int)$returnItem['variant_id'];
+                $storedTags = WarehouseReturnItem::parseScannedQrCodes($returnItem['scanned_qr_codes'] ?? null);
                 $tag = $scannedTags[$variantId] ?? null;
+                if ($return['source_type'] === 'SHOP' && !empty($storedTags)) {
+                    $tag = $storedTags[0];
+                }
                 if (!$tag && !empty($allocationTags[$variantId])) {
                     $offset = $allocationOffsets[$variantId] ?? 0;
                     $tag = $allocationTags[$variantId][$offset] ?? $allocationTags[$variantId][0];
                     $allocationOffsets[$variantId] = $offset + 1;
                 }
+                if (!$tag && !empty($storedTags)) {
+                    $tag = $storedTags[0];
+                }
+                $returnItem['returned_tag_codes'] = !empty($storedTags)
+                    ? $storedTags
+                    : ($tag ? [$tag] : []);
                 $returnItem['returned_tag_code'] = $tag ?: ($returnItem['barcode'] ?? $returnItem['sku'] ?? null);
             }
             unset($returnItem);

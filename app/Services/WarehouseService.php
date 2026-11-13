@@ -2590,6 +2590,7 @@ class WarehouseService {
         try {
             $existingExchangeNumber = null;
             $editSnapshot = null;
+            $preserveImmediateGoodReturnStock = false;
             if ($editReturnId > 0) {
                 $lockedReturn = Database::fetchOne(
                     "SELECT * FROM returns
@@ -2600,6 +2601,30 @@ class WarehouseService {
                 if (!$lockedReturn) {
                     throw new InvalidArgumentException("The return/exchange record no longer exists.");
                 }
+
+                $alreadyInwardedReturnItem = Database::fetchOne(
+                    "SELECT st.id
+                     FROM stock_transactions st
+                     JOIN return_items ri ON ri.id = st.reference_id
+                     WHERE ri.return_id = ? AND st.reference_type = 'warehouse_purchase_return_items'
+                       AND st.variant_id = ri.variant_id
+                       AND st.transaction_type = 'RETURN_INWARD'
+                     LIMIT 1
+                     FOR UPDATE",
+                    [$editReturnId]
+                );
+                if ($alreadyInwardedReturnItem) {
+                    throw new InvalidArgumentException("This return has already been inwarded from QR Labels and cannot be edited.");
+                }
+
+                $preserveImmediateGoodReturnStock = (bool)Database::fetchOne(
+                    "SELECT id FROM stock_transactions
+                     WHERE reference_type = 'returns' AND reference_id = ?
+                       AND transaction_type = 'RETURN_GOOD'
+                     LIMIT 1
+                     FOR UPDATE",
+                    [$editReturnId]
+                );
 
                 $oldReturnItems = Database::fetchAll(
                     "SELECT * FROM return_items WHERE return_id = ? FOR UPDATE",
@@ -2620,6 +2645,9 @@ class WarehouseService {
                 ];
 
                 foreach ($oldReturnItems as $oldItem) {
+                    if (($oldItem['destination'] ?? '') === 'AVAILABLE' && !$preserveImmediateGoodReturnStock) {
+                        continue;
+                    }
                     $stockState = ($oldItem['destination'] ?? '') === 'AVAILABLE' ? 'AVAILABLE' : 'DAMAGED';
                     StockService::decrease(
                         (int)$oldItem['variant_id'],
@@ -2877,8 +2905,8 @@ class WarehouseService {
                     [$returnId, $variantId, $qty, $condition, $condition === 'GOOD' ? 'AVAILABLE' : 'DAMAGE', $itemRefund, $pieceTagReason]
                 );
 
-                // Restock returned item
-                if ($condition === 'GOOD') {
+                // New good returns are credited only when their generated QR is inwarded.
+                if ($condition === 'GOOD' && $preserveImmediateGoodReturnStock) {
                     StockService::increase(
                         $variantId,
                         'WAREHOUSE',
@@ -2891,7 +2919,7 @@ class WarehouseService {
                         $userId,
                         "Direct Purchase Return Restock: $returnNumber"
                     );
-                } else {
+                } elseif ($condition !== 'GOOD') {
                     // DAMAGED pool
                     StockService::increase(
                         $variantId,
