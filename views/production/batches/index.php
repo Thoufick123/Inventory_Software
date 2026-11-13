@@ -4,9 +4,14 @@
         <span class="text-muted">Finished goods packing boxes, destination warehouse assignment & approval</span>
     </div>
     <?php if (hasPermission('batches', 'create')): ?>
-    <a href="<?= url('production/batches/create') ?>" class="btn btn-primary">
-        <i class="bi bi-plus-circle me-1"></i> Pack New Batch
-    </a>
+    <div class="d-flex align-items-center gap-2">
+        <a href="<?= url('production/billing/create') ?>" class="btn btn-outline-success">
+            <i class="bi bi-receipt me-1"></i> New Production Bill
+        </a>
+        <a href="<?= url('production/batches/create') ?>" class="btn btn-primary">
+            <i class="bi bi-plus-circle me-1"></i> Pack New Batch
+        </a>
+    </div>
     <?php endif; ?>
 </div>
 
@@ -158,6 +163,9 @@
                                     <div class="action-btns-group justify-content-end">
                                         <a href="<?= url('production/batches/label/' . $b['id']) ?>" target="_blank" class="btn btn-outline-info btn-action-icon" title="Print Carton QR Label">
                                             <i class="bi bi-qr-code"></i>
+                                        </a>
+                                        <a href="<?= url('production/billing/create?batch_id=' . $b['id']) ?>" class="btn btn-outline-success btn-action-icon" title="Generate Bill &amp; Invoice for this Batch">
+                                            <i class="bi bi-receipt"></i>
                                         </a>
                                         <?php if (hasPermission('batches', 'edit')): ?>
                                         <button type="button" class="btn btn-outline-primary btn-action-icon" onclick='openEditBatchModal(<?= json_encode($b, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)' title="Edit Batch Details">

@@ -254,8 +254,9 @@ $oneTimeCount = count($oneTimeCustomers ?? []) + count($unregisteredPurchases ??
                                         <!-- Lifetime Spend -->
                                         <td>
                                             <span class="fw-bold text-success fs-6">₹<?= number_format($cust['grand_total'], 2) ?></span>
+                                            <br><small class="text-success">Paid: ₹<?= number_format($cust['paid_total'], 2) ?></small>
                                             <?php if ($cust['pending_total'] > 0): ?>
-                                                <br><small class="text-danger">Pend: ₹<?= number_format($cust['pending_total'], 2) ?></small>
+                                                <br><small class="text-danger">Due: ₹<?= number_format($cust['pending_total'], 2) ?></small>
                                             <?php endif; ?>
                                         </td>
 
@@ -343,9 +344,15 @@ $oneTimeCount = count($oneTimeCustomers ?? []) + count($unregisteredPurchases ??
                                                 <span class="badge bg-light text-dark border fw-bold"><?= number_format($cust['total_units']) ?> pcs</span>
                                                 <small class="text-muted d-block"><?= number_format($cust['total_items']) ?> SKU</small>
                                             </td>
-                                            <td><span class="fw-bold text-success fs-6">₹<?= number_format($cust['grand_total'], 2) ?></span></td>
                                             <td>
-                                                <span class="badge bg-<?= ($firstInv['payment_status'] ?? 'PAID') === 'PAID' ? 'success' : 'warning text-dark' ?>">
+                                                <span class="fw-bold text-success fs-6">₹<?= number_format($cust['grand_total'], 2) ?></span>
+                                                <small class="text-success d-block">Paid: ₹<?= number_format($cust['paid_total'], 2) ?></small>
+                                                <?php if ($cust['pending_total'] > 0): ?>
+                                                    <small class="text-danger d-block">Due: ₹<?= number_format($cust['pending_total'], 2) ?></small>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-<?= ($firstInv['payment_status'] ?? 'PAID') === 'PAID' ? 'success' : (($firstInv['payment_status'] ?? '') === 'PARTIAL' ? 'warning text-dark' : 'danger') ?>">
                                                     <?= e($firstInv['payment_status'] ?? 'PAID') ?>
                                                 </span>
                                             </td>
@@ -395,10 +402,14 @@ $oneTimeCount = count($oneTimeCustomers ?? []) + count($unregisteredPurchases ??
                                             </td>
                                             <td><span class="fw-bold text-success fs-6">₹<?= number_format($po['total_amount'], 2) ?></span></td>
                                             <td>
-                                                <span class="badge bg-<?= ($po['payment_status'] ?? 'PAID') === 'PAID' ? 'success' : 'warning text-dark' ?>">
+                                                <span class="badge bg-<?= ($po['payment_status'] ?? 'PAID') === 'PAID' ? 'success' : (($po['payment_status'] ?? '') === 'PARTIAL' ? 'warning text-dark' : 'danger') ?>">
                                                     <?= e($po['payment_status'] ?? 'PAID') ?>
                                                 </span>
                                                 <small class="text-muted d-block font-monospace"><?= e($po['payment_method'] ?? 'CASH') ?></small>
+                                                <small class="text-success d-block">Paid: ₹<?= number_format((float)($po['paid_amount'] ?? 0), 2) ?></small>
+                                                <?php if ((float)($po['balance_due'] ?? 0) > 0): ?>
+                                                    <small class="text-danger d-block">Due: ₹<?= number_format((float)$po['balance_due'], 2) ?></small>
+                                                <?php endif; ?>
                                             </td>
                                             <td class="text-end pe-3">
                                                 <div class="btn-group btn-group-sm">
@@ -507,6 +518,10 @@ $oneTimeCount = count($oneTimeCustomers ?? []) + count($unregisteredPurchases ??
                                                 <?= e($po['payment_status'] ?? 'PAID') ?>
                                             </span>
                                             <small class="text-muted d-block font-monospace"><?= e($po['payment_method'] ?? 'CASH') ?></small>
+                                            <small class="text-success d-block">Paid: ₹<?= number_format((float)($po['paid_amount'] ?? 0), 2) ?></small>
+                                            <?php if ((float)($po['balance_due'] ?? 0) > 0): ?>
+                                                <small class="text-danger d-block">Due: ₹<?= number_format((float)$po['balance_due'], 2) ?></small>
+                                            <?php endif; ?>
                                         </td>
                                         <td class="text-end pe-3">
                                             <div class="btn-group btn-group-sm">
@@ -901,6 +916,7 @@ function openCustomerInvoicesModal(button) {
                     <span class="d-block text-muted" style="font-size: 0.72rem;">${escapeHtml(formatDate(invoice.order_date))}</span>
                 </span>
                 <span class="badge rounded-pill bg-success-subtle text-success flex-shrink-0">₹${Number(invoice.total_amount || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                <span class="small text-nowrap">Paid ₹${Number(invoice.paid_amount || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}<br><span class="text-danger">Due ₹${Number(invoice.balance_due || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>
                 <span class="btn-group btn-group-sm flex-shrink-0">
                     <a href="<?= url('warehouse/purchases/receive/') ?>${encodeURIComponent(invoice.id)}" target="_blank" rel="noopener" class="btn btn-outline-success">Bill</a>
                     <a href="<?= url('warehouse/purchases/receive/') ?>${encodeURIComponent(invoice.id)}?document=invoice" target="_blank" rel="noopener" class="btn btn-outline-primary">Invoice</a>
@@ -910,6 +926,7 @@ function openCustomerInvoicesModal(button) {
             <div class="list-group-item d-flex align-items-center justify-content-between gap-2 py-2">
                 <span class="fw-semibold font-monospace text-primary small">${escapeHtml(invoice.po_number || 'Invoice')}</span>
                 <span class="badge rounded-pill bg-success-subtle text-success flex-shrink-0">₹${Number(invoice.total_amount || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                <span class="small text-nowrap">Paid ₹${Number(invoice.paid_amount || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}<br><span class="text-danger">Due ₹${Number(invoice.balance_due || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></span>
             </div>
             <?php endif; ?>
         `).join('');
@@ -1203,6 +1220,8 @@ function renderOrdersHistoryTable(orders) {
             </td>
             <td>
                 <span class="fw-bold text-success fs-6">₹${Number(ord.total_amount).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                <small class="text-success d-block">Paid: ₹${Number(ord.paid_amount || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</small>
+                ${Number(ord.balance_due || 0) > 0 ? `<small class="text-danger d-block">Due: ₹${Number(ord.balance_due).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</small>` : ''}
             </td>
             <td>
                 <span class="badge ${payBadgeClass}">${escapeHtml(ord.payment_status || 'PAID')}</span>

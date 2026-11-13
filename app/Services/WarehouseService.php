@@ -1041,6 +1041,45 @@ class WarehouseService {
     /**
      * Create Direct Customer Purchase / Order with tax & discount calculation.
      */
+    private static function applyCustomerPurchasePayment(array &$poData, float $grandTotal, ?float $defaultPaidAmount = null): void {
+        if (!array_key_exists('paid_amount', $poData) && !array_key_exists('cash_tendered', $poData)) {
+            return;
+        }
+
+        $paymentMethod = strtoupper(trim((string)($poData['payment_method'] ?? 'CASH')));
+        $grandTotal = round($grandTotal, 2);
+
+        $cashTenderedValue = $poData['cash_tendered'] ?? null;
+        if ($paymentMethod === 'CASH' && $cashTenderedValue !== null && $cashTenderedValue !== '') {
+            if (!is_numeric($cashTenderedValue) || (float)$cashTenderedValue < 0) {
+                throw new InvalidArgumentException('Cash tendered must be a valid non-negative amount.');
+            }
+            $cashTendered = round((float)$cashTenderedValue, 2);
+            $paidAmount = min($cashTendered, $grandTotal);
+            $poData['cash_tendered'] = $cashTendered;
+            $poData['change_amount'] = round(max(0, $cashTendered - $grandTotal), 2);
+        } else {
+            $rawPaidAmount = $paymentMethod === 'CREDIT'
+                ? 0
+                : ($poData['paid_amount'] ?? $defaultPaidAmount ?? $grandTotal);
+            if (!is_numeric($rawPaidAmount)) {
+                throw new InvalidArgumentException('Payment received must be a valid amount.');
+            }
+
+            $paidAmount = round((float)$rawPaidAmount, 2);
+            if ($paidAmount < 0 || $paidAmount > $grandTotal) {
+                throw new InvalidArgumentException('Payment received cannot be negative or greater than the bill total.');
+            }
+            $poData['cash_tendered'] = $paymentMethod === 'CASH' ? $paidAmount : 0;
+            $poData['change_amount'] = 0;
+        }
+
+        $poData['paid_amount'] = $paidAmount;
+        $poData['payment_status'] = $paidAmount >= $grandTotal
+            ? 'PAID'
+            : ($paidAmount > 0 ? 'PARTIAL' : 'PENDING');
+    }
+
     public static function createPurchaseOrder(array $poData, array $items, int $userId): int {
         Database::beginTransaction();
         try {
@@ -1157,6 +1196,7 @@ class WarehouseService {
             $poData['igst_amount'] = $totalIgst;
             $poData['tax_amount'] = $totalCgst + $totalSgst + $totalIgst;
             $poData['total_amount'] = $grandTotal;
+            self::applyCustomerPurchasePayment($poData, $grandTotal);
 
             $poId = PurchaseOrder::create($poData);
 
@@ -1307,6 +1347,11 @@ class WarehouseService {
             $poData['igst_amount'] = $totalIgst;
             $poData['tax_amount'] = $totalCgst + $totalSgst + $totalIgst;
             $poData['total_amount'] = $grandTotal;
+            self::applyCustomerPurchasePayment(
+                $poData,
+                $grandTotal,
+                isset($existing['paid_amount']) ? (float)$existing['paid_amount'] : 0.0
+            );
 
             if (!$lockProductItems) {
                 $previousStockTransactions = Database::fetchAll(
@@ -2671,23 +2716,24 @@ class WarehouseService {
 
                 // Determine accurate unit price (tax-inclusive effective price)
                 $unitPrice = 0.0;
+                $purchaseItem = null;
                 if ($purchaseItemId) {
-                    $pi = Database::fetchOne(
-                        "SELECT variant_id, unit_price, total_amount, quantity
+                    $purchaseItem = Database::fetchOne(
+                        "SELECT variant_id, unit_price, total_amount, quantity, batch_lot_no, notes
                          FROM purchase_items WHERE id = ? AND purchase_order_id = ?",
                         [$purchaseItemId, $poId]
                     );
-                    if (!$pi || (int)$pi['variant_id'] !== $variantId) {
+                    if (!$purchaseItem || (int)$purchaseItem['variant_id'] !== $variantId) {
                         throw new InvalidArgumentException("A selected return item does not belong to this purchase order.");
                     }
                     $quantityByPurchaseItem[$purchaseItemId] = ($quantityByPurchaseItem[$purchaseItemId] ?? 0) + $qty;
-                    if ($quantityByPurchaseItem[$purchaseItemId] > (int)$pi['quantity']) {
+                    if ($quantityByPurchaseItem[$purchaseItemId] > (int)$purchaseItem['quantity']) {
                         throw new InvalidArgumentException("Return quantity cannot exceed the purchased quantity for an item.");
                     }
-                    if ((int)$pi['quantity'] > 0 && (float)($pi['total_amount'] ?? 0) > 0) {
-                        $unitPrice = round((float)$pi['total_amount'] / (int)$pi['quantity'], 2);
+                    if ((int)$purchaseItem['quantity'] > 0 && (float)($purchaseItem['total_amount'] ?? 0) > 0) {
+                        $unitPrice = round((float)$purchaseItem['total_amount'] / (int)$purchaseItem['quantity'], 2);
                     } else {
-                        $unitPrice = (float)$pi['unit_price'];
+                        $unitPrice = (float)$purchaseItem['unit_price'];
                     }
                 } else {
                     $purchasedQuantity = (int)(Database::fetchOne(
@@ -2713,6 +2759,12 @@ class WarehouseService {
                 $replacementVariantId = !empty($it['replacement_variant_id']) ? (int)$it['replacement_variant_id'] : null;
                 $replacementPieceTag = trim((string)($it['replacement_piece_tag'] ?? ''));
                 $pieceTags = !empty($it['piece_tags']) && is_array($it['piece_tags']) ? implode(', ', array_filter($it['piece_tags'])) : (is_string($it['piece_tags'] ?? null) ? trim($it['piece_tags']) : '');
+                if ($pieceTags === '' && $purchaseItem) {
+                    $pieceTags = trim((string)($purchaseItem['batch_lot_no'] ?? ''));
+                    if ($pieceTags === '' && preg_match('/\bQR:\s*(.*)$/is', (string)($purchaseItem['notes'] ?? ''), $matches)) {
+                        $pieceTags = trim($matches[1]);
+                    }
+                }
 
                 $condition = strtoupper(trim((string)($it['condition'] ?? 'GOOD')));
                 if (!in_array($condition, ['GOOD', 'DAMAGED'], true)) {
@@ -3234,7 +3286,7 @@ class WarehouseService {
     }
 
     /**
-     * Find a piece QR that has already left warehouse stock as a direct-purchase exchange replacement.
+     * Find a piece QR still out of warehouse stock as a direct-purchase exchange replacement.
      */
     public static function getExchangedReplacementByPieceTag(string $pieceTag, ?int $excludeReturnId = null): ?array {
         $pieceTag = trim($pieceTag);
@@ -3250,8 +3302,27 @@ class WarehouseService {
                AND r.source_type = 'WAREHOUSE_PURCHASE'
                AND e.status = 'COMPLETED'
                AND ei.piece_tag IS NOT NULL
-               AND FIND_IN_SET(UPPER(?), REPLACE(UPPER(ei.piece_tag), ' ', '')) > 0";
-        $params = [$pieceTag];
+               AND FIND_IN_SET(UPPER(?), REPLACE(UPPER(ei.piece_tag), ' ', '')) > 0
+               AND NOT EXISTS (
+                    SELECT 1
+                    FROM return_items ri
+                    JOIN `returns` restock_return ON restock_return.id = ri.return_id
+                    WHERE restock_return.id > r.id
+                      AND restock_return.source_type = 'WAREHOUSE_PURCHASE'
+                      AND restock_return.status NOT IN ('CANCELLED', 'REJECTED')
+                      AND ri.item_condition = 'GOOD'
+                      AND ri.destination = 'AVAILABLE'
+                      AND ri.reason IS NOT NULL
+                      AND FIND_IN_SET(
+                          UPPER(?),
+                          REPLACE(
+                              SUBSTRING_INDEX(UPPER(ri.reason), 'PIECE TAGS:', -1),
+                              ' ',
+                              ''
+                          )
+                      ) > 0
+               )";
+        $params = [$pieceTag, $pieceTag];
         if ($excludeReturnId !== null && $excludeReturnId > 0) {
             $sql .= " AND r.id != ?";
             $params[] = $excludeReturnId;
@@ -3259,6 +3330,69 @@ class WarehouseService {
         $sql .= " ORDER BY e.id DESC LIMIT 1";
 
         return Database::fetchOne($sql, $params);
+    }
+
+    public static function isAvailableExchangedSeriesTagInWarehouse(
+        string $pieceTag,
+        int $warehouseId,
+        ?int $expectedVariantId = null
+    ): bool {
+        $pieceTag = trim($pieceTag);
+        if ($pieceTag === '' || $warehouseId <= 0) {
+            return false;
+        }
+
+        $replacement = Database::fetchOne(
+            "SELECT ei.variant_id, pv.qr_type, pv.series_start_code, p.name AS product_name,
+                    GREATEST(COALESCE(pv.pack_quantity, 1), COALESCE(wq.pack_quantity, 1)) AS pack_quantity,
+                    COALESCE(wc.category_type, 'NORMAL') AS category_type,
+                    GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) AS is_complementary
+             FROM exchange_items ei
+             JOIN exchanges e ON e.id = ei.exchange_id
+             JOIN `returns` r ON r.id = e.return_id
+             JOIN product_variants pv ON pv.id = ei.variant_id
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+             LEFT JOIN warehouse_qr_codes wq
+               ON wq.variant_id = ei.variant_id
+              AND UPPER(TRIM(wq.qr_code)) = UPPER(?)
+             WHERE ei.item_type = 'NEW'
+               AND r.source_type = 'WAREHOUSE_PURCHASE'
+               AND e.status = 'COMPLETED'
+               AND ei.piece_tag IS NOT NULL
+               AND FIND_IN_SET(UPPER(?), REPLACE(UPPER(ei.piece_tag), ' ', '')) > 0
+             ORDER BY e.id DESC LIMIT 1",
+            [$pieceTag, $pieceTag]
+        );
+        if (!$replacement) {
+            return false;
+        }
+        if ($expectedVariantId !== null && (int)$replacement['variant_id'] !== $expectedVariantId) {
+            return false;
+        }
+
+        $categoryType = strtoupper((string)($replacement['category_type'] ?? ''));
+        $isSeriesOrPack = in_array(strtoupper((string)($replacement['qr_type'] ?? '')), ['SERIES', 'SERIES_BATCH'], true)
+            || in_array($categoryType, ['SERIES', 'COMPLEMENTARY'], true)
+            || (int)($replacement['pack_quantity'] ?? 1) > 1
+            || !empty($replacement['series_start_code'])
+            || !empty($replacement['is_complementary'])
+            || stripos((string)($replacement['product_name'] ?? ''), 'SERIES') !== false;
+        if (!$isSeriesOrPack) {
+            return false;
+        }
+
+        $availableStock = (float)(Database::fetchOne(
+            "SELECT COALESCE(SUM(quantity), 0) AS quantity
+             FROM stock_balances
+             WHERE variant_id = ?
+               AND location_type = 'WAREHOUSE'
+               AND location_id = ?
+               AND stock_state = 'AVAILABLE'",
+            [(int)$replacement['variant_id'], $warehouseId]
+        )['quantity'] ?? 0);
+
+        return $availableStock > 0;
     }
 
     /**
@@ -3310,11 +3444,19 @@ class WarehouseService {
         if ($exchange) {
             $exchangeItems = Database::fetchAll(
                 "SELECT ei.*, pv.sku, COALESCE(NULLIF(pv.qr_code, ''), CONCAT('QR-', pv.sku)) as qr_code, pv.selling_price,
+                        pv.qr_type, pv.pack_quantity,
+                        CASE WHEN UPPER(COALESCE(wc.category_type, '')) = 'SERIES'
+                                  OR pv.qr_type = 'SERIES_BATCH'
+                                  OR COALESCE(pv.pack_quantity, 1) > 1
+                             THEN 1 ELSE 0 END AS is_series,
+                        COALESCE(pv.is_complementary, p.is_complementary, 0) AS is_complementary,
+                        wc.category_type,
                         p.name as product_name, p.code as product_code,
                         sz.name as size_name, cl.name as color_name
                  FROM exchange_items ei
                  JOIN product_variants pv ON ei.variant_id = pv.id
                  JOIN products p ON pv.product_id = p.id
+                 LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
                  LEFT JOIN sizes sz ON pv.size_id = sz.id
                  LEFT JOIN colors cl ON pv.color_id = cl.id
                  WHERE ei.exchange_id = ?

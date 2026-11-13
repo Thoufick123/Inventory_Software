@@ -3172,7 +3172,11 @@ class WarehouseController {
             $itemTags = array_filter(array_map('trim', explode(',', (string)($item['tag_code'] ?? ''))));
             foreach ($itemTags as $pieceTag) {
                 $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag($pieceTag);
-                if ($exchangedReplacement) {
+                if ($exchangedReplacement && !WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
+                    $pieceTag,
+                    $warehouseId,
+                    (int)($item['variant_id'] ?? 0)
+                )) {
                     Session::flash('error', "QR code '{$pieceTag}' was already issued to a customer as an exchange replacement and is no longer in warehouse stock.");
                     Response::back();
                     return;
@@ -3665,6 +3669,12 @@ class WarehouseController {
 
         foreach (array_unique(array_merge([$extractedTag], $candidateCodes)) as $scannedPieceTag) {
             $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag((string)$scannedPieceTag);
+            if ($exchangedReplacement && WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
+                (string)$scannedPieceTag,
+                $warehouseId
+            )) {
+                continue;
+            }
             if ($exchangedReplacement) {
                 echo json_encode([
                     'success' => false,
@@ -5364,6 +5374,14 @@ class WarehouseController {
         if (!empty($search)) $filters['search'] = $search;
 
         $purchases = PurchaseOrder::getAll($filters);
+        foreach ($purchases as &$purchase) {
+            $purchase['paid_amount'] = PurchaseOrder::getEffectivePaidAmount($purchase);
+            $purchase['balance_due'] = max(0, (float)$purchase['total_amount'] - $purchase['paid_amount']);
+            $purchase['payment_status'] = $purchase['balance_due'] <= 0
+                ? 'PAID'
+                : ($purchase['paid_amount'] > 0 ? 'PARTIAL' : 'PENDING');
+        }
+        unset($purchase);
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
         $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
         $customers = Database::fetchAll("SELECT * FROM customers WHERE is_active = 1 ORDER BY name ASC");
@@ -5373,8 +5391,8 @@ class WarehouseController {
             'total_orders'    => count($purchases),
             'total_revenue'   => (float)array_sum(array_column($purchases, 'total_amount')),
             'total_units'     => (int)array_sum(array_column($purchases, 'total_ordered_qty')),
-            'paid_revenue'    => (float)array_sum(array_map(fn($p) => ($p['payment_status'] ?? '') === 'PAID' ? (float)$p['total_amount'] : 0, $purchases)),
-            'pending_revenue' => (float)array_sum(array_map(fn($p) => ($p['payment_status'] ?? '') !== 'PAID' ? (float)$p['total_amount'] : 0, $purchases)),
+            'paid_revenue'    => (float)array_sum(array_column($purchases, 'paid_amount')),
+            'pending_revenue' => (float)array_sum(array_column($purchases, 'balance_due')),
         ];
 
         // Group purchases by customer (One User Only One Time) with separate invoices
@@ -5411,12 +5429,11 @@ class WarehouseController {
                 $groupedCustomers[$custId]['total_units'] += (int)($po['total_ordered_qty'] ?? 0);
                 $groupedCustomers[$custId]['total_items'] += (int)($po['total_items'] ?? 0);
                 $amt = (float)($po['total_amount'] ?? 0);
+                $paid = (float)($po['paid_amount'] ?? 0);
+                $balanceDue = (float)($po['balance_due'] ?? max(0, $amt - $paid));
                 $groupedCustomers[$custId]['grand_total'] += $amt;
-                if (($po['payment_status'] ?? 'PAID') === 'PAID') {
-                    $groupedCustomers[$custId]['paid_total'] += $amt;
-                } else {
-                    $groupedCustomers[$custId]['pending_total'] += $amt;
-                }
+                $groupedCustomers[$custId]['paid_total'] += $paid;
+                $groupedCustomers[$custId]['pending_total'] += $balanceDue;
 
                 if (strtotime($po['order_date']) > strtotime($groupedCustomers[$custId]['latest_order_date'])) {
                     $groupedCustomers[$custId]['latest_order_date'] = $po['order_date'];
@@ -5433,6 +5450,8 @@ class WarehouseController {
                     'po_number'      => $po['po_number'],
                     'order_date'     => $po['order_date'],
                     'total_amount'   => $amt,
+                    'paid_amount'    => $paid,
+                    'balance_due'    => $balanceDue,
                     'total_units'    => (int)($po['total_ordered_qty'] ?? 0),
                     'total_items'    => (int)($po['total_items'] ?? 0),
                     'payment_status' => $po['payment_status'] ?? 'PAID',
@@ -5584,6 +5603,31 @@ class WarehouseController {
         try {
             $userId = Session::userId() ?? 1;
             $items = [];
+            $paymentMethod = strtoupper(trim((string)($_POST['payment_method'] ?? 'CASH')));
+            $paidAmount = null;
+            $cashAmount = 0.0;
+            $upiAmount = 0.0;
+            $upiRef = '';
+            if ($paymentMethod === 'CASH_UPI') {
+                $cashValue = $_POST['cash_amount'] ?? 0;
+                $upiValue = $_POST['upi_amount'] ?? 0;
+                if (!is_numeric($cashValue) || !is_numeric($upiValue) || (float)$cashValue < 0 || (float)$upiValue < 0) {
+                    Response::redirect(url('warehouse/purchases/create'), 'error', 'Cash and UPI amounts must be valid non-negative amounts.');
+                    return;
+                }
+                $cashAmount = (float)$cashValue;
+                $upiAmount = (float)$upiValue;
+                $paidAmount = round($cashAmount + $upiAmount, 2);
+                $upiRef = trim((string)($_POST['upi_reference'] ?? ''));
+            } elseif ($paymentMethod === 'CREDIT') {
+                $paidAmount = 0.0;
+            } elseif (isset($_POST['paid_amount']) && $_POST['paid_amount'] !== '') {
+                if (!is_numeric($_POST['paid_amount']) || (float)$_POST['paid_amount'] < 0) {
+                    Response::redirect(url('warehouse/purchases/create'), 'error', 'Payment received must be a valid non-negative amount.');
+                    return;
+                }
+                $paidAmount = (float)$_POST['paid_amount'];
+            }
 
             if (!empty($_POST['variant_id']) && is_array($_POST['variant_id'])) {
                 foreach ($_POST['variant_id'] as $idx => $vId) {
@@ -5636,12 +5680,20 @@ class WarehouseController {
             }
 
             // Server-side duplicate piece QR check (enforced only for individual garments, series QR remaining quantity is still available)
+            $purchaseWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+            $purchaseWarehouseId = $purchaseWarehouseId !== null
+                ? (int)$purchaseWarehouseId
+                : (int)($_POST['warehouse_id'] ?? 1);
             $seenTags = [];
             foreach ($items as $item) {
                 if (!empty($item['scanned_qr_codes'])) {
                     foreach (array_filter(array_map('trim', explode(',', $item['scanned_qr_codes']))) as $scannedPieceTag) {
                         $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag($scannedPieceTag);
-                        if ($exchangedReplacement) {
+                        if ($exchangedReplacement && !WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
+                            $scannedPieceTag,
+                            $purchaseWarehouseId,
+                            (int)$item['variant_id']
+                        )) {
                             Response::redirect(
                                 url('warehouse/purchases/create'),
                                 'error',
@@ -5728,14 +5780,9 @@ class WarehouseController {
                 );
             }
 
-            $paymentMethod = $_POST['payment_method'] ?? 'CASH';
             $notes = trim($_POST['notes'] ?? '');
 
             if ($paymentMethod === 'CASH_UPI') {
-                $cashAmount = (float)($_POST['cash_amount'] ?? 0.0);
-                $upiAmount = (float)($_POST['upi_amount'] ?? 0.0);
-                $upiRef = trim($_POST['upi_reference'] ?? '');
-                
                 $splitSummary = "[Split Payment: Cash ₹" . number_format($cashAmount, 2) . " + UPI ₹" . number_format($upiAmount, 2) . ($upiRef !== '' ? " (Ref: " . $upiRef . ")" : "") . "]";
                 $notes = $splitSummary . (!empty($notes) ? "\n" . $notes : "");
             }
@@ -5747,6 +5794,10 @@ class WarehouseController {
                 'order_date'     => $_POST['order_date'] ?? date('Y-m-d'),
                 'expected_date'  => !empty($_POST['expected_date']) ? $_POST['expected_date'] : date('Y-m-d'),
                 'payment_method' => $paymentMethod,
+                'paid_amount'   => $paidAmount,
+                'cash_tendered' => isset($_POST['cash_tendered']) && $_POST['cash_tendered'] !== ''
+                    ? $_POST['cash_tendered']
+                    : null,
                 'payment_status' => $_POST['payment_status'] ?? 'PAID',
                 'gst_type'       => $_POST['gst_type'] ?? 'CGST_SGST',
                 'status'         => $_POST['status'] ?? 'COMPLETED',
@@ -5902,6 +5953,33 @@ class WarehouseController {
                 Response::redirect(url('warehouse/purchases'), 'error', 'Purchase order not found.');
                 return;
             }
+            $paymentMethod = strtoupper(trim((string)($_POST['payment_method'] ?? 'CASH')));
+            $paidAmount = null;
+            $cashAmount = 0.0;
+            $upiAmount = 0.0;
+            $upiRef = '';
+            if ($paymentMethod === 'CASH_UPI') {
+                $cashValue = $_POST['cash_amount'] ?? 0;
+                $upiValue = $_POST['upi_amount'] ?? 0;
+                if (!is_numeric($cashValue) || !is_numeric($upiValue) || (float)$cashValue < 0 || (float)$upiValue < 0) {
+                    Response::redirect(url('warehouse/purchases/edit/' . $poId), 'error', 'Cash and UPI amounts must be valid non-negative amounts.');
+                    return;
+                }
+                $cashAmount = (float)$cashValue;
+                $upiAmount = (float)$upiValue;
+                $paidAmount = round($cashAmount + $upiAmount, 2);
+                $upiRef = trim((string)($_POST['upi_reference'] ?? ''));
+            } elseif ($paymentMethod === 'CREDIT') {
+                $paidAmount = 0.0;
+            } elseif (isset($_POST['paid_amount']) && $_POST['paid_amount'] !== '') {
+                if (!is_numeric($_POST['paid_amount']) || (float)$_POST['paid_amount'] < 0) {
+                    Response::redirect(url('warehouse/purchases/edit/' . $poId), 'error', 'Payment received must be a valid non-negative amount.');
+                    return;
+                }
+                $paidAmount = (float)$_POST['paid_amount'];
+            } else {
+                $paidAmount = (float)($po['paid_amount'] ?? 0);
+            }
             $productsLocked = empty($po['seller_id'])
                 && empty($po['warehouse_supplier_id'])
                 && PurchaseOrder::hasPriorEdit($poId);
@@ -6040,14 +6118,9 @@ class WarehouseController {
                 );
             }
 
-            $paymentMethod = $_POST['payment_method'] ?? 'CASH';
             $notes = trim($_POST['notes'] ?? '');
 
             if ($paymentMethod === 'CASH_UPI') {
-                $cashAmount = (float)($_POST['cash_amount'] ?? 0.0);
-                $upiAmount = (float)($_POST['upi_amount'] ?? 0.0);
-                $upiRef = trim($_POST['upi_reference'] ?? '');
-                
                 $splitSummary = "[Split Payment: Cash ₹" . number_format($cashAmount, 2) . " + UPI ₹" . number_format($upiAmount, 2) . ($upiRef !== '' ? " (Ref: " . $upiRef . ")" : "") . "]";
                 if (strpos($notes, '[Split Payment:') !== false) {
                     $notes = preg_replace('/\[Split Payment:.*?\]\r?\n?/', '', $notes);
@@ -6063,6 +6136,7 @@ class WarehouseController {
                 'order_date'     => $_POST['order_date'] ?? date('Y-m-d'),
                 'expected_date'  => !empty($_POST['expected_date']) ? $_POST['expected_date'] : null,
                 'payment_method' => $paymentMethod,
+                'paid_amount'   => $paidAmount,
                 'payment_status' => $_POST['payment_status'] ?? 'PAID',
                 'status'         => $_POST['status'] ?? 'COMPLETED',
                 'notes'          => $notes,
@@ -6130,7 +6204,9 @@ class WarehouseController {
     public function ajaxScanPurchaseQr(): void {
         $isAdjustmentScan = ($_REQUEST['purpose'] ?? '') === 'stock_adjustment';
         $isReturnEditScan = ($_REQUEST['purpose'] ?? '') === 'purchase_return_edit';
+        $isDirectPurchaseScan = ($_REQUEST['purpose'] ?? '') === 'direct_purchase';
         $isSameProductExchangeScan = ($_REQUEST['same_product_exchange_scan'] ?? '') === '1';
+        $directPurchaseWarehouseId = (int)($_REQUEST['warehouse_id'] ?? 0);
         $returnEditId = $isReturnEditScan ? (int)($_REQUEST['return_id'] ?? 0) : 0;
         $hasScanPermission = $isAdjustmentScan
             ? hasPermission('stock', 'adjust')
@@ -6195,11 +6271,19 @@ class WarehouseController {
         $exchangedReplacement = null;
         $exchangedReplacementTag = '';
         foreach (array_unique(array_merge([$extractedTag], $candidateCodes)) as $scannedPieceTag) {
-            $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag(
+            $candidateExchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag(
                 (string)$scannedPieceTag,
                 $isSameProductExchangeScan ? $returnEditId : null
             );
-            if ($exchangedReplacement) {
+            if ($candidateExchangedReplacement) {
+                if ($isDirectPurchaseScan && WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
+                    (string)$scannedPieceTag,
+                    $directPurchaseWarehouseId
+                )) {
+                    continue;
+                }
+
+                $exchangedReplacement = $candidateExchangedReplacement;
                 if (!$isSameProductExchangeScan) {
                     echo json_encode([
                         'success' => false,
@@ -6884,6 +6968,32 @@ class WarehouseController {
         exit;
     }
 
+    public function ajaxCustomerPurchaseCount(int|string $id = 0): void {
+        if (
+            !hasPermission('purchases', 'view')
+            && !hasPermission('purchases', 'create')
+            && !hasPermission('purchases', 'edit')
+        ) {
+            Response::jsonError('Access denied.', [], 403);
+            return;
+        }
+
+        $customerId = (int)$id;
+        if ($customerId <= 0 || !Database::fetchOne("SELECT id FROM customers WHERE id = ?", [$customerId])) {
+            Response::json(['success' => false, 'message' => 'Customer not found.'], 404);
+            return;
+        }
+
+        $count = Database::fetchOne(
+            "SELECT COUNT(*) AS purchase_count FROM purchase_orders WHERE customer_id = ?",
+            [$customerId]
+        );
+        Response::json([
+            'success' => true,
+            'purchase_count' => (int)($count['purchase_count'] ?? 0),
+        ]);
+    }
+
     public function ajaxCustomerPurchaseHistory(int|string $id = 0): void {
         if (
             !hasPermission('purchases', 'view')
@@ -6952,6 +7062,14 @@ class WarehouseController {
              ORDER BY po.order_date DESC, po.id DESC",
             [$customerId]
         );
+        foreach ($orders as &$order) {
+            $order['paid_amount'] = PurchaseOrder::getEffectivePaidAmount($order);
+            $order['balance_due'] = max(0, (float)$order['total_amount'] - $order['paid_amount']);
+            $order['payment_status'] = $order['balance_due'] <= 0
+                ? 'PAID'
+                : ($order['paid_amount'] > 0 ? 'PARTIAL' : 'PENDING');
+        }
+        unset($order);
 
         // Query all Line Items purchased by this customer across orders
         $items = Database::fetchAll(
@@ -7077,8 +7195,8 @@ class WarehouseController {
 
         $totalOrdersCount = count($orders);
         $totalSpend = array_sum(array_column($orders, 'total_amount'));
-        $paidSpend = array_sum(array_map(fn($o) => ($o['payment_status'] ?? 'PAID') === 'PAID' ? (float)$o['total_amount'] : 0, $orders));
-        $pendingSpend = $totalSpend - $paidSpend;
+        $paidSpend = array_sum(array_column($orders, 'paid_amount'));
+        $pendingSpend = array_sum(array_column($orders, 'balance_due'));
         $avgOrderVal = $totalOrdersCount > 0 ? round($totalSpend / $totalOrdersCount, 2) : 0;
         $methods = array_values(array_unique(array_filter(array_column($orders, 'payment_method'))));
 
@@ -7213,7 +7331,7 @@ class WarehouseController {
                 );
                 $invoices = Database::fetchAll(
                     "SELECT po.id, po.po_number, po.order_date, po.total_amount,
-                            po.payment_status, po.payment_method,
+                            po.paid_amount, po.notes, po.payment_status, po.payment_method,
                             (SELECT COUNT(*) FROM purchase_items pi WHERE pi.purchase_order_id = po.id) AS item_count,
                             (SELECT COALESCE(SUM(pi.quantity), 0) FROM purchase_items pi WHERE pi.purchase_order_id = po.id) AS total_qty,
                             (SELECT r.return_number FROM returns r WHERE r.purchase_order_id = po.id ORDER BY r.id DESC LIMIT 1) AS return_number
@@ -7225,6 +7343,15 @@ class WarehouseController {
                      ORDER BY po.order_date DESC, po.id DESC",
                     [$phone]
                 );
+                foreach ($invoices as &$invoice) {
+                    $invoice['paid_amount'] = PurchaseOrder::getEffectivePaidAmount($invoice);
+                    $invoice['balance_due'] = max(0, (float)$invoice['total_amount'] - $invoice['paid_amount']);
+                    $invoice['payment_status'] = $invoice['balance_due'] <= 0
+                        ? 'PAID'
+                        : ($invoice['paid_amount'] > 0 ? 'PARTIAL' : 'PENDING');
+                    unset($invoice['notes']);
+                }
+                unset($invoice);
                 Response::json([
                     'success' => true,
                     'invoice_count' => (int)($count['invoice_count'] ?? 0),
@@ -8365,7 +8492,11 @@ class WarehouseController {
                     }
 
                     $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag($stag);
-                    if ($exchangedReplacement) {
+                    if ($exchangedReplacement && !WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
+                        $stag,
+                        $warehouseId,
+                        (int)$vId
+                    )) {
                         Session::flash('error', "QR code '{$stag}' was already issued to a customer as an exchange replacement and cannot be allocated.");
                         Response::redirect(url('warehouse/allocation/create'));
                         return;
@@ -9181,6 +9312,12 @@ class WarehouseController {
 
         foreach (array_unique(array_merge([$extractedTag], $candidateCodes)) as $scannedPieceTag) {
             $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag((string)$scannedPieceTag);
+            if ($exchangedReplacement && WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
+                (string)$scannedPieceTag,
+                $warehouseId
+            )) {
+                continue;
+            }
             if ($exchangedReplacement) {
                 echo json_encode([
                     'success' => false,

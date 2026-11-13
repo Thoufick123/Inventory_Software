@@ -125,8 +125,13 @@
 
                     <!-- Operator / Tailor & Notes -->
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">Tailor / Stitching Master</label>
-                        <select name="worker_id" class="form-select">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <label class="form-label fw-semibold mb-0">Tailor / Stitching Master</label>
+                            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 fw-semibold" onclick="openAddTailorModal()">
+                                <i class="bi bi-plus-circle me-1"></i>+ Add Tailor
+                            </button>
+                        </div>
+                        <select name="worker_id" id="workerSelect" class="form-select">
                             <option value="">Select Worker / Operator</option>
                             <?php foreach ($users as $u): ?>
                                 <option value="<?= $u['id'] ?>"><?= e($u['full_name']) ?></option>
@@ -1129,4 +1134,145 @@ window.addEventListener('pageshow', () => {
         handleCuttingBatchChange(cuttingSelect.value);
     }
 });
+
+function openAddTailorModal() {
+    const nameInput = document.getElementById('newTailorName');
+    const phoneInput = document.getElementById('newTailorPhone');
+    const alertBox = document.getElementById('addTailorAlert');
+    if (nameInput) nameInput.value = '';
+    if (phoneInput) phoneInput.value = '';
+    if (alertBox) {
+        alertBox.classList.add('d-none');
+        alertBox.innerText = '';
+    }
+    const modalEl = document.getElementById('addTailorModal');
+    if (modalEl) {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+        setTimeout(() => nameInput && nameInput.focus(), 300);
+    }
+}
+
+function saveNewTailor() {
+    const nameInput = document.getElementById('newTailorName');
+    const phoneInput = document.getElementById('newTailorPhone');
+    const alertBox = document.getElementById('addTailorAlert');
+    const saveBtn = document.getElementById('btnSaveTailor');
+
+    const name = nameInput ? nameInput.value.trim() : '';
+    const phone = phoneInput ? phoneInput.value.trim() : '';
+
+    if (!name) {
+        if (alertBox) {
+            alertBox.innerText = 'Please enter the tailor / stitching master name.';
+            alertBox.classList.remove('d-none');
+        }
+        nameInput?.focus();
+        return;
+    }
+
+    if (alertBox) alertBox.classList.add('d-none');
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+    }
+
+    const formData = new FormData();
+    formData.append('full_name', name);
+    formData.append('phone', phone);
+    const csrfToken = document.querySelector('input[name="csrf_token"]')?.value || '';
+    if (csrfToken) formData.append('csrf_token', csrfToken);
+
+    fetch('<?= url("api/tailors/quick-add") ?>', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Save Tailor';
+        }
+
+        if (data.success) {
+            const select = document.getElementById('workerSelect') || document.querySelector('select[name="worker_id"]');
+            if (select) {
+                const opt = document.createElement('option');
+                opt.value = data.id;
+                opt.textContent = data.name;
+                opt.selected = true;
+                select.appendChild(opt);
+                select.value = data.id;
+                select.dispatchEvent(new Event('change'));
+            }
+
+            const modalEl = document.getElementById('addTailorModal');
+            if (modalEl) {
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if (modal) modal.hide();
+            }
+
+            // Quick feedback toast
+            const toastDiv = document.createElement('div');
+            toastDiv.className = 'alert alert-success position-fixed top-0 end-0 m-3 shadow-lg py-2 px-3';
+            toastDiv.style.zIndex = '9999';
+            toastDiv.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>' + (data.message || 'Tailor added successfully!');
+            document.body.appendChild(toastDiv);
+            setTimeout(() => toastDiv.remove(), 3000);
+        } else {
+            if (alertBox) {
+                alertBox.innerText = data.message || 'Error saving tailor.';
+                alertBox.classList.remove('d-none');
+            } else {
+                alert(data.message || 'Error saving tailor.');
+            }
+        }
+    })
+    .catch(err => {
+        console.error('Error saving tailor:', err);
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i> Save Tailor';
+        }
+        if (alertBox) {
+            alertBox.innerText = 'Network error while saving tailor.';
+            alertBox.classList.remove('d-none');
+        }
+    });
+}
 </script>
+
+<!-- Modal: Add Tailor / Stitching Master -->
+<div class="modal fade" id="addTailorModal" tabindex="-1" aria-labelledby="addTailorModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-primary text-white py-3">
+                <h6 class="modal-title fw-bold" id="addTailorModalLabel">
+                    <i class="bi bi-person-plus-fill me-2"></i>Add Tailor / Stitching Master
+                </h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div id="addTailorAlert" class="alert alert-danger py-2 px-3 small d-none mb-3"></div>
+                <div class="mb-3">
+                    <label class="form-label required fw-semibold">Tailor / Stitching Master Name <span class="text-danger">*</span></label>
+                    <input type="text" id="newTailorName" class="form-control text-uppercase fw-semibold" placeholder="e.g. RAMESH TAILOR" required onkeydown="if(event.key==='Enter'){event.preventDefault();saveNewTailor();}">
+                    <small class="text-muted">Enter the tailor or stitching master's full name.</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Phone Number (Optional)</label>
+                    <input type="text" id="newTailorPhone" class="form-control" placeholder="e.g. 9876543210" onkeydown="if(event.key==='Enter'){event.preventDefault();saveNewTailor();}">
+                </div>
+            </div>
+            <div class="modal-footer bg-light py-2 px-4 justify-content-between">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-sm btn-primary px-3 fw-semibold" id="btnSaveTailor" onclick="saveNewTailor()">
+                    <i class="bi bi-check-circle me-1"></i> Save Tailor
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

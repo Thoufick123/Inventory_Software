@@ -276,6 +276,9 @@
                     <?php if ($isAllInwarded): ?>
                         <span class="badge bg-success text-white ms-1"><i class="bi bi-check-circle-fill me-1"></i>Inward Complete</span>
                     <?php endif; ?>
+                    <?php if (!empty($damagedCount)): ?>
+                        <span class="badge bg-danger text-white ms-1"><i class="bi bi-exclamation-octagon-fill me-1"></i><?= (int)$damagedCount ?> Damaged</span>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -285,9 +288,17 @@
                 </a>
 
                 <?php if ($isAllInwarded): ?>
-                    <span class="badge bg-success-subtle text-success border border-success px-2.5 py-1.5 fw-bold d-inline-flex align-items-center gap-1 shadow-xs" title="All <?= (int)($allStickersCount ?? count($stickers)) ?> supplies inwarded to inventory">
-                        <i class="bi bi-check-circle-fill text-success"></i> Inwarded to Inventory (<?= (int)($inwardedCount ?? count($stickers)) ?>/<?= (int)($allStickersCount ?? count($stickers)) ?>)
+                    <span class="badge bg-success-subtle text-success border border-success px-2.5 py-1.5 fw-bold d-inline-flex align-items-center gap-1 shadow-xs" title="All <?= (int)($allStickersCount ?? count($stickers)) ?> supplies processed (<?= (int)$inwardedCount ?> inwarded<?= !empty($damagedCount) ? ', ' . (int)$damagedCount . ' damaged' : '' ?>)">
+                        <i class="bi bi-check-circle-fill text-success"></i> Inward Complete (<?= (int)($inwardedCount ?? count($stickers)) ?>/<?= (int)($allStickersCount ?? count($stickers)) ?>)
                     </span>
+                    <?php if (!empty($damagedCount)): ?>
+                        <span class="badge bg-danger-subtle text-danger border border-danger px-2.5 py-1.5 fw-bold d-inline-flex align-items-center gap-1 shadow-xs" title="<?= (int)$damagedCount ?> items recorded as production damage">
+                            <i class="bi bi-exclamation-octagon-fill text-danger"></i> <?= (int)$damagedCount ?> Damaged
+                        </span>
+                        <a href="<?= url('production/damages') ?>" class="btn btn-outline-danger btn-sm fw-bold">
+                            <i class="bi bi-shield-exclamation me-1"></i> Damages Log
+                        </a>
+                    <?php endif; ?>
                     <a href="<?= url('production/inventory') ?>" class="btn btn-outline-success btn-sm fw-bold">
                         <i class="bi bi-box-seam me-1"></i> View in Inventory
                     </a>
@@ -302,6 +313,17 @@
                             <i class="bi bi-box-arrow-in-down"></i> <span id="btnMoveToInwardText">Move to Inward (<?= (int)($pendingInwardCount ?? count($stickers)) ?>)</span>
                         </button>
                     </form>
+                    <button type="button" class="btn btn-outline-danger btn-sm fw-bold shadow-sm d-inline-flex align-items-center gap-1" id="btnReportDamage" onclick="openBulkSupplyDamage()" <?= $canManageSupplies ? '' : 'disabled style="opacity: 0.5; cursor: not-allowed;" title="Action disabled in view-only access"' ?> title="Report defective or damaged pieces before adding to inventory">
+                        <i class="bi bi-exclamation-octagon-fill"></i> <span>Report Damage</span>
+                    </button>
+                    <?php if (($damagedCount ?? 0) > 0): ?>
+                        <span class="badge bg-danger-subtle text-danger border border-danger px-2 py-1 small fw-semibold" title="<?= (int)$damagedCount ?> items recorded as production damage">
+                            <i class="bi bi-exclamation-octagon-fill me-1"></i><?= (int)$damagedCount ?> Damaged
+                        </span>
+                        <a href="<?= url('production/damages') ?>" class="btn btn-outline-danger btn-sm">
+                            <i class="bi bi-shield-exclamation me-1"></i> Damages
+                        </a>
+                    <?php endif; ?>
                     <?php if (($inwardedCount ?? 0) > 0): ?>
                         <span class="badge bg-success-subtle text-success border border-success px-2 py-1 small fw-semibold" title="<?= (int)$inwardedCount ?> labels already inwarded">
                             <i class="bi bi-check-circle me-1"></i><?= (int)$inwardedCount ?> Inwarded
@@ -386,20 +408,36 @@
 
         <div class="stickers-wrapper" id="stickersContainer">
             <?php foreach ($stickers as $stk): ?>
-                <?php $stkIsInwarded = !empty($stk['is_inwarded']); ?>
-                <div class="supply-label-card <?= $stkIsInwarded ? 'border-success' : '' ?>" id="card-<?= $stk['index'] ?>" style="<?= $stkIsInwarded ? 'background-color: #f8fafc;' : '' ?>">
+                <?php 
+                    $stkIsDamaged = !empty($stk['is_damaged']);
+                    $stkIsInwarded = !empty($stk['is_inwarded']); 
+                    $cardClass = $stkIsDamaged ? 'border-danger bg-danger-subtle bg-opacity-25' : ($stkIsInwarded ? 'border-success' : '');
+                ?>
+                <div class="supply-label-card <?= $cardClass ?>" id="card-<?= $stk['index'] ?>" style="<?= $stkIsDamaged ? 'background-color: #fff5f5;' : ($stkIsInwarded ? 'background-color: #f8fafc;' : '') ?>">
                     <div class="label-header">
                         <div class="d-flex align-items-center gap-1">
-                            <input type="checkbox" class="form-check-input supply-select-box no-print" id="check-supply-<?= $stk['index'] ?>" data-index="<?= $stk['index'] ?>" data-code="<?= htmlspecialchars($stk['code']) ?>" data-inwarded="<?= $stkIsInwarded ? '1' : '0' ?>" checked <?= $canManageSupplies ? 'onchange="updateSelectedCount()" title="Check to print or inward this supply label" style="margin-top: 0; cursor: pointer;"' : 'disabled style="margin-top: 0; cursor: not-allowed; opacity: 0.5;" title="Selection disabled in view-only access"' ?>>
+                            <input type="checkbox" class="form-check-input supply-select-box no-print" id="check-supply-<?= $stk['index'] ?>" data-index="<?= $stk['index'] ?>" data-code="<?= htmlspecialchars($stk['code']) ?>" data-inwarded="<?= $stkIsInwarded ? '1' : '0' ?>" data-damaged="<?= $stkIsDamaged ? '1' : '0' ?>" <?= $stkIsDamaged ? 'disabled style="margin-top: 0; cursor: not-allowed; opacity: 0.4;" title="Damaged item — excluded from stock inwarding"' : ($canManageSupplies ? 'checked onchange="updateSelectedCount()" title="Check to print or inward this supply label" style="margin-top: 0; cursor: pointer;"' : 'disabled style="margin-top: 0; cursor: not-allowed; opacity: 0.5;" title="Selection disabled in view-only access"') ?>>
                             <div class="company-tag" title="<?= htmlspecialchars($stk['supplier_name']) ?>">
                                 <?= htmlspecialchars($stk['supplier_name']) ?>
                             </div>
                         </div>
                         <div class="d-flex align-items-center gap-1">
-                            <?php if ($stkIsInwarded): ?>
+                            <?php if ($stkIsDamaged): ?>
+                                <span class="badge bg-danger text-white px-1.5 py-0.5 no-print" style="font-size: 8px;" title="Defect: <?= htmlspecialchars($stk['damage_info']['damage_reason'] ?? 'Logged') ?> • <?= htmlspecialchars($stk['damage_info']['damage_number'] ?? 'DMG') ?>"><i class="bi bi-exclamation-octagon-fill"></i> Damaged</span>
+                            <?php elseif ($stkIsInwarded): ?>
                                 <span class="badge bg-success text-white px-1.5 py-0.5 no-print" style="font-size: 8px;" title="Inwarded to inventory on <?= !empty($stk['inwarded_at']) ? date('d M Y, h:i A', strtotime($stk['inwarded_at'])) : 'Done' ?>"><i class="bi bi-check-circle-fill"></i> Inwarded</span>
                             <?php else: ?>
-                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-1.5 py-0.5 no-print" style="font-size: 8px;"><i class="bi bi-hourglass-split"></i> Pending Inward</span>
+                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-1.5 py-0.5 no-print" style="font-size: 8px;"><i class="bi bi-hourglass-split"></i> Pending</span>
+                                <?php if ($canManageSupplies): ?>
+                                    <button type="button" class="btn btn-outline-danger btn-xs py-0 px-1 border-0 no-print fw-bold" style="font-size: 8.5px;" onclick='openSingleSupplyDamage(<?= json_encode([
+                                        'code' => $stk['code'],
+                                        'product_name' => $stk['display_title'],
+                                        'supply_item_id' => $stk['supply_item_id'] ?? null,
+                                        'price' => (float)$stk['unit_price'],
+                                        'supplier_name' => $stk['supplier_name'],
+                                        'po_number' => $stk['po_number'],
+                                    ], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>)' title="Report defect/damage for this piece before inwarding"><i class="bi bi-exclamation-triangle text-danger"></i> Defect</button>
+                                <?php endif; ?>
                             <?php endif; ?>
                             <div class="po-tag"><?= htmlspecialchars($stk['po_number']) ?></div>
                         </div>
@@ -426,12 +464,101 @@
                             <div class="meta-line">
                                 <span>Code:</span> <strong class="font-monospace" style="font-size: 10.5px; font-weight: 800; color: #0f172a; letter-spacing: 0.3px;"><?= htmlspecialchars($stk['code']) ?></strong>
                             </div>
+                            <?php if ($stkIsDamaged && !empty($stk['damage_info'])): ?>
+                                <div class="meta-line text-danger mt-1 pt-1 border-top border-danger-subtle" style="font-size: 8.5px;">
+                                    <span>Defect:</span> <strong title="<?= htmlspecialchars($stk['damage_info']['damage_reason'] ?? '') ?>"><?= htmlspecialchars($stk['damage_info']['damage_reason'] ?? 'Logged Damage') ?></strong>
+                                </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
             <?php endforeach; ?>
         </div>
     <?php endif; ?>
+</div>
+
+<!-- Report Damage Modal for Garment Supplies -->
+<div class="modal fade no-print" id="supplyDamageModal" tabindex="-1" aria-hidden="true" style="overflow-y: auto;">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content shadow-lg border-danger">
+            <div class="modal-header bg-danger text-white py-3">
+                <h5 class="modal-title fw-bold fs-6">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>Report Damage / Defect (Garment Supplies)
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="<?= url('production/damages/store') ?>" enctype="multipart/form-data" id="supplyDamageForm">
+                <?= CSRF::field() ?>
+                <input type="hidden" name="redirect_url" value="<?= htmlspecialchars($_SERVER['REQUEST_URI'] ?? url('production/purchases/supply-qr/' . $purchase['id'])) ?>">
+
+                <div class="modal-body p-4">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <div class="p-3 bg-light rounded-3 border">
+                                <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+                                    <label for="supplyDamageQrScan" class="form-label fw-bold mb-0">
+                                        <i class="bi bi-upc-scan text-success me-1"></i>Scan Garment Supply Barcode / QR Tag
+                                    </label>
+                                    <small class="text-muted">Hardware scanner or manual entry</small>
+                                </div>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-white text-success border-end-0">
+                                        <i class="bi bi-qr-code"></i>
+                                    </span>
+                                    <input type="text" id="supplyDamageQrScan" class="form-control border-start-0" placeholder="Scan an SP label (e.g. SP112601) and press Enter" autocomplete="off">
+                                    <button type="button" class="btn btn-success fw-semibold px-3" onclick="scanSupplyDamageQr()">
+                                        <i class="bi bi-plus-circle me-1"></i>Scan / Add
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="supplyDamageScanStatus" class="small mt-1" role="status" aria-live="polite"></div>
+                            <div class="border rounded mt-2 p-2">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <strong>Defective / Damaged Supply Items</strong>
+                                    <span id="supplyDamageScannedCount" class="badge bg-secondary">0 items</span>
+                                </div>
+                                <div id="supplyDamageScannedLabels" class="list-group small" style="max-height: none; overflow: visible;">
+                                    <div class="list-group-item text-muted" id="supplyDamageScannedEmpty">No items selected or scanned yet.</div>
+                                </div>
+                            </div>
+                            <div id="supplyDamageQrInputs"></div>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="alert alert-danger-subtle border border-danger-subtle text-danger py-2 mb-0 small">
+                                <i class="bi bi-info-circle me-1"></i>Reported supply defects are quarantined under Production Damages and deducted so they will never be inwarded to stock.
+                            </div>
+                        </div>
+
+                        <!-- Estimated Loss Valuation -->
+                        <div class="col-12">
+                            <label class="form-label fw-bold text-danger">
+                                <i class="bi bi-currency-rupee me-1"></i>Total Estimated Loss Valuation <span class="badge bg-danger-subtle text-danger border ms-1">Auto</span>
+                            </label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-danger-subtle text-danger fw-bold">₹</span>
+                                <input type="number" step="0.01" name="loss_amount" id="supplyInputEstimatedLoss" class="form-control fw-bold text-danger bg-light fs-6" placeholder="0.00" readonly tabindex="-1" style="background-color: #f1f3f5 !important; cursor: not-allowed;">
+                            </div>
+                            <small class="text-muted d-block mt-1" id="supplyLossCalcHelp">Calculated automatically from supply purchase unit price.</small>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">
+                                Additional Notes &amp; Observations <small class="text-muted fw-normal">(Optional, applies to all reported items)</small>
+                            </label>
+                            <textarea name="defect_notes" id="supplyDefectNotes" class="form-control" rows="2" placeholder="e.g. Broken threads received from vendor, damaged spool boxes..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light py-3">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger px-4 fw-semibold shadow-sm" id="btnSaveSupplyDamage">
+                        <i class="bi bi-check-circle me-1"></i> Save Damage &amp; Quarantine
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -463,15 +590,386 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    const scanInput = document.getElementById('supplyDamageQrScan');
+    if (scanInput) {
+        scanInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                scanSupplyDamageQr();
+            }
+        });
+    }
+
+    const damageForm = document.getElementById('supplyDamageForm');
+    if (damageForm) {
+        damageForm.addEventListener('submit', function(e) {
+            if (supplyDamageList.length === 0) {
+                alert('Please scan or select at least 1 supply piece to report damage.');
+                e.preventDefault();
+                return false;
+            }
+            // Check that each item has a damage reason
+            for (let i = 0; i < supplyDamageList.length; i++) {
+                const item = supplyDamageList[i];
+                if (!item.damageReason) {
+                    alert('Please select a Damage / Defect Reason for item ' + item.code);
+                    e.preventDefault();
+                    return false;
+                }
+            }
+            const saveBtn = document.getElementById('btnSaveSupplyDamage');
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Saving Damage...';
+            }
+            return true;
+        });
+    }
+
     updateSelectedCount();
 });
 
 const canManageSupplies = <?= json_encode((bool)$canManageSupplies) ?>;
+const availableDamageReasons = <?= json_encode(array_column($damageReasons ?? [], 'reason')) ?>;
+const currentPurchaseStickers = <?= json_encode(array_map(fn($s) => [
+    'code' => $s['code'],
+    'product_name' => $s['display_title'],
+    'supply_item_id' => $s['supply_item_id'] ?? null,
+    'price' => (float)$s['unit_price'],
+    'supplier_name' => $s['supplier_name'],
+    'po_number' => $s['po_number'],
+    'is_damaged' => !empty($s['is_damaged']),
+    'is_inwarded' => !empty($s['is_inwarded']),
+], $stickers)) ?>;
+
+let supplyDamageList = [];
+let supplyDamageModalInstance = null;
+
+function getSupplyDamageModal() {
+    if (!supplyDamageModalInstance) {
+        const el = document.getElementById('supplyDamageModal');
+        if (el && typeof bootstrap !== 'undefined') {
+            supplyDamageModalInstance = new bootstrap.Modal(el);
+        }
+    }
+    return supplyDamageModalInstance;
+}
+
+function openSingleSupplyDamage(item) {
+    if (!canManageSupplies) {
+        alert('Action restricted: You do not have permission to report damage.');
+        return;
+    }
+    supplyDamageList = [{
+        code: item.code || item.qr_code,
+        productName: item.product_name,
+        supplyItemId: item.supply_item_id || null,
+        price: parseFloat(item.price) || 0,
+        supplierName: item.supplier_name || '',
+        poNumber: item.po_number || '',
+        damageReason: '',
+        photoInput: null,
+        photoPreviewUrl: null
+    }];
+    renderSupplyDamageList();
+    setSupplyDamageScanStatus('');
+    const modal = getSupplyDamageModal();
+    if (modal) modal.show();
+}
+
+function openBulkSupplyDamage() {
+    if (!canManageSupplies) {
+        alert('Action restricted: You do not have permission to report damage.');
+        return;
+    }
+
+    const checkedBoxes = Array.from(document.querySelectorAll('.supply-select-box:checked'));
+    const pendingSelectedBoxes = checkedBoxes.filter(cb => cb.dataset.damaged !== '1' && cb.dataset.inwarded !== '1');
+
+    if (pendingSelectedBoxes.length > 0) {
+        supplyDamageList = [];
+        pendingSelectedBoxes.forEach(cb => {
+            const code = cb.dataset.code;
+            const sticker = currentPurchaseStickers.find(s => s.code === code);
+            if (sticker) {
+                supplyDamageList.push({
+                    code: sticker.code,
+                    productName: sticker.product_name,
+                    supplyItemId: sticker.supply_item_id,
+                    price: parseFloat(sticker.price) || 0,
+                    supplierName: sticker.supplier_name || '',
+                    poNumber: sticker.po_number || '',
+                    damageReason: '',
+                    photoInput: null,
+                    photoPreviewUrl: null
+                });
+            }
+        });
+        renderSupplyDamageList();
+        setSupplyDamageScanStatus('Loaded ' + supplyDamageList.length + ' selected item(s). Set damage reasons and attach evidence photos.');
+    } else {
+        // If none checked or only already inwarded/damaged, open with empty list
+        supplyDamageList = [];
+        renderSupplyDamageList();
+        setSupplyDamageScanStatus('Scan an SP QR tag or hardware barcode above to add defective items.');
+    }
+
+    const modal = getSupplyDamageModal();
+    if (modal) modal.show();
+}
+
+function setSupplyDamageScanStatus(msg, isError = false) {
+    const el = document.getElementById('supplyDamageScanStatus');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = isError ? 'small mt-1 text-danger fw-semibold' : 'small mt-1 text-muted';
+}
+
+function scanSupplyDamageQr() {
+    const scanInput = document.getElementById('supplyDamageQrScan');
+    const scannedCode = scanInput ? scanInput.value.trim().toUpperCase().replace(/^#/, '') : '';
+    if (!scannedCode) return;
+
+    if (supplyDamageList.some(item => item.code === scannedCode)) {
+        setSupplyDamageScanStatus('QR label ' + scannedCode + ' is already in this damage list.', true);
+        if (scanInput) scanInput.select();
+        return;
+    }
+
+    // 1. Check if it's already in the current purchase stickers list
+    const foundLocal = currentPurchaseStickers.find(s => s.code === scannedCode);
+    if (foundLocal) {
+        if (foundLocal.is_damaged) {
+            setSupplyDamageScanStatus('QR label ' + scannedCode + ' has already been reported as damaged.', true);
+            return;
+        }
+        supplyDamageList.push({
+            code: foundLocal.code,
+            productName: foundLocal.product_name,
+            supplyItemId: foundLocal.supply_item_id,
+            price: parseFloat(foundLocal.price) || 0,
+            supplierName: foundLocal.supplier_name || '',
+            poNumber: foundLocal.po_number || '',
+            damageReason: '',
+            photoInput: null,
+            photoPreviewUrl: null
+        });
+        renderSupplyDamageList();
+        setSupplyDamageScanStatus('Added ' + foundLocal.code + ' (' + foundLocal.product_name + ')');
+        if (scanInput) scanInput.value = '';
+        return;
+    }
+
+    // 2. Fallback to API lookup for other supply tags or roll labels
+    setSupplyDamageScanStatus('Looking up QR label: ' + scannedCode + '…');
+    fetch('<?= url('api/production/damages/scan-roll') ?>?code=' + encodeURIComponent(scannedCode))
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                throw new Error(data.message || 'QR label not found.');
+            }
+            supplyDamageList.push({
+                code: data.code,
+                productName: data.roll_number || data.product_name || 'Garment Supply',
+                supplyItemId: data.supply_item_id || null,
+                price: parseFloat(data.price || data.loss || 0),
+                supplierName: data.seller_name || '',
+                poNumber: '',
+                damageReason: '',
+                photoInput: null,
+                photoPreviewUrl: null
+            });
+            renderSupplyDamageList();
+            setSupplyDamageScanStatus('Added ' + data.code + ' (' + (data.roll_number || data.code) + ')');
+            if (scanInput) scanInput.value = '';
+        })
+        .catch(err => {
+            setSupplyDamageScanStatus(err.message || 'Unable to scan this item.', true);
+        });
+}
+
+function removeSupplyDamageItem(index) {
+    if (supplyDamageList[index] && supplyDamageList[index].photoPreviewUrl) {
+        URL.revokeObjectURL(supplyDamageList[index].photoPreviewUrl);
+    }
+    supplyDamageList.splice(index, 1);
+    renderSupplyDamageList();
+}
+
+function renderSupplyDamageList() {
+    const container = document.getElementById('supplyDamageScannedLabels');
+    const countBadge = document.getElementById('supplyDamageScannedCount');
+    const inputsContainer = document.getElementById('supplyDamageQrInputs');
+    if (!container || !inputsContainer) return;
+
+    container.innerHTML = '';
+    inputsContainer.innerHTML = '';
+
+    if (countBadge) {
+        countBadge.textContent = supplyDamageList.length + ' item' + (supplyDamageList.length === 1 ? '' : 's');
+    }
+
+    if (supplyDamageList.length === 0) {
+        container.innerHTML = '<div class="list-group-item text-muted" id="supplyDamageScannedEmpty">No items selected or scanned yet.</div>';
+        updateSupplyDamageLossCalculations(0);
+        return;
+    }
+
+    let totalLoss = 0;
+
+    supplyDamageList.forEach((item, index) => {
+        totalLoss += (parseFloat(item.price) || 0);
+
+        const card = document.createElement('div');
+        card.className = 'list-group-item p-3 border mb-2 rounded bg-white shadow-xs';
+
+        // Header line
+        const header = document.createElement('div');
+        header.className = 'd-flex justify-content-between align-items-center mb-2 flex-wrap gap-1';
+
+        const titleDiv = document.createElement('div');
+        titleDiv.className = 'd-flex align-items-center gap-1.5 flex-wrap';
+
+        const codeBadge = document.createElement('span');
+        codeBadge.className = 'badge bg-dark font-monospace';
+        codeBadge.textContent = item.code;
+
+        const supplyBadge = document.createElement('span');
+        supplyBadge.className = 'badge bg-info-subtle text-info border';
+        supplyBadge.textContent = 'Supply';
+
+        const descSpan = document.createElement('span');
+        descSpan.className = 'fw-bold text-dark';
+        const metaParts = [item.supplierName, item.productName, '1 PCS', '₹' + item.price.toFixed(2)].filter(Boolean);
+        descSpan.textContent = metaParts.join(' • ');
+
+        titleDiv.append(codeBadge, supplyBadge, descSpan);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'btn btn-outline-danger btn-sm py-0 px-2 fw-semibold';
+        removeBtn.textContent = 'Remove';
+        removeBtn.onclick = () => removeSupplyDamageItem(index);
+
+        header.append(titleDiv, removeBtn);
+
+        // Fields row (Reason & Photo)
+        const fieldsRow = document.createElement('div');
+        fieldsRow.className = 'row g-2 mt-1';
+
+        // Reason column
+        const reasonCol = document.createElement('div');
+        reasonCol.className = 'col-md-6';
+        const reasonLabel = document.createElement('label');
+        reasonLabel.className = 'form-label small fw-semibold mb-1';
+        reasonLabel.innerHTML = 'Damage / Defect Reason <span class="text-danger">*</span>';
+
+        const reasonSelect = document.createElement('select');
+        reasonSelect.className = 'form-select form-select-sm';
+        reasonSelect.name = `damage_reasons[${index}]`;
+        reasonSelect.required = true;
+
+        const defOpt = document.createElement('option');
+        defOpt.value = '';
+        defOpt.textContent = '-- Select Reason --';
+        reasonSelect.appendChild(defOpt);
+
+        availableDamageReasons.forEach(r => {
+            const opt = document.createElement('option');
+            opt.value = r;
+            opt.textContent = r;
+            if (item.damageReason === r) opt.selected = true;
+            reasonSelect.appendChild(opt);
+        });
+
+        reasonSelect.onchange = () => {
+            item.damageReason = reasonSelect.value;
+        };
+
+        reasonCol.append(reasonLabel, reasonSelect);
+
+        // Photo column
+        const photoCol = document.createElement('div');
+        photoCol.className = 'col-md-6';
+        const photoLabel = document.createElement('label');
+        photoLabel.className = 'form-label small fw-semibold mb-1';
+        photoLabel.innerHTML = 'Defect Photo / Evidence <span class="text-danger">*</span>';
+
+        if (!item.photoInput) {
+            item.photoInput = document.createElement('input');
+            item.photoInput.type = 'file';
+            item.photoInput.accept = 'image/*,application/pdf';
+            item.photoInput.className = 'form-control form-control-sm';
+            item.photoInput.required = true;
+            item.photoInput.addEventListener('change', () => {
+                if (item.photoPreviewUrl) {
+                    URL.revokeObjectURL(item.photoPreviewUrl);
+                    item.photoPreviewUrl = null;
+                }
+                const file = item.photoInput.files && item.photoInput.files[0];
+                if (!file || !file.type.startsWith('image/')) {
+                    if (item.photoPreviewImage) item.photoPreviewImage.removeAttribute('src');
+                    if (item.photoPreviewContainer) item.photoPreviewContainer.classList.add('d-none');
+                    return;
+                }
+                item.photoPreviewUrl = URL.createObjectURL(file);
+                if (item.photoPreviewImage) item.photoPreviewImage.src = item.photoPreviewUrl;
+                if (item.photoPreviewContainer) item.photoPreviewContainer.classList.remove('d-none');
+            });
+        }
+        item.photoInput.name = `damage_photos[${index}]`;
+
+        const photoPreview = document.createElement('div');
+        photoPreview.className = `mt-1 ${item.photoPreviewUrl ? '' : 'd-none'}`;
+        const previewImage = document.createElement('img');
+        previewImage.className = 'rounded border bg-white p-1';
+        previewImage.style.cssText = 'display:block;max-width:100%;max-height:80px;object-fit:contain;';
+        if (item.photoPreviewUrl) previewImage.src = item.photoPreviewUrl;
+        photoPreview.appendChild(previewImage);
+        item.photoPreviewContainer = photoPreview;
+        item.photoPreviewImage = previewImage;
+
+        photoCol.append(photoLabel, item.photoInput, photoPreview);
+
+        fieldsRow.append(reasonCol, photoCol);
+        card.append(header, fieldsRow);
+        container.appendChild(card);
+
+        // Hidden input for QR code
+        const hiddenQr = document.createElement('input');
+        hiddenQr.type = 'hidden';
+        hiddenQr.name = `qr_codes[${index}]`;
+        hiddenQr.value = item.code;
+        inputsContainer.appendChild(hiddenQr);
+
+        // Hidden input for supply item id
+        const hiddenSupplyId = document.createElement('input');
+        hiddenSupplyId.type = 'hidden';
+        hiddenSupplyId.name = `damage_supply_item_ids[${index}]`;
+        hiddenSupplyId.value = item.supplyItemId || '';
+        inputsContainer.appendChild(hiddenSupplyId);
+    });
+
+    updateSupplyDamageLossCalculations(totalLoss);
+}
+
+function updateSupplyDamageLossCalculations(totalLoss) {
+    const lossInput = document.getElementById('supplyInputEstimatedLoss');
+    const help = document.getElementById('supplyLossCalcHelp');
+    if (lossInput) lossInput.value = totalLoss.toFixed(2);
+    if (help) {
+        help.textContent = `Estimated loss for ${supplyDamageList.length} item(s): ₹${totalLoss.toFixed(2)}`;
+    }
+}
 
 function toggleSelectAllSupplies(checked) {
     if (!canManageSupplies) return;
     document.querySelectorAll('.supply-select-box').forEach(cb => {
-        cb.checked = checked;
+        if (cb.dataset.damaged === '1') {
+            cb.checked = false;
+        } else {
+            cb.checked = checked;
+        }
     });
     updateSelectedCount();
 }
@@ -486,11 +984,12 @@ function updateSelectedCount() {
         const card = document.getElementById('card-' + cb.dataset.index);
         const code = cb.getAttribute('data-code');
         const isInwarded = cb.getAttribute('data-inwarded') === '1';
+        const isDamaged = cb.getAttribute('data-damaged') === '1';
 
         if (cb.checked) {
             totalCount++;
             if (card) card.classList.remove('d-print-none', 'unselected-supply');
-            if (!isInwarded && code) {
+            if (!isInwarded && !isDamaged && code) {
                 pendingSelectedCount++;
                 selectedPendingCodes.push(code);
             }

@@ -2187,22 +2187,25 @@ class ProductionController {
             return;
         }
 
-        $warehouseTag = Database::fetchOne(
-            "SELECT wq.qr_code, wq.inwarded_at, w.name as warehouse_name
-             FROM warehouse_qr_codes wq
-             LEFT JOIN warehouses w ON w.id = wq.warehouse_id
-             WHERE wq.qr_code = ? AND wq.inwarded_at IS NOT NULL
-             LIMIT 1",
-            [$scanCode]
-        );
-        if ($warehouseTag) {
-            $whName = $warehouseTag['warehouse_name'] ?: 'Warehouse';
-            Response::json([
-                'success' => false,
-                'is_outwarded' => true,
-                'message' => "QR label {$scanCode} is already located in {$whName}. Items already in the warehouse cannot be reported as production damage!",
-            ], 409);
-            return;
+        $isProductionSupplyTag = (bool)preg_match('/^SP(\d{2})(\d{2})(\d{2,})$/i', $scanCode);
+        if (!$isProductionSupplyTag) {
+            $warehouseTag = Database::fetchOne(
+                "SELECT wq.qr_code, wq.inwarded_at, w.name as warehouse_name
+                 FROM warehouse_qr_codes wq
+                 LEFT JOIN warehouses w ON w.id = wq.warehouse_id
+                 WHERE wq.qr_code = ? AND wq.inwarded_at IS NOT NULL
+                 LIMIT 1",
+                [$scanCode]
+            );
+            if ($warehouseTag) {
+                $whName = $warehouseTag['warehouse_name'] ?: 'Warehouse';
+                Response::json([
+                    'success' => false,
+                    'is_outwarded' => true,
+                    'message' => "QR label {$scanCode} is already located in {$whName}. Items already in the warehouse cannot be reported as production damage!",
+                ], 409);
+                return;
+            }
         }
 
         // 4. Check if piece has already been billed / sold
@@ -2361,7 +2364,25 @@ class ProductionController {
             }
         }
 
-        // 3. Check Warehouse QR Codes
+        // 3. Check Production Garment Supplies (SP tags from production purchases) FIRST
+        if (!$prodItem && $isProductionSupplyTag) {
+            $supplyItemId = max(0, (int)($_GET['supply_item_id'] ?? 0));
+            $labelLookup = $this->resolveDamageLabelCode($scanCode, $supplyItemId ?: null);
+            if ($labelLookup['status'] === 'ambiguous') {
+                Response::json([
+                    'success' => true,
+                    'needs_supply_selection' => true,
+                    'code' => $scanCode,
+                    'candidates' => $labelLookup['candidates'],
+                ]);
+                return;
+            }
+            if ($labelLookup['status'] === 'found') {
+                $prodItem = $labelLookup['item'];
+            }
+        }
+
+        // 4. Check Warehouse QR Codes
         if (!$prodItem) {
             $whQr = Database::fetchOne(
                 "SELECT wq.*,
@@ -2382,7 +2403,7 @@ class ProductionController {
             }
         }
 
-        // 4. Check Product Variants by SKU or QR
+        // 5. Check Other Supply / Variant Labels
         if (!$prodItem) {
             $supplyItemId = max(0, (int)($_GET['supply_item_id'] ?? 0));
             $labelLookup = $this->resolveDamageLabelCode($scanCode, $supplyItemId ?: null);
@@ -2463,7 +2484,7 @@ class ProductionController {
                 'purchase_number' => $prodItem['purchase_number'] ?? null,
                 'size' => $sizeStr,
                 'color' => $colorStr,
-                'seller_id' => null,
+                'seller_id' => !empty($prodItem['seller_id']) ? (int)$prodItem['seller_id'] : null,
                 'seller_name' => $isSupply ? ($prodItem['supplier_name'] ?: 'Purchased Supply') : 'Own Production',
                 'roll_id' => null,
                 'roll_number' => $rollDesc,
@@ -2549,7 +2570,8 @@ class ProductionController {
         $sequence = (int)$codeParts[3];
         $supplySql =
             "SELECT ppi.id, ppi.purchase_id, ppi.item_name, ppi.quantity, ppi.unit,
-                    ppi.weight_kg, ppi.unit_price, ppi.total_price,
+                    ppi.weight_kg, ppi.unit_price, ppi.total_price, ppi.hsn_code,
+                    ppi.product_id, ppi.variant_id, pp.seller_id,
                     pp.purchase_number, s.name AS supplier_name, s.company AS supplier_company
              FROM production_purchase_items ppi
              JOIN production_purchases pp ON pp.id = ppi.purchase_id
@@ -2620,12 +2642,19 @@ class ProductionController {
             || $quantity <= 1
             || $quantity > 100;
         $unit = trim((string)$supply['unit']);
-        $supply['product_id'] = null;
-        $supply['variant_id'] = null;
+        $supply['product_id'] = !empty($supply['product_id']) ? (int)$supply['product_id'] : null;
+        $supply['variant_id'] = !empty($supply['variant_id']) ? (int)$supply['variant_id'] : null;
+        $supply['seller_id'] = !empty($supply['seller_id']) ? (int)$supply['seller_id'] : null;
         $supply['product_name'] = $supply['item_name'];
         $supply['supplier_name'] = $supply['supplier_company'] ?: $supply['supplier_name'];
         $supply['sku'] = $supply['purchase_number'] . '-ITEM-' . $supply['id'];
         $supply['_damage_supply'] = true;
+
+        $pieceCount = (!$isPackage && $isWholeQuantity && $wholeQuantity > 1 && $wholeQuantity <= 100) ? $wholeQuantity : 1;
+        $pieceNum = $pieceCount > 1 ? min($pieceCount, max(1, $sequence)) : 1;
+        $supply['display_title'] = $isPackage ? $supply['item_name'] : ($supply['item_name'] . ($pieceCount > 1 ? " ({$pieceNum}/{$pieceCount})" : ' (1/1)'));
+        $supply['hsn_code'] = !empty($supply['hsn_code']) ? $supply['hsn_code'] : '—';
+
         $supply['damage_quantity_label'] = $isPackage
             ? rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.') . ' ' . $unit
             : '1 ' . $unit;
@@ -3706,6 +3735,19 @@ class ProductionController {
                     );
                 }
 
+                // Check Production Garment Supplies (SP tags from production purchases) FIRST
+                if (!$prodItem && preg_match('/^SP(\d{2})(\d{2})(\d{2,})$/i', $qrCode)) {
+                    $labelLookup = $this->resolveDamageLabelCode($qrCode, $qrEntry['supply_item_id'] ?: null);
+                    if ($labelLookup['status'] === 'ambiguous') {
+                        Session::flash('error', "QR code {$qrCode} matches multiple Other Garment Supplies labels. The code is not unique, so damage was not saved.");
+                        Response::back();
+                        return;
+                    }
+                    if ($labelLookup['status'] === 'found') {
+                        $prodItem = $labelLookup['item'];
+                    }
+                }
+
                 if (!$prodItem) {
                     $prodItem = Database::fetchOne(
                         "SELECT wq.*, p.id as product_id, p.name as product_name, pv.id as variant_id, pv.sku, pv.mrp, pv.selling_price, pv.production_cost, pv.weight as variant_weight,
@@ -3775,7 +3817,7 @@ class ProductionController {
                     'item_type' => 'PRODUCT',
                     'qr_code' => $qrCode,
                     'scan_index' => $qrEntry['scan_index'],
-                    'seller_id' => null,
+                    'seller_id' => !empty($prodItem['seller_id']) ? (int)$prodItem['seller_id'] : null,
                     'seller_roll_id' => null,
                     'product_id' => !empty($prodItem['product_id']) ? (int)$prodItem['product_id'] : null,
                     'variant_id' => !empty($prodItem['variant_id']) ? (int)$prodItem['variant_id'] : null,
@@ -4510,29 +4552,63 @@ class ProductionController {
             Database::execute("UPDATE production_purchases SET purchase_number = ? WHERE id = ?", [$purchaseNumber, $purchaseId]);
         }
 
+        $taxInputType = strtoupper(trim((string)($_POST['replacement_tax_mode'] ?? ($_POST['replacement_tax_input_type'] ?? 'PERCENT'))));
+        if (!in_array($taxInputType, ['PERCENT', 'AMOUNT'], true)) {
+            $taxInputType = 'PERCENT';
+        }
+
         $taxRate = 0.0;
-        if ($gstType !== 'EXEMPTED' && $hsnCode !== '') {
-            $hsnRow = Database::fetchOne("SELECT gst_rate FROM hsn_codes WHERE hsn_code = ?", [$hsnCode]);
-            if ($hsnRow) {
-                $taxRate = (float)$hsnRow['gst_rate'];
+        if ($gstType !== 'EXEMPTED') {
+            if (isset($_POST['replacement_tax_value']) && $_POST['replacement_tax_value'] !== '') {
+                $taxRate = max(0.0, (float)$_POST['replacement_tax_value']);
+            } elseif ($hsnCode !== '') {
+                $hsnRow = Database::fetchOne("SELECT gst_rate FROM hsn_codes WHERE hsn_code = ?", [$hsnCode]);
+                if ($hsnRow) {
+                    $taxRate = (float)$hsnRow['gst_rate'];
+                }
             }
         }
-        $taxAmount = round($price * ($taxRate / 100), 2);
-        $sgstAmount = in_array($gstType, ['SGST', 'BOTH'], true)
-            ? round($taxAmount / ($gstType === 'BOTH' ? 2 : 1), 2)
-            : 0.0;
-        $cgstAmount = in_array($gstType, ['CGST', 'BOTH'], true)
-            ? round($taxAmount / ($gstType === 'BOTH' ? 2 : 1), 2)
-            : 0.0;
-        $igstAmount = $gstType === 'IGST' ? $taxAmount : 0.0;
+
+        $cgstRate = isset($_POST['replacement_cgst_value']) && $_POST['replacement_cgst_value'] !== ''
+            ? max(0.0, (float)$_POST['replacement_cgst_value'])
+            : ($gstType === 'BOTH' ? ($taxInputType === 'PERCENT' ? $taxRate : $taxRate / 2) : 0.0);
+
+        if ($taxInputType === 'AMOUNT') {
+            if ($gstType === 'BOTH') {
+                $sgstAmount = round($taxRate, 2);
+                $cgstAmount = round($cgstRate, 2);
+                $igstAmount = 0.0;
+                $taxAmount = $sgstAmount + $cgstAmount;
+            } else {
+                $taxAmount = round($taxRate, 2);
+                $sgstAmount = $gstType === 'SGST' ? $taxAmount : 0.0;
+                $cgstAmount = $gstType === 'CGST' ? $taxAmount : 0.0;
+                $igstAmount = $gstType === 'IGST' ? $taxAmount : 0.0;
+            }
+            $sgstValue = $sgstAmount;
+            $cgstValue = $cgstAmount;
+            $igstValue = $igstAmount;
+        } else {
+            if ($gstType === 'BOTH') {
+                $sgstValue = $taxRate;
+                $cgstValue = $cgstRate > 0 ? $cgstRate : $taxRate;
+                $sgstAmount = round($price * ($sgstValue / 100), 2);
+                $cgstAmount = round($price * ($cgstValue / 100), 2);
+                $igstAmount = 0.0;
+                $taxAmount = $sgstAmount + $cgstAmount;
+                $igstValue = 0.0;
+            } else {
+                $taxAmount = round($price * ($taxRate / 100), 2);
+                $sgstAmount = $gstType === 'SGST' ? $taxAmount : 0.0;
+                $cgstAmount = $gstType === 'CGST' ? $taxAmount : 0.0;
+                $igstAmount = $gstType === 'IGST' ? $taxAmount : 0.0;
+                $sgstValue = $gstType === 'SGST' ? $taxRate : 0.0;
+                $cgstValue = $gstType === 'CGST' ? $taxRate : 0.0;
+                $igstValue = $gstType === 'IGST' ? $taxRate : 0.0;
+            }
+        }
         $totalPrice = $price + $sgstAmount + $cgstAmount + $igstAmount;
-        $sgstValue = in_array($gstType, ['SGST', 'BOTH'], true)
-            ? ($gstType === 'BOTH' ? $taxRate / 2 : $taxRate)
-            : 0.0;
-        $cgstValue = in_array($gstType, ['CGST', 'BOTH'], true)
-            ? ($gstType === 'BOTH' ? $taxRate / 2 : $taxRate)
-            : 0.0;
-        $igstValue = $gstType === 'IGST' ? $taxRate : 0.0;
+
         $itemName = $materialType !== '' ? $materialType : 'STANDARD FABRIC';
         $hasItemHsn = (bool)Database::fetchOne("SHOW COLUMNS FROM production_purchase_items LIKE 'hsn_code'");
 
@@ -4558,7 +4634,7 @@ class ProductionController {
                 'design_name = ?',
                 'design_count = ?',
             ];
-            $itemParams = ['FABRIC_ROLL', $itemName, $quantity, 'PCS', $weight, $price, $totalPrice, $gstType, 'PERCENT',
+            $itemParams = ['FABRIC_ROLL', $itemName, $quantity, 'PCS', $weight, $price, $totalPrice, $gstType, $taxInputType,
                 $sgstValue, $cgstValue, $igstValue, $sgstAmount, $cgstAmount, $igstAmount, $rollNumber, $color, $designName, $designCount];
             if ($hasItemHsn) {
                 $itemAssignments[] = 'hsn_code = ?';
@@ -4578,8 +4654,8 @@ class ProductionController {
                     (purchase_id, item_type, item_name, quantity, unit, weight_kg, unit_price, total_price,
                      gst_type, tax_input_type, sgst_value, cgst_value, igst_value, sgst_amount, cgst_amount, igst_amount,
                      roll_number, color, design_name, design_count, hsn_code, seller_roll_id)
-                 VALUES (?, 'FABRIC_ROLL', ?, ?, 'PCS', ?, ?, ?, ?, 'PERCENT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [$purchaseId, $itemName, $quantity, $weight, $price, $totalPrice, $gstType, $sgstValue, $cgstValue, $igstValue,
+                 VALUES (?, 'FABRIC_ROLL', ?, ?, 'PCS', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [$purchaseId, $itemName, $quantity, $weight, $price, $totalPrice, $gstType, $taxInputType, $sgstValue, $cgstValue, $igstValue,
                     $sgstAmount, $cgstAmount, $igstAmount, $rollNumber, $color, $designName, $designCount,
                     $hsnCode !== '' ? $hsnCode : null, $replacementRollId]
             );
@@ -4589,8 +4665,8 @@ class ProductionController {
                     (purchase_id, item_type, item_name, quantity, unit, weight_kg, unit_price, total_price,
                      gst_type, tax_input_type, sgst_value, cgst_value, igst_value, sgst_amount, cgst_amount, igst_amount,
                      roll_number, color, design_name, design_count, seller_roll_id)
-                 VALUES (?, 'FABRIC_ROLL', ?, ?, 'PCS', ?, ?, ?, ?, 'PERCENT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [$purchaseId, $itemName, $quantity, $weight, $price, $totalPrice, $gstType, $sgstValue, $cgstValue, $igstValue,
+                 VALUES (?, 'FABRIC_ROLL', ?, ?, 'PCS', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [$purchaseId, $itemName, $quantity, $weight, $price, $totalPrice, $gstType, $taxInputType, $sgstValue, $cgstValue, $igstValue,
                     $sgstAmount, $cgstAmount, $igstAmount, $rollNumber, $color, $designName, $designCount, $replacementRollId]
             );
         }
@@ -5724,62 +5800,76 @@ class ProductionController {
         }
     }
 
+    private function resolveProductionAttributeScope(int $categoryId, ?int $subcategoryId, ?int $subSubcategoryId): ?array {
+        if ($categoryId <= 0 || !Database::fetchOne("SELECT id FROM categories WHERE id = ?", [$categoryId])) {
+            return null;
+        }
+        if ($subcategoryId !== null && !Database::fetchOne(
+            "SELECT id FROM subcategories WHERE id = ? AND category_id = ?",
+            [$subcategoryId, $categoryId]
+        )) {
+            return null;
+        }
+        if ($subSubcategoryId !== null && (
+            $subcategoryId === null
+            || !Database::fetchOne(
+                "SELECT id FROM sub_subcategories WHERE id = ? AND subcategory_id = ?",
+                [$subSubcategoryId, $subcategoryId]
+            )
+        )) {
+            return null;
+        }
+
+        return [
+            'category_id' => $categoryId,
+            'subcategory_id' => $subcategoryId,
+            'sub_subcategory_id' => $subSubcategoryId,
+        ];
+    }
+
+    private function findProductionCategoryAttribute(int $attributeId, string $attributeName, ?array $scope = null): ?array {
+        if ($attributeId > 0) {
+            return Database::fetchOne("SELECT * FROM production_category_attributes WHERE id = ?", [$attributeId]);
+        }
+        if ($scope === null) {
+            return null;
+        }
+
+        return Database::fetchOne(
+            "SELECT * FROM production_category_attributes
+             WHERE category_id = ?
+               AND COALESCE(subcategory_id, 0) = ?
+               AND COALESCE(sub_subcategory_id, 0) = ?
+               AND attr_name = ?
+             ORDER BY id DESC LIMIT 1",
+            [
+                $scope['category_id'],
+                $scope['subcategory_id'] ?? 0,
+                $scope['sub_subcategory_id'] ?? 0,
+                $attributeName,
+            ]
+        );
+    }
+
     /**
-     * AJAX: Get category attributes for dynamic catalog hierarchy specifications.
-     * Matches exact hierarchy with multi-level scoping and cross-catalog synchronization.
+     * AJAX: Get production-only category attributes for dynamic program specifications.
      */
     public function ajaxGetCategoryAttributes(int $categoryId): void {
         try {
             $subcategoryId = !empty($_GET['subcategory_id']) ? (int)$_GET['subcategory_id'] : null;
             $subSubcategoryId = !empty($_GET['sub_subcategory_id']) ? (int)$_GET['sub_subcategory_id'] : null;
-
-            // 1. Resolve Category IDs across both `categories` and `warehouse_categories` by name and ID
-            $allCatIds = [$categoryId];
-            $catRow = Database::fetchOne("SELECT name FROM categories WHERE id = ?", [$categoryId]);
-            if (!$catRow) {
-                $catRow = Database::fetchOne("SELECT name FROM warehouse_categories WHERE id = ?", [$categoryId]);
-            }
-            if ($catRow && !empty($catRow['name'])) {
-                $catName = trim($catRow['name']);
-                $cIds = Database::fetchAll("SELECT id FROM categories WHERE LOWER(TRIM(name)) = LOWER(?)", [$catName]);
-                $wcIds = Database::fetchAll("SELECT id FROM warehouse_categories WHERE LOWER(TRIM(name)) = LOWER(?)", [$catName]);
-                $allCatIds = array_values(array_unique(array_filter(array_merge($allCatIds, array_column($cIds, 'id'), array_column($wcIds, 'id')))));
+            $scope = $this->resolveProductionAttributeScope($categoryId, $subcategoryId, $subSubcategoryId);
+            if ($scope === null) {
+                Response::json(['success' => false, 'message' => 'Invalid production category hierarchy.'], 404);
+                return;
             }
 
-            // 2. Resolve Subcategory IDs across both `subcategories` and `warehouse_subcategories`
             $allSubcatIds = $subcategoryId ? [$subcategoryId] : [];
-            if ($subcategoryId) {
-                $subcatRow = Database::fetchOne("SELECT name FROM subcategories WHERE id = ?", [$subcategoryId]);
-                if (!$subcatRow) {
-                    $subcatRow = Database::fetchOne("SELECT name FROM warehouse_subcategories WHERE id = ?", [$subcategoryId]);
-                }
-                if ($subcatRow && !empty($subcatRow['name'])) {
-                    $subName = trim($subcatRow['name']);
-                    $sIds = Database::fetchAll("SELECT id FROM subcategories WHERE LOWER(TRIM(name)) = LOWER(?)", [$subName]);
-                    $wsIds = Database::fetchAll("SELECT id FROM warehouse_subcategories WHERE LOWER(TRIM(name)) = LOWER(?)", [$subName]);
-                    $allSubcatIds = array_values(array_unique(array_filter(array_merge($allSubcatIds, array_column($sIds, 'id'), array_column($wsIds, 'id')))));
-                }
-            }
-
-            // 3. Resolve Sub-Subcategory IDs across both `sub_subcategories` and `warehouse_sub_subcategories`
             $allSubSubcatIds = $subSubcategoryId ? [$subSubcategoryId] : [];
-            if ($subSubcategoryId) {
-                $subSubRow = Database::fetchOne("SELECT name FROM sub_subcategories WHERE id = ?", [$subSubcategoryId]);
-                if (!$subSubRow) {
-                    $subSubRow = Database::fetchOne("SELECT name FROM warehouse_sub_subcategories WHERE id = ?", [$subSubcategoryId]);
-                }
-                if ($subSubRow && !empty($subSubRow['name'])) {
-                    $sscName = trim($subSubRow['name']);
-                    $ssIds = Database::fetchAll("SELECT id FROM sub_subcategories WHERE LOWER(TRIM(name)) = LOWER(?)", [$sscName]);
-                    $wssIds = Database::fetchAll("SELECT id FROM warehouse_sub_subcategories WHERE LOWER(TRIM(name)) = LOWER(?)", [$sscName]);
-                    $allSubSubcatIds = array_values(array_unique(array_filter(array_merge($allSubSubcatIds, array_column($ssIds, 'id'), array_column($wssIds, 'id')))));
-                }
-            }
-
-            // 4. Query matching attributes from `wh_category_attributes`
-            $catPlaceholders = implode(',', array_fill(0, count($allCatIds), '?'));
-            $sql = "SELECT * FROM wh_category_attributes WHERE category_id IN ($catPlaceholders) AND is_active = 1";
-            $rawAttributes = Database::fetchAll($sql, array_values($allCatIds));
+            $rawAttributes = Database::fetchAll(
+                "SELECT * FROM production_category_attributes WHERE category_id = ? AND is_active = 1",
+                [$categoryId]
+            );
 
             // Hierarchy matching & override logic:
             // Level 1: Category root (subcategory_id is NULL or 0)
@@ -5823,7 +5913,7 @@ class ProductionController {
                 }
             }
 
-            // 5. Query matching product style(s) and their variants from catalog (products & product_variants)
+            // Use production catalog styles only; warehouse catalog attributes are stored separately.
             $catalogSizes = [];
             $catalogColors = [];
 
@@ -5842,11 +5932,10 @@ class ProductionController {
                     array_values($allSubcatIds)
                 );
             }
-            if (empty($matchingProducts) && !empty($allCatIds)) {
-                $cPlaceholders = implode(',', array_fill(0, count($allCatIds), '?'));
+            if (empty($matchingProducts)) {
                 $matchingProducts = Database::fetchAll(
-                    "SELECT id, name, code FROM products WHERE category_id IN ($cPlaceholders) AND is_active = 1 ORDER BY id DESC",
-                    array_values($allCatIds)
+                    "SELECT id, name, code FROM products WHERE category_id = ? AND is_active = 1 ORDER BY id DESC",
+                    [$categoryId]
                 );
             }
 
@@ -5929,7 +6018,7 @@ class ProductionController {
                 $finalAttributes[] = $attr;
             }
 
-            // If no SIZE attribute was defined in wh_category_attributes, provide it dynamically
+            // If no production SIZE attribute was defined, provide it dynamically.
             if (!$hasSizeAttr) {
                 $sizeOptions = !empty($catalogSizes) ? $catalogSizes : $defaultSizeCodes;
                 $finalAttributes[] = [
@@ -5978,12 +6067,39 @@ class ProductionController {
                 return;
             }
 
-            $attr = null;
-            if ($attrId > 0) {
-                $attr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE id = ?", [$attrId]);
-            }
-            if (!$attr && !empty($attrName)) {
-                $attr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE attr_name = ? ORDER BY id DESC LIMIT 1", [$attrName]);
+            $scope = $this->resolveProductionAttributeScope(
+                (int)($_POST['category_id'] ?? 0),
+                !empty($_POST['subcategory_id']) ? (int)$_POST['subcategory_id'] : null,
+                !empty($_POST['sub_subcategory_id']) ? (int)$_POST['sub_subcategory_id'] : null
+            );
+            $attr = $this->findProductionCategoryAttribute($attrId, $attrName, $scope);
+            if (!$attr && $attrId <= 0 && $scope !== null && $attrName !== '') {
+                $currentOptions = array_values(array_filter(
+                    array_map('trim', explode(',', (string)($_POST['current_options'] ?? ''))),
+                    fn($value) => $value !== ''
+                ));
+                $currentOptions = array_values(array_unique(array_map('mb_strtoupper', $currentOptions)));
+                $sortOrder = (int)(Database::fetchOne(
+                    "SELECT MAX(sort_order) AS max_sort FROM production_category_attributes WHERE category_id = ?",
+                    [$scope['category_id']]
+                )['max_sort'] ?? 0) + 1;
+                Database::execute(
+                    "INSERT INTO production_category_attributes
+                        (category_id, subcategory_id, sub_subcategory_id, attr_name, attr_type, attr_options, sort_order, is_active, created_at)
+                     VALUES (?, ?, ?, ?, 'MULTI_SELECT', ?, ?, 1, NOW())",
+                    [
+                        $scope['category_id'],
+                        $scope['subcategory_id'],
+                        $scope['sub_subcategory_id'],
+                        $attrName,
+                        implode(',', $currentOptions),
+                        $sortOrder,
+                    ]
+                );
+                $attr = Database::fetchOne(
+                    "SELECT * FROM production_category_attributes WHERE id = ?",
+                    [(int)Database::lastInsertId()]
+                );
             }
 
             if (!$attr) {
@@ -6009,7 +6125,7 @@ class ProductionController {
             }
 
             $updatedOptsStr = implode(',', $currentOpts);
-            Database::execute("UPDATE wh_category_attributes SET attr_options = ?, attr_type = 'MULTI_SELECT', updated_at = NOW() WHERE id = ?", [$updatedOptsStr, $attr['id']]);
+            Database::execute("UPDATE production_category_attributes SET attr_options = ?, attr_type = 'MULTI_SELECT', updated_at = NOW() WHERE id = ?", [$updatedOptsStr, $attr['id']]);
 
             // If attribute is SIZE, also add each added option to sizes table if not present
             if ($attr['attr_name'] === 'SIZE') {
@@ -6023,6 +6139,7 @@ class ProductionController {
 
             Response::json([
                 'success'     => true,
+                'attribute_id' => (int)$attr['id'],
                 'new_options' => $addedOpts,
                 'all_options' => $currentOpts
             ]);
@@ -6050,13 +6167,12 @@ class ProductionController {
                 return;
             }
 
-            $attr = null;
-            if ($attrId > 0) {
-                $attr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE id = ?", [$attrId]);
-            }
-            if (!$attr && !empty($attrName)) {
-                $attr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE attr_name = ? ORDER BY id DESC LIMIT 1", [$attrName]);
-            }
+            $scope = $this->resolveProductionAttributeScope(
+                (int)($_POST['category_id'] ?? 0),
+                !empty($_POST['subcategory_id']) ? (int)$_POST['subcategory_id'] : null,
+                !empty($_POST['sub_subcategory_id']) ? (int)$_POST['sub_subcategory_id'] : null
+            );
+            $attr = $this->findProductionCategoryAttribute($attrId, $attrName, $scope);
 
             if (!$attr) {
                 Response::json(['success' => false, 'message' => 'Attribute not found.'], 404);
@@ -6067,7 +6183,7 @@ class ProductionController {
             $filteredOpts = array_filter($currentOpts, fn($v) => mb_strtoupper(trim($v)) !== $optionToDelete);
             $updatedOptsStr = implode(',', $filteredOpts);
 
-            Database::execute("UPDATE wh_category_attributes SET attr_options = ?, updated_at = NOW() WHERE id = ?", [$updatedOptsStr, $attr['id']]);
+            Database::execute("UPDATE production_category_attributes SET attr_options = ?, updated_at = NOW() WHERE id = ?", [$updatedOptsStr, $attr['id']]);
 
             Response::json(['success' => true]);
         } catch (\Throwable $e) {
@@ -6100,6 +6216,13 @@ class ProductionController {
                 Response::json(['success' => false, 'message' => 'Please select a Main Category first.'], 400);
                 return;
             }
+            $scope = $this->resolveProductionAttributeScope($categoryId, $subcategoryId, $subSubcategoryId);
+            if ($scope === null) {
+                Response::json(['success' => false, 'message' => 'Invalid production category hierarchy.'], 400);
+                return;
+            }
+            $subcategoryId = $scope['subcategory_id'];
+            $subSubcategoryId = $scope['sub_subcategory_id'];
             if (empty($attrName)) {
                 Response::json(['success' => false, 'message' => 'Attribute Name is required.'], 400);
                 return;
@@ -6118,36 +6241,38 @@ class ProductionController {
                 $formattedOptions = implode(',', $opts);
             }
 
-            // Check if attribute with same name already exists for this scope
-            $existingSql = "SELECT id FROM wh_category_attributes WHERE category_id = ? AND attr_name = ?";
+            // Check if attribute with the same name already exists for this exact hierarchy scope.
+            // This prevents ghost duplicates while still allowing a parent-level attribute to be reused at a more specific level.
+            $existingSql = "SELECT id FROM production_category_attributes WHERE category_id = ? AND attr_name = ? AND is_active = 1";
             $existingParams = [$categoryId, $attrName];
             if ($subSubcategoryId) {
-                $existingSql .= " AND sub_subcategory_id = ?";
+                $existingSql .= " AND COALESCE(subcategory_id, 0) = ? AND COALESCE(sub_subcategory_id, 0) = ?";
+                $existingParams[] = $subcategoryId ?: 0;
                 $existingParams[] = $subSubcategoryId;
             } elseif ($subcategoryId) {
-                $existingSql .= " AND subcategory_id = ? AND (sub_subcategory_id IS NULL OR sub_subcategory_id = 0)";
+                $existingSql .= " AND subcategory_id = ? AND COALESCE(sub_subcategory_id, 0) = 0";
                 $existingParams[] = $subcategoryId;
             } else {
-                $existingSql .= " AND (subcategory_id IS NULL OR subcategory_id = 0) AND (sub_subcategory_id IS NULL OR sub_subcategory_id = 0)";
+                $existingSql .= " AND COALESCE(subcategory_id, 0) = 0 AND COALESCE(sub_subcategory_id, 0) = 0";
             }
             $existing = Database::fetchOne($existingSql, $existingParams);
             if ($existing) {
                 Database::execute(
-                    "UPDATE wh_category_attributes SET attr_type = ?, attr_options = ?, is_required = ?, is_active = 1, updated_at = NOW() WHERE id = ?",
+                    "UPDATE production_category_attributes SET attr_type = ?, attr_options = ?, is_required = ?, is_active = 1, updated_at = NOW() WHERE id = ?",
                     [$attrType, $formattedOptions, $isRequired, $existing['id']]
                 );
                 $attrId = (int)$existing['id'];
             } else {
-                $maxSort = (int)(Database::fetchOne("SELECT MAX(sort_order) as m FROM wh_category_attributes WHERE category_id = ?", [$categoryId])['m'] ?? 0);
+                $maxSort = (int)(Database::fetchOne("SELECT MAX(sort_order) as m FROM production_category_attributes WHERE category_id = ?", [$categoryId])['m'] ?? 0);
                 Database::execute(
-                    "INSERT INTO wh_category_attributes (category_id, subcategory_id, sub_subcategory_id, attr_name, attr_type, attr_options, is_required, sort_order, is_active, created_at)
+                    "INSERT INTO production_category_attributes (category_id, subcategory_id, sub_subcategory_id, attr_name, attr_type, attr_options, is_required, sort_order, is_active, created_at)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())",
                     [$categoryId, $subcategoryId, $subSubcategoryId, $attrName, $attrType, $formattedOptions, $isRequired, $maxSort + 1]
                 );
                 $attrId = (int)Database::lastInsertId();
             }
 
-            $savedAttr = Database::fetchOne("SELECT * FROM wh_category_attributes WHERE id = ?", [$attrId]);
+            $savedAttr = Database::fetchOne("SELECT * FROM production_category_attributes WHERE id = ?", [$attrId]);
             Response::json([
                 'success'   => true,
                 'message'   => "Attribute '{$attrName}' saved successfully.",
@@ -11659,9 +11784,21 @@ class ProductionController {
         // Generate email if not given
         $email = $username . '@grm.local';
 
-        // Find appropriate role (QC or Production Staff)
-        $role = Database::fetchOne("SELECT id FROM roles WHERE slug IN ('qc', 'qc-inspector', 'production-staff') OR name LIKE '%QC%' OR name LIKE '%Production Staff%' ORDER BY id ASC LIMIT 1");
-        $roleId = $role ? (int)$role['id'] : 4;
+        // Find appropriate role (QC or Production Staff, or fallback to any valid role in roles table)
+        $role = Database::fetchOne("SELECT id FROM roles WHERE slug IN ('qc', 'qc-inspector', 'production-staff', 'operator', 'staff', 'production-manager') OR name LIKE '%QC%' OR name LIKE '%Inspector%' OR name LIKE '%Production%' OR name LIKE '%Staff%' ORDER BY id ASC LIMIT 1");
+        if (!$role) {
+            $role = Database::fetchOne("SELECT id FROM roles ORDER BY (CASE WHEN id != 1 THEN 0 ELSE 1 END), id ASC LIMIT 1");
+        }
+
+        if (!$role) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'System configuration error: No user roles found in the database. Please configure roles first.'
+            ]);
+            return;
+        }
+
+        $roleId = (int)$role['id'];
 
         $passwordHash = password_hash('grm@123', PASSWORD_BCRYPT);
 
@@ -15323,41 +15460,96 @@ class ProductionController {
         $qrCodeVal = !empty($damage['qr_code']) ? $damage['qr_code'] : (!empty($damage['roll_number']) ? $damage['roll_number'] : ('DMG-' . ($damage['damage_number'] ?? $damage['id'])));
         $prodDisplayName = !empty($damage['product_name']) ? $damage['product_name'] : ($damage['catalog_product_name'] ?: 'Garment Product');
 
-        $this->renderProductionRecord(
-            'Damage Record ' . ($damage['damage_number'] ?? ('#' . $damage['id'])),
-            'damages',
-            'Damages',
-            url('production/damages'),
-            [
+        $isSupply = (bool)preg_match('/^SP(\d{2})(\d{2})(\d{2,})$/i', (string)$qrCodeVal);
+        $supplyInfo = null;
+        if ($isSupply) {
+            $supplyLookup = $this->resolveDamageLabelCode($qrCodeVal);
+            if ($supplyLookup['status'] === 'found') {
+                $supplyInfo = $supplyLookup['item'];
+            }
+        }
+
+        if ($isSupply) {
+            $supplierName = !empty($supplyInfo['supplier_name']) ? $supplyInfo['supplier_name'] : ($damage['seller_company'] ?: ($damage['seller_name'] ?? 'Direct Supplier'));
+            $itemDisplayTitle = !empty($supplyInfo['display_title']) ? $supplyInfo['display_title'] : ($damage['product_name'] ?: 'Garment Supply');
+            $poNumber = !empty($supplyInfo['purchase_number']) ? $supplyInfo['purchase_number'] : '—';
+            $hsnCode = !empty($supplyInfo['hsn_code']) ? $supplyInfo['hsn_code'] : '—';
+            $unitPrice = (float)(!empty($supplyInfo['unit_price']) ? $supplyInfo['unit_price'] : ($damage['loss_amount'] ?? 0));
+
+            $fields = [
+                'Item Type'         => 'Garment Supply Item',
+                'Supplier / Vendor' => $supplierName,
+                'Supply Item'       => $itemDisplayTitle,
+                'Scanned QR Label'  => $qrCodeVal,
+                'Purchase PO #'     => $poNumber,
+                'HSN Code'          => $hsnCode,
+                'Unit Price'        => '₹ ' . number_format($unitPrice, 2),
+                'Damaged Quantity'  => number_format((int)($damage['damaged_quantity'] ?? 1)) . ' piece',
+                'Loss Amount'       => '₹ ' . number_format((float)($damage['loss_amount'] ?? $unitPrice), 2),
+                'Defect Reason'     => $damage['damage_reason'] ?? '—',
+                'Defect Notes'      => $damage['defect_notes'] ?? '—',
+                'Status'            => $damage['status'] ?? '—',
+                'Resolution'        => $damage['resolution_type'] ?? '—',
+                'Debit Note'        => $damage['debit_note_number'] ?? '—',
+                'Reported By'       => $damage['reported_by_name'] ?? '—',
+                'Resolved By'       => $damage['resolved_by_name'] ?? '—',
+                'Created At'        => $damage['created_at'] ?? '—',
+            ];
+
+            $qrLabelData = [
+                'code'            => $qrCodeVal,
+                'is_supply'       => true,
+                'supplier_name'   => $supplierName,
+                'display_title'   => $itemDisplayTitle,
+                'po_number'       => $poNumber,
+                'item_type_label' => 'GARMENT SUPPLY',
+                'hsn_code'        => $hsnCode !== '—' ? $hsnCode : '',
+                'price'           => $unitPrice,
+                'defect_reason'   => $damage['damage_reason'] ?? '',
+                'weight'          => 0.00,
+            ];
+        } else {
+            $fields = [
                 'Item Type'         => $isProd ? 'Finished Garment Product' : 'Fabric Roll Piece',
-            'Origin / Supplier' => $isProd ? 'Own Production Unit' : ($damage['seller_company'] ?: ($damage['seller_name'] ?? '—')),
-            'Item / Roll'       => $isProd ? $prodDisplayName : ($damage['roll_number'] ?? '—'),
-            'Scanned QR Label'  => $qrCodeVal,
-            'Variant / Color'   => $isProd ? trim(($damage['variant_size_name'] ? 'Size: ' . $damage['variant_size_name'] . ' ' : '') . ($damage['variant_color_name'] ? 'Color: ' . $damage['variant_color_name'] : '')) : ($damage['roll_color'] ?? '—'),
-            'SKU / Design'      => $isProd ? ($damage['variant_sku'] ?? '—') : ($damage['roll_design'] ?? '—'),
-            'Damaged Quantity'  => number_format((int)($damage['damaged_quantity'] ?? 0)) . ($isProd ? ' piece(s)' : ' roll(s)'),
-            'Damaged Weight'    => number_format((float)($damage['damaged_weight'] ?? 0), 2) . ' kg',
-            'Loss Amount'       => '₹ ' . number_format((float)($damage['loss_amount'] ?? 0), 2),
-            'Reason'            => $damage['damage_reason'] ?? '—',
-            'Notes'             => $damage['defect_notes'] ?? '—',
-            'Status'            => $damage['status'] ?? '—',
+                'Origin / Supplier' => $isProd ? 'Own Production Unit' : ($damage['seller_company'] ?: ($damage['seller_name'] ?? '—')),
+                'Item / Roll'       => $isProd ? $prodDisplayName : ($damage['roll_number'] ?? '—'),
+                'Scanned QR Label'  => $qrCodeVal,
+                'Variant / Color'   => $isProd ? trim(($damage['variant_size_name'] ? 'Size: ' . $damage['variant_size_name'] . ' ' : '') . ($damage['variant_color_name'] ? 'Color: ' . $damage['variant_color_name'] : '')) : ($damage['roll_color'] ?? '—'),
+                'SKU / Design'      => $isProd ? ($damage['variant_sku'] ?? '—') : ($damage['roll_design'] ?? '—'),
+                'Damaged Quantity'  => number_format((int)($damage['damaged_quantity'] ?? 0)) . ($isProd ? ' piece(s)' : ' roll(s)'),
+                'Damaged Weight'    => number_format((float)($damage['damaged_weight'] ?? 0), 2) . ' kg',
+                'Loss Amount'       => '₹ ' . number_format((float)($damage['loss_amount'] ?? 0), 2),
+                'Reason'            => $damage['damage_reason'] ?? '—',
+                'Notes'             => $damage['defect_notes'] ?? '—',
+                'Status'            => $damage['status'] ?? '—',
                 'Resolution'        => $damage['resolution_type'] ?? '—',
                 'Debit Note'        => $damage['debit_note_number'] ?? '—',
                 'Replacement Roll'  => $damage['replacement_roll_code'] ?? ($damage['replacement_roll_number'] ?? '—'),
                 'Reported By'       => $damage['reported_by_name'] ?? '—',
                 'Resolved By'       => $damage['resolved_by_name'] ?? '—',
                 'Created At'        => $damage['created_at'] ?? '—',
-            ],
+            ];
+
+            $qrLabelData = [
+                'code'        => $qrCodeVal,
+                'is_supply'   => false,
+                'roll_number' => $damage['roll_number'] ?? ($isProd ? $prodDisplayName : ''),
+                'color'       => $damage['roll_color'] ?? ($damage['variant_color_name'] ?? ''),
+                'design'      => $damage['roll_design'] ?? ($damage['variant_sku'] ?? ''),
+                'weight'      => (float)($damage['damaged_weight'] ?? 0),
+            ];
+        }
+
+        $this->renderProductionRecord(
+            'Damage Record ' . ($damage['damage_number'] ?? ('#' . $damage['id'])),
+            'damages',
+            'Damages',
+            url('production/damages'),
+            $fields,
             [],
             [],
             'Damage Details',
-            [
-                'code'        => $qrCodeVal,
-                'roll_number' => $damage['roll_number'] ?? '',
-                'color'       => $damage['roll_color'] ?? '',
-                'design'      => $damage['roll_design'] ?? '',
-                'weight'      => (float)($damage['damaged_weight'] ?? 0),
-            ]
+            $qrLabelData
         );
     }
 
@@ -15689,9 +15881,16 @@ class ProductionController {
             return;
         }
 
-        // Determine operator role
-        $role = Database::fetchOne("SELECT id FROM roles WHERE slug IN ('production-staff', 'operator', 'staff', 'production-manager') ORDER BY id ASC LIMIT 1");
-        $roleId = $role ? (int)$role['id'] : 4;
+        // Determine operator role (with safe fallback ensuring foreign key constraint never fails)
+        $role = Database::fetchOne("SELECT id FROM roles WHERE slug IN ('production-staff', 'operator', 'staff', 'production-manager') OR name LIKE '%Production%' OR name LIKE '%Operator%' OR name LIKE '%Staff%' ORDER BY id ASC LIMIT 1");
+        if (!$role) {
+            $role = Database::fetchOne("SELECT id FROM roles ORDER BY (CASE WHEN id != 1 THEN 0 ELSE 1 END), id ASC LIMIT 1");
+        }
+        if (!$role) {
+            Response::json(['success' => false, 'message' => 'System configuration error: No user roles found in the database.'], 500);
+            return;
+        }
+        $roleId = (int)$role['id'];
 
         // Generate clean unique username
         $baseUsername = strtolower(preg_replace('/[^a-z0-9_]/', '', str_replace(' ', '_', $fullName)));
@@ -15720,6 +15919,66 @@ class ProductionController {
             'id'      => $newId,
             'name'    => $fullName,
             'message' => 'Cutting Master added successfully!'
+        ]);
+    }
+
+    /**
+     * AJAX quick add Tailor / Stitching Master.
+     */
+    public function ajaxQuickAddTailor(): void {
+        header('Content-Type: application/json');
+
+        $rawInput = file_get_contents('php://input');
+        $jsonData = !empty($rawInput) ? json_decode($rawInput, true) : [];
+        if (!is_array($jsonData)) $jsonData = [];
+
+        $fullName = mb_strtoupper(trim($_POST['full_name'] ?? $jsonData['full_name'] ?? ''));
+        $phone = trim($_POST['phone'] ?? $jsonData['phone'] ?? '');
+
+        if (empty($fullName)) {
+            Response::json(['success' => false, 'message' => 'Tailor / Stitching Master name is required.'], 422);
+            return;
+        }
+
+        // Determine staff role (with safe fallback ensuring foreign key constraint never fails)
+        $role = Database::fetchOne("SELECT id FROM roles WHERE slug IN ('production-staff', 'operator', 'staff', 'production-manager') OR name LIKE '%Production%' OR name LIKE '%Tailor%' OR name LIKE '%Staff%' ORDER BY id ASC LIMIT 1");
+        if (!$role) {
+            $role = Database::fetchOne("SELECT id FROM roles ORDER BY (CASE WHEN id != 1 THEN 0 ELSE 1 END), id ASC LIMIT 1");
+        }
+        if (!$role) {
+            Response::json(['success' => false, 'message' => 'System configuration error: No user roles found in the database.'], 500);
+            return;
+        }
+        $roleId = (int)$role['id'];
+
+        // Generate clean unique username
+        $baseUsername = strtolower(preg_replace('/[^a-z0-9_]/', '', str_replace(' ', '_', $fullName)));
+        if (empty($baseUsername)) {
+            $baseUsername = 'tailor_' . time();
+        }
+        $username = $baseUsername;
+        $counter = 1;
+        while (Database::fetchOne("SELECT id FROM users WHERE username = ?", [$username])) {
+            $username = $baseUsername . '_' . $counter;
+            $counter++;
+        }
+
+        $passwordHash = password_hash('Tailor@123', PASSWORD_BCRYPT);
+        $scopedUnitId = function_exists('currentProductionUnitId') ? currentProductionUnitId() : null;
+
+        Database::execute(
+            "INSERT INTO users (username, full_name, phone, role_id, department, production_unit_id, password_hash, is_active, created_at, updated_at) 
+             VALUES (?, ?, ?, ?, 'PRODUCTION', ?, ?, 1, NOW(), NOW())",
+            [$username, $fullName, $phone ?: null, $roleId, $scopedUnitId, $passwordHash]
+        );
+
+        $newId = (int)Database::lastInsertId();
+
+        Response::json([
+            'success' => true,
+            'id'      => $newId,
+            'name'    => $fullName,
+            'message' => 'Tailor / Stitching Master added successfully!'
         ]);
     }
 
@@ -16014,17 +16273,47 @@ class ProductionController {
             $inwardedMap[$iq['qr_code']] = $iq['inwarded_at'];
         }
 
+        // Query damage records for this purchase prefix
+        $damageRows = Database::fetchAll(
+            "SELECT rd.qr_code, rd.damage_number, rd.damage_reason, rd.loss_amount, rd.damaged_quantity, rd.status, rd.created_at
+             FROM roll_damages rd
+             WHERE rd.qr_code LIKE ? AND rd.status NOT IN ('CANCELLED', 'REJECTED')",
+            [$prefix . '%']
+        );
+        $damageMap = [];
+        foreach ($damageRows as $dr) {
+            $damageMap[$dr['qr_code']] = $dr;
+        }
+
+        // Fetch standard damage reasons for the modal
+        $damageReasons = Database::fetchAll("SELECT reason FROM roll_damage_reasons ORDER BY reason ASC");
+        if (empty($damageReasons)) {
+            $damageReasons = [
+                ['reason' => 'Broken / Crushed in Transit'],
+                ['reason' => 'Color Variation / Bleed'],
+                ['reason' => 'Defective Quality / Substandard'],
+                ['reason' => 'Torn / Cut / Damaged Packaging'],
+                ['reason' => 'Supplier Defect / Manufacturing Flaw'],
+                ['reason' => 'Wrong Specification / Non-conforming']
+            ];
+        }
+
         foreach ($stickers as &$stk) {
-            $isStkInwarded = !empty($inwardedMap[$stk['code']]) || (!empty($purchase['is_inwarded']) && empty($inwardedQrs));
+            $code = $stk['code'];
+            $isDamaged = isset($damageMap[$code]);
+            $isStkInwarded = !$isDamaged && (!empty($inwardedMap[$code]) || (!empty($purchase['is_inwarded']) && empty($inwardedQrs)));
+            $stk['is_damaged'] = $isDamaged;
+            $stk['damage_info'] = $damageMap[$code] ?? null;
             $stk['is_inwarded'] = $isStkInwarded;
-            $stk['inwarded_at'] = $inwardedMap[$stk['code']] ?? ($purchase['inwarded_at'] ?? null);
+            $stk['inwarded_at'] = $inwardedMap[$code] ?? ($purchase['inwarded_at'] ?? null);
         }
         unset($stk);
 
         $allStickersCount = count($stickers);
         $inwardedCount = count(array_filter($stickers, fn($s) => !empty($s['is_inwarded'])));
-        $pendingCount = $allStickersCount - $inwardedCount;
-        $isAllInwarded = $allStickersCount > 0 && $pendingCount === 0;
+        $damagedCount = count(array_filter($stickers, fn($s) => !empty($s['is_damaged'])));
+        $pendingCount = count(array_filter($stickers, fn($s) => empty($s['is_inwarded']) && empty($s['is_damaged'])));
+        $isAllInwarded = $allStickersCount > 0 && ($inwardedCount + $damagedCount) >= $allStickersCount;
 
         $inwardedOnly = !empty($_GET['inwarded_only']) || (isset($_GET['filter']) && $_GET['filter'] === 'inwarded');
         if ($inwardedOnly) {
@@ -16049,6 +16338,9 @@ class ProductionController {
             'isAllInwarded'      => $isAllInwarded,
             'inwardedCount'      => $inwardedCount,
             'pendingInwardCount' => $pendingCount,
+            'damagedCount'       => $damagedCount,
+            'damageMap'          => $damageMap,
+            'damageReasons'      => $damageReasons,
             'inwardedOnly'       => $inwardedOnly,
             'allStickersCount'   => $allStickersCount,
         ]);
@@ -16174,6 +16466,10 @@ class ProductionController {
                 if ($hasSelection) {
                     $selectedForThisItem = array_intersect($thisItemQrs, $selectedQrCodes);
                     foreach ($selectedForThisItem as $qrCode) {
+                        $isDamaged = Database::fetchOne("SELECT id FROM roll_damages WHERE qr_code = ? AND status NOT IN ('CANCELLED', 'REJECTED')", [$qrCode]);
+                        if ($isDamaged) {
+                            continue;
+                        }
                         $existing = Database::fetchOne("SELECT id, inwarded_at FROM warehouse_qr_codes WHERE qr_code = ?", [$qrCode]);
                         if (!$existing || empty($existing['inwarded_at'])) {
                             $qrsToInward[] = $qrCode;
@@ -16181,6 +16477,10 @@ class ProductionController {
                     }
                 } else {
                     foreach ($thisItemQrs as $qrCode) {
+                        $isDamaged = Database::fetchOne("SELECT id FROM roll_damages WHERE qr_code = ? AND status NOT IN ('CANCELLED', 'REJECTED')", [$qrCode]);
+                        if ($isDamaged) {
+                            continue;
+                        }
                         $existing = Database::fetchOne("SELECT id, inwarded_at FROM warehouse_qr_codes WHERE qr_code = ?", [$qrCode]);
                         if (!$existing || empty($existing['inwarded_at'])) {
                             $qrsToInward[] = $qrCode;
@@ -16205,6 +16505,11 @@ class ProductionController {
                 if ($existingProduct) {
                     $productId = (int)$existingProduct['id'];
                     $prodCode = $existingProduct['code'];
+                    if (empty($existingProduct['seller_id']) && !empty($purchase['seller_id'])) {
+                        try {
+                            Database::execute("UPDATE products SET seller_id = ? WHERE id = ?", [(int)$purchase['seller_id'], $productId]);
+                        } catch (\Throwable $e) {}
+                    }
                 } else {
                     $cleanSlug = preg_replace('/[^A-Z0-9]/', '', $itemName);
                     $baseCode = 'SUP-' . substr($cleanSlug ?: 'ITEM', 0, 8);
@@ -16213,9 +16518,9 @@ class ProductionController {
 
                     Database::execute(
                         "INSERT INTO products
-                            (name, code, category_id, warehouse_category_id, hsn_code, source_type, is_active, created_at, updated_at)
-                         VALUES (?, ?, ?, ?, ?, 'EXTERNAL_PURCHASE', 1, NOW(), NOW())",
-                        [$itemName, $prodCode, $defaultCatId, $defaultWhCatId, $hsnCode]
+                            (name, code, category_id, warehouse_category_id, seller_id, hsn_code, source_type, is_active, created_at, updated_at)
+                         VALUES (?, ?, ?, ?, ?, ?, 'EXTERNAL_PURCHASE', 1, NOW(), NOW())",
+                        [$itemName, $prodCode, $defaultCatId, $defaultWhCatId, (int)$purchase['seller_id'], $hsnCode]
                     );
                     $productId = (int)Database::lastInsertId();
                 }

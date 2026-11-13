@@ -977,7 +977,7 @@ function handleRollRowChange(selectElement, counterId, autoPopulate = true) {
         if (cIdx !== counterId) {
             const sel = c.querySelector('.roll-select');
             const qInp = c.querySelector('.roll-qty-input');
-            if (sel && String(sel.value) === String(selectedRollId)) {
+            if (sel && String(sel.value) === String(currentSelectedRollId)) {
                 otherUsed += parseInt(qInp?.value) || 0;
             }
         }
@@ -988,7 +988,7 @@ function handleRollRowChange(selectElement, counterId, autoPopulate = true) {
     const supSpan = document.getElementById('roll_supplier_' + counterId);
     const colSpan = document.getElementById('roll_color_' + counterId);
     const desSpan = document.getElementById('roll_design_' + counterId);
-    if (supSpan) supSpan.innerText = rollObj.seller_name ? (rollObj.seller_name + (rollObj.seller_company ? ` (${rollObj.seller_company})` : '')) : 'Seller';
+    if (supSpan) supSpan.innerText = rollObj.seller_name ? (rollObj.seller_name + (rollObj.seller_company ? ` (${rollObj.seller_company})` : '')) : (rollObj.seller_company || 'Supplier');
     if (colSpan) colSpan.innerText = rollObj.color || 'Plain';
     if (desSpan) desSpan.innerText = rollObj.design_name || 'Standard Design';
     if (specsDiv) specsDiv.classList.remove('d-none');
@@ -1052,6 +1052,16 @@ function syncRollStockAllocations() {
         const totalAvail = (rollObj.available_quantity !== undefined && rollObj.available_quantity !== null) ? parseInt(rollObj.available_quantity) : origQty;
         const origWeight = parseFloat(rollObj.weight || 0);
         const origPrice = parseFloat(rollObj.price || 0);
+
+        // Keep supplier, color and design in sync
+        const supSpan = document.getElementById('roll_supplier_' + counterId);
+        const colSpan = document.getElementById('roll_color_' + counterId);
+        const desSpan = document.getElementById('roll_design_' + counterId);
+        const specsDiv = document.getElementById('roll_specs_' + counterId);
+        if (supSpan) supSpan.innerText = rollObj.seller_name ? (rollObj.seller_name + (rollObj.seller_company ? ` (${rollObj.seller_company})` : '')) : (rollObj.seller_company || 'Supplier');
+        if (colSpan) colSpan.innerText = rollObj.color || 'Plain';
+        if (desSpan) desSpan.innerText = rollObj.design_name || 'Standard Design';
+        if (specsDiv) specsDiv.classList.remove('d-none');
 
         const thisRowQty = parseInt(qtyInp?.value) || 0;
         const totalUsed = rollUsageMap[rollId] || 0;
@@ -1788,6 +1798,8 @@ function processScannedRollCode(rawCode) {
     if (String(select.value) !== String(matchedRoll.id)) {
         select.value = String(matchedRoll.id);
         handleRollRowChange(select, counterId, true);
+    } else {
+        handleRollRowChange(select, counterId, false);
     }
 
     if (matchedPiece) {
@@ -2052,10 +2064,23 @@ function openQuickAddOptionModal(idx, attrName, attrId) {
     const inputVal = prompt(promptText);
     if (!inputVal || !inputVal.trim()) return;
 
+    const card = document.getElementById('program_roll_card_' + idx);
+    const categoryId = card?.querySelector('.roll-cat-select')?.value || '';
+    const subcategoryId = card?.querySelector('.roll-subcat-select')?.value || '';
+    const subSubcategoryId = card?.querySelector('.roll-subsubcat-select')?.value || '';
+    const cleanAttrName = attrName.replace(/[^a-zA-Z0-9_]/g, '_');
+    const chipsBox = document.getElementById(`attr_chips_container_${idx}_${cleanAttrName}`);
+    const currentOptions = chipsBox
+        ? Array.from(chipsBox.querySelectorAll('input[type="checkbox"]')).map(input => input.value)
+        : [];
     const formData = new FormData();
     formData.append('attribute_id', attrId);
     formData.append('attr_name', attrName);
     formData.append('options', inputVal.trim());
+    formData.append('category_id', categoryId);
+    formData.append('subcategory_id', subcategoryId);
+    formData.append('sub_subcategory_id', subSubcategoryId);
+    formData.append('current_options', currentOptions.join(','));
 
     fetch(`${baseUrl}/api/categories/attributes/add-option`, {
         method: 'POST',
@@ -2106,10 +2131,14 @@ function openQuickAddOptionModal(idx, attrName, attrId) {
 function deleteRollAttrOption(idx, attrName, optionVal, attrId) {
     if (!confirm(`Are you sure you want to remove "${optionVal}" from ${attrName}?`)) return;
 
+    const card = document.getElementById('program_roll_card_' + idx);
     const formData = new FormData();
     formData.append('attribute_id', attrId);
     formData.append('attr_name', attrName);
     formData.append('option', optionVal);
+    formData.append('category_id', card?.querySelector('.roll-cat-select')?.value || '');
+    formData.append('subcategory_id', card?.querySelector('.roll-subcat-select')?.value || '');
+    formData.append('sub_subcategory_id', card?.querySelector('.roll-subsubcat-select')?.value || '');
 
     fetch(`${baseUrl}/api/categories/attributes/delete-option`, {
         method: 'POST',
@@ -2188,6 +2217,42 @@ function handleAttrTypeChange(type) {
     }
 }
 
+function refreshProgramRollAttributePanels(catId, subcatId = '', subsubcatId = '') {
+    const cards = document.querySelectorAll('.program-roll-card');
+    let matched = false;
+
+    cards.forEach(card => {
+        const cMatch = card.id.match(/\d+$/);
+        if (!cMatch) return;
+
+        const cIdx = parseInt(cMatch[0], 10);
+        const cCat = card.querySelector('.roll-cat-select')?.value || '';
+        const cSub = card.querySelector('.roll-subcat-select')?.value || '';
+        const cSubSub = card.querySelector('.roll-subsubcat-select')?.value || '';
+
+        const sameCategory = String(cCat) === String(catId);
+        const exactHierarchyMatch = sameCategory && (!subcatId || String(cSub) === String(subcatId)) && (!subsubcatId || String(cSubSub) === String(subsubcatId));
+        const categoryLevelMatch = sameCategory && (!subcatId || String(cSub) === String(subcatId) || !cSub || String(cSub) === '');
+
+        if (exactHierarchyMatch || (sameCategory && categoryLevelMatch)) {
+            matched = true;
+            loadRollCategoryAttributes(cIdx, cCat, cSub, cSubSub);
+        }
+    });
+
+    if (!matched && catId) {
+        cards.forEach(card => {
+            const cMatch = card.id.match(/\d+$/);
+            if (!cMatch) return;
+            const cIdx = parseInt(cMatch[0], 10);
+            const cCat = card.querySelector('.roll-cat-select')?.value || '';
+            if (String(cCat) === String(catId)) {
+                loadRollCategoryAttributes(cIdx, cCat, card.querySelector('.roll-subcat-select')?.value || '', card.querySelector('.roll-subsubcat-select')?.value || '');
+            }
+        });
+    }
+}
+
 function handleSaveCategoryAttribute(e) {
     e.preventDefault();
     const btn = document.getElementById('btnSubmitAttrModal');
@@ -2235,20 +2300,7 @@ function handleSaveCategoryAttribute(e) {
         if (data.success) {
             const modal = bootstrap.Modal.getInstance(document.getElementById('modalQuickAddCategoryAttribute'));
             if (modal) modal.hide();
-
-            // Dynamically refresh attributes for all roll cards sharing this category hierarchy!
-            document.querySelectorAll('.program-roll-card').forEach(card => {
-                const cMatch = card.id.match(/\d+$/);
-                if (cMatch) {
-                    const cIdx = parseInt(cMatch[0]);
-                    const cCat = card.querySelector('.roll-cat-select')?.value;
-                    const cSub = card.querySelector('.roll-subcat-select')?.value;
-                    const cSubSub = card.querySelector('.roll-subsubcat-select')?.value;
-                    if (String(cCat) === String(catId)) {
-                        loadRollCategoryAttributes(cIdx, cCat, cSub, cSubSub);
-                    }
-                }
-            });
+            refreshProgramRollAttributePanels(catId, subcatId, subsubcatId);
         } else {
             alert(data.message || 'Error saving category attribute.');
         }

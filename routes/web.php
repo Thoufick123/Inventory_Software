@@ -290,6 +290,7 @@ class Router {
         $this->get('api/hsn-codes', 'ProductionController', 'ajaxHsnCodesList', ['AuthMiddleware']);
         $this->post('api/hsn-codes/store', 'ProductionController', 'ajaxStoreHsnCode', ['AuthMiddleware']);
         $this->post('api/operators/quick-add', 'ProductionController', 'ajaxQuickAddOperator', ['AuthMiddleware']);
+        $this->post('api/tailors/quick-add', 'ProductionController', 'ajaxQuickAddTailor', ['AuthMiddleware']);
         $this->post('api/warehouse/quick-add', 'WarehouseController', 'ajaxAddWarehouse', ['AuthMiddleware', ['PermissionMiddleware', 'warehouse', 'create']]);
         $this->post('api/warehouse/store', 'WarehouseController', 'ajaxAddWarehouse', ['AuthMiddleware', ['PermissionMiddleware', 'warehouse', 'create']]);
         $this->get('api/warehouse/get/{id}', 'WarehouseController', 'ajaxGetWarehouse', ['AuthMiddleware', ['PermissionMiddleware', 'warehouse', 'view']]);
@@ -326,6 +327,7 @@ class Router {
         $this->post('api/warehouse/customers/search', 'WarehouseController', 'ajaxSearchCustomers', ['AuthMiddleware']);
         $this->get('api/warehouse/customers/purchase-history', 'WarehouseController', 'ajaxCustomerPurchaseHistory', ['AuthMiddleware']);
         $this->post('api/warehouse/customers/purchase-history', 'WarehouseController', 'ajaxCustomerPurchaseHistory', ['AuthMiddleware']);
+        $this->get('api/warehouse/customers/{id}/purchase-count', 'WarehouseController', 'ajaxCustomerPurchaseCount', ['AuthMiddleware']);
         $this->get('api/warehouse/customers/{id}/purchase-history', 'WarehouseController', 'ajaxCustomerPurchaseHistory', ['AuthMiddleware']);
         $this->post('api/warehouse/customers/{id}/purchase-history', 'WarehouseController', 'ajaxCustomerPurchaseHistory', ['AuthMiddleware']);
         $this->get('api/warehouse/warehouse-variant-stock', 'WarehouseController', 'ajaxGetWarehouseStock', ['AuthMiddleware']);
@@ -376,6 +378,7 @@ class Router {
         $this->get('production/billing/move-to-batch/{id}', 'ProductionBillingController', 'moveBillToBatchForm', ['AuthMiddleware']);
         $this->post('production/billing/move-to-batch/{id}', 'ProductionBillingController', 'createBillDispatchBatch', ['AuthMiddleware']);
         $this->get('production/billing/create', 'ProductionBillingController', 'createBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'create']]);
+        $this->post('production/billing/create', 'ProductionBillingController', 'createBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'create']]);
         $this->post('production/billing/store', 'ProductionBillingController', 'storeBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'create']]);
         $this->get('production/billing/view/{id}', 'ProductionBillingController', 'viewBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'view']]);
         $this->get('production/billing/edit/{id}', 'ProductionBillingController', 'editBill', ['AuthMiddleware', ['PermissionMiddleware', 'production_billing', 'edit']]);
