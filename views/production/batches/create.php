@@ -198,7 +198,14 @@
             <div class="card shadow-sm h-100 d-flex flex-column">
                 <div class="card-header bg-white d-flex align-items-center justify-content-between py-3">
                     <h5 class="card-title mb-0 fw-bold"><i class="bi bi-grid-3x3 me-2 text-primary"></i>Packed Quantities</h5>
-                    <span class="badge bg-success fs-6 px-3 py-2" id="totalPackedBadge">0 pcs Packed</span>
+                    <div class="d-flex align-items-center gap-2">
+                        <?php if ($selectedQC): ?>
+                            <button type="button" class="btn btn-sm btn-outline-success fw-semibold shadow-sm" onclick="generateBillFromSelectedQC()" title="Generate Bill &amp; Invoice from checked products in this QC Batch">
+                                <i class="bi bi-receipt-cutoff me-1"></i> Bill Generation
+                            </button>
+                        <?php endif; ?>
+                        <span class="badge bg-success fs-6 px-3 py-2" id="totalPackedBadge">0 pcs Packed</span>
+                    </div>
                 </div>
                 <?php if ($selectedQC && ($totalQCRework ?? 0) > 0): ?>
                     <div class="p-3 bg-warning bg-opacity-10 border-bottom border-warning-subtle">
@@ -401,18 +408,30 @@
                         </div>
                     <?php endif; ?>
                 </div>
-                <div class="card-footer bg-white p-3 d-flex justify-content-between align-items-center border-top">
+                <div class="card-footer bg-white p-3 d-flex justify-content-between align-items-center border-top flex-wrap gap-2">
                     <a href="<?= url('production/batches') ?>" class="btn btn-outline-secondary">
                         <i class="bi bi-x-circle me-1"></i> Cancel
                     </a>
                     <?php if ($selectedQC && ($selectedQC['remaining_qty'] ?? 1) <= 0 && ($selectedQC['already_packed_qty'] ?? 0) > 0 && ($totalQCRework ?? 0) <= 0): ?>
-                        <a href="<?= url('production/batches' . (!empty($existingBatches[0]['batch_number']) ? '?search=' . urlencode($existingBatches[0]['batch_number']) : '')) ?>" class="btn btn-primary px-4 fw-semibold">
-                            <i class="bi bi-box-seam me-1"></i> View Finished Batch (<?= e($existingBatches[0]['batch_number'] ?? '') ?>)
-                        </a>
+                        <div class="d-flex align-items-center gap-2">
+                            <button type="button" class="btn btn-success px-4 fw-semibold shadow-sm" onclick="generateBillFromSelectedQC()">
+                                <i class="bi bi-receipt-cutoff me-1"></i> Generate Bill &amp; Invoice
+                            </button>
+                            <a href="<?= url('production/batches' . (!empty($existingBatches[0]['batch_number']) ? '?search=' . urlencode($existingBatches[0]['batch_number']) : '')) ?>" class="btn btn-primary px-4 fw-semibold">
+                                <i class="bi bi-box-seam me-1"></i> View Finished Batch (<?= e($existingBatches[0]['batch_number'] ?? '') ?>)
+                            </a>
+                        </div>
                     <?php else: ?>
-                        <button type="submit" class="btn btn-primary px-4 fw-semibold" id="btnSavePackedBatch">
-                            <i class="bi bi-check2-circle me-1"></i> Save Packed Batch
-                        </button>
+                        <div class="d-flex align-items-center gap-2">
+                            <?php if ($selectedQC): ?>
+                                <button type="button" class="btn btn-outline-success px-3 fw-semibold shadow-sm" id="btnCreateBillFromQC" onclick="generateBillFromSelectedQC()" title="Generate Bill and Tax Invoice directly from selected products in this QC Batch">
+                                    <i class="bi bi-receipt-cutoff me-1"></i> Generate Bill &amp; Invoice
+                                </button>
+                            <?php endif; ?>
+                            <button type="submit" class="btn btn-primary px-4 fw-semibold" id="btnSavePackedBatch">
+                                <i class="bi bi-check2-circle me-1"></i> Save Packed Batch
+                            </button>
+                        </div>
                     <?php endif; ?>
                 </div>
             </div>
@@ -707,4 +726,58 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+function generateBillFromSelectedQC() {
+    const qcSelect = document.getElementById('qc_batch_id');
+    const qcBatchId = qcSelect ? qcSelect.value : '<?= $selectedQC['id'] ?? '' ?>';
+    if (!qcBatchId) {
+        alert('Please select a QC Inspection Batch first.');
+        if (qcSelect) qcSelect.focus();
+        return;
+    }
+
+    // Collect all checked piece tags
+    const checkedTags = [];
+    document.querySelectorAll('.piece-tags-input:checked').forEach(cb => {
+        const val = (cb.value || '').trim();
+        if (val) checkedTags.push(val);
+    });
+
+    const hasRows = document.querySelectorAll('.variant-item-row').length > 0;
+    if (!hasRows && checkedTags.length === 0) {
+        alert('No QC products available to bill.');
+        return;
+    }
+
+    // Dynamically create form and submit to production/billing/create
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '<?= url("production/billing/create") ?>';
+
+    const csrf = document.querySelector('input[name="csrf_token"]');
+    if (csrf) {
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrf_token';
+        csrfInput.value = csrf.value;
+        form.appendChild(csrfInput);
+    }
+
+    const qcInput = document.createElement('input');
+    qcInput.type = 'hidden';
+    qcInput.name = 'qc_batch_id';
+    qcInput.value = qcBatchId;
+    form.appendChild(qcInput);
+
+    checkedTags.forEach(tag => {
+        const tagInput = document.createElement('input');
+        tagInput.type = 'hidden';
+        tagInput.name = 'selected_tags[]';
+        tagInput.value = tag;
+        form.appendChild(tagInput);
+    });
+
+    document.body.appendChild(form);
+    form.submit();
+}
 </script>
