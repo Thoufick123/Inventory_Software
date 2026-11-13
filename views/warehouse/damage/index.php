@@ -160,7 +160,7 @@
                     <th class="text-nowrap py-3 text-uppercase fs-7 fw-bold text-muted" style="min-width: 130px;">Loss / Valuation</th>
                     <th class="text-nowrap py-3 text-uppercase fs-7 fw-bold text-muted" style="min-width: 130px;">Status</th>
                     <th class="text-nowrap py-3 text-uppercase fs-7 fw-bold text-muted" style="min-width: 130px;">Date</th>
-                    <th class="pe-3 text-end text-nowrap py-3 text-uppercase fs-7 fw-bold text-muted" style="min-width: 90px;">Actions</th>
+                    <th class="pe-3 text-end text-nowrap py-3 text-uppercase fs-7 fw-bold text-muted" style="min-width: 230px;">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -373,10 +373,35 @@
 
                         <!-- ACTIONS -->
                         <td class="pe-3 text-end text-nowrap">
-                            <a href="<?= url('warehouse/damage/view/' . $d['id']) ?>" class="btn btn-sm btn-outline-primary px-2.5 py-1 shadow-sm d-inline-flex align-items-center gap-1">
-                                <i class="bi bi-eye"></i>
-                                <span>View</span>
-                            </a>
+                            <div class="d-inline-flex align-items-center justify-content-end gap-1">
+                                <a href="<?= url('warehouse/damage/view/' . (int)$d['id']) ?>" class="btn btn-sm btn-outline-primary px-2 py-1 shadow-sm" title="View damage details">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                <?php if (hasPermission('damage', 'edit') && in_array($statusVal, ['LOGGED', 'INSPECTED'], true) && empty($d['resolution_action'])): ?>
+                                    <a href="<?= url('warehouse/damage/edit/' . (int)$d['id']) ?>" class="btn btn-sm btn-outline-secondary px-2 py-1 shadow-sm" title="Edit scanned product">
+                                        <i class="bi bi-pencil-square"></i>
+                                    </a>
+                                <?php endif; ?>
+                                <?php
+                                    $canContinueReplacement = strtoupper((string)($d['resolution_action'] ?? '')) === 'REPLACEMENT'
+                                        && empty($d['replacement_inwarded_at']);
+                                    $canStartResolution = in_array($statusVal, ['LOGGED', 'INSPECTED'], true)
+                                        && (empty($d['resolution_action']) || $canContinueReplacement);
+                                ?>
+                                <?php if (hasPermission('damage', 'resolve') && $canStartResolution): ?>
+                                    <a href="<?= url('warehouse/damage/resolve/' . (int)$d['id']) ?>" class="btn btn-sm btn-outline-success px-2 py-1 shadow-sm" title="<?= $canContinueReplacement ? 'Continue replacement inward' : 'Resolve damage case' ?>">
+                                        <i class="bi bi-check2-circle"></i><span class="ms-1">Resolve</span>
+                                    </a>
+                                <?php endif; ?>
+                                <?php if (hasPermission('damage', 'delete')): ?>
+                                    <form method="POST" action="<?= url('warehouse/damage/delete/' . (int)$d['id']) ?>" class="d-inline" onsubmit="return confirm('Remove this damage case from the active list? Inventory and audit history will be retained.');">
+                                        <?= CSRF::input() ?>
+                                        <button type="submit" class="btn btn-sm btn-outline-danger px-2 py-1 shadow-sm" title="Delete damage case">
+                                            <i class="bi bi-trash3"></i>
+                                        </button>
+                                    </form>
+                                <?php endif; ?>
+                            </div>
                         </td>
                     </tr>
                 <?php endforeach; endif; ?>

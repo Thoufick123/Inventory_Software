@@ -582,7 +582,13 @@ class Router {
         $this->get('warehouse/damage', 'WarehouseController', 'damageList', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'view']]);
         $this->get('warehouse/damage/create', 'WarehouseController', 'createDamage', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'create']]);
         $this->post('warehouse/damage/store', 'WarehouseController', 'storeDamage', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'create']]);
+        $this->get('warehouse/damage/edit/{id}', 'WarehouseController', 'editDamage', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'edit']]);
+        $this->post('warehouse/damage/update/{id}', 'WarehouseController', 'updateDamage', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'edit']]);
+        $this->post('warehouse/damage/delete/{id}', 'WarehouseController', 'deleteDamage', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'delete']]);
         $this->get('warehouse/damage/view/{id}', 'WarehouseController', 'viewDamage', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'view']]);
+        $this->get('warehouse/damage/resolve/{id}', 'WarehouseController', 'resolveDamageForm', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'resolve']]);
+        $this->post('warehouse/damage/resolve/{id}', 'WarehouseController', 'resolveDamage', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'resolve']]);
+        $this->post('warehouse/damage/inward-replacement/{id}', 'WarehouseController', 'inwardDamageReplacement', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'resolve']]);
         $this->post('warehouse/damage/update-status/{id}', 'WarehouseController', 'updateDamageStatus', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'resolve']]);
         $this->get('api/warehouse/damage/lookup-scan', 'WarehouseController', 'ajaxLookupDamageProduct', ['AuthMiddleware']);
         $this->post('api/warehouse/damage/lookup-scan', 'WarehouseController', 'ajaxLookupDamageProduct', ['AuthMiddleware']);
