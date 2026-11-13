@@ -4552,29 +4552,63 @@ class ProductionController {
             Database::execute("UPDATE production_purchases SET purchase_number = ? WHERE id = ?", [$purchaseNumber, $purchaseId]);
         }
 
+        $taxInputType = strtoupper(trim((string)($_POST['replacement_tax_mode'] ?? ($_POST['replacement_tax_input_type'] ?? 'PERCENT'))));
+        if (!in_array($taxInputType, ['PERCENT', 'AMOUNT'], true)) {
+            $taxInputType = 'PERCENT';
+        }
+
         $taxRate = 0.0;
-        if ($gstType !== 'EXEMPTED' && $hsnCode !== '') {
-            $hsnRow = Database::fetchOne("SELECT gst_rate FROM hsn_codes WHERE hsn_code = ?", [$hsnCode]);
-            if ($hsnRow) {
-                $taxRate = (float)$hsnRow['gst_rate'];
+        if ($gstType !== 'EXEMPTED') {
+            if (isset($_POST['replacement_tax_value']) && $_POST['replacement_tax_value'] !== '') {
+                $taxRate = max(0.0, (float)$_POST['replacement_tax_value']);
+            } elseif ($hsnCode !== '') {
+                $hsnRow = Database::fetchOne("SELECT gst_rate FROM hsn_codes WHERE hsn_code = ?", [$hsnCode]);
+                if ($hsnRow) {
+                    $taxRate = (float)$hsnRow['gst_rate'];
+                }
             }
         }
-        $taxAmount = round($price * ($taxRate / 100), 2);
-        $sgstAmount = in_array($gstType, ['SGST', 'BOTH'], true)
-            ? round($taxAmount / ($gstType === 'BOTH' ? 2 : 1), 2)
-            : 0.0;
-        $cgstAmount = in_array($gstType, ['CGST', 'BOTH'], true)
-            ? round($taxAmount / ($gstType === 'BOTH' ? 2 : 1), 2)
-            : 0.0;
-        $igstAmount = $gstType === 'IGST' ? $taxAmount : 0.0;
+
+        $cgstRate = isset($_POST['replacement_cgst_value']) && $_POST['replacement_cgst_value'] !== ''
+            ? max(0.0, (float)$_POST['replacement_cgst_value'])
+            : ($gstType === 'BOTH' ? ($taxInputType === 'PERCENT' ? $taxRate : $taxRate / 2) : 0.0);
+
+        if ($taxInputType === 'AMOUNT') {
+            if ($gstType === 'BOTH') {
+                $sgstAmount = round($taxRate, 2);
+                $cgstAmount = round($cgstRate, 2);
+                $igstAmount = 0.0;
+                $taxAmount = $sgstAmount + $cgstAmount;
+            } else {
+                $taxAmount = round($taxRate, 2);
+                $sgstAmount = $gstType === 'SGST' ? $taxAmount : 0.0;
+                $cgstAmount = $gstType === 'CGST' ? $taxAmount : 0.0;
+                $igstAmount = $gstType === 'IGST' ? $taxAmount : 0.0;
+            }
+            $sgstValue = $sgstAmount;
+            $cgstValue = $cgstAmount;
+            $igstValue = $igstAmount;
+        } else {
+            if ($gstType === 'BOTH') {
+                $sgstValue = $taxRate;
+                $cgstValue = $cgstRate > 0 ? $cgstRate : $taxRate;
+                $sgstAmount = round($price * ($sgstValue / 100), 2);
+                $cgstAmount = round($price * ($cgstValue / 100), 2);
+                $igstAmount = 0.0;
+                $taxAmount = $sgstAmount + $cgstAmount;
+                $igstValue = 0.0;
+            } else {
+                $taxAmount = round($price * ($taxRate / 100), 2);
+                $sgstAmount = $gstType === 'SGST' ? $taxAmount : 0.0;
+                $cgstAmount = $gstType === 'CGST' ? $taxAmount : 0.0;
+                $igstAmount = $gstType === 'IGST' ? $taxAmount : 0.0;
+                $sgstValue = $gstType === 'SGST' ? $taxRate : 0.0;
+                $cgstValue = $gstType === 'CGST' ? $taxRate : 0.0;
+                $igstValue = $gstType === 'IGST' ? $taxRate : 0.0;
+            }
+        }
         $totalPrice = $price + $sgstAmount + $cgstAmount + $igstAmount;
-        $sgstValue = in_array($gstType, ['SGST', 'BOTH'], true)
-            ? ($gstType === 'BOTH' ? $taxRate / 2 : $taxRate)
-            : 0.0;
-        $cgstValue = in_array($gstType, ['CGST', 'BOTH'], true)
-            ? ($gstType === 'BOTH' ? $taxRate / 2 : $taxRate)
-            : 0.0;
-        $igstValue = $gstType === 'IGST' ? $taxRate : 0.0;
+
         $itemName = $materialType !== '' ? $materialType : 'STANDARD FABRIC';
         $hasItemHsn = (bool)Database::fetchOne("SHOW COLUMNS FROM production_purchase_items LIKE 'hsn_code'");
 
@@ -4600,7 +4634,7 @@ class ProductionController {
                 'design_name = ?',
                 'design_count = ?',
             ];
-            $itemParams = ['FABRIC_ROLL', $itemName, $quantity, 'PCS', $weight, $price, $totalPrice, $gstType, 'PERCENT',
+            $itemParams = ['FABRIC_ROLL', $itemName, $quantity, 'PCS', $weight, $price, $totalPrice, $gstType, $taxInputType,
                 $sgstValue, $cgstValue, $igstValue, $sgstAmount, $cgstAmount, $igstAmount, $rollNumber, $color, $designName, $designCount];
             if ($hasItemHsn) {
                 $itemAssignments[] = 'hsn_code = ?';
@@ -4620,8 +4654,8 @@ class ProductionController {
                     (purchase_id, item_type, item_name, quantity, unit, weight_kg, unit_price, total_price,
                      gst_type, tax_input_type, sgst_value, cgst_value, igst_value, sgst_amount, cgst_amount, igst_amount,
                      roll_number, color, design_name, design_count, hsn_code, seller_roll_id)
-                 VALUES (?, 'FABRIC_ROLL', ?, ?, 'PCS', ?, ?, ?, ?, 'PERCENT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [$purchaseId, $itemName, $quantity, $weight, $price, $totalPrice, $gstType, $sgstValue, $cgstValue, $igstValue,
+                 VALUES (?, 'FABRIC_ROLL', ?, ?, 'PCS', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [$purchaseId, $itemName, $quantity, $weight, $price, $totalPrice, $gstType, $taxInputType, $sgstValue, $cgstValue, $igstValue,
                     $sgstAmount, $cgstAmount, $igstAmount, $rollNumber, $color, $designName, $designCount,
                     $hsnCode !== '' ? $hsnCode : null, $replacementRollId]
             );
@@ -4631,8 +4665,8 @@ class ProductionController {
                     (purchase_id, item_type, item_name, quantity, unit, weight_kg, unit_price, total_price,
                      gst_type, tax_input_type, sgst_value, cgst_value, igst_value, sgst_amount, cgst_amount, igst_amount,
                      roll_number, color, design_name, design_count, seller_roll_id)
-                 VALUES (?, 'FABRIC_ROLL', ?, ?, 'PCS', ?, ?, ?, ?, 'PERCENT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [$purchaseId, $itemName, $quantity, $weight, $price, $totalPrice, $gstType, $sgstValue, $cgstValue, $igstValue,
+                 VALUES (?, 'FABRIC_ROLL', ?, ?, 'PCS', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [$purchaseId, $itemName, $quantity, $weight, $price, $totalPrice, $gstType, $taxInputType, $sgstValue, $cgstValue, $igstValue,
                     $sgstAmount, $cgstAmount, $igstAmount, $rollNumber, $color, $designName, $designCount, $replacementRollId]
             );
         }

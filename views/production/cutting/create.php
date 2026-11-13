@@ -501,12 +501,18 @@ function calculateRollTotals() {
         const priceInput = row.querySelector('.cutting-roll-price');
 
         if (select && select.value) {
+            const selectedOption = select.options[select.selectedIndex];
             selectedRollIds.add(String(select.value));
             if (!firstRollId) firstRollId = select.value;
-            const w = parseFloat(weightInput ? weightInput.value : 0) || 0;
-            const p = parseFloat(priceInput ? priceInput.value : 0) || 0;
-            totalWeight += w;
-            totalPrice += p;
+            const weight = parseFloat(selectedOption?.dataset.weight || 0) || 0;
+            const price = parseFloat(selectedOption?.dataset.price || 0) || 0;
+            if (weightInput) weightInput.value = weight.toFixed(2);
+            if (priceInput) priceInput.value = price.toFixed(2);
+            totalWeight += weight;
+            totalPrice += price;
+        } else {
+            if (weightInput) weightInput.value = '0.00';
+            if (priceInput) priceInput.value = '0.00';
         }
     });
 

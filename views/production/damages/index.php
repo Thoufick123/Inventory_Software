@@ -701,16 +701,16 @@
                                         </div>
                                         <div class="col-lg-1 col-md-3">
                                             <label class="form-label required small fw-bold">Designs *</label>
-                                            <input type="number" min="1" step="1" name="replacement_design_count" id="inputReplacementDesignCount" class="form-control" value="1">
+                                            <input type="text" inputmode="numeric" data-integer="true" name="replacement_design_count" id="inputReplacementDesignCount" class="form-control" value="1" placeholder="1">
                                         </div>
                                         <div class="col-lg-1 col-md-3">
                                             <label class="form-label required small fw-bold">RQ *</label>
-                                            <input type="number" min="1" step="1" name="replacement_quantity" id="inputReplacementQuantity" class="form-control" value="1">
+                                            <input type="text" inputmode="numeric" data-integer="true" name="replacement_quantity" id="inputReplacementQuantity" class="form-control" value="1" placeholder="1">
                                         </div>
                                         <div class="col-lg-2 col-md-3">
                                             <label class="form-label required small fw-bold">Weight (kg) *</label>
                                             <div class="input-group">
-                                                <input type="number" min="0" step="0.01" name="replacement_weight" id="inputReplacementWeight" class="form-control" placeholder="0.00">
+                                                <input type="text" inputmode="decimal" name="replacement_weight" id="inputReplacementWeight" class="form-control" placeholder="0.00">
                                                 <span class="input-group-text">kg</span>
                                             </div>
                                         </div>
@@ -718,7 +718,7 @@
                                             <label class="form-label required small fw-bold">Price (₹) *</label>
                                             <div class="input-group">
                                                 <span class="input-group-text">₹</span>
-                                                <input type="number" min="0" step="0.01" name="replacement_price" id="inputReplacementPrice" class="form-control" placeholder="0.00">
+                                                <input type="text" inputmode="decimal" name="replacement_price" id="inputReplacementPrice" class="form-control" placeholder="0.00">
                                             </div>
                                         </div>
 
@@ -744,9 +744,9 @@
                                             </div>
                                         </div>
 
-                                        <div class="col-lg-3 col-md-4">
+                                        <div class="col-lg-2 col-md-4">
                                             <label class="form-label small fw-bold">GST</label>
-                                            <select name="replacement_gst_type" id="inputReplacementGstType" class="form-select">
+                                            <select name="replacement_gst_type" id="inputReplacementGstType" class="form-select" onchange="updateReplacementTaxFields()">
                                                 <option value="EXEMPTED">Exempted</option>
                                                 <option value="SGST">SGST</option>
                                                 <option value="CGST">CGST</option>
@@ -755,7 +755,25 @@
                                             </select>
                                         </div>
 
-                                        <div class="col-lg-6 col-md-8">
+                                        <div class="col-lg-2 col-md-4" id="fieldReplacementTaxMode" style="display: none;">
+                                            <label class="form-label small fw-bold">Tax Input Type</label>
+                                            <select name="replacement_tax_mode" id="inputReplacementTaxMode" class="form-select" onchange="updateReplacementTaxFields()">
+                                                <option value="PERCENT">Percentage (%)</option>
+                                                <option value="AMOUNT">Amount (₹)</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="col-lg-2 col-md-4" id="fieldReplacementTaxValue" style="display: none;">
+                                            <label class="form-label small fw-bold" id="labelReplacementTaxValue">Tax (%)</label>
+                                            <input type="text" inputmode="decimal" name="replacement_tax_value" id="inputReplacementTaxValue" class="form-control" placeholder="0.00" value="0">
+                                        </div>
+
+                                        <div class="col-lg-2 col-md-4" id="fieldReplacementCgstValue" style="display: none;">
+                                            <label class="form-label small fw-bold" id="labelReplacementCgstValue">CGST (%)</label>
+                                            <input type="text" inputmode="decimal" name="replacement_cgst_value" id="inputReplacementCgstValue" class="form-control" placeholder="0.00" value="0">
+                                        </div>
+
+                                        <div class="col-lg-5 col-md-8" id="fieldReplacementPhotoBox">
                                             <label class="form-label small fw-bold">Roll Sample Photo <small class="text-muted fw-normal">(Optional — JPG, PNG, WEBP)</small></label>
                                             <input type="file" name="replacement_photo" id="inputReplacementPhoto" class="form-control" accept=".jpg,.jpeg,.png,.webp">
                                             <div id="replacementPhotoPreview" class="small mt-1" style="display:none;">
@@ -1504,6 +1522,25 @@ function openResolveModal(damageData) {
     gstSelect.value = Array.from(gstSelect.options).some(option => option.value === savedGstType)
         ? savedGstType
         : 'EXEMPTED';
+
+    const modeSelect = document.getElementById('inputReplacementTaxMode');
+    if (modeSelect) {
+        modeSelect.value = damageData.replacement_tax_mode || 'PERCENT';
+    }
+    const valInput = document.getElementById('inputReplacementTaxValue');
+    if (valInput) {
+        valInput.value = (damageData.replacement_tax_value !== undefined && damageData.replacement_tax_value !== null)
+            ? damageData.replacement_tax_value
+            : (damageData.replacement_roll_gst_rate || '0');
+    }
+    const cgstInput = document.getElementById('inputReplacementCgstValue');
+    if (cgstInput) {
+        cgstInput.value = (damageData.replacement_cgst_value !== undefined && damageData.replacement_cgst_value !== null)
+            ? damageData.replacement_cgst_value
+            : '0';
+    }
+    updateReplacementTaxFields();
+
     const replPhotoInp = document.getElementById('inputReplacementPhoto');
     if (replPhotoInp) replPhotoInp.value = '';
     const replPhotoPreview = document.getElementById('replacementPhotoPreview');
@@ -1524,6 +1561,69 @@ function openResolveModal(damageData) {
 
     const modal = new bootstrap.Modal(document.getElementById('resolveModal'));
     modal.show();
+}
+
+function updateReplacementTaxFields() {
+    const gstSelect = document.getElementById('inputReplacementGstType');
+    const modeField = document.getElementById('fieldReplacementTaxMode');
+    const valField = document.getElementById('fieldReplacementTaxValue');
+    const cgstField = document.getElementById('fieldReplacementCgstValue');
+    const modeSelect = document.getElementById('inputReplacementTaxMode');
+    const valInput = document.getElementById('inputReplacementTaxValue');
+    const cgstInput = document.getElementById('inputReplacementCgstValue');
+    const valLabel = document.getElementById('labelReplacementTaxValue');
+    const cgstLabel = document.getElementById('labelReplacementCgstValue');
+    const photoBox = document.getElementById('fieldReplacementPhotoBox');
+
+    if (!gstSelect) return;
+    const gstType = gstSelect.value;
+    const isExempted = gstType === 'EXEMPTED';
+    const isBoth = gstType === 'BOTH';
+    const mode = modeSelect ? modeSelect.value : 'PERCENT';
+    const symbol = mode === 'PERCENT' ? '%' : '₹';
+
+    if (modeField) modeField.style.display = isExempted ? 'none' : '';
+    if (valField) valField.style.display = isExempted ? 'none' : '';
+    if (cgstField) cgstField.style.display = (!isExempted && isBoth) ? '' : 'none';
+
+    if (valLabel) {
+        valLabel.textContent = isBoth ? `SGST (${symbol})` : `${gstType} (${symbol})`;
+    }
+    if (cgstLabel) {
+        cgstLabel.textContent = `CGST (${symbol})`;
+    }
+
+    if (photoBox) {
+        if (isExempted) {
+            photoBox.className = 'col-lg-5 col-md-8';
+        } else if (isBoth) {
+            photoBox.className = 'col-lg-3 col-md-12';
+        } else {
+            photoBox.className = 'col-lg-3 col-md-8';
+        }
+    }
+
+    if (isExempted) {
+        if (valInput) valInput.value = '0';
+        if (cgstInput) cgstInput.value = '0';
+    } else {
+        // If tax value is 0 or empty, try to auto-populate from current selected HSN
+        if (valInput && (!valInput.value || parseFloat(valInput.value) === 0)) {
+            const hsnCode = document.getElementById('inputReplacementHsn')?.value || '';
+            if (hsnCode && window.hsnCodesList) {
+                const foundHsn = window.hsnCodesList.find(h => String(h.hsn_code).toUpperCase() === String(hsnCode).toUpperCase());
+                if (foundHsn && parseFloat(foundHsn.gst_rate) > 0) {
+                    const rate = parseFloat(foundHsn.gst_rate);
+                    if (isBoth) {
+                        valInput.value = (rate / 2).toFixed(2);
+                        if (cgstInput) cgstInput.value = (rate / 2).toFixed(2);
+                    } else {
+                        valInput.value = rate;
+                    }
+                }
+            }
+        }
+    }
 }
 
 function handleResolutionStatusChange(status) {
@@ -1635,6 +1735,7 @@ function initHsnDropdown(container, hiddenSelector) {
                 e.preventDefault();
                 const code = item.dataset.code || '';
                 const desc = item.dataset.desc || '';
+                const gstRate = parseFloat(item.dataset.gst) || 0;
                 hiddenInput.value = code;
                 if (!code) {
                     btnText.textContent = '-- Select HSN --';
@@ -1645,6 +1746,24 @@ function initHsnDropdown(container, hiddenSelector) {
                 if (bsDropdown) bsDropdown.hide();
                 hiddenInput.dispatchEvent(new Event('input', { bubbles: true }));
                 hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+                if (hiddenInput.id === 'inputReplacementHsn') {
+                    const gstSelect = document.getElementById('inputReplacementGstType');
+                    if (gstRate > 0) {
+                        if (gstSelect && gstSelect.value === 'EXEMPTED') {
+                            gstSelect.value = 'IGST';
+                        }
+                        const taxVal = document.getElementById('inputReplacementTaxValue');
+                        const cgstVal = document.getElementById('inputReplacementCgstValue');
+                        if (gstSelect && gstSelect.value === 'BOTH') {
+                            if (taxVal) taxVal.value = (gstRate / 2).toFixed(2);
+                            if (cgstVal) cgstVal.value = (gstRate / 2).toFixed(2);
+                        } else {
+                            if (taxVal) taxVal.value = gstRate;
+                        }
+                    }
+                    updateReplacementTaxFields();
+                }
             });
         });
     }
@@ -1754,6 +1873,25 @@ function initQuickAddHsnModalHandler() {
                     if (bsDropdown) bsDropdown.hide();
                     activeHsnTarget.hiddenInput.dispatchEvent(new Event('input', { bubbles: true }));
                     activeHsnTarget.hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+                    if (activeHsnTarget.hiddenInput.id === 'inputReplacementHsn') {
+                        const gstSelect = document.getElementById('inputReplacementGstType');
+                        const gstRate = parseFloat(newHsn.gst_rate) || 0;
+                        if (gstRate > 0) {
+                            if (gstSelect && gstSelect.value === 'EXEMPTED') {
+                                gstSelect.value = 'IGST';
+                            }
+                            const taxVal = document.getElementById('inputReplacementTaxValue');
+                            const cgstVal = document.getElementById('inputReplacementCgstValue');
+                            if (gstSelect && gstSelect.value === 'BOTH') {
+                                if (taxVal) taxVal.value = (gstRate / 2).toFixed(2);
+                                if (cgstVal) cgstVal.value = (gstRate / 2).toFixed(2);
+                            } else {
+                                if (taxVal) taxVal.value = gstRate;
+                            }
+                        }
+                        updateReplacementTaxFields();
+                    }
                 }
 
                 const modalEl = document.getElementById('modalQuickAddHsn');
@@ -2204,6 +2342,7 @@ function confirmDeleteDamage(actionUrl, damageNumber) {
         if (!input) return false;
         return input.matches(
             '#inputReplacementDesignCount, #inputReplacementQuantity, #inputReplacementWeight, #inputReplacementPrice, ' +
+            '#inputReplacementTaxValue, #inputReplacementCgstValue, ' +
             '#inputRefundAmount, #inputDamagedWeight, #editDamagedWeight, #inputEstimatedLoss, #editEstimatedLoss'
         ) || (input.type === 'number');
     }
