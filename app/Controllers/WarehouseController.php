@@ -1413,12 +1413,14 @@ class WarehouseController {
         $normalItems = [];
         $seriesItems = [];
         $returnedItems = [];
-        $returnedVariantIds = array_fill_keys(array_map('intval', array_column(Database::fetchAll(
-            "SELECT DISTINCT variant_id
+        $returnedQuantitiesByVariant = array_column(Database::fetchAll(
+            "SELECT variant_id, COALESCE(SUM(quantity), 0) AS returned_quantity
              FROM stock_transactions
-             WHERE location_type = 'WAREHOUSE' AND location_id = ? AND transaction_type = 'RETURN_INWARD'",
+             WHERE location_type = 'WAREHOUSE' AND location_id = ?
+               AND stock_state = 'AVAILABLE' AND transaction_type = 'RETURN_INWARD' AND quantity > 0
+             GROUP BY variant_id",
             [$selectedWarehouseId]
-        ), 'variant_id')), true);
+        ), 'returned_quantity', 'variant_id');
         $prodAvailableQty = 0;
         $prodValuation = 0.0;
         $tpAvailableQty = 0;
@@ -1431,12 +1433,25 @@ class WarehouseController {
         foreach ($stockItems as $item) {
             $allocatedQty = (float)($item['allocated_quantity'] ?? 0);
             $rawQty = (float)($item['quantity'] ?? 0);
-            $netAvailableQty = max(0, $rawQty - $allocatedQty);
+            $variantId = (int)$item['variant_id'];
+            $returnedQty = ($item['stock_state'] ?? '') === 'AVAILABLE'
+                ? min(
+                    max(0, $rawQty - $allocatedQty),
+                    max(0, (float)($returnedQuantitiesByVariant[$variantId] ?? 0))
+                )
+                : 0;
+            if ($returnedQty > 0) {
+                $returnedQuantitiesByVariant[$variantId] = max(
+                    0,
+                    (float)$returnedQuantitiesByVariant[$variantId] - $returnedQty
+                );
+            }
+            $netAvailableQty = max(0, $rawQty - $returnedQty - $allocatedQty);
             $item['allocated_quantity'] = $allocatedQty;
 
             // Once allocated product, don't show in available stock
             if (($item['stock_state'] ?? '') === 'AVAILABLE') {
-                if ($netAvailableQty <= 0) {
+                if ($netAvailableQty <= 0 && $returnedQty <= 0) {
                     continue;
                 }
                 $item['quantity'] = $netAvailableQty;
@@ -1481,11 +1496,15 @@ class WarehouseController {
             $item['cost_rate'] = $costRate;
             $item['valuation'] = $valuation;
 
-            // Add the fully calculated row to the Returned tab. Previously it
-            // was copied before display prices and valuation were assigned,
-            // which made returned rows show ₹0.00.
-            if (isset($returnedVariantIds[(int)$item['variant_id']])) {
-                $returnedItems[] = $item;
+            if ($returnedQty > 0) {
+                $returnedItem = $item;
+                $returnedItem['quantity'] = $returnedQty;
+                $returnedItem['display_stock_state'] = 'AVAILABLE';
+                $returnedItem['valuation'] = $returnedQty * (($isComp || !$isProd) ? $itemSellingPrice : $costRate);
+                $returnedItems[] = $returnedItem;
+            }
+
+            if (($item['stock_state'] ?? '') === 'AVAILABLE' && $netAvailableQty <= 0) {
                 continue;
             }
 
