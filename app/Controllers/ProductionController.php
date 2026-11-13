@@ -2187,22 +2187,25 @@ class ProductionController {
             return;
         }
 
-        $warehouseTag = Database::fetchOne(
-            "SELECT wq.qr_code, wq.inwarded_at, w.name as warehouse_name
-             FROM warehouse_qr_codes wq
-             LEFT JOIN warehouses w ON w.id = wq.warehouse_id
-             WHERE wq.qr_code = ? AND wq.inwarded_at IS NOT NULL
-             LIMIT 1",
-            [$scanCode]
-        );
-        if ($warehouseTag) {
-            $whName = $warehouseTag['warehouse_name'] ?: 'Warehouse';
-            Response::json([
-                'success' => false,
-                'is_outwarded' => true,
-                'message' => "QR label {$scanCode} is already located in {$whName}. Items already in the warehouse cannot be reported as production damage!",
-            ], 409);
-            return;
+        $isProductionSupplyTag = (bool)preg_match('/^SP(\d{2})(\d{2})(\d{2,})$/i', $scanCode);
+        if (!$isProductionSupplyTag) {
+            $warehouseTag = Database::fetchOne(
+                "SELECT wq.qr_code, wq.inwarded_at, w.name as warehouse_name
+                 FROM warehouse_qr_codes wq
+                 LEFT JOIN warehouses w ON w.id = wq.warehouse_id
+                 WHERE wq.qr_code = ? AND wq.inwarded_at IS NOT NULL
+                 LIMIT 1",
+                [$scanCode]
+            );
+            if ($warehouseTag) {
+                $whName = $warehouseTag['warehouse_name'] ?: 'Warehouse';
+                Response::json([
+                    'success' => false,
+                    'is_outwarded' => true,
+                    'message' => "QR label {$scanCode} is already located in {$whName}. Items already in the warehouse cannot be reported as production damage!",
+                ], 409);
+                return;
+            }
         }
 
         // 4. Check if piece has already been billed / sold
@@ -2361,7 +2364,25 @@ class ProductionController {
             }
         }
 
-        // 3. Check Warehouse QR Codes
+        // 3. Check Production Garment Supplies (SP tags from production purchases) FIRST
+        if (!$prodItem && $isProductionSupplyTag) {
+            $supplyItemId = max(0, (int)($_GET['supply_item_id'] ?? 0));
+            $labelLookup = $this->resolveDamageLabelCode($scanCode, $supplyItemId ?: null);
+            if ($labelLookup['status'] === 'ambiguous') {
+                Response::json([
+                    'success' => true,
+                    'needs_supply_selection' => true,
+                    'code' => $scanCode,
+                    'candidates' => $labelLookup['candidates'],
+                ]);
+                return;
+            }
+            if ($labelLookup['status'] === 'found') {
+                $prodItem = $labelLookup['item'];
+            }
+        }
+
+        // 4. Check Warehouse QR Codes
         if (!$prodItem) {
             $whQr = Database::fetchOne(
                 "SELECT wq.*,
@@ -2382,7 +2403,7 @@ class ProductionController {
             }
         }
 
-        // 4. Check Product Variants by SKU or QR
+        // 5. Check Other Supply / Variant Labels
         if (!$prodItem) {
             $supplyItemId = max(0, (int)($_GET['supply_item_id'] ?? 0));
             $labelLookup = $this->resolveDamageLabelCode($scanCode, $supplyItemId ?: null);
@@ -2463,7 +2484,7 @@ class ProductionController {
                 'purchase_number' => $prodItem['purchase_number'] ?? null,
                 'size' => $sizeStr,
                 'color' => $colorStr,
-                'seller_id' => null,
+                'seller_id' => !empty($prodItem['seller_id']) ? (int)$prodItem['seller_id'] : null,
                 'seller_name' => $isSupply ? ($prodItem['supplier_name'] ?: 'Purchased Supply') : 'Own Production',
                 'roll_id' => null,
                 'roll_number' => $rollDesc,
@@ -2550,6 +2571,7 @@ class ProductionController {
         $supplySql =
             "SELECT ppi.id, ppi.purchase_id, ppi.item_name, ppi.quantity, ppi.unit,
                     ppi.weight_kg, ppi.unit_price, ppi.total_price,
+                    ppi.product_id, ppi.variant_id, pp.seller_id,
                     pp.purchase_number, s.name AS supplier_name, s.company AS supplier_company
              FROM production_purchase_items ppi
              JOIN production_purchases pp ON pp.id = ppi.purchase_id
@@ -2620,8 +2642,9 @@ class ProductionController {
             || $quantity <= 1
             || $quantity > 100;
         $unit = trim((string)$supply['unit']);
-        $supply['product_id'] = null;
-        $supply['variant_id'] = null;
+        $supply['product_id'] = !empty($supply['product_id']) ? (int)$supply['product_id'] : null;
+        $supply['variant_id'] = !empty($supply['variant_id']) ? (int)$supply['variant_id'] : null;
+        $supply['seller_id'] = !empty($supply['seller_id']) ? (int)$supply['seller_id'] : null;
         $supply['product_name'] = $supply['item_name'];
         $supply['supplier_name'] = $supply['supplier_company'] ?: $supply['supplier_name'];
         $supply['sku'] = $supply['purchase_number'] . '-ITEM-' . $supply['id'];
@@ -3706,6 +3729,19 @@ class ProductionController {
                     );
                 }
 
+                // Check Production Garment Supplies (SP tags from production purchases) FIRST
+                if (!$prodItem && preg_match('/^SP(\d{2})(\d{2})(\d{2,})$/i', $qrCode)) {
+                    $labelLookup = $this->resolveDamageLabelCode($qrCode, $qrEntry['supply_item_id'] ?: null);
+                    if ($labelLookup['status'] === 'ambiguous') {
+                        Session::flash('error', "QR code {$qrCode} matches multiple Other Garment Supplies labels. The code is not unique, so damage was not saved.");
+                        Response::back();
+                        return;
+                    }
+                    if ($labelLookup['status'] === 'found') {
+                        $prodItem = $labelLookup['item'];
+                    }
+                }
+
                 if (!$prodItem) {
                     $prodItem = Database::fetchOne(
                         "SELECT wq.*, p.id as product_id, p.name as product_name, pv.id as variant_id, pv.sku, pv.mrp, pv.selling_price, pv.production_cost, pv.weight as variant_weight,
@@ -3775,7 +3811,7 @@ class ProductionController {
                     'item_type' => 'PRODUCT',
                     'qr_code' => $qrCode,
                     'scan_index' => $qrEntry['scan_index'],
-                    'seller_id' => null,
+                    'seller_id' => !empty($prodItem['seller_id']) ? (int)$prodItem['seller_id'] : null,
                     'seller_roll_id' => null,
                     'product_id' => !empty($prodItem['product_id']) ? (int)$prodItem['product_id'] : null,
                     'variant_id' => !empty($prodItem['variant_id']) ? (int)$prodItem['variant_id'] : null,
@@ -16205,6 +16241,11 @@ class ProductionController {
                 if ($existingProduct) {
                     $productId = (int)$existingProduct['id'];
                     $prodCode = $existingProduct['code'];
+                    if (empty($existingProduct['seller_id']) && !empty($purchase['seller_id'])) {
+                        try {
+                            Database::execute("UPDATE products SET seller_id = ? WHERE id = ?", [(int)$purchase['seller_id'], $productId]);
+                        } catch (\Throwable $e) {}
+                    }
                 } else {
                     $cleanSlug = preg_replace('/[^A-Z0-9]/', '', $itemName);
                     $baseCode = 'SUP-' . substr($cleanSlug ?: 'ITEM', 0, 8);
@@ -16213,9 +16254,9 @@ class ProductionController {
 
                     Database::execute(
                         "INSERT INTO products
-                            (name, code, category_id, warehouse_category_id, hsn_code, source_type, is_active, created_at, updated_at)
-                         VALUES (?, ?, ?, ?, ?, 'EXTERNAL_PURCHASE', 1, NOW(), NOW())",
-                        [$itemName, $prodCode, $defaultCatId, $defaultWhCatId, $hsnCode]
+                            (name, code, category_id, warehouse_category_id, seller_id, hsn_code, source_type, is_active, created_at, updated_at)
+                         VALUES (?, ?, ?, ?, ?, ?, 'EXTERNAL_PURCHASE', 1, NOW(), NOW())",
+                        [$itemName, $prodCode, $defaultCatId, $defaultWhCatId, (int)$purchase['seller_id'], $hsnCode]
                     );
                     $productId = (int)Database::lastInsertId();
                 }
