@@ -874,6 +874,9 @@ class Router {
         $this->get('shop/inward/view/{id}', 'ShopController', 'viewInward', ['AuthMiddleware', ['PermissionMiddleware', 'shop_inward', 'view']]);
         $this->post('shop/inward/receive/{id}', 'ShopController', 'receiveInward', ['AuthMiddleware', ['PermissionMiddleware', 'shop_inward', 'receive']]);
         $this->post('shop/inward/verify/{id}', 'ShopController', 'verifyInward', ['AuthMiddleware', ['PermissionMiddleware', 'shop_inward', 'verify']]);
+        $this->get('shop/inward/edit/{id}', 'ShopController', 'editInward', ['AuthMiddleware', ['PermissionMiddleware', 'shop_inward', 'edit']]);
+        $this->post('shop/inward/update/{id}', 'ShopController', 'updateInward', ['AuthMiddleware', ['PermissionMiddleware', 'shop_inward', 'edit']]);
+        $this->post('shop/inward/delete/{id}', 'ShopController', 'deleteInward', ['AuthMiddleware', ['PermissionMiddleware', 'shop_inward', 'delete']]);
         $this->get('shop/inward/label/{id}', 'ShopController', 'printInwardQRLabel', ['AuthMiddleware', ['PermissionMiddleware', 'shop_inward', 'print']]);
         $this->get('shop/inward/gatepass/{id}', 'ShopController', 'printInwardGatePass', ['AuthMiddleware', ['PermissionMiddleware', 'shop_inward', 'print']]);
         $this->post('api/shop/inward/scan', 'ShopController', 'ajaxScanInward', ['AuthMiddleware', ['PermissionMiddleware', 'shop_inward', 'receive']]);

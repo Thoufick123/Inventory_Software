@@ -29,6 +29,8 @@
         || hasPermission('shop_inward', 'create')
         || hasPermission('inward', 'create')
         || hasPermission('inward', 'verify');
+    $canEditInward = hasPermission('shop_inward', 'edit');
+    $canDeleteInward = hasPermission('shop_inward', 'delete');
     // Calculate actual total received, damaged, and missing quantities across all items
     $totalRecvCount = 0;
     $totalDamCount = 0;
@@ -53,7 +55,16 @@
         <h2 class="mb-1"><i class="bi bi-qr-code-scan me-2 text-primary"></i>Cross-Check Shop Inward #<?= e($allocation['allocation_number']) ?></h2>
        </div>
     <div class="d-flex gap-2 flex-wrap">
-        
+        <?php if ($canEditInward): ?>
+            <a href="<?= url('shop/inward/edit/' . $allocation['id']) ?>?shop_id=<?= (int)($shop['id'] ?? 0) ?>" class="btn btn-warning">
+                <i class="bi bi-pencil-square me-1"></i>Edit Inward
+            </a>
+        <?php endif; ?>
+        <?php if ($canDeleteInward): ?>
+            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteInwardModal">
+                <i class="bi bi-trash3 me-1"></i>Delete Inward
+            </button>
+        <?php endif; ?>
         <a href="<?= url('shop/inward') ?>?shop_id=<?= (int)($shop['id'] ?? 0) ?>" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i> Inward Queue
         </a>
@@ -223,6 +234,35 @@
                         </button>
                         <button type="button" class="btn-close position-static p-2" data-bs-dismiss="alert" aria-label="Close"></button>
                     </div>
+                </div>
+            </div>
+        <?php endif; ?>
+
+        <?php if (!$isFullyReceived && $canInward): ?>
+            <div class="card border-0 shadow-sm mb-4 border-start border-primary border-4">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                        <label class="form-label fw-bold text-dark mb-0"><i class="bi bi-upc-scan text-primary me-1"></i>Live Product &amp; QR Cross-Check Scanner</label>
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+                            <i class="bi bi-shop me-1"></i>Inward to <strong><?= e($shop['name'] ?? 'Shop') ?></strong>
+                        </span>
+                    </div>
+                    <div class="input-group input-group-lg mb-2">
+                        <span class="input-group-text bg-white"><i class="bi bi-qr-code text-primary"></i></span>
+                        <input type="text" id="liveScannerInput" class="form-control font-monospace" placeholder="Scan piece QR / barcode / SKU / master consignment..." autocomplete="off">
+                        <button class="btn btn-primary px-4 fw-semibold" type="button" id="btnLiveScanSubmit"><i class="bi bi-plus-circle me-1"></i>Scan</button>
+                        <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#cameraScanModal" title="Use camera"><i class="bi bi-camera"></i></button>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="small fw-semibold text-muted">Scan condition:</span>
+                        <div class="btn-group btn-group-sm" role="group" aria-label="Scanner mode">
+                            <input type="radio" class="btn-check" name="liveScanMode" id="liveModeGood" checked autocomplete="off" onchange="setScanMode('good')">
+                            <label class="btn btn-outline-success" for="liveModeGood"><i class="bi bi-check-circle me-1"></i>Good / Intact</label>
+                            <input type="radio" class="btn-check" name="liveScanMode" id="liveModeDamage" autocomplete="off" onchange="setScanMode('damage')">
+                            <label class="btn btn-outline-danger" for="liveModeDamage"><i class="bi bi-slash-circle me-1"></i>Damaged / Defect</label>
+                        </div>
+                    </div>
+                    <div id="scanAlertMsg" class="mt-3 d-none" role="status" aria-live="polite"></div>
                 </div>
             </div>
         <?php endif; ?>
@@ -445,6 +485,37 @@
 </div>
 <?php endif; ?>
 
+<?php if ($canDeleteInward): ?>
+<div class="modal fade" id="deleteInwardModal" tabindex="-1" aria-labelledby="deleteInwardModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <form method="POST" action="<?= url('shop/inward/delete/' . $allocation['id']) ?>" onsubmit="return confirmShopInwardDelete()">
+                <?= CSRF::field() ?>
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title" id="deleteInwardModalLabel"><i class="bi bi-exclamation-triangle me-2"></i>Delete / Reverse Inward Receipt</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Allocation <strong><?= e($allocation['allocation_number']) ?></strong> will be reset to dispatched. Credited stock is reversed only if its balances remain available.</p>
+                    <label class="form-label" for="deleteInwardReason">Mandatory reason</label>
+                    <textarea class="form-control" name="reason" id="deleteInwardReason" rows="3" required minlength="4"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Reverse Inward</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+function confirmShopInwardDelete() {
+    const reason = document.getElementById('deleteInwardReason').value.trim();
+    return reason.length >= 4 && confirm('Reverse this inward receipt and deduct its credited stock?');
+}
+</script>
+<?php endif; ?>
+
 <style>
 #modalMissingPiecesGrid {
     scrollbar-width: thin;
@@ -623,6 +694,7 @@
     const IS_RECEIVED = IS_FULLY_RECEIVED;
     const ITEMS = <?= json_encode($items) ?>;
     const PIECE_QRS = <?= json_encode($pieceQRs ?? []) ?>;
+    const ACTIVE_DAMAGED_TAGS_BY_VARIANT = <?= json_encode($activeDamagedTagsByVariant ?? [], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
     const SAVED_SERVER_DRAFT = <?= json_encode($savedDraft ?? null) ?>;
     const DRAFT_STORAGE_KEY = 'grm_shop_inward_draft_' + ALLOCATION_ID;
     let draftDebounceTimer = null;
@@ -632,12 +704,33 @@
     const DAMAGED_TAGS = new Set();
     let currentScanMode = 'good'; // 'good' or 'damage'
 
+    function isPieceAlreadyQuarantined(item, tagCode) {
+        const tag = String(tagCode || '').trim().toUpperCase();
+        const activeTags = ACTIVE_DAMAGED_TAGS_BY_VARIANT[String(item.variant_id)] || [];
+        return tag !== '' && activeTags.some(activeTag => String(activeTag).trim().toUpperCase() === tag);
+    }
+
+    function blockQuarantinedPiece(item, tagCode) {
+        if (!isPieceAlreadyQuarantined(item, tagCode)) return false;
+
+        playBeep('error');
+        showScanFeedback(
+            `⚠️ Piece QR <span class="badge bg-danger font-monospace">${escapeHtml(tagCode)}</span> is already quarantined in Shop Damage Management and cannot be received as good stock.`,
+            'warning'
+        );
+        return true;
+    }
+
     function setScanMode(mode) {
         currentScanMode = mode;
         const goodMode = document.getElementById('modalModeGood');
         const damageMode = document.getElementById('modalModeDamage');
+        const liveGoodMode = document.getElementById('liveModeGood');
+        const liveDamageMode = document.getElementById('liveModeDamage');
         if (goodMode) goodMode.checked = mode === 'good';
         if (damageMode) damageMode.checked = mode === 'damage';
+        if (liveGoodMode) liveGoodMode.checked = mode === 'good';
+        if (liveDamageMode) liveDamageMode.checked = mode === 'damage';
 
         const scanButton = document.getElementById('btnModalScanPlusOne');
         const scanButtonIcon = document.getElementById('modalScanModeIcon');
@@ -869,6 +962,31 @@
         }
     }
 
+    function parseInwardTags(rawTags) {
+        let tags = [];
+        if (Array.isArray(rawTags)) {
+            tags = rawTags;
+        } else if (rawTags) {
+            const rawValue = String(rawTags);
+            try {
+                const parsed = JSON.parse(rawValue);
+                tags = Array.isArray(parsed) ? parsed : rawValue.split(/[,|]/);
+            } catch (e) {
+                tags = rawValue.split(/[,|]/);
+            }
+        }
+
+        return tags
+            .map(tag => {
+                if (tag && typeof tag === 'object') {
+                    return tag.tag_code || tag.qr_code || tag.tag || '';
+                }
+                return tag;
+            })
+            .map(tag => String(tag || '').trim().toUpperCase())
+            .filter(Boolean);
+    }
+
     // Initialize global sequence ranges for multi-variant consignments
     let currentGlobalSeq = 1;
     ITEMS.forEach(it => {
@@ -933,21 +1051,51 @@
         const dmgQty = parseInt(it.damaged_qty) || 0;
         const receivedTotal = parseInt(it.received_qty) || (IS_FULLY_RECEIVED ? qty : 0);
         const recvQty = Math.max(0, receivedTotal - dmgQty);
+        const receivedTags = parseInwardTags(it.received_qr_codes);
+        const activeDamagedTags = new Set(
+            (ACTIVE_DAMAGED_TAGS_BY_VARIANT[String(it.variant_id)] || [])
+                .map(tag => String(tag).trim().toUpperCase())
+        );
+        const allocatedTags = savedTags.map(tag => String(tag).trim().toUpperCase()).filter(Boolean);
+        const allocatedTagSet = new Set(allocatedTags);
+        const knownDamagedTags = allocatedTags.filter(tag => activeDamagedTags.has(tag));
 
         if (isSeries && it.series_qr_code) {
             const sTag = it.series_qr_code;
-            if (dmgQty > 0) {
+            if (dmgQty > 0 || activeDamagedTags.has(sTag)) {
                 DAMAGED_TAGS.add(sTag);
             } else if (recvQty > 0) {
                 SCANNED_TAGS.add(sTag);
             }
-        } else if (savedTags.length > 0) {
-            savedTags.forEach((tag, idx) => {
-                const clean = String(tag).toUpperCase();
-                if (idx >= (savedTags.length - dmgQty)) {
-                    DAMAGED_TAGS.add(clean);
-                } else if (idx < recvQty) {
-                    SCANNED_TAGS.add(clean);
+        } else if (allocatedTags.length > 0) {
+            knownDamagedTags.forEach(tag => DAMAGED_TAGS.add(tag));
+
+            const processedTags = receivedTags.filter(tag => allocatedTagSet.has(tag));
+            const damageCandidates = processedTags.length > 0 ? processedTags : allocatedTags;
+            let remainingDamaged = Math.max(0, dmgQty - knownDamagedTags.length);
+            for (let i = damageCandidates.length - 1; i >= 0 && remainingDamaged > 0; i--) {
+                const tag = damageCandidates[i];
+                if (!DAMAGED_TAGS.has(tag)) {
+                    DAMAGED_TAGS.add(tag);
+                    remainingDamaged--;
+                }
+            }
+
+            let remainingGood = recvQty;
+            const goodCandidates = [...processedTags, ...allocatedTags];
+            for (const tag of goodCandidates) {
+                if (remainingGood <= 0) break;
+                if (!DAMAGED_TAGS.has(tag) && !SCANNED_TAGS.has(tag)) {
+                    SCANNED_TAGS.add(tag);
+                    remainingGood--;
+                }
+            }
+        } else if (receivedTags.length > 0) {
+            receivedTags.forEach(tag => {
+                if (activeDamagedTags.has(tag)) {
+                    DAMAGED_TAGS.add(tag);
+                } else {
+                    SCANNED_TAGS.add(tag);
                 }
             });
         } else if (IS_FULLY_RECEIVED) {
@@ -999,15 +1147,32 @@
             variantTags.push(getLabelCode(p, item).toUpperCase());
         }
 
+        const quarantinedTags = variantTags.filter(tag => isPieceAlreadyQuarantined(item, tag));
+        quarantinedTags.forEach(tag => {
+            DAMAGED_TAGS.add(tag);
+            SCANNED_TAGS.delete(tag);
+        });
+        const targetDmgQty = Math.min(expected, Math.max(validDmgQty, quarantinedTags.length));
+        const targetRecvQty = Math.min(validRecvQty, expected - targetDmgQty);
+        if (dmgInput && parseInt(dmgInput.value) !== targetDmgQty) {
+            dmgInput.value = targetDmgQty;
+        }
+        if (recvInput && parseInt(recvInput.value) !== targetRecvQty) {
+            recvInput.value = targetRecvQty;
+        }
+
         // Sync damaged tags
         let damagedInSet = variantTags.filter(t => DAMAGED_TAGS.has(t));
-        if (damagedInSet.length > validDmgQty) {
-            for (let i = damagedInSet.length - 1; i >= validDmgQty; i--) {
-                DAMAGED_TAGS.delete(damagedInSet[i]);
+        if (damagedInSet.length > targetDmgQty) {
+            for (let i = damagedInSet.length - 1; i >= 0 && damagedInSet.length > targetDmgQty; i--) {
+                if (!quarantinedTags.includes(damagedInSet[i])) {
+                    DAMAGED_TAGS.delete(damagedInSet[i]);
+                    damagedInSet.splice(i, 1);
+                }
             }
-        } else if (damagedInSet.length < validDmgQty) {
+        } else if (damagedInSet.length < targetDmgQty) {
             for (let t of variantTags) {
-                if (damagedInSet.length >= validDmgQty) break;
+                if (damagedInSet.length >= targetDmgQty) break;
                 if (!DAMAGED_TAGS.has(t) && !SCANNED_TAGS.has(t)) {
                     DAMAGED_TAGS.add(t);
                     damagedInSet.push(t);
@@ -1017,14 +1182,14 @@
 
         // Sync verified good tags (excluding damaged tags)
         let verifiedInSet = variantTags.filter(t => SCANNED_TAGS.has(t) && !DAMAGED_TAGS.has(t));
-        if (verifiedInSet.length > validRecvQty) {
-            for (let i = verifiedInSet.length - 1; i >= validRecvQty; i--) {
+        if (verifiedInSet.length > targetRecvQty) {
+            for (let i = verifiedInSet.length - 1; i >= targetRecvQty; i--) {
                 SCANNED_TAGS.delete(verifiedInSet[i]);
             }
-        } else if (verifiedInSet.length < validRecvQty) {
+        } else if (verifiedInSet.length < targetRecvQty) {
             for (let t of variantTags) {
-                if (verifiedInSet.length >= validRecvQty) break;
-                if (!SCANNED_TAGS.has(t) && !DAMAGED_TAGS.has(t)) {
+                if (verifiedInSet.length >= targetRecvQty) break;
+                if (!SCANNED_TAGS.has(t) && !DAMAGED_TAGS.has(t) && !isPieceAlreadyQuarantined(item, t)) {
                     SCANNED_TAGS.add(t);
                     verifiedInSet.push(t);
                 }
@@ -1366,7 +1531,10 @@
 
         // Check if Master Consignment QR or Outward Number
         if (code === ALLOCATION_NUMBER || code === OUTWARD_NUMBER || code.includes(ALLOCATION_NUMBER) || (OUTWARD_NUMBER && code.includes(OUTWARD_NUMBER))) {
-            autoFillAllExpected();
+            if (!autoFillAllExpected()) {
+                if (liveInput) { liveInput.value = ''; liveInput.focus(); }
+                return;
+            }
             playBeep('double');
             showScanFeedback("⚡ Master Consignment QR scanned! All " + TOTAL_EXPECTED + " pcs verified!", "success");
             if (liveInput) { liveInput.value = ''; liveInput.focus(); }
@@ -1481,6 +1649,10 @@
             // Specific handling for Series Product (1 QR code represents the entire allocated pack)
             if (matchedItem.is_series) {
                 const seriesTag = (matchedItem.series_qr_code || identifiedTag || getLabelCode(matchedItem.startSeq, matchedItem)).toUpperCase();
+                if (blockQuarantinedPiece(matchedItem, seriesTag)) {
+                    if (liveInput) { liveInput.value = ''; liveInput.focus(); }
+                    return;
+                }
 
                 if (currentScanMode === 'damage') {
                     if (DAMAGED_TAGS.has(seriesTag)) {
@@ -1541,17 +1713,29 @@
                 for (let p = matchedItem.startSeq; p <= matchedItem.endSeq; p++) {
                     const tag = getLabelCode(p, matchedItem).toUpperCase();
                     if (currentScanMode === 'damage') {
-                        if (!DAMAGED_TAGS.has(tag)) {
+                        if (!DAMAGED_TAGS.has(tag) && !isPieceAlreadyQuarantined(matchedItem, tag)) {
                             identifiedTag = tag;
                             break;
                         }
                     } else {
-                        if (!SCANNED_TAGS.has(tag) && !DAMAGED_TAGS.has(tag)) {
+                        if (!SCANNED_TAGS.has(tag) && !DAMAGED_TAGS.has(tag) && !isPieceAlreadyQuarantined(matchedItem, tag)) {
                             identifiedTag = tag;
                             break;
                         }
                     }
                 }
+            }
+
+            if (!identifiedTag) {
+                playBeep('error');
+                showScanFeedback(`⚠️ No unquarantined piece QR is available for <strong>${escapeHtml(matchedItem.sku)}</strong>.`, 'warning');
+                if (liveInput) { liveInput.value = ''; liveInput.focus(); }
+                return;
+            }
+
+            if (identifiedTag && blockQuarantinedPiece(matchedItem, identifiedTag)) {
+                if (liveInput) { liveInput.value = ''; liveInput.focus(); }
+                return;
             }
 
             if (currentScanMode === 'damage') {
@@ -1662,6 +1846,19 @@
     }
 
     function autoFillAllExpected() {
+        for (const item of ITEMS) {
+            const tags = item.is_series
+                ? [item.series_qr_code || getLabelCode(item.startSeq, item)]
+                : (Array.isArray(item.saved_tags) && item.saved_tags.length
+                    ? item.saved_tags
+                    : Array.from({ length: parseInt(item.dispatched_qty > 0 ? item.dispatched_qty : item.requested_qty) || 0 }, (_, index) => getLabelCode(item.startSeq + index, item)));
+            const quarantinedTag = tags.find(tag => isPieceAlreadyQuarantined(item, tag));
+            if (quarantinedTag) {
+                blockQuarantinedPiece(item, quarantinedTag);
+                return false;
+            }
+        }
+
         ITEMS.forEach(item => {
             const vid = item.variant_id;
             const recvInput = document.getElementById(`input-recv-${vid}`);
@@ -1681,6 +1878,7 @@
         if (activeModalVariantId) {
             updateModalState(activeModalVariantId);
         }
+        return true;
     }
 
     function recalculateMatrix() {
@@ -2192,6 +2390,7 @@
                     const isDamaged = DAMAGED_TAGS.has(pieceTagCode);
                     const isVerified = SCANNED_TAGS.has(pieceTagCode) && !isDamaged;
                     const isPending = !isVerified && !isDamaged;
+                    const isAlreadyQuarantined = isPieceAlreadyQuarantined(item, pieceTagCode);
 
                     // Apply Active Filter: Skip non-matching pieces
                     if (modalPieceFilter === 'mismatched' && !isPending) {
@@ -2348,7 +2547,7 @@
                                         </div>
                                     </div>
                                     <div class="d-flex flex-column gap-1.5 flex-shrink-0 align-items-center">
-                                        <button type="button" class="btn btn-sm btn-outline-success d-flex align-items-center justify-content-center shadow-xs" style="width: 32px; height: 30px; padding: 0; border-radius: 6px;" onclick="unmarkPieceDamage(${variantId}, '${escapeHtml(pieceTagCode)}');" title="Change to Good Product">
+                                        <button type="button" class="btn btn-sm btn-outline-success d-flex align-items-center justify-content-center shadow-xs" style="width: 32px; height: 30px; padding: 0; border-radius: 6px;" ${isAlreadyQuarantined ? 'disabled' : `onclick="unmarkPieceDamage(${variantId}, '${escapeHtml(pieceTagCode)}');"`} title="${isAlreadyQuarantined ? 'Locked: this piece is already in Shop Damage Management' : 'Change to Good Product'}">
                                             <i class="bi bi-check-lg" style="font-size: 1.05rem;"></i>
                                         </button>
                                         <button type="button" class="btn btn-sm btn-danger d-flex align-items-center justify-content-center shadow-xs disabled" style="width: 32px; height: 30px; padding: 0; border-radius: 6px; opacity: 0.9;" disabled title="Damage Product">
@@ -2486,6 +2685,7 @@
 
         if (item.is_series) {
             const seriesTag = (item.series_qr_code || getLabelCode(item.startSeq, item)).toUpperCase();
+            if (blockQuarantinedPiece(item, seriesTag)) return;
             DAMAGED_TAGS.delete(seriesTag);
             SCANNED_TAGS.add(seriesTag);
             if (recvInput) recvInput.value = expected;
@@ -2509,12 +2709,20 @@
         if (!tagToVerify) {
             for (let p = item.startSeq; p <= item.endSeq; p++) {
                 const code = getLabelCode(p, item).toUpperCase();
-                if (!SCANNED_TAGS.has(code) && !DAMAGED_TAGS.has(code)) {
+                if (!SCANNED_TAGS.has(code) && !DAMAGED_TAGS.has(code) && !isPieceAlreadyQuarantined(item, code)) {
                     tagToVerify = code;
                     break;
                 }
             }
         }
+
+        if (!tagToVerify) {
+            playBeep('error');
+            showScanFeedback(`⚠️ No unquarantined piece QR is available for <strong>${escapeHtml(item.sku)}</strong>.`, 'warning');
+            return;
+        }
+
+        if (tagToVerify && blockQuarantinedPiece(item, tagToVerify)) return;
 
         if (tagToVerify && SCANNED_TAGS.has(tagToVerify) && !DAMAGED_TAGS.has(tagToVerify)) {
             playBeep('error');
@@ -2573,6 +2781,7 @@
 
         if (item.is_series) {
             const seriesTag = (item.series_qr_code || getLabelCode(item.startSeq, item)).toUpperCase();
+            if (blockQuarantinedPiece(item, seriesTag)) return;
             SCANNED_TAGS.delete(seriesTag);
             DAMAGED_TAGS.add(seriesTag);
             if (dmgInput) dmgInput.value = expected;
@@ -2596,12 +2805,20 @@
         if (!tagToMark) {
             for (let p = item.startSeq; p <= item.endSeq; p++) {
                 const code = getLabelCode(p, item).toUpperCase();
-                if (!DAMAGED_TAGS.has(code) && !SCANNED_TAGS.has(code)) {
+                if (!DAMAGED_TAGS.has(code) && !SCANNED_TAGS.has(code) && !isPieceAlreadyQuarantined(item, code)) {
                     tagToMark = code;
                     break;
                 }
             }
         }
+
+        if (!tagToMark) {
+            playBeep('error');
+            showScanFeedback(`⚠️ No unquarantined piece QR is available for <strong>${escapeHtml(item.sku)}</strong>.`, 'warning');
+            return;
+        }
+
+        if (tagToMark && blockQuarantinedPiece(item, tagToMark)) return;
 
         if (tagToMark && DAMAGED_TAGS.has(tagToMark)) {
             playBeep('error');
@@ -2636,6 +2853,10 @@
     function unmarkPieceDamage(vid, tagCode) {
         const item = ITEMS.find(i => String(i.variant_id) === String(vid));
         if (!item) return;
+        const protectedTag = item.is_series
+            ? (item.series_qr_code || getLabelCode(item.startSeq, item)).toUpperCase()
+            : String(tagCode || '').toUpperCase();
+        if (blockQuarantinedPiece(item, protectedTag)) return;
 
         if (item.is_series) {
             const seriesTag = (item.series_qr_code || getLabelCode(item.startSeq, item)).toUpperCase();
@@ -2739,9 +2960,17 @@
     function creditSingleItem(vid) {
         const item = ITEMS.find(i => String(i.variant_id) === String(vid));
         if (!item) return;
+        const expected = parseInt(item.dispatched_qty > 0 ? item.dispatched_qty : item.requested_qty) || 0;
+        if (item.is_series) {
+            const seriesTag = (item.series_qr_code || getLabelCode(item.startSeq, item)).toUpperCase();
+            if (blockQuarantinedPiece(item, seriesTag)) return;
+        } else {
+            for (let p = item.startSeq; p <= item.endSeq; p++) {
+                if (blockQuarantinedPiece(item, getLabelCode(p, item).toUpperCase())) return;
+            }
+        }
         const recvInput = document.getElementById(`input-recv-${vid}`);
         const dmgInput = document.getElementById(`input-dmg-${vid}`);
-        const expected = parseInt(item.dispatched_qty > 0 ? item.dispatched_qty : item.requested_qty) || 0;
         
         if (recvInput) {
             for (let p = item.startSeq; p <= item.endSeq; p++) {

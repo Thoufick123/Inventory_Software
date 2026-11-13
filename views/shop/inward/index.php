@@ -4,6 +4,8 @@ $canInward = hasPermission('shop_inward', 'verify')
     || hasPermission('shop_inward', 'create')
     || hasPermission('inward', 'create')
     || hasPermission('inward', 'verify');
+$canEditInward = hasPermission('shop_inward', 'edit');
+$canDeleteInward = hasPermission('shop_inward', 'delete');
 $hasMultipleShops = count($shops ?? []) > 1;
 ?>
 <style>
@@ -301,7 +303,15 @@ $hasMultipleShops = count($shops ?? []) > 1;
                             </div>
 
                             <!-- Card Footer -->
-                            <div class="card-footer bg-light py-2 px-3 d-flex justify-content-between align-items-center gap-1">
+                            <div class="card-footer bg-light py-2 px-3 d-flex justify-content-between align-items-center gap-1 flex-wrap">
+                                <div class="d-inline-flex gap-1">
+                                    <?php if ($canEditInward): ?>
+                                        <a href="<?= url('shop/inward/edit/' . $a['id']) . $shopQuery ?>" class="btn btn-sm btn-warning py-1 px-2" title="Edit inward receipt"><i class="bi bi-pencil-square"></i></a>
+                                    <?php endif; ?>
+                                    <?php if ($canDeleteInward): ?>
+                                        <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2" onclick="openShopInwardDeleteModal(<?= (int)$a['id'] ?>, '<?= e($a['allocation_number']) ?>')" title="Delete inward receipt"><i class="bi bi-trash3"></i></button>
+                                    <?php endif; ?>
+                                </div>
                                 <?php if ($isFullyReceived || !$canInward): ?>
                                     <a href="<?= url('shop/inward/view/' . $a['id']) . $shopQuery ?>" class="btn btn-sm btn-outline-primary flex-grow-1 py-1">
                                         <i class="bi bi-eye me-1"></i> View Inward
@@ -484,6 +494,12 @@ $hasMultipleShops = count($shops ?? []) > 1;
                                             <i class="bi <?= ((!$isRecv || $isPartial) && $canInward) ? 'bi-qr-code-scan' : 'bi-eye' ?> me-1"></i>
                                             <?= ((!$isRecv || $isPartial) && $canInward) ? ($isPartial ? 'Continue Inward' : 'Cross-Check &amp; Inward') : 'View Inward' ?>
                                         </a>
+                                        <?php if ($canEditInward): ?>
+                                            <a href="<?= url('shop/inward/edit/' . $a['id']) . $shopQuery ?>" class="btn btn-sm btn-warning" title="Edit inward receipt"><i class="bi bi-pencil-square"></i></a>
+                                        <?php endif; ?>
+                                        <?php if ($canDeleteInward): ?>
+                                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="openShopInwardDeleteModal(<?= (int)$a['id'] ?>, '<?= e($a['allocation_number']) ?>')" title="Delete inward receipt"><i class="bi bi-trash3"></i></button>
+                                        <?php endif; ?>
                                         <a href="<?= url('shop/inventory') ?>?shop_id=<?= (int)($a['destination_shop_id'] ?? 0) ?>"
                                            class="btn btn-sm btn-outline-success"
                                            title="View inventory for <?= e($a['destination_shop_name'] ?? 'destination shop') ?>">
@@ -501,6 +517,43 @@ $hasMultipleShops = count($shops ?? []) > 1;
 </div>
     </div>
 </div>
+
+<?php if ($canDeleteInward): ?>
+<div class="modal fade" id="modalDeleteShopInward" tabindex="-1" aria-labelledby="modalDeleteShopInwardLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <form method="POST" id="formDeleteShopInward" action="" onsubmit="return validateShopInwardDelete()">
+                <?= CSRF::field() ?>
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title fw-bold" id="modalDeleteShopInwardLabel"><i class="bi bi-exclamation-triangle-fill me-2"></i>Delete / Reverse Inward</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Allocation <strong id="deleteShopInwardNumber">-</strong> will be reset to dispatched. Credited stock is reversed only if its balances remain available.</p>
+                    <label class="form-label" for="deleteShopInwardReason">Mandatory reason</label>
+                    <textarea class="form-control" name="reason" id="deleteShopInwardReason" rows="3" minlength="4" required></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Reverse Inward</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+function openShopInwardDeleteModal(id, number) {
+    document.getElementById('formDeleteShopInward').action = '<?= url("shop/inward/delete/") ?>' + id;
+    document.getElementById('deleteShopInwardNumber').textContent = number || ('#' + id);
+    document.getElementById('deleteShopInwardReason').value = '';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalDeleteShopInward')).show();
+}
+function validateShopInwardDelete() {
+    const reason = document.getElementById('deleteShopInwardReason').value.trim();
+    return reason.length >= 4 && confirm('Reverse this inward receipt and deduct its credited stock?');
+}
+</script>
+<?php endif; ?>
 
 <!-- ========================================================================= -->
 <!-- MODAL: SHOW QR CODE -->

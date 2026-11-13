@@ -3869,14 +3869,47 @@ class ShopService {
     /**
      * Complete receipt of a shop allocation inward consignment.
      */
+    private static function normalizeInwardPieceTags($rawTags): array {
+        if (is_array($rawTags)) {
+            $tags = $rawTags;
+        } else {
+            $rawTags = trim((string)$rawTags);
+            if ($rawTags === '') {
+                return [];
+            }
+
+            $decoded = json_decode($rawTags, true);
+            $tags = is_array($decoded) ? $decoded : (preg_split('/[,|]/', $rawTags) ?: []);
+        }
+
+        $normalized = [];
+        foreach ($tags as $tag) {
+            if (is_array($tag)) {
+                $tag = $tag['tag_code'] ?? ($tag['qr_code'] ?? ($tag['tag'] ?? ''));
+            }
+            $tag = strtoupper(trim((string)$tag));
+            if ($tag !== '') {
+                $normalized[] = $tag;
+            }
+        }
+
+        return $normalized;
+    }
+
     public static function receiveShopAllocation(int $allocationId, int $shopId, int $userId, string $notes = '', ?array $receivedItems = null): void {
         $details = self::getInwardAllocationDetails($allocationId);
         if (!$details) {
             throw new Exception("Allocation Pass #$allocationId not found.");
         }
+        if ((int)($details['shop']['id'] ?? 0) !== $shopId) {
+            throw new Exception('This inward allocation is not assigned to the selected shop.');
+        }
 
         $allocation = $details['allocation'];
         $items = $details['items'];
+        if (!in_array($allocation['status'], ['DISPATCHED', 'PARTIAL_RECEIVED', 'RECEIVED', 'COMPLETED', 'DELIVERED'], true)) {
+            throw new Exception("Allocation status '{$allocation['status']}' cannot be inwarded.");
+        }
 
         Database::beginTransaction();
         try {
@@ -3885,6 +3918,11 @@ class ShopService {
             $totalAccepted = 0;
             $totalDamaged = 0;
             $totalMissing = 0;
+            $activeDamagedTagsByVariant = ShopDamage::getActivePieceTagsByVariant(
+                $shopId,
+                array_column($items, 'variant_id'),
+                true
+            );
 
             // 1. Process each item variant
             foreach ($items as $item) {
@@ -3897,8 +3935,11 @@ class ShopService {
                 $prevAccepted = max(0.0, $prevRecv - $prevDam);
 
                 if ($receivedItems !== null && isset($receivedItems[$vid])) {
-                    $recv = max(0.0, (float)($receivedItems[$vid]['received_qty'] ?? 0));
-                    $dam  = max(0.0, (float)($receivedItems[$vid]['damaged_qty'] ?? 0));
+                    $recv = (float)($receivedItems[$vid]['received_qty'] ?? 0);
+                    $dam  = (float)($receivedItems[$vid]['damaged_qty'] ?? 0);
+                    if ($recv < 0 || $dam < 0 || floor($recv) !== $recv || floor($dam) !== $dam) {
+                        throw new Exception("Inward quantities for {$item['sku']} must be non-negative whole pieces.");
+                    }
                     if ($recv > $dispatchedQty) {
                         throw new Exception("Received quantity for {$item['sku']} exceeds the dispatched quantity.");
                     }
@@ -3915,6 +3956,23 @@ class ShopService {
                     $itemNotes = '';
                     $scannedTagsList = [];
                     $damagedTagsList = [];
+                }
+
+                $scannedTagsList = self::normalizeInwardPieceTags($scannedTagsList);
+                $damagedTagsList = self::normalizeInwardPieceTags($damagedTagsList);
+                $accepted = $recv - $dam;
+                $allocatedTags = self::normalizeInwardPieceTags($item['saved_tags'] ?? []);
+                $reportedTags = array_merge($scannedTagsList, $damagedTagsList);
+                $reportedTagSet = array_values(array_unique($reportedTags));
+                if (
+                    count($scannedTagsList) !== count(array_unique($scannedTagsList))
+                    || count($damagedTagsList) !== count(array_unique($damagedTagsList))
+                    || count($scannedTagsList) > $accepted
+                    || count($damagedTagsList) > $dam
+                    || array_intersect($scannedTagsList, $damagedTagsList)
+                    || (!empty($allocatedTags) && array_diff($reportedTagSet, $allocatedTags))
+                ) {
+                    throw new Exception("Piece QR codes for SKU {$item['sku']} do not match the verified inward quantities.");
                 }
 
                 $receivedTagMap = [];
@@ -3934,25 +3992,38 @@ class ShopService {
                     }
                 }
                 if (!$receivedTagMap && $recv > 0) {
-                    $allocatedTags = $item['saved_tags'] ?? [];
-                    if (!$allocatedTags && !empty($item['selected_qr_codes'])) {
-                        $allocatedTags = json_decode((string)$item['selected_qr_codes'], true);
-                        if (!is_array($allocatedTags)) {
-                            $allocatedTags = explode(',', (string)$item['selected_qr_codes']);
-                        }
-                    }
-                    foreach (array_slice((array)$allocatedTags, 0, (int)$recv) as $allocatedTag) {
-                        $allocatedTag = is_array($allocatedTag)
-                            ? ($allocatedTag['tag_code'] ?? ($allocatedTag['qr_code'] ?? ''))
-                            : (string)$allocatedTag;
-                        $allocatedTag = strtoupper(trim($allocatedTag));
+                    foreach (array_slice($allocatedTags, 0, (int)$recv) as $allocatedTag) {
+                        $allocatedTag = strtoupper(trim((string)$allocatedTag));
                         if ($allocatedTag !== '') {
                             $receivedTagMap[$allocatedTag] = $allocatedTag;
                         }
                     }
                 }
 
-                $accepted = max(0.0, $recv - $dam);
+                $damagedTagMap = [];
+                foreach ($damagedTagsList as $damagedTag) {
+                    $damagedTag = strtoupper(trim((string)$damagedTag));
+                    if ($damagedTag !== '') {
+                        $damagedTagMap[$damagedTag] = true;
+                    }
+                }
+                foreach ($scannedTagsList as $scannedTag) {
+                    $scannedTag = strtoupper(trim((string)$scannedTag));
+                    if ($scannedTag !== '' && isset($damagedTagMap[$scannedTag])) {
+                        throw new Exception("Piece QR {$scannedTag} for {$item['sku']} cannot be marked both good and damaged.");
+                    }
+                }
+                foreach ($receivedTagMap as $receivedTag) {
+                    $receivedTag = strtoupper(trim((string)$receivedTag));
+                    if ($receivedTag === ''
+                        || isset($damagedTagMap[$receivedTag])
+                        || !isset($activeDamagedTagsByVariant[$vid][$receivedTag])) {
+                        continue;
+                    }
+
+                    throw new Exception("Piece QR {$receivedTag} for {$item['sku']} is quarantined in Shop Damage Management and cannot be received as good stock.");
+                }
+
                 $missing = max(0.0, $dispatchedQty - $recv);
 
                 $totalAccounted += $recv;
@@ -4002,8 +4073,6 @@ class ShopService {
                 // Incremental deltas for DAMAGED shop stock
                 $deltaDamaged = $dam - $prevDam;
                 if ($deltaDamaged > 0) {
-                    $baseCount = (int)(Database::fetchOne("SELECT COUNT(*) as c FROM shop_damages WHERE shop_id = ?", [$shopId])['c'] ?? 0);
-                    $damageNumber = 'SH-DMG-' . date('Ymd') . '-' . str_pad((string)($baseCount + 1), 4, '0', STR_PAD_LEFT);
                     $costPerUnit = (float)($item['production_cost'] ?? $item['purchase_price'] ?? $item['selling_price'] ?? 0.0);
                     $totalLoss = $deltaDamaged * $costPerUnit;
 
@@ -4013,21 +4082,37 @@ class ShopService {
                     $datePart = date('my');
                     $generatedDamagePrefix = $catInitial . $subInitial . $subSubInitial;
 
-                    // Collect all damaged piece tags
-                    $damTags = $damagedTagsList;
+                    $existingDamageRows = Database::fetchAll(
+                        "SELECT tag_code FROM shop_damages
+                         WHERE shop_id = ? AND variant_id = ? AND source_type = 'INWARD_TRANSIT'
+                           AND (allocation_id = ? OR reference_id = ?)
+                           AND status NOT IN ('CANCELLED', 'RESTOCKED', 'REPAIRED', 'SALVAGED', 'WRITTEN_OFF')
+                         FOR UPDATE",
+                        [$shopId, $vid, $allocationId, $allocationId]
+                    );
+                    $existingDamageTagSet = [];
+                    foreach ($existingDamageRows as $damageRow) {
+                        foreach (self::normalizeInwardPieceTags($damageRow['tag_code'] ?? '') as $existingDamageTag) {
+                            $existingDamageTagSet[$existingDamageTag] = true;
+                        }
+                    }
+                    $damTags = array_values(array_filter(
+                        $damagedTagsList,
+                        static fn(string $tag): bool => !isset($existingDamageTagSet[$tag])
+                    ));
                     if (empty($damTags) && !empty($receivedItems[$vid]['damage_tag'])) {
-                        $damTags = array_filter(array_map('trim', explode(',', (string)$receivedItems[$vid]['damage_tag'])));
+                        $damTags = self::normalizeInwardPieceTags($receivedItems[$vid]['damage_tag']);
                     }
                     if (empty($damTags)) {
                         for ($dIdx = 1; $dIdx <= (int)$deltaDamaged; $dIdx++) {
-                            $damTags[] = sprintf('%s%s%02d', $generatedDamagePrefix, $datePart, $dIdx);
+                            $damTags[] = sprintf('%s%s%02d', $generatedDamagePrefix, $datePart, (int)$prevDam + $dIdx);
                         }
                     }
+                    $damTags = array_slice($damTags, 0, max(1, (int)$deltaDamaged));
                     $tagCode = implode(', ', $damTags);
                     $damageReason = !empty($itemNotes) ? $itemNotes : 'Transit / Inward Verification Damage';
 
                     $damageId = ShopDamage::create([
-                        'damage_number' => $damageNumber,
                         'shop_id'       => $shopId,
                         'variant_id'    => $vid,
                         'tag_code'      => $tagCode,
@@ -4044,6 +4129,10 @@ class ShopService {
                         'status'        => 'LOGGED',
                         'reported_by'   => $userId,
                     ]);
+                    $damageNumber = ShopDamage::getDamageNumberById($damageId);
+                    if ($damageNumber === null) {
+                        throw new RuntimeException("Shop damage record #{$damageId} could not be retrieved after creation.");
+                    }
 
                     StockService::increase(
                         variantId: $vid,
@@ -4087,6 +4176,521 @@ class ShopService {
             Database::commit();
         } catch (Exception $e) {
             Database::rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * Reconcile a previously received shop allocation and its stock movements.
+     */
+    public static function updateShopInwardAllocation(
+        int $allocationId,
+        int $shopId,
+        int $userId,
+        array $receivedItems,
+        string $editReason,
+        string $notes = ''
+    ): void {
+        $editReason = trim($editReason);
+        if (strlen($editReason) < 4) {
+            throw new Exception('A mandatory reason of at least 4 characters is required to modify this inward receipt.');
+        }
+
+        Database::beginTransaction();
+        try {
+            $details = self::getInwardAllocationDetails($allocationId);
+            if (!$details || (int)($details['shop']['id'] ?? 0) !== $shopId) {
+                throw new Exception('This inward allocation is not assigned to the selected shop.');
+            }
+
+            $allocation = $details['allocation'];
+            if (!in_array($allocation['status'], ['DISPATCHED', 'PARTIAL_RECEIVED', 'RECEIVED', 'COMPLETED', 'DELIVERED'], true)) {
+                throw new Exception("Allocation status '{$allocation['status']}' cannot be edited.");
+            }
+
+            $damageRows = Database::fetchAll(
+                "SELECT * FROM shop_damages
+                 WHERE shop_id = ? AND (allocation_id = ? OR reference_id = ?)
+                   AND source_type = 'INWARD_TRANSIT' AND status <> 'CANCELLED'
+                 ORDER BY id ASC FOR UPDATE",
+                [$shopId, $allocationId, $allocationId]
+            );
+            $damageRowsByVariant = [];
+            foreach ($damageRows as $damageRow) {
+                $damageRowsByVariant[(int)$damageRow['variant_id']][] = $damageRow;
+            }
+            $activeDamagedTagsByVariant = ShopDamage::getActivePieceTagsByVariant(
+                $shopId,
+                array_column($details['items'], 'variant_id'),
+                true
+            );
+
+            $plans = [];
+            $totalExpected = 0;
+            $totalAccounted = 0;
+            $previousSnapshot = ['status' => $allocation['status'], 'items' => []];
+            $newSnapshot = ['edit_reason' => $editReason, 'updated_by' => $userId, 'items' => []];
+
+            foreach ($details['items'] as $item) {
+                $variantId = (int)$item['variant_id'];
+                $expected = (int)($item['dispatched_qty'] > 0 ? $item['dispatched_qty'] : $item['requested_qty']);
+                $previousTotal = (int)($item['received_qty'] ?? 0);
+                $previousDamaged = (int)($item['damaged_qty'] ?? 0);
+                if (in_array($allocation['status'], ['RECEIVED', 'COMPLETED', 'DELIVERED'], true) && $previousTotal === 0 && $previousDamaged === 0) {
+                    $previousTotal = $expected;
+                }
+                $previousGood = max(0, $previousTotal - $previousDamaged);
+
+                $itemData = $receivedItems[$variantId] ?? [
+                    'received_qty' => $previousGood,
+                    'damaged_qty' => $previousDamaged,
+                ];
+                $newGood = (float)($itemData['received_qty'] ?? 0);
+                $newDamaged = (float)($itemData['damaged_qty'] ?? 0);
+                if (
+                    $newGood < 0 || $newDamaged < 0
+                    || floor($newGood) !== $newGood || floor($newDamaged) !== $newDamaged
+                    || ($newGood + $newDamaged) > $expected
+                ) {
+                    throw new Exception("Inward quantities for SKU {$item['sku']} must be whole pieces and cannot exceed the {$expected} dispatched pieces.");
+                }
+
+                $goodTags = array_key_exists('good_tags', $itemData)
+                    ? self::normalizeInwardPieceTags($itemData['good_tags'])
+                    : array_slice(array_diff(
+                        self::normalizeInwardPieceTags($item['received_qr_codes'] ?? ''),
+                        self::normalizeInwardPieceTags(array_merge(...array_map(
+                            static fn(array $row): array => self::normalizeInwardPieceTags($row['tag_code'] ?? ''),
+                            $damageRowsByVariant[$variantId] ?? []
+                        )))
+                    ), 0, (int)$newGood);
+                $damagedTags = array_key_exists('damage_tags', $itemData)
+                    ? self::normalizeInwardPieceTags($itemData['damage_tags'])
+                    : array_slice(self::normalizeInwardPieceTags(array_merge(...array_map(
+                        static fn(array $row): array => self::normalizeInwardPieceTags($row['tag_code'] ?? ''),
+                        $damageRowsByVariant[$variantId] ?? []
+                    ))), 0, (int)$newDamaged);
+
+                $allReportedTags = array_merge($goodTags, $damagedTags);
+                $allocatedTags = self::normalizeInwardPieceTags($item['saved_tags'] ?? []);
+                if (
+                    array_intersect($goodTags, $damagedTags)
+                    || (!empty($allocatedTags) && array_diff($allReportedTags, $allocatedTags))
+                ) {
+                    throw new Exception("Piece QR codes for SKU {$item['sku']} do not match the allocation.");
+                }
+
+                $variantDamageRows = $damageRowsByVariant[$variantId] ?? [];
+                $damageChanged = ((int)$newDamaged !== $previousDamaged);
+                $oldDamageTags = [];
+                $hasProcessedDamageRecord = false;
+                foreach ($variantDamageRows as $damageRow) {
+                    if ($damageRow['status'] !== 'LOGGED') {
+                        $hasProcessedDamageRecord = true;
+                    }
+                    $oldDamageTags = array_merge($oldDamageTags, self::normalizeInwardPieceTags($damageRow['tag_code'] ?? ''));
+                }
+                $oldDamageTagSet = array_fill_keys(array_values(array_unique($oldDamageTags)), true);
+                foreach ($goodTags as $goodTag) {
+                    if (
+                        isset($activeDamagedTagsByVariant[$variantId][$goodTag])
+                        && !isset($oldDamageTagSet[$goodTag])
+                    ) {
+                        throw new Exception("Piece QR {$goodTag} for {$item['sku']} is quarantined in Shop Damage Management and cannot be received as good stock.");
+                    }
+                }
+                $damageChanged = $damageChanged || array_diff($damagedTags, array_values(array_unique($oldDamageTags)))
+                    || array_diff(array_values(array_unique($oldDamageTags)), $damagedTags);
+                if ($hasProcessedDamageRecord && $damageChanged) {
+                    throw new Exception("Damage records for SKU {$item['sku']} have already been inspected or processed and cannot be reconciled here.");
+                }
+                $damageRowQuantity = array_sum(array_map(
+                    static fn(array $row): int => (int)($row['quantity'] ?? 0),
+                    $variantDamageRows
+                ));
+                if ($damageRowQuantity !== $previousDamaged && $previousDamaged > 0) {
+                    throw new Exception("Damage case quantities for SKU {$item['sku']} do not match the saved inward receipt; reconcile the damage cases first.");
+                }
+
+                if (
+                    count($goodTags) > (int)$newGood
+                    || count($damagedTags) > (int)$newDamaged
+                    || count($goodTags) !== count(array_unique($goodTags))
+                    || count($damagedTags) !== count(array_unique($damagedTags))
+                    || array_intersect($goodTags, $damagedTags)
+                    || (!empty($allocatedTags) && array_diff(array_merge($goodTags, $damagedTags), $allocatedTags))
+                ) {
+                    throw new Exception("Piece QR codes for SKU {$item['sku']} do not match the edited inward quantities or allocation.");
+                }
+
+                $deltaGood = (float)$newGood - $previousGood;
+                if ($deltaGood < 0) {
+                    $available = StockService::getBalance($variantId, 'SHOP', $shopId, 'AVAILABLE');
+                    if ($available < abs($deltaGood)) {
+                        throw new Exception("Cannot reduce SKU '{$item['sku']}' good stock by " . abs($deltaGood) . " pcs; only {$available} pcs are currently available.");
+                    }
+                }
+                if ($damageChanged && $previousDamaged > 0) {
+                    $damagedBalance = StockService::getBalance($variantId, 'SHOP', $shopId, 'DAMAGED');
+                    if ($damagedBalance < $previousDamaged) {
+                        throw new Exception("Cannot reconcile damaged stock for SKU '{$item['sku']}'; only {$damagedBalance} damaged pcs remain in the shop.");
+                    }
+                }
+
+                $plans[$variantId] = [
+                    'item' => $item,
+                    'expected' => $expected,
+                    'previous_good' => $previousGood,
+                    'previous_damaged' => $previousDamaged,
+                    'new_good' => (int)$newGood,
+                    'new_damaged' => (int)$newDamaged,
+                    'good_tags' => $goodTags,
+                    'damaged_tags' => $damagedTags,
+                    'damage_rows' => $variantDamageRows,
+                    'damage_changed' => (bool)$damageChanged,
+                    'item_notes' => trim((string)($itemData['notes'] ?? '')),
+                ];
+
+                $totalExpected += $expected;
+                $totalAccounted += (int)$newGood + (int)$newDamaged;
+                $previousSnapshot['items'][] = [
+                    'variant_id' => $variantId,
+                    'sku' => $item['sku'],
+                    'good_qty' => $previousGood,
+                    'damaged_qty' => $previousDamaged,
+                ];
+            }
+
+            $totalGood = 0;
+            $totalDamaged = 0;
+            foreach ($plans as $variantId => $plan) {
+                $item = $plan['item'];
+                $deltaGood = $plan['new_good'] - $plan['previous_good'];
+                if ($deltaGood > 0) {
+                    StockService::increase(
+                        variantId: $variantId,
+                        locationType: 'SHOP',
+                        locationId: $shopId,
+                        stockState: 'AVAILABLE',
+                        quantity: $deltaGood,
+                        transactionType: 'SHOP_ALLOCATION_INWARD_EDIT',
+                        referenceType: 'warehouse_allocations',
+                        referenceId: $allocationId,
+                        userId: $userId,
+                        notes: "Inward edit for Allocation #{$allocation['allocation_number']}. Reason: {$editReason}"
+                    );
+                } elseif ($deltaGood < 0) {
+                    StockService::decrease(
+                        variantId: $variantId,
+                        locationType: 'SHOP',
+                        locationId: $shopId,
+                        stockState: 'AVAILABLE',
+                        quantity: abs($deltaGood),
+                        transactionType: 'SHOP_ALLOCATION_INWARD_EDIT',
+                        referenceType: 'warehouse_allocations',
+                        referenceId: $allocationId,
+                        userId: $userId,
+                        notes: "Inward edit reduction for Allocation #{$allocation['allocation_number']}. Reason: {$editReason}"
+                    );
+                }
+
+                if ($plan['damage_changed']) {
+                    foreach ($plan['damage_rows'] as $damageRow) {
+                        Database::execute(
+                            "UPDATE shop_damages
+                             SET status = 'CANCELLED',
+                                 defect_notes = CONCAT(COALESCE(defect_notes, ''), ' [Reconciled by inward edit: ', ?, ']')
+                             WHERE id = ?",
+                            [$editReason, (int)$damageRow['id']]
+                        );
+                    }
+
+                    if ($plan['previous_damaged'] > 0) {
+                        StockService::decrease(
+                            variantId: $variantId,
+                            locationType: 'SHOP',
+                            locationId: $shopId,
+                            stockState: 'DAMAGED',
+                            quantity: $plan['previous_damaged'],
+                            transactionType: 'SHOP_ALLOCATION_INWARD_EDIT',
+                            referenceType: 'warehouse_allocations',
+                            referenceId: $allocationId,
+                            userId: $userId,
+                            notes: "Reverse previous inward damage for Allocation #{$allocation['allocation_number']}. Reason: {$editReason}"
+                        );
+                    }
+
+                    if ($plan['new_damaged'] > 0) {
+                        $costPerUnit = (float)($item['production_cost'] ?? $item['purchase_price'] ?? $item['selling_price'] ?? 0.0);
+                        $damageTagCode = implode(', ', $plan['damaged_tags']);
+                        $damageId = ShopDamage::create([
+                            'shop_id' => $shopId,
+                            'variant_id' => $variantId,
+                            'tag_code' => $damageTagCode,
+                            'source_type' => 'INWARD_TRANSIT',
+                            'reference_id' => $allocationId,
+                            'allocation_id' => $allocationId,
+                            'defect_type' => 'TRANSIT_DAMAGE',
+                            'quantity' => $plan['new_damaged'],
+                            'cost_per_unit' => $costPerUnit,
+                            'estimated_cost' => $costPerUnit,
+                            'total_loss' => $costPerUnit * $plan['new_damaged'],
+                            'damage_reason' => $plan['item_notes'] !== '' ? $plan['item_notes'] : 'Transit / Inward Verification Damage',
+                            'defect_notes' => "Reconciled during Shop Inward edit for Allocation #{$allocation['allocation_number']}. Reason: {$editReason}",
+                            'status' => 'LOGGED',
+                            'reported_by' => $userId,
+                        ]);
+                        $damageNumber = ShopDamage::getDamageNumberById($damageId);
+                        if ($damageNumber === null) {
+                            throw new RuntimeException("Shop damage record #{$damageId} could not be retrieved after creation.");
+                        }
+
+                        StockService::increase(
+                            variantId: $variantId,
+                            locationType: 'SHOP',
+                            locationId: $shopId,
+                            stockState: 'DAMAGED',
+                            quantity: $plan['new_damaged'],
+                            transactionType: 'SHOP_ALLOCATION_INWARD_EDIT',
+                            referenceType: 'shop_damages',
+                            referenceId: $damageId,
+                            userId: $userId,
+                            notes: "Inward edit for Allocation #{$allocation['allocation_number']} (Case #{$damageNumber})."
+                        );
+                    }
+                }
+
+                $receivedTags = array_values(array_unique(array_merge($plan['good_tags'], $plan['damaged_tags'])));
+                $missing = max(0, $plan['expected'] - $plan['new_good'] - $plan['new_damaged']);
+                Database::execute(
+                    "UPDATE allocation_items
+                     SET received_qty = ?, damaged_qty = ?, missing_qty = ?, received_qr_codes = ?
+                     WHERE allocation_id = ? AND variant_id = ?",
+                    [
+                        $plan['new_good'] + $plan['new_damaged'],
+                        $plan['new_damaged'],
+                        $missing,
+                        $receivedTags ? json_encode($receivedTags) : null,
+                        $allocationId,
+                        $variantId,
+                    ]
+                );
+
+                $totalGood += $plan['new_good'];
+                $totalDamaged += $plan['new_damaged'];
+                $newSnapshot['items'][] = [
+                    'variant_id' => $variantId,
+                    'sku' => $item['sku'],
+                    'good_qty' => $plan['new_good'],
+                    'damaged_qty' => $plan['new_damaged'],
+                    'missing_qty' => $missing,
+                ];
+            }
+
+            $totalMissing = max(0, $totalExpected - $totalAccounted);
+            $newStatus = $totalAccounted >= $totalExpected ? 'RECEIVED' : 'PARTIAL_RECEIVED';
+            Database::execute(
+                "UPDATE warehouse_allocations SET notes = ?, updated_at = NOW() WHERE id = ?",
+                [$notes, $allocationId]
+            );
+            WarehouseAllocation::updateStatus($allocationId, $newStatus, $userId);
+            Database::execute(
+                "UPDATE allocation_outwards SET status = 'DELIVERED', updated_at = NOW() WHERE allocation_id = ?",
+                [$allocationId]
+            );
+
+            $newSnapshot['status'] = $newStatus;
+            $newSnapshot['good_qty'] = $totalGood;
+            $newSnapshot['damaged_qty'] = $totalDamaged;
+            $newSnapshot['missing_qty'] = $totalMissing;
+            $newSnapshot['notes'] = $notes;
+            AuditService::log('SHOP', 'ALLOCATION_INWARD_UPDATE', 'warehouse_allocations', $allocationId, $previousSnapshot, $newSnapshot, $userId);
+
+            Database::commit();
+        } catch (Exception $e) {
+            Database::rollback();
+            error_log("ShopService::updateShopInwardAllocation failed: " . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * Reverse a shop inward receipt and return the allocation to dispatched state.
+     */
+    public static function deleteShopInwardAllocation(int $allocationId, int $shopId, int $userId, string $reason): void {
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new Exception('A mandatory reason is required to delete this inward receipt.');
+        }
+
+        Database::beginTransaction();
+        try {
+            $details = self::getInwardAllocationDetails($allocationId);
+            if (!$details || (int)($details['shop']['id'] ?? 0) !== $shopId) {
+                throw new Exception('This inward allocation is not assigned to the selected shop.');
+            }
+
+            $allocation = $details['allocation'];
+            if (!in_array($allocation['status'], ['DISPATCHED', 'PARTIAL_RECEIVED', 'RECEIVED', 'COMPLETED', 'DELIVERED'], true)) {
+                throw new Exception("Allocation status '{$allocation['status']}' cannot be deleted from Shop Inward.");
+            }
+
+            $damageRows = Database::fetchAll(
+                "SELECT * FROM shop_damages
+                 WHERE shop_id = ? AND (allocation_id = ? OR reference_id = ?)
+                   AND source_type = 'INWARD_TRANSIT' AND status <> 'CANCELLED'
+                 ORDER BY id ASC FOR UPDATE",
+                [$shopId, $allocationId, $allocationId]
+            );
+            foreach ($damageRows as $damageRow) {
+                if ($damageRow['status'] !== 'LOGGED') {
+                    throw new Exception("Cannot delete this inward receipt because damage case {$damageRow['damage_number']} has already been inspected or processed.");
+                }
+            }
+
+            $damageRowsByVariant = [];
+            foreach ($damageRows as $damageRow) {
+                $damageRowsByVariant[(int)$damageRow['variant_id']][] = $damageRow;
+            }
+            $plans = [];
+            foreach ($details['items'] as $item) {
+                $variantId = (int)$item['variant_id'];
+                $expected = (int)($item['dispatched_qty'] > 0 ? $item['dispatched_qty'] : $item['requested_qty']);
+                $receivedTotal = (int)($item['received_qty'] ?? 0);
+                $damaged = (int)($item['damaged_qty'] ?? 0);
+                if (in_array($allocation['status'], ['RECEIVED', 'COMPLETED', 'DELIVERED'], true) && $receivedTotal === 0 && $damaged === 0) {
+                    $receivedTotal = $expected;
+                }
+                $good = max(0, $receivedTotal - $damaged);
+                $variantDamageRows = $damageRowsByVariant[$variantId] ?? [];
+                $damageCaseQuantity = array_sum(array_map(
+                    static fn(array $row): int => (int)($row['quantity'] ?? 0),
+                    $variantDamageRows
+                ));
+                if ($damageCaseQuantity > $damaged) {
+                    throw new Exception("Damage case quantities for SKU '{$item['sku']}' exceed the saved inward damaged quantity. Reconcile the damage cases first.");
+                }
+
+                $availableBalance = StockService::getBalance($variantId, 'SHOP', $shopId, 'AVAILABLE');
+                if ($availableBalance < $good) {
+                    throw new Exception("Cannot delete inward receipt: SKU '{$item['sku']}' has {$good} good pcs credited, but only {$availableBalance} pcs remain available. Reverse related sales or allocations first.");
+                }
+                $damagedBalance = StockService::getBalance($variantId, 'SHOP', $shopId, 'DAMAGED');
+                if ($damagedBalance < $damaged) {
+                    throw new Exception("Cannot delete inward receipt: SKU '{$item['sku']}' has {$damaged} damaged pcs credited, but only {$damagedBalance} pcs remain in damaged stock.");
+                }
+
+                $plans[$variantId] = [
+                    'item' => $item,
+                    'expected' => $expected,
+                    'good' => $good,
+                    'damaged' => $damaged,
+                    'damage_rows' => $variantDamageRows,
+                ];
+            }
+
+            foreach ($plans as $variantId => $plan) {
+                $item = $plan['item'];
+                if ($plan['good'] > 0) {
+                    StockService::decrease(
+                        variantId: $variantId,
+                        locationType: 'SHOP',
+                        locationId: $shopId,
+                        stockState: 'AVAILABLE',
+                        quantity: $plan['good'],
+                        transactionType: 'SHOP_INWARD_DELETED',
+                        referenceType: 'warehouse_allocations',
+                        referenceId: $allocationId,
+                        userId: $userId,
+                        notes: "Reversal of inward receipt for Allocation #{$allocation['allocation_number']}. Reason: {$reason}"
+                    );
+                }
+
+                $damageQtyReversed = 0;
+                foreach ($plan['damage_rows'] as $damageRow) {
+                    $caseQty = (int)$damageRow['quantity'];
+                    if ($caseQty <= 0) {
+                        continue;
+                    }
+                    StockService::decrease(
+                        variantId: $variantId,
+                        locationType: 'SHOP',
+                        locationId: $shopId,
+                        stockState: 'DAMAGED',
+                        quantity: $caseQty,
+                        transactionType: 'SHOP_INWARD_DELETED',
+                        referenceType: 'shop_damages',
+                        referenceId: (int)$damageRow['id'],
+                        userId: $userId,
+                        notes: "Reversal of inward damage case {$damageRow['damage_number']}. Reason: {$reason}"
+                    );
+                    $damageQtyReversed += $caseQty;
+                    Database::execute(
+                        "UPDATE shop_damages
+                         SET status = 'CANCELLED',
+                             defect_notes = CONCAT(COALESCE(defect_notes, ''), ' [CANCELLED: Inward receipt deleted - ', ?, ']')
+                         WHERE id = ?",
+                        [$reason, (int)$damageRow['id']]
+                    );
+                }
+                if ($plan['damaged'] > $damageQtyReversed) {
+                    StockService::decrease(
+                        variantId: $variantId,
+                        locationType: 'SHOP',
+                        locationId: $shopId,
+                        stockState: 'DAMAGED',
+                        quantity: $plan['damaged'] - $damageQtyReversed,
+                        transactionType: 'SHOP_INWARD_DELETED',
+                        referenceType: 'warehouse_allocations',
+                        referenceId: $allocationId,
+                        userId: $userId,
+                        notes: "Reversal of inward damaged stock for Allocation #{$allocation['allocation_number']}. Reason: {$reason}"
+                    );
+                }
+
+                Database::execute(
+                    "UPDATE allocation_items
+                     SET received_qty = 0, damaged_qty = 0, missing_qty = ?, received_qr_codes = NULL
+                     WHERE allocation_id = ? AND variant_id = ?",
+                    [$plan['expected'], $allocationId, $variantId]
+                );
+            }
+
+            Database::execute(
+                "UPDATE warehouse_allocations
+                 SET status = 'DISPATCHED',
+                     notes = CONCAT(COALESCE(notes, ''), ' [Inward deleted at ', NOW(), ' - Reason: ', ?, ']'),
+                     updated_at = NOW()
+                 WHERE id = ?",
+                [$reason, $allocationId]
+            );
+            Database::execute(
+                "UPDATE allocation_outwards SET status = 'DISPATCHED', updated_at = NOW() WHERE allocation_id = ?",
+                [$allocationId]
+            );
+
+            AuditService::log('SHOP', 'ALLOCATION_INWARD_DELETE', 'warehouse_allocations', $allocationId, [
+                'allocation_number' => $allocation['allocation_number'],
+                'status' => $allocation['status'],
+                'shop_id' => $shopId,
+                'items' => array_map(static function (array $plan): array {
+                    return [
+                        'variant_id' => (int)$plan['item']['variant_id'],
+                        'sku' => $plan['item']['sku'] ?? '',
+                        'good_qty' => $plan['good'],
+                        'damaged_qty' => $plan['damaged'],
+                    ];
+                }, array_values($plans)),
+            ], [
+                'deleted_by' => $userId,
+                'reason' => $reason,
+                'new_status' => 'DISPATCHED',
+            ], $userId);
+
+            Database::commit();
+        } catch (Exception $e) {
+            Database::rollback();
+            error_log("ShopService::deleteShopInwardAllocation failed: " . $e->getMessage());
             throw $e;
         }
     }

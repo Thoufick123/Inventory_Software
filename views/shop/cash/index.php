@@ -265,8 +265,8 @@ $currTab = $tab ?? 'overview';
             <!-- Navigation Tabs -->
             <ul class="nav nav-pills card-header-pills" id="cashModuleTabs">
                 <li class="nav-item">
-                    <a class="nav-link rounded-pill px-3 <?= $currTab === 'overview' || $currTab === 'ledger' ? 'active' : '' ?>" href="<?= url('shop/cash?tab=ledger') ?>">
-                        <i class="bi bi-list-columns me-1"></i> Cash Flow Ledger (<?= count($ledger) ?>)
+                   <a class="nav-link rounded-pill px-3 <?= $currTab === 'shift_logs' ? 'active' : '' ?>" href="<?= url('shop/cash?tab=shift_logs') ?>">
+                       <i class="bi bi-door-open me-1"></i> Open/Close Shift Logs (<?= count($shiftLogs) ?>)
                     </a>
                 </li>
                 <li class="nav-item">
@@ -285,8 +285,8 @@ $currTab = $tab ?? 'overview';
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link rounded-pill px-3 <?= $currTab === 'shift_logs' ? 'active' : '' ?>" href="<?= url('shop/cash?tab=shift_logs') ?>">
-                        <i class="bi bi-door-open me-1"></i> Open/Close Shift Logs (<?= count($shiftLogs) ?>)
+                   <a class="nav-link rounded-pill px-3 <?= $currTab === 'overview' || $currTab === 'ledger' ? 'active' : '' ?>" href="<?= url('shop/cash?tab=ledger') ?>">
+                       <i class="bi bi-list-columns me-1"></i> Cash Flow Ledger (<?= count($ledger) ?>)
                     </a>
                 </li>
             </ul>
@@ -340,7 +340,8 @@ $currTab = $tab ?? 'overview';
                                         ($tx['transaction_type'] === 'BANK_DEPOSIT' && $tx['source_table'] === 'bank_deposits')
                                     );
                                     $shiftIsEditable = empty($tx['register_id']) || ($tx['register_status'] ?? '') === 'OPEN';
-                                    $canManageTransaction = $manualSourceMatches && !$isVoided && $shiftIsEditable;
+                                    $showEditAction = $manualSourceMatches && !$isVoided && hasPermission('shop_cash', 'edit');
+                                    $showVoidAction = $manualSourceMatches && !$isVoided && hasPermission('shop_cash', 'delete');
                                     ?>
                                     <tr class="cash-row" data-search="<?= e($searchData) ?>">
                                         <td class="ps-4 fw-bold font-monospace text-dark small"><?= e($tx['transaction_number']) ?></td>
@@ -369,7 +370,7 @@ $currTab = $tab ?? 'overview';
                                         </td>
                                         <td class="pe-4"><small class="text-dark fw-semibold"><?= e($tx['staff_name'] ?? 'Admin') ?></small></td>
                                         <td class="text-end pe-4 text-nowrap">
-                                            <?php if ($canManageTransaction && hasPermission('shop_cash', 'edit')): ?>
+                                            <?php if ($showEditAction && $shiftIsEditable): ?>
                                                 <button type="button" class="btn btn-sm btn-outline-primary btn-edit-cash-transaction"
                                                         data-id="<?= (int)$tx['id'] ?>"
                                                         data-type="<?= e($tx['transaction_type']) ?>"
@@ -389,8 +390,12 @@ $currTab = $tab ?? 'overview';
                                                         title="Edit manual transaction">
                                                     <i class="bi bi-pencil-square"></i>
                                                 </button>
+                                            <?php elseif ($showEditAction): ?>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" disabled title="This shift is closed; the transaction cannot be edited." aria-label="Edit unavailable because the shift is closed">
+                                                    <i class="bi bi-pencil-square"></i>
+                                                </button>
                                             <?php endif; ?>
-                                            <?php if ($canManageTransaction && hasPermission('shop_cash', 'delete')): ?>
+                                            <?php if ($showVoidAction && $shiftIsEditable): ?>
                                                 <form method="POST" action="<?= url('shop/cash/transactions/void/' . (int)$tx['id']) ?>" class="d-inline"
                                                       onsubmit="return confirm('Void this manual cash entry? It will be removed from totals but kept in audit history.');">
                                                     <?= CSRF::field() ?>
@@ -398,6 +403,24 @@ $currTab = $tab ?? 'overview';
                                                         <i class="bi bi-trash"></i>
                                                     </button>
                                                 </form>
+                                            <?php elseif ($showVoidAction): ?>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" disabled title="This shift is closed; the transaction cannot be voided." aria-label="Void unavailable because the shift is closed">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            <?php endif; ?>
+                                            <?php if (!$showEditAction && !$showVoidAction): ?>
+                                                <?php
+                                                if (!$manualSourceMatches) {
+                                                    $readOnlyReason = 'System-generated transaction; no manual actions are available.';
+                                                } elseif ($isVoided) {
+                                                    $readOnlyReason = 'This transaction has already been voided.';
+                                                } else {
+                                                    $readOnlyReason = 'You do not have permission to edit or void this transaction.';
+                                                }
+                                                ?>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" disabled title="<?= e($readOnlyReason) ?>" aria-label="<?= e($readOnlyReason) ?>">
+                                                    <i class="bi bi-lock"></i>
+                                                </button>
                                             <?php endif; ?>
                                         </td>
                                     </tr>
@@ -680,75 +703,100 @@ $currTab = $tab ?? 'overview';
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body p-4">
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold">Amount</label>
-                        <input type="number" min="0.01" step="0.01" name="amount" id="editCashTransactionAmount" class="form-control" required>
-                    </div>
-
                     <div data-ledger-edit-fields="CASH_IN" class="d-none">
                         <div class="mb-3">
-                            <label class="form-label fw-semibold">Category</label>
-                            <input type="text" name="category" id="editCashInCategory" class="form-control" maxlength="100" data-ledger-edit-required="true">
+                            <label class="form-label fw-bold">Top-Up Amount (₹)</label>
+                            <div class="input-group input-group-lg">
+                                <span class="input-group-text bg-light fw-bold">₹</span>
+                                <input type="number" step="0.01" min="1" name="amount" id="editCashInAmount" class="form-control fw-bold text-success fs-4" placeholder="0.00" data-ledger-edit-required="true">
+                            </div>
                         </div>
-                        <div class="mb-0">
-                            <label class="form-label fw-semibold">Description</label>
-                            <textarea name="description" id="editCashInDescription" class="form-control" rows="2" data-ledger-edit-required="true"></textarea>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Source / Provided By</label>
+                            <input type="text" name="source" id="editCashInSource" class="form-control" placeholder="e.g. Store Owner / Main Safe Vault" data-ledger-edit-required="true">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label fw-semibold">Reason / Description</label>
+                            <input type="text" name="notes" id="editCashInNotes" class="form-control" placeholder="e.g. Added change float for busy weekend">
                         </div>
                     </div>
 
                     <div data-ledger-edit-fields="EXPENSE" class="d-none">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Expense Category</label>
+                            <input type="text" name="expense_category" id="editExpenseCategory" class="form-control" placeholder="e.g. Tea & Refreshments / Cleaning / Store Maintenance / Miscellaneous" list="editExpenseCategorySuggestions" data-ledger-edit-required="true">
+                            <datalist id="editExpenseCategorySuggestions">
+                                <option value="Tea & Refreshments">
+                                <option value="Cleaning & Housekeeping">
+                                <option value="Store Maintenance & Repairs">
+                                <option value="Courier & Customer Shipping">
+                                <option value="Carry Bags & Packaging">
+                                <option value="Staff Welfare / Lunch">
+                                <option value="Electricity / Internet / Water">
+                                <option value="Travel / Local Conveyance">
+                                <option value="Printing & POS Rolls">
+                                <option value="Miscellaneous General Expense">
+                            </datalist>
+                        </div>
                         <div class="row g-3">
                             <div class="col-md-6">
-                                <label class="form-label fw-semibold">Expense category</label>
-                                <input type="text" name="expense_category" id="editExpenseCategory" class="form-control" maxlength="100" data-ledger-edit-required="true">
+                                <label class="form-label fw-bold">Expense Amount (₹)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light fw-bold">₹</span>
+                                    <input type="number" step="0.01" min="1" name="amount" id="editExpenseAmount" class="form-control fw-bold" placeholder="0.00" data-ledger-edit-required="true">
+                                </div>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label fw-semibold">Paid to</label>
-                                <input type="text" name="paid_to" id="editExpensePaidTo" class="form-control" maxlength="150" data-ledger-edit-required="true">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-semibold">Payment mode</label>
+                                <label class="form-label fw-semibold">Payment Mode</label>
                                 <select name="payment_mode" id="editExpensePaymentMode" class="form-select">
-                                    <option value="CASH">Cash</option>
-                                    <option value="UPI">UPI</option>
-                                    <option value="CARD">Card</option>
+                                    <option value="CASH">Cash (From Till)</option>
+                                    <option value="UPI">UPI Transfer</option>
+                                    <option value="CARD">Card / Online</option>
                                     <option value="ONLINE">Online</option>
                                 </select>
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-semibold">Bill / reference number</label>
-                                <input type="text" name="bill_number" id="editExpenseBillNumber" class="form-control" maxlength="100">
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label fw-semibold">Notes</label>
-                                <textarea name="notes" id="editExpenseNotes" class="form-control" rows="2"></textarea>
-                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Paid To (Vendor / Person Name)</label>
+                            <input type="text" name="paid_to" id="editExpensePaidTo" class="form-control" placeholder="e.g. Local Tea Stall / Cleaner / Courier Partner" data-ledger-edit-required="true">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Bill / Receipt / Slip # (Optional)</label>
+                            <input type="text" name="bill_number" id="editExpenseBillNumber" class="form-control" placeholder="e.g. BILL-4521">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label fw-semibold">Notes / Purpose Description</label>
+                            <input type="text" name="notes" id="editExpenseNotes" class="form-control" placeholder="e.g. Tea & snacks for customer & staff">
                         </div>
                     </div>
 
                     <div data-ledger-edit-fields="BANK_DEPOSIT" class="d-none">
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label fw-semibold">Bank name</label>
-                                <input type="text" name="bank_name" id="editDepositBankName" class="form-control" maxlength="100" data-ledger-edit-required="true">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-semibold">Account number</label>
-                                <input type="text" name="account_number" id="editDepositAccountNumber" class="form-control" maxlength="50">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-semibold">Slip number</label>
-                                <input type="text" name="slip_number" id="editDepositSlipNumber" class="form-control" maxlength="100">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-semibold">Deposit date</label>
-                                <input type="date" name="deposit_date" id="editDepositDate" class="form-control" data-ledger-edit-required="true">
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label fw-semibold">Notes</label>
-                                <textarea name="notes" id="editDepositNotes" class="form-control" rows="2"></textarea>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Deposit Amount (₹)</label>
+                            <div class="input-group input-group-lg">
+                                <span class="input-group-text bg-light fw-bold">₹</span>
+                                <input type="number" step="0.01" min="1" name="amount" id="editDepositAmount" class="form-control fw-bold text-info fs-4" placeholder="0.00" data-ledger-edit-required="true">
                             </div>
                         </div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Bank Name</label>
+                                <input type="text" name="bank_name" id="editDepositBankName" class="form-control" placeholder="e.g. HDFC Bank / SBI" data-ledger-edit-required="true">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Deposit Date</label>
+                                <input type="date" name="deposit_date" id="editDepositDate" class="form-control" data-ledger-edit-required="true">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Account / CDM Slip # (Optional)</label>
+                            <input type="text" name="slip_number" id="editDepositSlipNumber" class="form-control" placeholder="e.g. CDM-895123">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label fw-semibold">Remarks</label>
+                            <input type="text" name="notes" id="editDepositNotes" class="form-control" placeholder="e.g. Day cash deposit dropped at CDM machine">
+                        </div>
+                        <input type="hidden" name="account_number" id="editDepositAccountNumber">
                     </div>
                 </div>
                 <div class="modal-footer bg-light border-0 py-3 px-4">
@@ -1406,31 +1454,44 @@ document.querySelectorAll('.btn-edit-cash-transaction').forEach(button => {
 
         const updateUrl = <?= json_encode(url('shop/cash/transactions/update/')) ?>;
         form.action = updateUrl + encodeURIComponent(transactionId);
-        document.getElementById('editCashTransactionAmount').value = this.dataset.amount || '';
+        const activeSection = form.querySelector(`[data-ledger-edit-fields="${transactionType}"]`);
+        const amountInput = activeSection ? activeSection.querySelector('[name="amount"]') : null;
+        if (!amountInput) return;
+        amountInput.value = this.dataset.amount || '';
 
         document.querySelectorAll('[data-ledger-edit-fields]').forEach(section => {
             const isVisible = section.dataset.ledgerEditFields === transactionType;
             section.classList.toggle('d-none', !isVisible);
+            section.querySelectorAll('input, select, textarea').forEach(field => {
+                field.disabled = !isVisible;
+            });
             section.querySelectorAll('[data-ledger-edit-required]').forEach(field => {
                 field.required = isVisible;
             });
         });
 
         if (transactionType === 'CASH_IN') {
-            document.getElementById('editCashInCategory').value = this.dataset.category || '';
-            document.getElementById('editCashInDescription').value = this.dataset.description || '';
+            const description = this.dataset.description || '';
+            const prefix = 'Cash Top-Up from ';
+            const detail = description.startsWith(prefix) ? description.slice(prefix.length) : description;
+            const separator = detail.indexOf(' - ');
+            document.getElementById('editCashInSource').value = separator >= 0 ? detail.slice(0, separator) : detail;
+            document.getElementById('editCashInNotes').value = separator >= 0 ? detail.slice(separator + 3) : '';
+            document.getElementById('editCashTransactionTitle').textContent = 'Edit Cash Injection / Float Top-Up';
         } else if (transactionType === 'EXPENSE') {
             document.getElementById('editExpenseCategory').value = this.dataset.expenseCategory || '';
             document.getElementById('editExpensePaidTo').value = this.dataset.paidTo || '';
             document.getElementById('editExpensePaymentMode').value = this.dataset.sourcePaymentMode || 'CASH';
             document.getElementById('editExpenseBillNumber').value = this.dataset.billNumber || '';
             document.getElementById('editExpenseNotes').value = this.dataset.sourceNotes || '';
+            document.getElementById('editCashTransactionTitle').textContent = 'Edit Petty Cash Expense Voucher';
         } else if (transactionType === 'BANK_DEPOSIT') {
             document.getElementById('editDepositBankName').value = this.dataset.bankName || '';
             document.getElementById('editDepositAccountNumber').value = this.dataset.accountNumber || '';
             document.getElementById('editDepositSlipNumber').value = this.dataset.slipNumber || '';
             document.getElementById('editDepositDate').value = this.dataset.depositDate || '';
             document.getElementById('editDepositNotes').value = this.dataset.depositNotes || '';
+            document.getElementById('editCashTransactionTitle').textContent = 'Edit Bank Cash Drop / Safe Transfer';
         } else {
             return;
         }

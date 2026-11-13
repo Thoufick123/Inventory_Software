@@ -801,14 +801,15 @@ class CashService {
             $type = $transaction['transaction_type'];
 
             if ($type === 'CASH_IN') {
-                $category = trim((string)($payload['category'] ?? ''));
-                $description = trim((string)($payload['description'] ?? ''));
-                if ($category === '' || strlen($category) > 100 || $description === '') {
-                    throw new InvalidArgumentException('Cash top-up category and description are required.');
+                $cashInSource = trim((string)($payload['source'] ?? ''));
+                $notes = trim((string)($payload['notes'] ?? ''));
+                if ($cashInSource === '') {
+                    throw new InvalidArgumentException('Cash top-up source is required.');
                 }
+                $description = "Cash Top-Up from {$cashInSource}" . ($notes !== '' ? " - {$notes}" : '');
                 Database::execute(
-                    "UPDATE cash_transactions SET amount = ?, category = ?, description = ? WHERE id = ? AND shop_id = ?",
-                    [(float)$amount, $category, $description, $transactionId, $shopId]
+                    "UPDATE cash_transactions SET amount = ?, description = ? WHERE id = ? AND shop_id = ?",
+                    [(float)$amount, $description, $transactionId, $shopId]
                 );
             } elseif ($type === 'EXPENSE') {
                 $category = trim((string)($payload['expense_category'] ?? ''));

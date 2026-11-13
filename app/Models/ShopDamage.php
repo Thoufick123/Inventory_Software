@@ -151,6 +151,42 @@ class ShopDamage {
         return $records;
     }
 
+    public static function getActivePieceTagsByVariant(int $shopId, array $variantIds, bool $forUpdate = false): array {
+        $variantIds = array_values(array_unique(array_filter(array_map('intval', $variantIds), static fn(int $id): bool => $id > 0)));
+        if ($shopId <= 0 || !$variantIds) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($variantIds), '?'));
+        $sql = "SELECT variant_id, tag_code
+                FROM shop_damages
+                WHERE shop_id = ? AND variant_id IN ({$placeholders})
+                  AND status NOT IN ('RESTOCKED', 'REPAIRED', 'SALVAGED', 'WRITTEN_OFF', 'CANCELLED')
+                  AND tag_code IS NOT NULL AND tag_code <> ''";
+        if ($forUpdate) {
+            $sql .= " FOR UPDATE";
+        }
+
+        $records = Database::fetchAll($sql, array_merge([$shopId], $variantIds));
+        $tagsByVariant = [];
+        foreach ($records as $record) {
+            $variantId = (int)$record['variant_id'];
+            foreach (self::resolvePieceTags($record) as $tag) {
+                $normalizedTag = strtoupper(trim($tag));
+                if ($normalizedTag !== '') {
+                    $tagsByVariant[$variantId][$normalizedTag] = $normalizedTag;
+                }
+            }
+        }
+
+        foreach ($tagsByVariant as &$tags) {
+            $tags = array_values($tags);
+        }
+        unset($tags);
+
+        return $tagsByVariant;
+    }
+
     /**
      * Mark records whose tagged damaged pieces have already left the shop.
      */
@@ -331,16 +367,17 @@ class ShopDamage {
             $seq = (int)end($parts) + 1;
         }
 
-        do {
+        while (true) {
             $num = sprintf('%s%04d', $fullPrefix, $seq);
-            $exists = Database::fetchOne("SELECT id FROM shop_damages WHERE damage_number = ? LIMIT 1", [$num]);
+            $exists = Database::fetchOne(
+                "SELECT id FROM shop_damages WHERE damage_number = ? LIMIT 1 FOR UPDATE",
+                [$num]
+            );
             if (!$exists) {
                 return $num;
             }
             $seq++;
-        } while ($seq < 9999);
-
-        return sprintf('%s%04d', $fullPrefix, $seq);
+        }
     }
 
     /**
@@ -351,31 +388,55 @@ class ShopDamage {
             $data['damage_number'] = self::generateDamageNumber();
         }
 
-        Database::execute(
-            "INSERT INTO shop_damages 
+        $sql = "INSERT INTO shop_damages 
              (damage_number, shop_id, variant_id, tag_code, source_type, reference_id, allocation_id, defect_type, quantity, cost_per_unit, estimated_cost, total_loss, damage_reason, defect_notes, photo_url, status, reported_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-                $data['damage_number'],
-                (int)$data['shop_id'],
-                (int)$data['variant_id'],
-                !empty($data['tag_code']) ? trim($data['tag_code']) : null,
-                $data['source_type'] ?? 'SHOP_BIN_HANDLING',
-                !empty($data['reference_id']) ? (int)$data['reference_id'] : null,
-                !empty($data['allocation_id']) ? (int)$data['allocation_id'] : (!empty($data['reference_id']) && ($data['source_type'] ?? '') === 'INWARD_TRANSIT' ? (int)$data['reference_id'] : null),
-                $data['defect_type'] ?? 'OTHER',
-                max(1, (int)($data['quantity'] ?? 1)),
-                (float)($data['cost_per_unit'] ?? 0.00),
-                (float)($data['estimated_cost'] ?? 0.00),
-                (float)($data['total_loss'] ?? 0.00),
-                $data['damage_reason'] ?? 'Damaged / Defect',
-                $data['defect_notes'] ?? null,
-                $data['photo_url'] ?? null,
-                $data['status'] ?? 'LOGGED',
-                !empty($data['reported_by']) ? (int)$data['reported_by'] : null,
-            ]
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        $params = [
+            $data['damage_number'],
+            (int)$data['shop_id'],
+            (int)$data['variant_id'],
+            !empty($data['tag_code']) ? trim($data['tag_code']) : null,
+            $data['source_type'] ?? 'SHOP_BIN_HANDLING',
+            !empty($data['reference_id']) ? (int)$data['reference_id'] : null,
+            !empty($data['allocation_id']) ? (int)$data['allocation_id'] : (!empty($data['reference_id']) && ($data['source_type'] ?? '') === 'INWARD_TRANSIT' ? (int)$data['reference_id'] : null),
+            $data['defect_type'] ?? 'OTHER',
+            max(1, (int)($data['quantity'] ?? 1)),
+            (float)($data['cost_per_unit'] ?? 0.00),
+            (float)($data['estimated_cost'] ?? 0.00),
+            (float)($data['total_loss'] ?? 0.00),
+            $data['damage_reason'] ?? 'Damaged / Defect',
+            $data['defect_notes'] ?? null,
+            $data['photo_url'] ?? null,
+            $data['status'] ?? 'LOGGED',
+            !empty($data['reported_by']) ? (int)$data['reported_by'] : null,
+        ];
+        $collisionRetries = 0;
+        while (true) {
+            try {
+                Database::execute($sql, $params);
+                return (int)Database::lastInsertId();
+            } catch (PDOException $e) {
+                $driverMessage = (string)($e->errorInfo[2] ?? $e->getMessage());
+                if (
+                    (int)($e->errorInfo[1] ?? 0) !== 1062
+                    || !str_contains(strtolower($driverMessage), 'damage_number')
+                    || $collisionRetries >= 5
+                ) {
+                    throw $e;
+                }
+
+                $collisionRetries++;
+                $params[0] = self::generateDamageNumber();
+            }
+        }
+    }
+
+    public static function getDamageNumberById(int $id): ?string {
+        $record = Database::fetchOne(
+            "SELECT damage_number FROM shop_damages WHERE id = ?",
+            [$id]
         );
-        return (int)Database::lastInsertId();
+        return $record ? (string)$record['damage_number'] : null;
     }
 
     /**

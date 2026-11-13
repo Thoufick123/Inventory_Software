@@ -62,6 +62,7 @@ An enterprise-grade, end-to-end apparel manufacturing, central warehousing, mult
      ```bash
      mysql -h 127.0.0.1 -P 3307 -u root -p grm_inventory < database/migrations/2026_11_11_add_product_price_logs.sql
      mysql -h 127.0.0.1 -P 3307 -u root -p grm_inventory < database/migrations/2026_11_11_add_production_supplier_archive.sql
+     mysql -h 127.0.0.1 -P 3307 -u root -p grm_inventory < database/migrations/2026_12_03_add_cancelled_shop_damage_status.sql
      ```
    - Database changes are not applied by deploying application files. Run the corresponding additive SQL migration against the production database before using the affected feature.
 

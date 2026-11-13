@@ -3307,6 +3307,10 @@ class ShopController {
         }
 
         $savedDraft = $_SESSION['shop_inward_drafts'][$allocationId] ?? null;
+        $activeDamagedTagsByVariant = ShopDamage::getActivePieceTagsByVariant(
+            (int)($details['shop']['id'] ?? 0),
+            array_column($details['items'], 'variant_id')
+        );
 
         Response::view('shop.inward.view', array_merge($details, [
             'pageTitle'     => 'Cross-Check Shop Inward #' . $details['allocation']['allocation_number'],
@@ -3314,6 +3318,7 @@ class ShopController {
             'activeMenu'    => 'shop-inward',
             'totalExpected' => $totalExpected,
             'savedDraft'    => $savedDraft,
+            'activeDamagedTagsByVariant' => $activeDamagedTagsByVariant,
             'breadcrumb'    => [
                 ['label' => 'Shop', 'url' => url('shop/dashboard')],
                 ['label' => 'Inward / GRN', 'url' => url('shop/inward')],
@@ -3385,6 +3390,175 @@ class ShopController {
             );
         } catch (Exception $e) {
             Response::redirect(url('shop/inward/view/' . $allocationId), 'error', "Inward verification failed: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Show the Shop Inward receipt reconciliation form.
+     */
+    public function editInward(string $id): void {
+        if (!hasPermission('shop_inward', 'edit')) {
+            Session::setFlash('error', 'Access denied: You do not have permission to edit Shop Inward receipts.');
+            Response::redirect(url('shop/inward'));
+            return;
+        }
+
+        $allocationId = (int)$id;
+        $details = ShopService::getInwardAllocationDetails($allocationId);
+        $scopedShopId = function_exists('currentShopId') ? currentShopId() : null;
+        if (!$details || ($scopedShopId !== null && (int)($details['shop']['id'] ?? 0) !== $scopedShopId)) {
+            Session::setFlash('error', 'Inward allocation not found or not assigned to your shop.');
+            Response::redirect(url('shop/inward'));
+            return;
+        }
+
+        $totalExpected = 0;
+        $totalGood = 0;
+        $totalDamaged = 0;
+        $totalMissing = 0;
+        foreach ($details['items'] as $item) {
+            $expected = (int)($item['dispatched_qty'] > 0 ? $item['dispatched_qty'] : $item['requested_qty']);
+            $received = (int)($item['received_qty'] ?? 0);
+            $damaged = (int)($item['damaged_qty'] ?? 0);
+            if (in_array($details['allocation']['status'], ['RECEIVED', 'COMPLETED', 'DELIVERED'], true) && $received === 0 && $damaged === 0) {
+                $received = $expected;
+            }
+            $totalExpected += $expected;
+            $totalGood += max(0, $received - $damaged);
+            $totalDamaged += $damaged;
+            $totalMissing += max(0, $expected - $received);
+        }
+        $damages = ShopDamage::getAll([
+            'shop_id' => (int)$details['shop']['id'],
+            'reference_id' => $allocationId,
+        ]);
+
+        Response::view('shop.inward.edit', array_merge($details, [
+            'pageTitle' => 'Edit Shop Inward #' . $details['allocation']['allocation_number'],
+            'activeModule' => 'shop',
+            'activeMenu' => 'shop-inward',
+            'totalExpected' => $totalExpected,
+            'totalReceived' => $totalGood,
+            'totalDamaged' => $totalDamaged,
+            'totalMissing' => $totalMissing,
+            'damages' => $damages,
+            'breadcrumb' => [
+                ['label' => 'Shop', 'url' => url('shop/dashboard')],
+                ['label' => 'Inward / GRN', 'url' => url('shop/inward')],
+                ['label' => $details['allocation']['allocation_number'], 'url' => url('shop/inward/view/' . $allocationId)],
+                ['label' => 'Edit Inward'],
+            ],
+        ]));
+    }
+
+    /**
+     * Reconcile Shop Inward quantities and inventory balances.
+     */
+    public function updateInward(string $id): void {
+        $allocationId = (int)$id;
+        if (!CSRF::validateRequest()) {
+            Session::setFlash('error', 'Invalid security token or session expired. Please try again.');
+            Response::redirect(url('shop/inward/edit/' . $allocationId));
+            return;
+        }
+        if (!hasPermission('shop_inward', 'edit')) {
+            Session::setFlash('error', 'Access denied: You do not have permission to edit Shop Inward receipts.');
+            Response::redirect(url('shop/inward/view/' . $allocationId));
+            return;
+        }
+
+        $details = ShopService::getInwardAllocationDetails($allocationId);
+        if (!$details) {
+            Session::setFlash('error', 'Inward allocation not found or not assigned to your shop.');
+            Response::redirect(url('shop/inward'));
+            return;
+        }
+        $shopId = (int)($details['shop']['id'] ?? 0);
+        $scopedShopId = function_exists('currentShopId') ? currentShopId() : null;
+        if ($shopId <= 0 || ($scopedShopId !== null && $scopedShopId !== $shopId)) {
+            Session::setFlash('error', 'Inward allocation not found or not assigned to your shop.');
+            Response::redirect(url('shop/inward'));
+            return;
+        }
+
+        $receivedItems = [];
+        foreach (($_POST['items'] ?? []) as $variantId => $data) {
+            if (!is_array($data)) {
+                continue;
+            }
+            $receivedItems[(int)$variantId] = [
+                'received_qty' => (float)($data['received_qty'] ?? 0),
+                'damaged_qty' => (float)($data['damaged_qty'] ?? 0),
+                'notes' => trim((string)($data['notes'] ?? '')),
+                'good_tags' => $data['good_tags'] ?? [],
+                'damage_tags' => $data['damage_tags'] ?? [],
+            ];
+        }
+
+        try {
+            ShopService::updateShopInwardAllocation(
+                $allocationId,
+                $shopId,
+                (int)(Session::userId() ?? 1),
+                $receivedItems,
+                trim((string)($_POST['edit_reason'] ?? '')),
+                trim((string)($_POST['notes'] ?? ''))
+            );
+            Response::redirect(
+                url('shop/inward/view/' . $allocationId) . '?shop_id=' . $shopId,
+                'success',
+                "Allocation {$details['allocation']['allocation_number']} inward receipt updated and shop stock reconciled."
+            );
+        } catch (Exception $e) {
+            Response::redirect(url('shop/inward/edit/' . $allocationId) . '?shop_id=' . $shopId, 'error', 'Failed to update Shop Inward receipt: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Reverse a Shop Inward receipt with a required audit reason.
+     */
+    public function deleteInward(string $id): void {
+        $allocationId = (int)$id;
+        if (!CSRF::validateRequest()) {
+            Session::setFlash('error', 'Invalid security token or session expired.');
+            Response::redirect(url('shop/inward'));
+            return;
+        }
+        if (!hasPermission('shop_inward', 'delete')) {
+            Session::setFlash('error', 'Access denied: You do not have permission to delete Shop Inward receipts.');
+            Response::redirect(url('shop/inward'));
+            return;
+        }
+
+        $details = ShopService::getInwardAllocationDetails($allocationId);
+        if (!$details) {
+            Session::setFlash('error', 'Inward allocation not found or not assigned to your shop.');
+            Response::redirect(url('shop/inward'));
+            return;
+        }
+        $shopId = (int)($details['shop']['id'] ?? 0);
+        $scopedShopId = function_exists('currentShopId') ? currentShopId() : null;
+        if ($shopId <= 0 || ($scopedShopId !== null && $scopedShopId !== $shopId)) {
+            Session::setFlash('error', 'Inward allocation not found or not assigned to your shop.');
+            Response::redirect(url('shop/inward'));
+            return;
+        }
+
+        try {
+            ShopService::deleteShopInwardAllocation(
+                $allocationId,
+                $shopId,
+                (int)(Session::userId() ?? 1),
+                trim((string)($_POST['reason'] ?? ''))
+            );
+            unset($_SESSION['shop_inward_drafts'][$allocationId]);
+            Response::redirect(url('shop/inward') . '?shop_id=' . $shopId, 'success', "Allocation {$details['allocation']['allocation_number']} inward receipt reversed and reset.");
+        } catch (Exception $e) {
+            Response::redirect(
+                url('shop/inward/view/' . $allocationId) . '?shop_id=' . $shopId,
+                'error',
+                'Unable to delete Shop Inward receipt: ' . $e->getMessage()
+            );
         }
     }
 
@@ -4609,7 +4783,6 @@ class ShopController {
         }
 
         $status = ($actionType === 'rework' || $actionType === 'return_wh') ? 'RETURN_TO_WH' : 'LOGGED';
-        $prefix = 'SH-DMG-';
         $savedCount = 0;
         $totalQty = 0;
         $processedQtyByVariant = [];
@@ -4619,9 +4792,7 @@ class ShopController {
         try {
             Database::beginTransaction();
 
-            $baseCount = (int)(Database::fetchOne("SELECT COUNT(*) as c FROM shop_damages WHERE shop_id = ?", [$shopId])['c'] ?? 0);
-
-            foreach ($items as $idx => $it) {
+            foreach ($items as $it) {
                 $variantId = (int)($it['variant_id'] ?? 0);
                 if ($variantId <= 0) continue;
 
@@ -4722,10 +4893,7 @@ class ShopController {
                 $defectType = in_array($rawDefect, $allowedDefectTypes, true) ? $rawDefect : 'OTHER';
                 $defectNotes = trim($it['defect_notes'] ?? ($_POST['defect_notes'] ?? ''));
 
-                $damageNumber = $prefix . date('Ymd') . '-' . str_pad((string)($baseCount + $idx + 1), 4, '0', STR_PAD_LEFT);
-
                 $damageId = ShopDamage::create([
-                    'damage_number' => $damageNumber,
                     'shop_id'       => $shopId,
                     'variant_id'    => $variantId,
                     'tag_code'      => !empty($tagCode) ? $tagCode : null,
@@ -4741,6 +4909,10 @@ class ShopController {
                     'status'        => $status,
                     'reported_by'   => $userId,
                 ]);
+                $damageNumber = ShopDamage::getDamageNumberById($damageId);
+                if ($damageNumber === null) {
+                    throw new RuntimeException("Shop damage record #{$damageId} could not be retrieved after creation.");
+                }
 
                 // Adjust Stock: Deduct from AVAILABLE shop stock (if available) and Move to DAMAGED state
                 StockService::decrease(

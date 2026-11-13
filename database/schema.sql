@@ -2300,7 +2300,7 @@ CREATE TABLE `shop_damages` (
   `damage_reason` varchar(255) NOT NULL,
   `defect_notes` text DEFAULT NULL,
   `photo_url` varchar(500) DEFAULT NULL,
-  `status` enum('LOGGED','INSPECTED','SALVAGED','WRITTEN_OFF','REPAIRED','RETURN_TO_WH','REWORK') DEFAULT 'LOGGED',
+  `status` enum('LOGGED','INSPECTED','SALVAGED','WRITTEN_OFF','REPAIRED','RETURN_TO_WH','REWORK','CANCELLED') DEFAULT 'LOGGED',
   `disposition_notes` text DEFAULT NULL,
   `reported_by` int(10) unsigned DEFAULT NULL,
   `inspected_by` int(10) unsigned DEFAULT NULL,

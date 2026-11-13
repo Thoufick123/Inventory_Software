@@ -13,6 +13,9 @@ $filterUpi = $currFilter['upi_total'] ?? $upi_total;
 $filterDigital = $currFilter['digital_total'] ?? ($upi_total + $card_total);
 $filterAov = $currFilter['avg_order_value'] ?? $avg_order_value_today;
 $filterLowStock = $currFilter['low_stock_count'] ?? $low_stock_count;
+$canEditShopDetails = !empty($shop['id'])
+    && hasPermission('dashboard', 'view')
+    && (hasPermission('dashboard', 'edit') || hasPermission('shop', 'edit'));
 ?>
 <!-- Include Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
@@ -41,7 +44,16 @@ $filterLowStock = $currFilter['low_stock_count'] ?? $low_stock_count;
             <?php if (!empty($shop['logo_url'])): ?>
                 <img src="<?= e($shop['logo_url']) ?>" alt="<?= e($shop['name'] ?? 'Shop') ?> logo" style="max-width:140px;max-height:64px;object-fit:contain;">
             <?php else: ?>
-                <div class="rounded-circle bg-primary-subtle text-primary p-3"><i class="bi bi-shop fs-4"></i></div>
+                <svg viewBox="0 0 150 75" width="88" height="44" role="img" aria-label="GRM logo" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <pattern id="shopLogoStipple" width="3" height="3" patternUnits="userSpaceOnUse">
+                            <circle cx="1.5" cy="1.5" r="0.6" fill="#000" />
+                        </pattern>
+                    </defs>
+                    <rect width="150" height="75" fill="url(#shopLogoStipple)" opacity="0.35" />
+                    <rect width="150" height="75" fill="none" stroke="#000" stroke-width="1.5" />
+                    <text x="75" y="54" font-family="'Times New Roman', Georgia, serif" font-size="52" font-weight="900" text-anchor="middle" fill="#000" letter-spacing="-2">GRM</text>
+                </svg>
             <?php endif; ?>
             <div class="flex-grow-1">
                 <div class="d-flex flex-wrap align-items-center gap-2">
@@ -55,11 +67,76 @@ $filterLowStock = $currFilter['low_stock_count'] ?? $low_stock_count;
                     <?php if (!empty($shop['gst_number'])): ?><?= (!empty($shop['address']) || !empty($shop['phone'])) ? ' · ' : '' ?>GSTIN: <?= e($shop['gst_number']) ?><?php endif; ?>
                 </div>
             </div>
-            <?php if (!empty($shop['id']) && hasPermission('dashboard', 'view') && (hasPermission('dashboard', 'edit') || hasPermission('shop', 'edit'))): ?>
-                <a class="btn btn-sm btn-outline-primary" href="<?= url('admin/dashboard?edit_type=shop&edit_id=' . (int)$shop['id']) ?>"><i class="bi bi-pencil me-1"></i>Edit details</a>
+            <?php if ($canEditShopDetails): ?>
+                <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#shopDashboardEditModal">
+                    <i class="bi bi-pencil me-1"></i>Edit details
+                </button>
             <?php endif; ?>
         </div>
     </div>
+
+    <?php if ($canEditShopDetails): ?>
+    <div class="modal fade" id="shopDashboardEditModal" tabindex="-1" aria-labelledby="shopDashboardEditModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow">
+                <form method="POST" action="<?= url('admin/shops/update/' . (int)$shop['id']) ?>" enctype="multipart/form-data" class="d-flex flex-column flex-grow-1" style="min-height:0;">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="return_to" value="shop-dashboard">
+                    <input type="hidden" name="manager_id" value="<?= (int)($shop['manager_id'] ?? 0) ?>">
+                    <input type="hidden" name="is_active" value="<?= !empty($shop['is_active']) ? '1' : '0' ?>">
+                    <div class="modal-header bg-primary text-white flex-shrink-0">
+                        <h5 class="modal-title fw-bold" id="shopDashboardEditModalLabel">
+                            <i class="bi bi-shop me-2"></i>Edit Shop Details
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body p-4" style="min-height:0;overflow-y:auto;">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold" for="shopDashboardEditName">Shop / Store Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="shopDashboardEditName" name="name" value="<?= e($shop['name'] ?? '') ?>" required>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="shopDashboardEditCode">Shop Code</label>
+                                <input type="text" class="form-control font-monospace" id="shopDashboardEditCode" name="code" value="<?= e($shop['code'] ?? '') ?>">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="shopDashboardEditManager">Store Manager</label>
+                                <input type="text" class="form-control" id="shopDashboardEditManager" name="manager_name" value="<?= e($shop['manager_name'] ?? '') ?>" pattern="[A-Za-z\s]*">
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="shopDashboardEditGst">GST Number</label>
+                                <input type="text" class="form-control font-monospace text-uppercase" id="shopDashboardEditGst" name="gst_number" value="<?= e($shop['gst_number'] ?? '') ?>" maxlength="15" pattern="[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="shopDashboardEditPhone">Contact Phone</label>
+                                <input type="tel" class="form-control" id="shopDashboardEditPhone" name="phone" value="<?= e(substr(preg_replace('/\D+/', '', (string)($shop['phone'] ?? '')), -10)) ?>" maxlength="10" pattern="[0-9]{10}" oninput="this.value = this.value.replace(/\D/g, '').slice(0, 10)">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold" for="shopDashboardEditAddress">Store Address</label>
+                            <textarea class="form-control" id="shopDashboardEditAddress" name="address" rows="2"><?= e($shop['address'] ?? '') ?></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold" for="shopDashboardEditLogo">Shop Logo</label>
+                            <input type="file" class="form-control" id="shopDashboardEditLogo" name="logo" accept="image/jpeg,image/png,image/webp">
+                            <small class="form-text text-muted">JPG, PNG, or WEBP; up to 5 MB.</small>
+                            <div class="mt-2 <?= empty($shop['logo_url']) ? 'd-none' : '' ?>" id="shopDashboardLogoPreviewContainer">
+                                <img src="<?= e($shop['logo_url'] ?? '') ?>" id="shopDashboardLogoPreview" alt="<?= e($shop['name'] ?? 'Shop') ?> logo preview" class="img-thumbnail" style="max-width:180px;max-height:90px;object-fit:contain;">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light flex-shrink-0">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary fw-semibold"><i class="bi bi-check2-circle me-1"></i>Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <!-- ============================================================ -->
     <!-- DYNAMIC FILTER TOOLBAR (TODAY / WEEK / MONTH / CUSTOM RANGE) -->
@@ -393,7 +470,7 @@ $filterLowStock = $currFilter['low_stock_count'] ?? $low_stock_count;
                                         <td class="fw-bold text-dark"><?= formatCurrency((float)$sale['total_amount']) ?></td>
                                         <td><small class="text-muted"><?= date('h:i A', strtotime($sale['created_at'])) ?></small></td>
                                         <td class="text-end pe-4">
-                                            <a href="<?= url('shop/pos/invoice/' . $sale['id']) ?>" target="_blank" class="btn btn-sm btn-light border rounded-pill px-3 shadow-none" title="Print Invoice">
+                                            <a href="<?= url('shop/pos/invoice/' . (int)$sale['id']) ?>" onclick="window.open(this.href, '_blank', 'width=800,height=700'); return false;" class="btn btn-sm btn-light border rounded-pill px-3 shadow-none" title="Print Invoice">
                                                 <i class="bi bi-printer me-1 text-primary"></i> Print
                                             </a>
                                         </td>
@@ -413,6 +490,19 @@ $filterLowStock = $currFilter['low_stock_count'] ?? $low_stock_count;
 <!-- ============================================================ -->
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const shopLogoInput = document.getElementById('shopDashboardEditLogo');
+    const shopLogoPreview = document.getElementById('shopDashboardLogoPreview');
+    const shopLogoPreviewContainer = document.getElementById('shopDashboardLogoPreviewContainer');
+    if (shopLogoInput && shopLogoPreview && shopLogoPreviewContainer) {
+        shopLogoInput.addEventListener('change', function() {
+            const file = this.files && this.files[0];
+            if (file) {
+                shopLogoPreview.src = URL.createObjectURL(file);
+                shopLogoPreviewContainer.classList.remove('d-none');
+            }
+        });
+    }
+
     // 1. Initial State Data
     let activeCardPeriod = '<?= e($activePeriod) ?>';
     let currentChartPeriod = '7days';

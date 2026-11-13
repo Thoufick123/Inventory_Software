@@ -1430,8 +1430,14 @@ class AdminController {
     }
 
     public function updateShop(string $id): void {
+        $returnToShopDashboard = ($_POST['return_to'] ?? '') === 'shop-dashboard';
+        $redirect = static function (string $type, string $message) use ($returnToShopDashboard): void {
+            $destination = $returnToShopDashboard ? 'shop/dashboard' : 'admin/dashboard?tab=shops';
+            Response::redirect(url($destination), $type, $message);
+        };
+
         if (!CSRF::validateRequest()) {
-            Response::redirect(url('admin/dashboard?tab=shops'), 'error', 'Invalid security token.');
+            $redirect('error', 'Invalid security token.');
         }
 
         $shopId = (int)$id;
@@ -1442,21 +1448,21 @@ class AdminController {
         $gstNumber = strtoupper(trim($_POST['gst_number'] ?? ''));
 
         if (empty($name)) {
-            Response::redirect(url('admin/dashboard?tab=shops'), 'error', 'Shop Name is required.');
+            $redirect('error', 'Shop Name is required.');
         }
         if (!empty($managerName) && !preg_match('/^[a-zA-Z\s]+$/', $managerName)) {
-            Response::redirect(url('admin/dashboard?tab=shops'), 'error', 'Shop Manager name must contain only alphabets.');
+            $redirect('error', 'Shop Manager name must contain only alphabets.');
         }
         if (!empty($phone) && !preg_match('/^[0-9]{10}$/', $phone)) {
-            Response::redirect(url('admin/dashboard?tab=shops'), 'error', 'Contact phone must be exactly 10 digits.');
+            $redirect('error', 'Contact phone must be exactly 10 digits.');
         }
         if (!$this->isValidGstNumber($gstNumber)) {
-            Response::redirect(url('admin/dashboard?tab=shops'), 'error', 'Enter a valid 15-character GSTIN.');
+            $redirect('error', 'Enter a valid 15-character GSTIN.');
         }
 
         $shop = Shop::find($shopId);
         if (!$shop) {
-            Response::redirect(url('admin/dashboard?tab=shops'), 'error', 'Shop not found.');
+            $redirect('error', 'Shop not found.');
             return;
         }
 
@@ -1475,9 +1481,9 @@ class AdminController {
             ]);
 
             AuditService::log('shops', 'update', 'shops', $shopId, null, $_POST);
-            Response::redirect(url('admin/dashboard?tab=shops'), 'success', "Retail Shop '{$name}' updated successfully.");
+            $redirect('success', "Retail Shop '{$name}' updated successfully.");
         } catch (Exception $e) {
-            Response::redirect(url('admin/dashboard?tab=shops'), 'error', 'Error updating shop: ' . $e->getMessage());
+            $redirect('error', 'Error updating shop: ' . $e->getMessage());
         }
     }
 
