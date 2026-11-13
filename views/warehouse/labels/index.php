@@ -1445,6 +1445,43 @@ if (!empty($generatedItems) && !$isViewingExisting) {
     }
 }
 
+if ($currentSourceType === 'returns') {
+    $tagCodesList = array_values(array_filter(array_unique(array_column($generatedItems, 'tag_code'))));
+    $inwardedTagsMap = [];
+    if ($tagCodesList) {
+        $placeholders = implode(',', array_fill(0, count($tagCodesList), '?'));
+        $inwardedRows = Database::fetchAll(
+            "SELECT qr_code FROM warehouse_qr_codes
+             WHERE qr_code IN ($placeholders) AND inwarded_at IS NOT NULL",
+            $tagCodesList
+        );
+        foreach ($inwardedRows as $inwardedRow) {
+            $inwardedTagsMap[$inwardedRow['qr_code']] = true;
+        }
+    }
+
+    $inwardedCount = 0;
+    foreach ($generatedItems as &$generatedItem) {
+        if (!empty($inwardedTagsMap[$generatedItem['tag_code'] ?? ''])) {
+            $generatedItem['is_inwarded'] = true;
+        }
+        if (!empty($generatedItem['is_inwarded'])) {
+            $inwardedCount++;
+        }
+    }
+    unset($generatedItem);
+
+    $alreadyInwardedQty = $inwardedCount;
+    $totalExpectedQty = count($generatedItems);
+    $remainingQty = max(0, $totalExpectedQty - $alreadyInwardedQty);
+    $isFullyInwarded = $totalExpectedQty > 0 && $remainingQty === 0;
+    $isPartiallyInwarded = $alreadyInwardedQty > 0 && !$isFullyInwarded;
+}
+$availableGeneratedCount = count(array_filter(
+    $generatedItems,
+    static fn(array $item): bool => empty($item['is_inwarded']) && empty($item['is_deleted'])
+));
+
 // Prepare distinct brands and catalog codes list — ONLY for products with stock > 0
 $distinctBrands = [];
 $distinctCatalogCodes = [];
@@ -1846,7 +1883,9 @@ foreach ($qrBatches as $batch) {
                         <td><span class="badge <?= strtoupper($returnItem['classification'] ?? '') === 'DAMAGED' ? 'bg-danger' : 'bg-success' ?>"><?= e($returnItem['classification'] ?? 'GOOD') ?></span></td>
                         <td><?= $returnQty ?> pcs</td>
                         <td class="text-end">
-                            <?php if (hasPermission('wh_labels', 'create')): ?>
+                            <?php if (!empty($returnItem['is_inwarded'])): ?>
+                                <span class="text-success small fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>Stock updated</span>
+                            <?php elseif (hasPermission('wh_labels', 'create')): ?>
                                 <a class="btn btn-sm btn-outline-danger" href="<?= url('warehouse/labels?source_type=returns&view=generate&history_tab=returns&return_id=' . (int)$returnItem['warehouse_return_id'] . '&return_item_id=' . (int)$returnItem['id'] . '&return_variant_id=' . (int)$returnItem['variant_id']) ?>">
                                     <i class="bi bi-qr-code me-1"></i>Return QR
                                 </a>
@@ -2811,7 +2850,7 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                     <i class="bi bi-qr-code me-2 text-success"></i>
                     Individual Piece QR Codes &amp; Labels
                     <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill ms-2" id="totalPiecesBadge">
-                        <?= count($generatedItems) ?> Available Pieces
+                        <?= $availableGeneratedCount ?> Available Pieces
                     </span>
                     <span class="badge bg-primary text-white rounded-pill ms-1" id="selectedPiecesBadge" style="display: none;">
                         <i class="bi bi-check2-square me-1"></i><span id="selectedCountText">0</span> Selected
@@ -2861,18 +2900,18 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                     <!-- Selection Controls: Select All & Range Selection -->
                     <div class="col-lg-7 col-md-12 d-flex align-items-center gap-2 flex-wrap">
                         <div class="form-check d-flex align-items-center gap-2 mb-0 selection-toolbar-pill">
-                            <input class="form-check-input mt-0" type="checkbox" id="selectAllPiecesChk" onchange="toggleSelectAllPieces(this.checked)" style="cursor: pointer;">
+                            <input class="form-check-input mt-0" type="checkbox" id="selectAllPiecesChk" onchange="toggleSelectAllPieces(this.checked)" style="cursor: pointer;" <?= $availableGeneratedCount === 0 ? 'disabled' : '' ?>>
                             <label class="form-check-label fw-bold text-dark user-select-none mb-0" for="selectAllPiecesChk" style="cursor: pointer; font-size: 0.85rem;">
-                                Select All (<span id="totalSelectableCount"><?= count($generatedItems) ?></span>)
+                                Select All (<span id="totalSelectableCount"><?= $availableGeneratedCount ?></span>)
                             </label>
                         </div>
 
                         <div class="input-group input-group-sm shadow-2xs" style="width: 310px; max-width: 100%;">
                             <span class="input-group-text bg-white fw-bold text-dark border-secondary-subtle">Range</span>
-                            <input type="number" id="rangeSelectFrom" class="form-control text-center fw-bold border-secondary-subtle" placeholder="<?= !empty($generatedItems) ? $generatedItems[0]['piece_no'] : 1 ?>" min="1" max="<?= !empty($generatedItems) ? end($generatedItems)['piece_no'] : 1 ?>" style="flex: 0 0 72px; width: 72px; max-width: none;">
+                            <input type="number" id="rangeSelectFrom" class="form-control text-center fw-bold border-secondary-subtle" placeholder="<?= !empty($generatedItems) ? $generatedItems[0]['piece_no'] : 1 ?>" min="1" max="<?= !empty($generatedItems) ? end($generatedItems)['piece_no'] : 1 ?>" style="flex: 0 0 72px; width: 72px; max-width: none;" <?= $availableGeneratedCount === 0 ? 'disabled' : '' ?>>
                             <span class="input-group-text bg-white fw-semibold text-muted border-secondary-subtle">to</span>
-                            <input type="number" id="rangeSelectTo" class="form-control text-center fw-bold border-secondary-subtle" placeholder="<?= !empty($generatedItems) ? end($generatedItems)['piece_no'] : 1 ?>" min="1" max="<?= !empty($generatedItems) ? end($generatedItems)['piece_no'] : 1 ?>" style="flex: 0 0 72px; width: 72px; max-width: none;">
-                            <button type="button" class="btn btn-outline-primary fw-bold px-2.5" onclick="selectPieceRange()">Select</button>
+                            <input type="number" id="rangeSelectTo" class="form-control text-center fw-bold border-secondary-subtle" placeholder="<?= !empty($generatedItems) ? end($generatedItems)['piece_no'] : 1 ?>" min="1" max="<?= !empty($generatedItems) ? end($generatedItems)['piece_no'] : 1 ?>" style="flex: 0 0 72px; width: 72px; max-width: none;" <?= $availableGeneratedCount === 0 ? 'disabled' : '' ?>>
+                            <button type="button" class="btn btn-outline-primary fw-bold px-2.5" onclick="selectPieceRange()" <?= $availableGeneratedCount === 0 ? 'disabled' : '' ?>>Select</button>
                         </div>
 
                         <button type="button" class="btn btn-sm btn-outline-secondary px-2.5 fw-semibold shadow-2xs" onclick="clearPieceSelection()" title="Deselect all">
@@ -2895,7 +2934,7 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
                             </button>
                         <?php endif; ?>
                         <?php if ($canInwardQrUnits): ?>
-                        <button type="button" class="btn btn-sm btn-outline-success fw-bold bg-white shadow-2xs" id="btnQuickInwardSelected" onclick="confirmStickeredInwardAction(event)" title="Inward stickered product(s) to warehouse inventory stock">
+                        <button type="button" class="btn btn-sm btn-outline-success fw-bold bg-white shadow-2xs" id="btnQuickInwardSelected" onclick="confirmStickeredInwardAction(event)" title="Inward stickered product(s) to warehouse inventory stock" <?= $availableGeneratedCount === 0 ? 'disabled' : '' ?>>
                             <i class="bi bi-box-arrow-in-down-right me-1"></i>Inward to Stock
                         </button>
                         <?php endif; ?>
@@ -3188,31 +3227,6 @@ $hasSeriesGenerated = !empty($generatedItems) && !empty($generatedItems[0]['is_s
     }
     if (!$activeWh && !empty($warehouses)) $activeWh = $warehouses[0];
 
-    // For returns: calculate inward status from warehouse_qr_codes
-    if ($currentSourceType === 'returns') {
-        $tagCodesList = array_filter(array_column($generatedItems, 'tag_code'));
-        $inwardedTagsMap = [];
-        if (!empty($tagCodesList)) {
-            $placeholders = implode(',', array_fill(0, count($tagCodesList), '?'));
-            $inwardedRows = Database::fetchAll("SELECT qr_code FROM warehouse_qr_codes WHERE qr_code IN ($placeholders) AND inwarded_at IS NOT NULL", $tagCodesList);
-            foreach ($inwardedRows as $ir) {
-                $inwardedTagsMap[$ir['qr_code']] = true;
-            }
-        }
-        $inwardedCount = 0;
-        foreach ($generatedItems as &$gitm) {
-            if (!empty($inwardedTagsMap[$gitm['tag_code']])) {
-                $gitm['is_inwarded'] = true;
-                $inwardedCount++;
-            }
-        }
-        unset($gitm);
-        $alreadyInwardedQty = $inwardedCount;
-        $totalExpectedQty = count($generatedItems);
-        $remainingQty = max(0, $totalExpectedQty - $alreadyInwardedQty);
-        $isFullyInwarded = ($alreadyInwardedQty >= $totalExpectedQty && $totalExpectedQty > 0);
-        $isPartiallyInwarded = ($alreadyInwardedQty > 0 && !$isFullyInwarded);
-    }
 ?>
 <!-- ========================================================================= -->
 <!-- STEP 3: CONFIRM STICKERED PRODUCTS & UPDATE INVENTORY STOCK (STANDALONE ONLY) -->
@@ -4496,7 +4510,7 @@ function syncInwardButtonWithSelection() {
     const isFlagSet = value => value === true || value === 1 || ['1', 'true', 'yes'].includes(String(value).toLowerCase());
     const availableItems = [];
     (Array.isArray(GENERATED_ITEMS) ? GENERATED_ITEMS : []).forEach((it, idx) => {
-        if (it && (<?= $currentSourceType === 'returns' ? 'true' : 'false' ?> || !isFlagSet(it.is_inwarded)) && !isFlagSet(it.is_deleted)) {
+        if (it && !isFlagSet(it.is_inwarded) && !isFlagSet(it.is_deleted)) {
             availableItems.push({ index: idx, item: it });
         }
     });
