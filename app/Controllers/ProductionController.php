@@ -573,17 +573,233 @@ class ProductionController {
     }
 
     public function viewSeller(string $id): void {
-        $seller = Database::fetchOne("SELECT * FROM sellers WHERE id = ? AND seller_type = 'MATERIAL_SUPPLIER'", [(int)$id]);
+        self::ensureDatabaseSchema();
+        $sellerId = (int)$id;
+        $seller = Database::fetchOne("SELECT * FROM sellers WHERE id = ? AND seller_type = 'MATERIAL_SUPPLIER'", [$sellerId]);
         if (!$seller) {
             Response::error(404, 'Material Supplier not found.');
+            return;
         }
 
+        // 1. All Purchases from this Supplier
+        $purchases = Database::fetchAll(
+            "SELECT pp.*, u.full_name AS created_by_name,
+                    (SELECT COUNT(*) FROM production_purchase_items ppi WHERE ppi.purchase_id = pp.id) AS items_count,
+                    (SELECT COALESCE(SUM(quantity), 0) FROM production_purchase_items ppi WHERE ppi.purchase_id = pp.id) AS total_qty,
+                    (SELECT COALESCE(SUM(weight_kg), 0) FROM production_purchase_items ppi WHERE ppi.purchase_id = pp.id) AS total_weight
+             FROM production_purchases pp
+             LEFT JOIN users u ON pp.created_by = u.id
+             WHERE pp.seller_id = ?
+             ORDER BY pp.created_at DESC, pp.id DESC",
+            [$sellerId]
+        );
+
+        // 2. All Purchased Rolls (Buying Log)
+        $purchasedRolls = Database::fetchAll(
+            "SELECT ppi.*, pp.purchase_number, pp.purchase_date, pp.created_at AS purchase_created_at,
+                    pp.notes AS purchase_notes, u.full_name AS purchase_by_name,
+                    sr.roll_number AS sr_roll_number, sr.qr_code AS sr_qr_code,
+                    sr.start_code, sr.end_code, sr.start_seq, sr.end_seq,
+                    sr.material_type, sr.notes AS sr_notes, sr.created_at AS roll_created_at,
+                    (CASE 
+                        WHEN pp.notes LIKE '%Replacement%' OR ppi.item_name LIKE '%Replacement%' OR sr.notes LIKE '%Replacement%' THEN 1
+                        ELSE 0
+                     END) AS is_replacement_inward
+             FROM production_purchase_items ppi
+             JOIN production_purchases pp ON pp.id = ppi.purchase_id
+             LEFT JOIN seller_rolls sr ON sr.id = ppi.seller_roll_id
+             LEFT JOIN users u ON pp.created_by = u.id
+             WHERE pp.seller_id = ? OR sr.seller_id = ?
+             ORDER BY COALESCE(pp.created_at, ppi.created_at) DESC, ppi.id DESC",
+            [$sellerId, $sellerId]
+        );
+
+        // 3. Replaced Rolls Log (From Damage Resolutions)
+        $replacedRolls = Database::fetchAll(
+            "SELECT rd.*,
+                    orig_sr.roll_number AS damaged_roll_number, orig_sr.color AS damaged_color, orig_sr.design_name AS damaged_design,
+                    orig_sr.material_type AS damaged_material, orig_sr.qr_code AS damaged_qr_code,
+                    orig_sr.start_code AS damaged_start_code, orig_sr.end_code AS damaged_end_code,
+                    orig_sr.quantity AS damaged_roll_qty, orig_sr.weight AS damaged_roll_weight,
+                    orig_sr.price AS damaged_roll_price,
+                    repl_sr.roll_number AS repl_roll_number, repl_sr.color AS repl_color, repl_sr.design_name AS repl_design,
+                    repl_sr.material_type AS repl_material, repl_sr.quantity AS repl_quantity, repl_sr.weight AS repl_weight,
+                    repl_sr.price AS repl_price, repl_sr.qr_code AS repl_qr_code,
+                    repl_sr.start_code AS repl_start_code, repl_sr.end_code AS repl_end_code,
+                    repl_sr.created_at AS repl_created_at,
+                    u_rep.full_name AS reported_by_name,
+                    u_res.full_name AS resolved_by_name,
+                    pp.id AS replacement_purchase_id,
+                    pp.purchase_number AS replacement_purchase_number,
+                    pp.created_at AS replacement_purchase_created_at
+             FROM roll_damages rd
+             LEFT JOIN seller_rolls orig_sr ON rd.seller_roll_id = orig_sr.id
+             LEFT JOIN seller_rolls repl_sr ON rd.replacement_roll_id = repl_sr.id
+             LEFT JOIN users u_rep ON rd.reported_by = u_rep.id
+             LEFT JOIN users u_res ON rd.resolved_by = u_res.id
+             LEFT JOIN production_purchase_items ppi ON ppi.seller_roll_id = rd.replacement_roll_id
+             LEFT JOIN production_purchases pp ON pp.id = ppi.purchase_id
+             WHERE (rd.seller_id = ? OR orig_sr.seller_id = ? OR repl_sr.seller_id = ?)
+               AND (rd.replacement_roll_id IS NOT NULL 
+                    OR rd.resolution_type = 'REPLACEMENT' 
+                    OR rd.status = 'REPLACEMENT_RECEIVED'
+                    OR (rd.replacement_roll_number IS NOT NULL AND rd.replacement_roll_number != ''))
+             ORDER BY COALESCE(rd.resolved_at, rd.updated_at, rd.created_at) DESC",
+            [$sellerId, $sellerId, $sellerId]
+        );
+
+        // 4. All Damages for this Supplier
+        $allDamages = Database::fetchAll(
+            "SELECT rd.*, orig_sr.roll_number as roll_code, u_rep.full_name as reported_by_name
+             FROM roll_damages rd
+             LEFT JOIN seller_rolls orig_sr ON rd.seller_roll_id = orig_sr.id
+             LEFT JOIN users u_rep ON rd.reported_by = u_rep.id
+             WHERE rd.seller_id = ? OR orig_sr.seller_id = ?
+             ORDER BY rd.created_at DESC",
+            [$sellerId, $sellerId]
+        );
+
+        // 5. Active Rolls in inventory
+        $activeRolls = Database::fetchAll(
+            "SELECT sr.*,
+                    (SELECT COUNT(*) FROM production_programs ppr WHERE ppr.seller_roll_id = sr.id) as programs_count
+             FROM seller_rolls sr
+             WHERE sr.seller_id = ?
+             ORDER BY sr.created_at DESC, sr.id DESC",
+            [$sellerId]
+        );
+
+        // 6. Metrics Calculation
+        $totalPurchasedRollsCount = 0;
+        $totalPurchasedQty = 0;
+        $totalPurchasedWeight = 0;
+        $totalPurchasedValuation = 0.0;
+        $totalReplacedRollsCount = count($replacedRolls);
+        $totalReplacedQty = 0;
+        $totalReplacedValuation = 0.0;
+
+        foreach ($purchasedRolls as $pr) {
+            if (!empty($pr['is_replacement_inward'])) {
+                $totalReplacedQty += (float)($pr['quantity'] ?? 0);
+            } else {
+                $totalPurchasedRollsCount++;
+                $totalPurchasedQty += (float)($pr['quantity'] ?? 0);
+                $totalPurchasedWeight += (float)($pr['weight_kg'] ?? 0);
+                $totalPurchasedValuation += (float)($pr['total_price'] ?? 0);
+            }
+        }
+
+        if ($totalReplacedRollsCount === 0) {
+            foreach ($purchasedRolls as $pr) {
+                if (!empty($pr['is_replacement_inward'])) {
+                    $totalReplacedRollsCount++;
+                }
+            }
+        }
+
+        foreach ($replacedRolls as $rr) {
+            $totalReplacedValuation += (float)($rr['repl_price'] ?: ($rr['loss_amount'] ?? 0));
+            if ($totalReplacedQty <= 0) {
+                $totalReplacedQty += (float)($rr['repl_quantity'] ?: ($rr['damaged_quantity'] ?? 0));
+            }
+        }
+
+        // 7. Unified Chronological Audit Log (Date & Time)
+        $auditLog = [];
+
+        foreach ($purchasedRolls as $pr) {
+            $isRepl = !empty($pr['is_replacement_inward']);
+            $dt = !empty($pr['purchase_created_at']) ? $pr['purchase_created_at'] : (!empty($pr['created_at']) ? $pr['created_at'] : ($pr['purchase_date'] . ' 00:00:00'));
+            $auditLog[] = [
+                'type'            => $isRepl ? 'REPLACED' : 'BUYING',
+                'action_label'    => $isRepl ? 'Replacement Inward' : 'Roll Purchase (Buying)',
+                'badge_class'     => $isRepl ? 'bg-info text-dark' : 'bg-primary text-white',
+                'badge_icon'      => $isRepl ? 'bi-arrow-repeat' : 'bi-bag-check-fill',
+                'datetime'        => $dt,
+                'roll_number'     => $pr['roll_number'] ?: ($pr['sr_roll_number'] ?: '—'),
+                'item_name'       => $pr['item_name'] ?: 'Fabric Roll',
+                'color'           => $pr['color'] ?: '—',
+                'design'          => $pr['design_name'] ?: '—',
+                'quantity'        => (float)$pr['quantity'],
+                'weight'          => (float)($pr['weight_kg'] ?? 0),
+                'unit_price'      => (float)($pr['unit_price'] ?? 0),
+                'total_price'     => (float)($pr['total_price'] ?? 0),
+                'qr_code'         => $pr['sr_qr_code'] ?: '—',
+                'start_code'      => $pr['start_code'] ?? null,
+                'end_code'        => $pr['end_code'] ?? null,
+                'reference_type'  => 'PURCHASE',
+                'reference_id'    => $pr['purchase_id'],
+                'reference_code'  => $pr['purchase_number'],
+                'reference_url'   => url('production/purchases/view/' . $pr['purchase_id']),
+                'notes'           => $pr['purchase_notes'] ?: ($pr['sr_notes'] ?: ''),
+                'user_name'       => $pr['purchase_by_name'] ?: 'System Administrator',
+            ];
+        }
+
+        foreach ($replacedRolls as $rr) {
+            $dt = !empty($rr['resolved_at']) ? $rr['resolved_at'] : (!empty($rr['updated_at']) ? $rr['updated_at'] : $rr['created_at']);
+            $alreadyLogged = false;
+            if (!empty($rr['replacement_purchase_number'])) {
+                foreach ($auditLog as $al) {
+                    if ($al['reference_code'] === $rr['replacement_purchase_number']) {
+                        $alreadyLogged = true;
+                        break;
+                    }
+                }
+            }
+            if (!$alreadyLogged) {
+                $auditLog[] = [
+                    'type'            => 'REPLACED',
+                    'action_label'    => 'Supplier Replacement Received',
+                    'badge_class'     => 'bg-success text-white',
+                    'badge_icon'      => 'bi-shield-check',
+                    'datetime'        => $dt,
+                    'roll_number'     => $rr['repl_roll_number'] ?: ($rr['replacement_roll_number'] ?: '—'),
+                    'item_name'       => ($rr['repl_material'] ?: 'Replacement Fabric Roll') . ' (Replaced for Damaged: ' . ($rr['damaged_roll_number'] ?: 'Roll #' . $rr['seller_roll_id']) . ')',
+                    'color'           => $rr['repl_color'] ?: ($rr['damaged_color'] ?: '—'),
+                    'design'          => $rr['repl_design'] ?: ($rr['damaged_design'] ?: '—'),
+                    'quantity'        => (float)($rr['repl_quantity'] ?: ($rr['damaged_quantity'] ?? 0)),
+                    'weight'          => (float)($rr['repl_weight'] ?: ($rr['damaged_weight'] ?? 0)),
+                    'unit_price'      => (float)($rr['repl_price'] ?? 0),
+                    'total_price'     => (float)($rr['repl_price'] ?: ($rr['loss_amount'] ?? 0)),
+                    'qr_code'         => $rr['repl_qr_code'] ?: '—',
+                    'start_code'      => $rr['repl_start_code'] ?? null,
+                    'end_code'        => $rr['repl_end_code'] ?? null,
+                    'reference_type'  => 'DAMAGE',
+                    'reference_id'    => $rr['id'],
+                    'reference_code'  => $rr['damage_number'],
+                    'reference_url'   => url('production/damages'),
+                    'notes'           => 'Defect: ' . ($rr['damage_reason'] ?: '') . ($rr['resolution_notes'] ? ' | ' . $rr['resolution_notes'] : ''),
+                    'user_name'       => $rr['resolved_by_name'] ?: ($rr['reported_by_name'] ?: 'System Administrator'),
+                ];
+            }
+        }
+
+        usort($auditLog, function($a, $b) {
+            return strtotime($b['datetime']) <=> strtotime($a['datetime']);
+        });
+
         Response::view('production.sellers.profile_view', [
-            'pageTitle'    => 'Supplier Details — ' . $seller['name'],
-            'activeModule' => 'production',
-            'activeMenu'   => 'prod-sellers',
-            'seller'       => $seller,
-            'breadcrumb'   => [
+            'pageTitle'                 => 'Supplier Details — ' . $seller['name'],
+            'activeModule'              => 'production',
+            'activeMenu'                => 'prod-sellers',
+            'seller'                    => $seller,
+            'purchases'                 => $purchases,
+            'purchasedRolls'            => $purchasedRolls,
+            'replacedRolls'             => $replacedRolls,
+            'activeRolls'               => $activeRolls,
+            'allDamages'                => $allDamages,
+            'auditLog'                  => $auditLog,
+            'totalPurchasedRollsCount'  => $totalPurchasedRollsCount,
+            'totalPurchasedQty'         => $totalPurchasedQty,
+            'totalPurchasedWeight'      => $totalPurchasedWeight,
+            'totalPurchasedValuation'   => $totalPurchasedValuation,
+            'totalReplacedRollsCount'   => $totalReplacedRollsCount,
+            'totalReplacedQty'          => $totalReplacedQty,
+            'totalReplacedValuation'    => $totalReplacedValuation,
+            'totalActiveRollsCount'     => count($activeRolls),
+            'totalDamagesCount'         => count($allDamages),
+            'breadcrumb'                => [
                 ['label' => 'Production', 'url' => url('production/dashboard')],
                 ['label' => 'Suppliers', 'url' => url('production/sellers')],
                 ['label' => $seller['name']],
