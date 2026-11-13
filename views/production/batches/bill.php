@@ -287,8 +287,8 @@
         </div>
         <div class="col-4">
             <div class="signature-box">
-                <div class="fw-bold text-dark">___________________</div>
-                <div class="small text-muted">Warehouse Receiver Sign &amp; Date</div>
+                <div class="fw-bold text-dark">Warehouse Receiver Sign &amp; Date</div>
+                <div class="small text-muted">Quality / Warehouse Approved</div>
             </div>
         </div>
     </div>
