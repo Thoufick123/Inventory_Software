@@ -354,6 +354,7 @@ class Router {
         $this->get('production/sellers/roll-labels/{id}', 'ProductionController', 'printSellerRollLabel', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
         $this->post('production/sellers/add-extra-label/{id}', 'ProductionController', 'addExtraRollLabel', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'edit']]);
         $this->post('production/sellers/delete-extra-label/{id}', 'ProductionController', 'deleteExtraRollLabel', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'delete']]);
+        $this->get('production/sellers/export-replaced', 'ProductionController', 'exportReplacedRolls', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
         $this->get('api/sellers/{id}/roll-labels-ajax', 'ProductionController', 'ajaxSellerRollLabels', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
         $this->get('api/sellers/next-roll-codes', 'ProductionController', 'ajaxNextFabricRollCodes', ['AuthMiddleware']);
         $this->get('api/sellers/{id}/rolls', 'ProductionController', 'ajaxSellerRolls', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);

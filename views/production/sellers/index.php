@@ -3,6 +3,9 @@
         <h2 class="mb-1"><i class="bi bi-truck-flatbed me-2 text-primary"></i>Production Suppliers</h2>
         </div>
     <div class="d-flex gap-2">
+        <a href="<?= url('production/sellers/export-replaced') ?>" class="btn btn-outline-success" title="Export All Replaced Rolls (CSV)">
+            <i class="bi bi-file-earmark-arrow-down me-1"></i>Export Replaced Rolls
+        </a>
         <?php if (hasPermission('sellers', 'create')): ?>
             <a href="<?= url('production/sellers/create') ?>" class="btn btn-primary"><i class="bi bi-plus-circle me-1"></i>Add Supplier</a>
         <?php endif; ?>
@@ -48,9 +51,14 @@
 </div>
 
 <div class="card border shadow-sm">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
         <h5 class="mb-0 fw-bold"><i class="bi bi-person-vcard me-2 text-primary"></i>Supplier Profiles</h5>
-        <span class="badge bg-primary-subtle text-primary" id="supplierCount"><?= number_format(count($sellers)) ?> suppliers</span>
+        <div class="d-flex align-items-center gap-2">
+            <a href="<?= url('production/sellers/export-replaced') ?>" class="btn btn-sm btn-outline-success" title="Export Replaced Rolls Log (CSV)">
+                <i class="bi bi-file-earmark-spreadsheet me-1"></i>Export Replaced (CSV)
+            </a>
+            <span class="badge bg-primary-subtle text-primary" id="supplierCount"><?= number_format(count($sellers)) ?> suppliers</span>
+        </div>
     </div>
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
@@ -109,6 +117,9 @@
                         
                         <td class="text-end text-nowrap">
                             <div class="action-btns-group justify-content-end">
+                                <?php if ($replCount > 0): ?>
+                                    <a href="<?= url('production/sellers/export-replaced?seller_id=' . $seller['id']) ?>" class="btn btn-action-icon btn-outline-success" title="Export <?= $replCount ?> Replaced Rolls for <?= e($seller['name']) ?> (CSV)"><i class="bi bi-file-earmark-arrow-down"></i></a>
+                                <?php endif; ?>
                                 <?php if (hasPermission('sellers', 'view')): ?>
                                     <a href="<?= url('production/sellers/view/' . $seller['id']) ?>" class="btn btn-action-icon btn-outline-info" title="View supplier"><i class="bi bi-eye"></i></a>
                                 <?php endif; ?>

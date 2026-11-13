@@ -601,6 +601,179 @@ class ProductionController {
         ]);
     }
 
+    public function exportReplacedRolls(): void {
+        self::ensureDatabaseSchema();
+        $sellerId = isset($_GET['seller_id']) && is_numeric($_GET['seller_id']) ? (int)$_GET['seller_id'] : null;
+
+        $sql = "SELECT rd.*,
+                       s.name AS supplier_name, s.company AS supplier_company, s.phone AS supplier_phone,
+                       orig_sr.roll_number AS damaged_roll_number, orig_sr.color AS damaged_color, orig_sr.design_name AS damaged_design,
+                       orig_sr.material_type AS damaged_material, orig_sr.qr_code AS damaged_qr_code,
+                       orig_sr.start_code AS damaged_start_code, orig_sr.end_code AS damaged_end_code,
+                       orig_sr.quantity AS damaged_roll_qty, orig_sr.weight AS damaged_roll_weight,
+                       orig_sr.price AS damaged_roll_price,
+                       repl_sr.roll_number AS repl_roll_number, repl_sr.color AS repl_color, repl_sr.design_name AS repl_design,
+                       repl_sr.material_type AS repl_material, repl_sr.quantity AS repl_quantity, repl_sr.weight AS repl_weight,
+                       repl_sr.price AS repl_price, repl_sr.qr_code AS repl_qr_code,
+                       repl_sr.start_code AS repl_start_code, repl_sr.end_code AS repl_end_code,
+                       repl_sr.created_at AS repl_created_at,
+                       p.name AS catalog_product_name,
+                       cl.name AS variant_color_name,
+                       sz.name AS variant_size_name,
+                       u_rep.full_name AS reported_by_name,
+                       u_res.full_name AS resolved_by_name,
+                       (SELECT pp.id FROM production_purchases pp 
+                        LEFT JOIN production_purchase_items ppi ON ppi.purchase_id = pp.id 
+                        WHERE (rd.replacement_roll_id IS NOT NULL AND ppi.seller_roll_id = rd.replacement_roll_id)
+                           OR pp.notes LIKE CONCAT('%', rd.damage_number, '%')
+                        ORDER BY pp.id DESC LIMIT 1) AS replacement_purchase_id,
+                       (SELECT pp.purchase_number FROM production_purchases pp 
+                        LEFT JOIN production_purchase_items ppi ON ppi.purchase_id = pp.id 
+                        WHERE (rd.replacement_roll_id IS NOT NULL AND ppi.seller_roll_id = rd.replacement_roll_id)
+                           OR pp.notes LIKE CONCAT('%', rd.damage_number, '%')
+                        ORDER BY pp.id DESC LIMIT 1) AS replacement_purchase_number
+                FROM roll_damages rd
+                LEFT JOIN sellers s ON rd.seller_id = s.id
+                LEFT JOIN seller_rolls orig_sr ON rd.seller_roll_id = orig_sr.id
+                LEFT JOIN seller_rolls repl_sr ON rd.replacement_roll_id = repl_sr.id
+                LEFT JOIN products p ON rd.product_id = p.id
+                LEFT JOIN product_variants pv ON rd.variant_id = pv.id
+                LEFT JOIN colors cl ON pv.color_id = cl.id
+                LEFT JOIN sizes sz ON pv.size_id = sz.id
+                LEFT JOIN users u_rep ON rd.reported_by = u_rep.id
+                LEFT JOIN users u_res ON rd.resolved_by = u_res.id
+                WHERE (rd.replacement_roll_id IS NOT NULL 
+                       OR rd.resolution_type = 'REPLACEMENT' 
+                       OR rd.status = 'REPLACEMENT_RECEIVED'
+                       OR (rd.replacement_roll_number IS NOT NULL AND rd.replacement_roll_number != ''))";
+        $params = [];
+        if ($sellerId) {
+            $sql .= " AND (rd.seller_id = ? OR orig_sr.seller_id = ? OR repl_sr.seller_id = ?)";
+            $params = [$sellerId, $sellerId, $sellerId];
+        }
+        $sql .= " ORDER BY COALESCE(rd.resolved_at, rd.updated_at, rd.created_at) DESC";
+
+        $rows = Database::fetchAll($sql, $params);
+
+        $supplierSuffix = $sellerId ? ('Supplier_' . $sellerId . '_') : 'All_Suppliers_';
+        $filename = 'Replaced_Rolls_' . $supplierSuffix . date('Ymd_His') . '.csv';
+
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        $out = fopen('php://output', 'w');
+        // UTF-8 BOM
+        fprintf($out, chr(0xEF) . chr(0xBB) . chr(0xBF));
+
+        // Column Headers
+        fputcsv($out, [
+            '#',
+            'Supplier Name',
+            'Supplier Company',
+            'Supplier Contact',
+            'Replacement Roll No',
+            'Color',
+            'Design / Pattern',
+            'Replaced For (Damaged Roll / Item)',
+            'Damaged Item Specifications',
+            'Defect Quantity',
+            'Defect Weight (kg)',
+            'Defect Reason / Cause',
+            'Defect / Resolution Notes',
+            'Quantity (pcs)',
+            'Weight (kg)',
+            'Valuation (INR)',
+            'Replacement QR Codes',
+            'Replaced Date & Time',
+            'Damage Claim #',
+            'Purchase Inward #',
+            'Resolved By'
+        ]);
+
+        foreach ($rows as $idx => $rr) {
+            $damagedTitle = '';
+            if (!empty($rr['damaged_roll_number'])) {
+                $damagedTitle = $rr['damaged_roll_number'];
+            } elseif (!empty($rr['product_name'])) {
+                $damagedTitle = $rr['product_name'];
+            } elseif (!empty($rr['catalog_product_name'])) {
+                $damagedTitle = $rr['catalog_product_name'];
+            } elseif (!empty($rr['seller_roll_id'])) {
+                $damagedTitle = 'Roll #' . $rr['seller_roll_id'];
+            } elseif (!empty($rr['qr_code'])) {
+                $damagedTitle = 'Item [' . $rr['qr_code'] . ']';
+            } else {
+                $damagedTitle = 'Damaged Item #' . $rr['id'];
+            }
+
+            $specParts = [];
+            if (!empty($rr['damaged_color']) && $rr['damaged_color'] !== '—') {
+                $specParts[] = 'Color: ' . $rr['damaged_color'];
+            } elseif (!empty($rr['variant_color_name'])) {
+                $specParts[] = 'Color: ' . $rr['variant_color_name'];
+            }
+            if (!empty($rr['damaged_design'])) {
+                $specParts[] = 'Design: ' . $rr['damaged_design'];
+            }
+            if (!empty($rr['variant_size_name'])) {
+                $specParts[] = 'Size: ' . $rr['variant_size_name'];
+            }
+            if (!empty($rr['variant_info'])) {
+                $specParts[] = $rr['variant_info'];
+            }
+            if (!empty($rr['qr_code']) && strpos($damagedTitle, $rr['qr_code']) === false) {
+                $specParts[] = 'QR: ' . $rr['qr_code'];
+            }
+            $specText = implode(' | ', $specParts);
+
+            $replRoll = $rr['repl_roll_number'] ?: ($rr['replacement_roll_number'] ?: ('Roll #' . ($rr['replacement_roll_id'] ?: '—')));
+            $replColor = $rr['repl_color'] ?: '—';
+            $replDesign = $rr['repl_design'] ?: '—';
+            $replQty = (float)($rr['repl_quantity'] ?: ($rr['damaged_quantity'] ?: 0));
+            $replWeight = (float)($rr['repl_weight'] ?: ($rr['damaged_weight'] ?: 0));
+            $replPrice = (float)($rr['repl_price'] ?: 0);
+            $replValuation = $replQty > 0 && $replPrice > 0 ? ($replQty * $replPrice) : (float)($rr['replacement_valuation'] ?: ($rr['loss_valuation'] ?: 0));
+
+            $replQrRange = '—';
+            if (!empty($rr['repl_start_code']) && !empty($rr['repl_end_code'])) {
+                $replQrRange = $rr['repl_start_code'] . ' -> ' . $rr['repl_end_code'];
+            } elseif (!empty($rr['repl_qr_code'])) {
+                $replQrRange = $rr['repl_qr_code'];
+            }
+
+            $dateStr = date('d-m-Y H:i:s', strtotime($rr['resolved_at'] ?: ($rr['updated_at'] ?: $rr['created_at'])));
+
+            fputcsv($out, [
+                $idx + 1,
+                $rr['supplier_name'] ?: '-',
+                $rr['supplier_company'] ?: '-',
+                $rr['supplier_phone'] ?: '-',
+                $replRoll,
+                $replColor,
+                $replDesign,
+                $damagedTitle,
+                $specText,
+                number_format((float)($rr['damaged_quantity'] ?: 1), 2) . ' pcs',
+                (float)($rr['damaged_weight'] ?? 0) > 0 ? number_format((float)$rr['damaged_weight'], 2) : '—',
+                $rr['defect_type'] ?: '—',
+                $rr['defect_notes'] ?: ($rr['resolution_notes'] ?: '—'),
+                number_format($replQty, 2),
+                number_format($replWeight, 2),
+                number_format($replValuation, 2),
+                $replQrRange,
+                $dateStr,
+                $rr['damage_number'] ?: '—',
+                $rr['replacement_purchase_number'] ?: '—',
+                $rr['resolved_by_name'] ?: ($rr['reported_by_name'] ?: 'System Administrator')
+            ]);
+        }
+
+        fclose($out);
+        exit;
+    }
+
     public function viewSeller(string $id): void {
         self::ensureDatabaseSchema();
         $sellerId = (int)$id;
