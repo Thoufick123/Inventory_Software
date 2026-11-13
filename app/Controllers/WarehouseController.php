@@ -519,6 +519,81 @@ class WarehouseController {
     }
 
     /**
+     * Show the QR-only editor for an inward batch.
+     */
+    public function editInwardQr(string $id): void {
+        if (!hasPermission('inward', 'edit')) {
+            Session::flash('error', 'Access denied: You do not have permission to edit inward QR codes.');
+            Response::redirect(url('warehouse/inward/view/' . $id));
+            return;
+        }
+
+        $batchId = (int)$id;
+        $batch = ProductionBatch::find($batchId);
+        if (!$batch) {
+            Session::flash('error', 'Production batch not found.');
+            Response::redirect(url('warehouse/inward'));
+            return;
+        }
+
+        $items = ProductionBatch::getItems($batchId);
+        $hasEditableQrItems = false;
+        foreach ($items as $item) {
+            if (!empty($item['is_series']) || !empty($item['is_complementary'])) {
+                $hasEditableQrItems = true;
+                break;
+            }
+        }
+
+        Response::view('warehouse.inward.edit_qr', [
+            'pageTitle'        => 'Edit Inward QR Codes #' . $batch['batch_number'],
+            'activeModule'     => 'warehouse',
+            'activeMenu'       => 'wh-inward',
+            'batch'            => $batch,
+            'items'            => $items,
+            'hasEditableQrItems' => $hasEditableQrItems,
+            'breadcrumb'       => [
+                ['label' => 'Warehouse', 'url' => url('warehouse/dashboard')],
+                ['label' => 'Inward / GRN', 'url' => url('warehouse/inward')],
+                ['label' => 'Batch #' . $batch['batch_number'], 'url' => url('warehouse/inward/view/' . $batchId)],
+                ['label' => 'Edit QR Codes'],
+            ],
+        ]);
+    }
+
+    /**
+     * Update inward QR mappings only; quantity and stock records are untouched.
+     */
+    public function updateInwardQr(string $id): void {
+        $batchId = (int)$id;
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token or session expired. Please try again.');
+            Response::redirect(url('warehouse/inward/edit-qr/' . $batchId));
+            return;
+        }
+
+        if (!hasPermission('inward', 'edit')) {
+            Session::flash('error', 'Access denied: You do not have permission to edit inward QR codes.');
+            Response::redirect(url('warehouse/inward/view/' . $batchId));
+            return;
+        }
+
+        $editReason = trim((string)($_POST['edit_reason'] ?? ''));
+        $qrItems = isset($_POST['qr_items']) && is_array($_POST['qr_items']) ? $_POST['qr_items'] : [];
+
+        try {
+            WarehouseService::updateInwardQrCodes($batchId, Session::userId() ?? 1, $qrItems, $editReason);
+            $batch = ProductionBatch::find($batchId);
+            $batchNumber = $batch['batch_number'] ?? "#$batchId";
+            Session::flash('success', "QR codes for Batch $batchNumber updated. Quantities and warehouse stock were not changed.");
+            Response::redirect(url('warehouse/inward/view/' . $batchId));
+        } catch (Throwable $e) {
+            Session::flash('error', 'Failed to update inward QR codes: ' . $e->getMessage());
+            Response::redirect(url('warehouse/inward/edit-qr/' . $batchId));
+        }
+    }
+
+    /**
      * Show Edit Form for an Inward Shipment.
      */
     public function editInward(string $id): void {
@@ -12001,17 +12076,29 @@ class WarehouseController {
         }
 
         $userId = Session::get('user_id');
-        $goodQty       = $_POST['good_qty']      ?? [];
-        $damagedQty    = $_POST['damaged_qty']   ?? [];
-        $classification = $_POST['classification'] ?? [];
+        $goodQty = isset($_POST['good_qty']) && is_array($_POST['good_qty']) ? $_POST['good_qty'] : [];
+        $classification = isset($_POST['classification']) && is_array($_POST['classification']) ? $_POST['classification'] : [];
 
         try {
             foreach ($return['items'] as $item) {
                 $itemId    = $item['id'];
                 $returned  = (int)$item['returned_qty'];
                 $class  = $classification[$itemId] ?? 'GOOD';
-                $g      = max(0, min($returned, (int)($goodQty[$itemId] ?? 0)));
-                $d      = max(0, (int)($damagedQty[$itemId] ?? 0));
+                if (!in_array($class, ['GOOD', 'DAMAGED', 'DEFECTIVE', 'WRONG_SIZE'], true)) {
+                    throw new InvalidArgumentException("Invalid return classification for item #{$itemId}.");
+                }
+                $canAdjustGoodQty = !empty($item['is_series_or_complementary']);
+                $rawGoodQty = $goodQty[$itemId] ?? 0;
+                $goodQtyValue = is_scalar($rawGoodQty) ? trim((string)$rawGoodQty) : '';
+                $parsedGoodQty = preg_match('/^\d+$/D', $goodQtyValue) ? (int)$goodQtyValue : false;
+                if ($class !== 'GOOD' && $canAdjustGoodQty
+                    && ($parsedGoodQty === false || $parsedGoodQty < 0 || $parsedGoodQty > $returned)) {
+                    throw new InvalidArgumentException("Good quantity for {$item['sku']} must be a whole number between 0 and {$returned} pcs.");
+                }
+                $g      = $class === 'GOOD'
+                    ? $returned
+                    : ($canAdjustGoodQty ? (int)$parsedGoodQty : 0);
+                $d      = max(0, $returned - $g);
                 $df     = 0;
 
                 if ($class === 'GOOD') {
@@ -12019,12 +12106,6 @@ class WarehouseController {
                     $d  = 0;
                     $df = 0;
                 } else {
-                    $nonGood = max(0, $returned - $g);
-                    if ($d < $nonGood) {
-                        $d = $nonGood;
-                    }
-                    $d = max(0, $d);
-
                     if ($class === 'DEFECTIVE' || $class === 'WRONG_SIZE') {
                         $df = $d;
                         $d  = 0;
