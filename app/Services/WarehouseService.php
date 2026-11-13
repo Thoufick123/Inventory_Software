@@ -3395,6 +3395,195 @@ class WarehouseService {
         return $availableStock > 0;
     }
 
+    public static function isWarehouseQrTagAvailable(
+        int $variantId,
+        int $warehouseId,
+        string $pieceTag
+    ): bool {
+        $pieceTag = strtoupper(trim($pieceTag));
+        if ($variantId <= 0 || $warehouseId <= 0 || $pieceTag === ''
+            || !preg_match('/^[A-Z0-9_ -]+$/', $pieceTag)) {
+            return false;
+        }
+
+        $availableStock = (float)(Database::fetchOne(
+            "SELECT COALESCE(SUM(quantity), 0) AS quantity
+             FROM stock_balances
+             WHERE variant_id = ? AND location_type = 'WAREHOUSE'
+               AND location_id = ? AND stock_state = 'AVAILABLE'",
+            [$variantId, $warehouseId]
+        )['quantity'] ?? 0);
+        if ($availableStock <= 0) {
+            return false;
+        }
+
+        foreach (Database::fetchAll(
+            "SELECT qr_code, series_end_code
+             FROM warehouse_qr_codes
+             WHERE variant_id = ? AND warehouse_id = ? AND inwarded_at IS NOT NULL",
+            [$variantId, $warehouseId]
+        ) as $warehouseQr) {
+            $startCode = strtoupper(trim((string)($warehouseQr['qr_code'] ?? '')));
+            $endCode = strtoupper(trim((string)($warehouseQr['series_end_code'] ?? '')));
+            if ($pieceTag === $startCode || ($endCode !== '' && $pieceTag === $endCode)
+                || ($endCode !== '' && $pieceTag === $startCode . ' - ' . $endCode)
+                || ($endCode !== '' && self::qrTagIsWithinRange($pieceTag, $startCode, $endCode))) {
+                return true;
+            }
+        }
+
+        $variantQr = Database::fetchOne(
+            "SELECT pv.qr_code, pv.series_start_code, pv.series_end_code, pv.qr_type,
+                    pv.pack_quantity, pv.is_complementary,
+                    COALESCE(p.is_complementary, 0) AS product_is_complementary,
+                    COALESCE(wc.category_type, 'NORMAL') AS category_type
+             FROM product_variants pv
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN warehouse_categories wc ON wc.id = p.warehouse_category_id
+             WHERE pv.id = ?",
+            [$variantId]
+        );
+        if ($variantQr) {
+            $categoryType = strtoupper((string)($variantQr['category_type'] ?? ''));
+            $isSeriesOrPack = in_array(strtoupper((string)($variantQr['qr_type'] ?? '')), ['SERIES', 'SERIES_BATCH'], true)
+                || in_array($categoryType, ['SERIES', 'COMPLEMENTARY'], true)
+                || (int)($variantQr['pack_quantity'] ?? 1) > 1
+                || !empty($variantQr['is_complementary'])
+                || !empty($variantQr['product_is_complementary']);
+            $qrCode = strtoupper(trim((string)($variantQr['qr_code'] ?? '')));
+            $startCode = strtoupper(trim((string)($variantQr['series_start_code'] ?? '')));
+            $endCode = strtoupper(trim((string)($variantQr['series_end_code'] ?? '')));
+            if ($isSeriesOrPack && (
+                ($qrCode !== '' && $pieceTag === $qrCode)
+                || ($startCode !== '' && $pieceTag === $startCode)
+                || ($startCode !== '' && $endCode !== '' && $pieceTag === $startCode . ' - ' . $endCode)
+            )) {
+                return true;
+            }
+        }
+
+        $productionReceipts = Database::fetchAll(
+            "SELECT pbi.received_qr_codes, pbi.damaged_qr_codes
+             FROM production_batch_items pbi
+             JOIN production_batches pb ON pb.id = pbi.production_batch_id
+             LEFT JOIN production_outwards po ON (pb.production_outward_id = po.id OR po.production_batch_id = pb.id)
+             WHERE pbi.variant_id = ? AND pb.status IN ('RECEIVED', 'DISPATCHED')
+               AND COALESCE(po.warehouse_id, pb.destination_warehouse_id) = ?",
+            [$variantId, $warehouseId]
+        );
+        foreach ($productionReceipts as $receipt) {
+            $isReceived = self::qrTagIsInRecordedList($pieceTag, (string)($receipt['received_qr_codes'] ?? ''));
+            $isDamaged = self::qrTagIsInRecordedList($pieceTag, (string)($receipt['damaged_qr_codes'] ?? ''));
+            if ($isReceived && !$isDamaged) {
+                return true;
+            }
+        }
+
+        $returnItems = Database::fetchAll(
+            "SELECT ri.reason
+             FROM return_items ri
+             JOIN `returns` r ON r.id = ri.return_id
+             WHERE ri.variant_id = ? AND r.warehouse_id = ?
+               AND ri.item_condition = 'GOOD' AND ri.destination = 'AVAILABLE'
+               AND r.status NOT IN ('CANCELLED', 'REJECTED')
+               AND UPPER(COALESCE(ri.reason, '')) LIKE '%PIECE TAGS:%'",
+            [$variantId, $warehouseId]
+        );
+        foreach ($returnItems as $returnItem) {
+            $tagList = preg_replace('/^.*?PIECE TAGS:\s*/i', '', (string)($returnItem['reason'] ?? ''));
+            if (self::qrTagIsInRecordedList($pieceTag, (string)$tagList)) {
+                return true;
+            }
+        }
+
+        $warehouseReturns = Database::fetchAll(
+            "SELECT wri.scanned_qr_codes
+             FROM warehouse_return_items wri
+             JOIN warehouse_returns wr ON wr.id = wri.warehouse_return_id
+             WHERE wri.variant_id = ? AND wr.destination_warehouse_id = ?
+               AND wri.classification = 'GOOD' AND wri.good_qty > 0
+               AND wr.status = 'COMPLETED'",
+            [$variantId, $warehouseId]
+        );
+        foreach ($warehouseReturns as $warehouseReturn) {
+            if (self::qrTagIsInRecordedList($pieceTag, (string)($warehouseReturn['scanned_qr_codes'] ?? ''))) {
+                return true;
+            }
+        }
+
+        $transactions = Database::fetchAll(
+            "SELECT notes
+             FROM stock_transactions
+             WHERE variant_id = ? AND location_type = 'WAREHOUSE' AND location_id = ?
+               AND notes LIKE '%Tags:%' AND notes LIKE ?
+             ORDER BY id DESC LIMIT 100",
+            [$variantId, $warehouseId, '%' . $pieceTag . '%']
+        );
+        foreach ($transactions as $transaction) {
+            $notes = strtoupper((string)($transaction['notes'] ?? ''));
+            if (preg_match('/(?<![A-Z0-9])' . preg_quote($pieceTag, '/') . '(?![A-Z0-9])/', $notes)) {
+                return true;
+            }
+            if (preg_match('/TAGS:\s*([A-Z0-9_-]+)\s+-\s+([A-Z0-9_-]+)/', $notes, $range)
+                && self::qrTagIsWithinRange($pieceTag, $range[1], $range[2])) {
+                return true;
+            }
+            if (preg_match('/TAGS:\s*([A-Z0-9_-]+).*?\(TOTAL\s+(\d+)\)/', $notes, $summary)
+                && preg_match('/^(.+?)(\d+)$/', $summary[1], $start)
+                && preg_match('/^(.+?)(\d+)$/', $pieceTag, $scanned)
+                && strtoupper($start[1]) === strtoupper($scanned[1])
+                && strlen($start[2]) === strlen($scanned[2])
+                && (int)$scanned[2] >= (int)$start[2]
+                && (int)$scanned[2] < (int)$start[2] + (int)$summary[2]) {
+                return true;
+            }
+        }
+
+        return self::isAvailableExchangedSeriesTagInWarehouse($pieceTag, $warehouseId, $variantId);
+    }
+
+    private static function qrTagIsInRecordedList(string $pieceTag, string $recordedTags): bool {
+        $decoded = json_decode($recordedTags, true);
+        if (is_array($decoded)) {
+            $tags = [];
+            foreach ($decoded as $entry) {
+                $tags[] = is_array($entry)
+                    ? (string)($entry['tag_code'] ?? $entry['qr_code'] ?? $entry['tag'] ?? $entry['code'] ?? '')
+                    : (is_scalar($entry) ? (string)$entry : '');
+            }
+        } else {
+            $tags = preg_split('/[,;|\r\n]+/', $recordedTags) ?: [];
+        }
+
+        foreach ($tags as $tag) {
+            $tag = strtoupper(trim((string)$tag, " \t\n\r\0\x0B\"'"));
+            if ($tag === $pieceTag) {
+                return true;
+            }
+            if (preg_match('/^(.+?)\s+-\s+(.+)$/', $tag, $range)
+                && self::qrTagIsWithinRange($pieceTag, $range[1], $range[2])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function qrTagIsWithinRange(string $pieceTag, string $startCode, string $endCode): bool {
+        if (!preg_match('/^(.+?)(\d+)$/', strtoupper(trim($startCode)), $start)
+            || !preg_match('/^(.+?)(\d+)$/', strtoupper(trim($endCode)), $end)
+            || !preg_match('/^(.+?)(\d+)$/', strtoupper(trim($pieceTag)), $scanned)) {
+            return false;
+        }
+
+        return strtoupper($start[1]) === strtoupper($end[1])
+            && strtoupper($start[1]) === strtoupper($scanned[1])
+            && strlen($start[2]) === strlen($end[2])
+            && strlen($start[2]) === strlen($scanned[2])
+            && (int)$scanned[2] >= (int)$start[2]
+            && (int)$scanned[2] <= (int)$end[2];
+    }
+
     /**
      * Get Complete Details for a Single Direct Purchase Return / Exchange.
      */

@@ -101,8 +101,8 @@
                         <i class="bi bi-qr-code-scan fs-5"></i>
                     </span>
                     <div>
-                        <h6 class="fw-bold mb-0 text-dark">Live QR Code &amp; Barcode Gun Scanner</h6>
-                        <small class="text-muted">Scan piece tag sticker or enter tag / SKU (e.g. <code>TTS092601</code>, <code>RMT092606</code>) to dynamically add product &amp; log damaged stock</small>
+                        <h6 class="fw-bold mb-0 text-dark">Live Warehouse QR Scanner</h6>
+                        <small class="text-muted">Scan an exact QR tag recorded as available stock in the selected warehouse to log damage</small>
                     </div>
                 </div>
                 <div class="d-flex align-items-center gap-2">
@@ -123,7 +123,7 @@
                 <input type="text" 
                        id="damage_qr_input" 
                        class="form-control form-control-lg border-danger border-opacity-25 font-monospace fw-bold" 
-                       placeholder="Scan QR Code or Type Piece Tag / SKU (e.g. TTS092601, RMT092606)..." 
+                       placeholder="Scan exact warehouse QR tag..." 
                        autocomplete="off" 
                        autofocus>
                 <button type="button" class="btn btn-danger px-4 fw-bold d-flex align-items-center gap-2" id="triggerScanBtn">
@@ -154,7 +154,7 @@
                 <table class="table table-hover align-middle mb-0" id="itemsTable">
                     <thead class="table-light">
                         <tr>
-                            <th style="width: 14%;">QR NO / SKU</th>
+                            <th style="width: 14%;">QR TAG</th>
                             <th style="width: 14%;">CATEGORY</th>
                             <th style="width: 26%;">PRODUCT NAME / VARIANT <span class="text-danger">*</span></th>
                             <th style="width: 8%;" class="text-center">SIZE</th>

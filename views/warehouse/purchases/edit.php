@@ -366,10 +366,10 @@ $displayNotes = trim(preg_replace('/\[Split Payment:.*?\]\r?\n?/', '', $po['note
                         <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                             <div class="d-flex align-items-center gap-2">
                                 <span class="badge bg-warning text-dark px-2 py-0.5 fw-bold" style="font-size: 0.72rem;">
-                                    <i class="bi bi-upc-scan me-1"></i>Live Scanner &amp; Search
+                                    <i class="bi bi-upc-scan me-1"></i>Warehouse QR Scanner
                                 </span>
                                 <span class="text-white-50" style="font-size: 0.76rem;">
-                                    Scan QR tag / barcode or type product code / SKU / name — <kbd class="bg-dark text-warning border border-secondary px-1 py-0" style="font-size:0.7rem;">Alt + S</kbd> to focus
+                                    Scan an exact QR tag stocked in the selected warehouse — <kbd class="bg-dark text-warning border border-secondary px-1 py-0" style="font-size:0.7rem;">Alt + S</kbd> to focus
                                 </span>
                             </div>
                         </div>
@@ -382,17 +382,13 @@ $displayNotes = trim(preg_replace('/\[Split Payment:.*?\]\r?\n?/', '', $po['note
                                 </span>
                                 <input type="text" id="purchaseScanInput" class="form-control bg-dark text-white border-secondary font-monospace" 
                                        style="font-size: 0.9rem;"
-                                       placeholder="Scan piece QR tag, Barcode, or type Product Code / SKU / Name..." 
-                                       autocomplete="off" autofocus oninput="onLiveSearchInput(this.value)" onkeydown="onScannerInputKeydown(event)">
+                                       placeholder="Scan exact warehouse QR tag..." 
+                                       autocomplete="off" autofocus onkeydown="onScannerInputKeydown(event)">
                                 <button type="button" class="btn btn-warning px-3 fw-bold" id="btnPurchaseScanSubmit" onclick="submitCurrentScan()">
                                     <i class="bi bi-plus-lg me-1"></i> Scan &amp; Add
                                 </button>
                             </div>
                             
-                            <!-- Floating Live Search Dropdown -->
-                            <div id="liveSearchResults" class="dropdown-menu w-100 shadow-lg p-0 d-none" 
-                                 style="position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 1055; max-height: 300px; overflow-y: auto; border-radius: 8px; border: 1px solid #cbd5e1; background: #ffffff;">
-                            </div>
                         </div>
 
                         <div id="scanFeedbackMsg" class="mt-2 small d-none alert py-1 px-2.5 mb-0" style="font-size: 0.8rem;"></div>
@@ -1969,13 +1965,13 @@ function onScannerInputKeydown(e) {
     const items = dropdown ? dropdown.querySelectorAll('.search-result-item') : [];
 
     if (e.key === 'ArrowDown') {
-        if (!dropdown.classList.contains('d-none') && items.length > 0) {
+        if (dropdown && !dropdown.classList.contains('d-none') && items.length > 0) {
             e.preventDefault();
             activeSearchIndex = (activeSearchIndex + 1) % items.length;
             highlightSearchItem(items);
         }
     } else if (e.key === 'ArrowUp') {
-        if (!dropdown.classList.contains('d-none') && items.length > 0) {
+        if (dropdown && !dropdown.classList.contains('d-none') && items.length > 0) {
             e.preventDefault();
             activeSearchIndex = (activeSearchIndex - 1 + items.length) % items.length;
             highlightSearchItem(items);
