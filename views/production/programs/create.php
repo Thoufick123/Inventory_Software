@@ -700,9 +700,6 @@ function addProgramRollRow(rollData = null) {
                         <i class="bi bi-sliders text-primary"></i>
                         <span>Category Attributes &amp; Specifications</span>
                     </span>
-                    <button type="button" class="btn btn-xs btn-outline-primary py-1 px-2.5 fw-semibold btn-add-attr-trigger" style="font-size: 11px;" onclick="openAddAttributeModal(${idx})" title="Add new attribute for this category level">
-                        <i class="bi bi-plus-circle me-1"></i>+ Add Attribute
-                    </button>
                 </div>
                 <div id="roll_attrs_container_${idx}" class="roll-attributes-container d-flex flex-column gap-3">
                     <div class="text-muted small py-3 px-3 bg-white rounded-3 border border-dashed fst-italic" style="font-size: 11px;">
@@ -2024,7 +2021,7 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
                     <div class="p-3 bg-white rounded-3 text-center small text-muted border border-dashed" style="font-size: 11px;">
                         <i class="bi bi-sliders me-1 text-secondary"></i>No pre-set attributes for this category level yet. 
                         <a href="javascript:void(0)" onclick="openAddAttributeModal(${idx})" class="fw-semibold text-primary text-decoration-none ms-1">
-                            <i class="bi bi-plus-circle"></i> + Add Attribute
+                            <i class="bi bi-plus-circle"></i> Add Attribute
                         </a>
                     </div>
                 `;
