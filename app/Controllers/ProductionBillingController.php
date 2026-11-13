@@ -55,7 +55,31 @@ class ProductionBillingController
 
     public function createBill(): void
     {
-        $this->renderForm(null);
+        $qcBatchId = !empty($_REQUEST['qc_batch_id']) ? (int)$_REQUEST['qc_batch_id'] : 0;
+        $batchId = !empty($_REQUEST['batch_id']) ? (int)$_REQUEST['batch_id'] : 0;
+        $selectedTags = !empty($_POST['selected_tags']) && is_array($_POST['selected_tags']) ? $_POST['selected_tags'] : [];
+        if (empty($selectedTags) && !empty($_GET['tags'])) {
+            $selectedTags = explode(',', (string)$_GET['tags']);
+        }
+
+        $preloadedItems = [];
+        $overrideUnitId = null;
+
+        if ($qcBatchId > 0) {
+            $preloadedItems = $this->loadQCItemsForBilling($qcBatchId, $selectedTags);
+            $qb = Database::fetchOne("SELECT pp.production_unit_id FROM qc_batches qb JOIN production_programs pp ON pp.id = qb.program_id WHERE qb.id = ?", [$qcBatchId]);
+            if (!empty($qb['production_unit_id'])) {
+                $overrideUnitId = (int)$qb['production_unit_id'];
+            }
+        } elseif ($batchId > 0) {
+            $preloadedItems = $this->loadBatchItemsForBilling($batchId);
+            $pb = Database::fetchOne("SELECT pp.production_unit_id FROM production_batches pb JOIN production_programs pp ON pp.id = pb.program_id WHERE pb.id = ?", [$batchId]);
+            if (!empty($pb['production_unit_id'])) {
+                $overrideUnitId = (int)$pb['production_unit_id'];
+            }
+        }
+
+        $this->renderForm(null, $preloadedItems, $overrideUnitId);
     }
 
     public function editBill(string $id): void
@@ -528,13 +552,14 @@ class ProductionBillingController
         }
     }
 
-    private function renderForm(?array $bill): void
+    private function renderForm(?array $bill, array $preloadedItems = [], ?int $overrideUnitId = null): void
     {
-        $billItems = $bill ? $this->loadBillItems((int)$bill['id']) : [];
+        $billItems = $bill ? $this->loadBillItems((int)$bill['id']) : $preloadedItems;
         $productionUnits = function_exists('getScopedProductionUnits')
             ? getScopedProductionUnits()
             : ProductionUnit::getAll(['is_active' => 1]);
-        $savedUnit = !empty($bill['production_unit_id']) ? ProductionUnit::find((int)$bill['production_unit_id']) : null;
+        $targetUnitId = !empty($bill['production_unit_id']) ? (int)$bill['production_unit_id'] : ($overrideUnitId ?: 0);
+        $savedUnit = $targetUnitId > 0 ? ProductionUnit::find($targetUnitId) : null;
         $prodUnit = $savedUnit ?: ProductionUnit::getActiveFacility();
         if ($savedUnit && !array_filter($productionUnits, static fn(array $unit): bool => (int)$unit['id'] === (int)$savedUnit['id'])) {
             $productionUnits[] = $savedUnit;
@@ -548,6 +573,168 @@ class ProductionBillingController
             'prodUnit' => $prodUnit,
             'productionUnits' => $productionUnits,
         ]);
+    }
+
+    /**
+     * Load QC items and available piece tags to pre-populate bill.
+     */
+    private function loadQCItemsForBilling(int $qcBatchId, array $filterTags = []): array
+    {
+        $rows = Database::fetchAll(
+            "SELECT qi.*, 
+                    pp.program_number, pp.name AS program_name,
+                    COALESCE(p.name, pp.name, 'Finished Product') AS product_name,
+                    p.code AS product_code, p.gst_percentage, p.hsn_code,
+                    pv.sku, pv.mrp AS variant_mrp, pv.selling_price
+             FROM qc_items qi
+             JOIN qc_batches qb ON qb.id = qi.qc_batch_id
+             JOIN production_programs pp ON pp.id = qb.program_id
+             LEFT JOIN products p ON p.id = pp.product_id
+             LEFT JOIN product_variants pv ON pv.id = qi.variant_id
+             WHERE qi.qc_batch_id = ? AND qi.passed_qty > 0
+             ORDER BY qi.id ASC",
+            [$qcBatchId]
+        );
+
+        $availableTagsMap = ProductionService::getAvailableQCPieceTags($qcBatchId);
+        $cleanFilterTags = array_flip(array_map('strtoupper', array_map('trim', $filterTags)));
+
+        // Exclude already billed tags
+        $billedRows = Database::fetchAll("SELECT tag_code FROM production_bill_item_tags");
+        $billedTags = array_fill_keys(array_map(static fn($r) => strtoupper(trim((string)$r['tag_code'])), $billedRows), true);
+
+        // Exclude damage tags
+        $damagedRows = Database::fetchAll("SELECT qr_code FROM roll_damages WHERE qr_code IS NOT NULL AND status NOT IN ('CANCELLED', 'REJECTED')");
+        $damagedTags = array_fill_keys(array_map(static fn($r) => strtoupper(trim((string)$r['qr_code'])), $damagedRows), true);
+
+        $billItems = [];
+        foreach ($rows as $r) {
+            $qcItemId = (int)$r['id'];
+            $itemTags = $availableTagsMap[$qcItemId] ?? [];
+
+            // Filter unbilled and undamaged
+            $validTags = [];
+            foreach ($itemTags as $tag) {
+                $uTag = strtoupper(trim((string)$tag));
+                if (isset($billedTags[$uTag]) || isset($damagedTags[$uTag])) {
+                    continue;
+                }
+                if (!empty($cleanFilterTags) && !isset($cleanFilterTags[$uTag])) {
+                    continue;
+                }
+                $validTags[] = $tag;
+            }
+
+            if (empty($validTags)) {
+                continue;
+            }
+
+            $mrp = (float)($r['variant_mrp'] ?: ($r['base_price'] ?: 0));
+            $unitPrice = (float)($r['selling_price'] ?: ($r['discount_price'] ?: ($r['base_price'] ?: $mrp)));
+            $gstRate = (float)($r['gst_percentage'] ?: 5.0);
+
+            $billItems[] = [
+                'qc_item_id'     => $qcItemId,
+                'product_name'   => $r['product_name'] ?? 'Finished Product',
+                'sku'            => $r['sku'] ?: trim(($r['size_name'] ?? '') . '-' . ($r['color_name'] ?? '')),
+                'hsn_code'       => $r['hsn_code'] ?: '6109',
+                'size_name'      => $r['size_name'] ?? '',
+                'color_name'     => $r['color_name'] ?? '',
+                'mrp'            => $mrp,
+                'unit_price'     => $unitPrice,
+                'gst_percentage' => $gstRate,
+                'gst_type'       => $gstRate > 0 ? 'BOTH' : 'EXEMPTED',
+                'tax_input_type' => 'PERCENT',
+                'sgst_rate'      => round($gstRate / 2, 2),
+                'cgst_rate'      => round($gstRate / 2, 2),
+                'igst_rate'      => 0.0,
+                'tags'           => array_values($validTags),
+            ];
+        }
+
+        return $billItems;
+    }
+
+    /**
+     * Load packed Batch items and piece tags to pre-populate bill.
+     */
+    private function loadBatchItemsForBilling(int $batchId): array
+    {
+        $batch = Database::fetchOne("SELECT * FROM production_batches WHERE id = ?", [$batchId]);
+        if (!$batch) return [];
+
+        $pbiRows = Database::fetchAll(
+            "SELECT pbi.*,
+                    COALESCE(p.name, pp.name, 'Finished Product') AS product_name,
+                    p.code AS product_code, p.gst_percentage, p.hsn_code,
+                    pv.sku, pv.mrp AS variant_mrp, pv.selling_price,
+                    c.name AS color_name, sz.name AS size_name
+             FROM production_batch_items pbi
+             JOIN production_batches pb ON pb.id = pbi.production_batch_id
+             JOIN production_programs pp ON pp.id = pb.program_id
+             LEFT JOIN products p ON p.id = pp.product_id
+             LEFT JOIN product_variants pv ON pv.id = pbi.variant_id
+             LEFT JOIN colors c ON c.id = pv.color_id
+             LEFT JOIN sizes sz ON sz.id = pv.size_id
+             WHERE pbi.production_batch_id = ?
+             ORDER BY pbi.id ASC",
+            [$batchId]
+        );
+
+        $billedRows = Database::fetchAll("SELECT tag_code FROM production_bill_item_tags");
+        $billedTags = array_fill_keys(array_map(static fn($r) => strtoupper(trim((string)$r['tag_code'])), $billedRows), true);
+
+        $damagedRows = Database::fetchAll("SELECT qr_code FROM roll_damages WHERE qr_code IS NOT NULL AND status NOT IN ('CANCELLED', 'REJECTED')");
+        $damagedTags = array_fill_keys(array_map(static fn($r) => strtoupper(trim((string)$r['qr_code'])), $damagedRows), true);
+
+        $billItems = [];
+        foreach ($pbiRows as $r) {
+            $tags = [];
+            if (!empty($r['piece_tags'])) {
+                $decoded = json_decode($r['piece_tags'], true);
+                $tags = is_array($decoded) ? $decoded : explode(',', $r['piece_tags']);
+            }
+
+            $validTags = [];
+            foreach ($tags as $t) {
+                $tClean = strtoupper(trim((string)$t));
+                if ($tClean !== '' && !isset($billedTags[$tClean]) && !isset($damagedTags[$tClean])) {
+                    $validTags[] = trim((string)$t);
+                }
+            }
+
+            if (empty($validTags)) continue;
+
+            $qcItemId = 0;
+            if (!empty($batch['qc_batch_id'])) {
+                $qi = Database::fetchOne("SELECT id FROM qc_items WHERE qc_batch_id = ? AND variant_id = ? LIMIT 1", [(int)$batch['qc_batch_id'], (int)$r['variant_id']]);
+                if ($qi) $qcItemId = (int)$qi['id'];
+            }
+
+            $mrp = (float)($r['variant_mrp'] ?: 0);
+            $unitPrice = (float)($r['selling_price'] ?: $mrp);
+            $gstRate = (float)($r['gst_percentage'] ?: 5.0);
+
+            $billItems[] = [
+                'qc_item_id'     => $qcItemId,
+                'product_name'   => $r['product_name'] ?? 'Finished Product',
+                'sku'            => $r['sku'] ?: trim(($r['size_name'] ?? '') . '-' . ($r['color_name'] ?? '')),
+                'hsn_code'       => $r['hsn_code'] ?: '6109',
+                'size_name'      => $r['size_name'] ?? '',
+                'color_name'     => $r['color_name'] ?? '',
+                'mrp'            => $mrp,
+                'unit_price'     => $unitPrice,
+                'gst_percentage' => $gstRate,
+                'gst_type'       => $gstRate > 0 ? 'BOTH' : 'EXEMPTED',
+                'tax_input_type' => 'PERCENT',
+                'sgst_rate'      => round($gstRate / 2, 2),
+                'cgst_rate'      => round($gstRate / 2, 2),
+                'igst_rate'      => 0.0,
+                'tags'           => array_values($validTags),
+            ];
+        }
+
+        return $billItems;
     }
 
     private function findBill(int $id): ?array
