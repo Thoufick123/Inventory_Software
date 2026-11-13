@@ -401,7 +401,10 @@
                     <div class="mb-3">
                         <label class="form-label small fw-bold text-dark required">Input Type <span class="text-danger">*</span></label>
                         <select name="attr_type" id="attrModalType" class="form-select form-select-sm" onchange="handleAttrTypeChange(this.value)">
-                            <option value="MULTI_SELECT" selected>Multiple Checkbox Pills / Sizes (Image 2 style)</option>
+                            <option value="MULTI_SELECT" selected>Multiple Checkbox Pills / Sizes (Multi-Select)</option>
+                            <option value="SELECT">Dropdown Selection (Single Select)</option>
+                            <option value="TEXT">Text Field</option>
+                            <option value="NUMBER">Number Field</option>
                         </select>
                     </div>
 
@@ -1977,6 +1980,26 @@ function stopCameraScanner() {
 // =========================================================================
 // DYNAMIC CATEGORY ATTRIBUTES & SPECIFICATIONS LOGIC
 // =========================================================================
+function getCurrentCardAttributeValues(idx) {
+    const card = document.getElementById('program_roll_card_' + idx);
+    if (!card) return {};
+    const values = {};
+    card.querySelectorAll(`[name^="rolls[${idx}][attributes]"]`).forEach(input => {
+        const match = input.name.match(/\[attributes\]\[([^\]]+)\]/);
+        if (!match) return;
+        const attrKey = match[1];
+        if (input.type === 'checkbox') {
+            if (input.checked) {
+                if (!values[attrKey]) values[attrKey] = [];
+                values[attrKey].push(input.value);
+            }
+        } else if (input.value !== '') {
+            values[attrKey] = input.value;
+        }
+    });
+    return values;
+}
+
 function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '', savedValues = null) {
     const container = document.getElementById('roll_attrs_container_' + idx);
     if (!container) return;
@@ -1989,7 +2012,7 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
     }
 
     container.innerHTML = `<div class="py-3 text-center text-muted small" style="font-size: 11px;">
-        <span class="spinner-border spinner-border-sm text-primary me-1" role="status"></span> Loading category attributes &amp; sizes...
+        <span class="spinner-border spinner-border-sm text-primary me-1" role="status"></span> Loading category attributes &amp; specifications...
     </div>`;
 
     let url = `${baseUrl}/api/categories/attributes/${encodeURIComponent(catId)}`;
@@ -2023,10 +2046,11 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
                 const isReq = attr.is_required == 1;
                 const isSize = /^(SIZE|SIZES)$/i.test(attr.attr_name.trim());
                 const isColor = /^(COLOR|COLORS)$/i.test(attr.attr_name.trim());
-                // Fabric roll colors are tracked per-roll on the roll card, skip rendering COLOR attribute in roll cutting attributes
-                if (isColor) return;
                 const cleanAttrName = isSize ? 'SIZE' : attr.attr_name.replace(/[^a-zA-Z0-9_]/g, '_');
                 const opts = attr.attr_options ? attr.attr_options.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+                // Only skip COLOR if it has zero configured options
+                if (isColor && opts.length === 0) return;
 
                 // Skip empty select/multi_select attributes with no options
                 if (opts.length === 0 && (attr.attr_type === 'MULTI_SELECT' || attr.attr_type === 'SELECT')) {
@@ -2059,6 +2083,11 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
                                 <span>${attrLabelTitle}</span>
                                 ${isReq ? '<span class="text-danger">*</span>' : ''}
                             </label>
+                            <div class="d-flex align-items-center gap-1">
+                                <button type="button" class="btn btn-xs btn-outline-primary py-0.5 px-2 fw-semibold" style="font-size: 11px;" onclick="openQuickAddOptionModal(${idx}, '${escapeHtml(inputAttrName)}', ${attr.id || 0})" title="Add new option to ${escapeHtml(inputAttrName)}">
+                                    <i class="bi bi-plus me-0.5"></i>+ Add Option
+                                </button>
+                            </div>
                         </div>
                         <div class="p-3 px-4 border rounded-3 bg-light d-flex flex-wrap gap-2 align-items-center" id="attr_chips_container_${idx}_${cleanAttrName}" style="min-height: 50px;">`;
 
@@ -2279,8 +2308,6 @@ function handleAttrTypeChange(type) {
 
 function refreshProgramRollAttributePanels(catId, subcatId = '', subsubcatId = '') {
     const cards = document.querySelectorAll('.program-roll-card');
-    let matched = false;
-
     cards.forEach(card => {
         const cMatch = card.id.match(/\d+$/);
         if (!cMatch) return;
@@ -2291,31 +2318,17 @@ function refreshProgramRollAttributePanels(catId, subcatId = '', subsubcatId = '
         const cSubSub = card.querySelector('.roll-subsubcat-select')?.value || '';
 
         const sameCategory = String(cCat) === String(catId);
-        const exactHierarchyMatch = sameCategory && (!subcatId || String(cSub) === String(subcatId)) && (!subsubcatId || String(cSubSub) === String(subsubcatId));
-        const categoryLevelMatch = sameCategory && (!subcatId || String(cSub) === String(subcatId) || !cSub || String(cSub) === '');
-
-        if (exactHierarchyMatch || (sameCategory && categoryLevelMatch)) {
-            matched = true;
-            loadRollCategoryAttributes(cIdx, cCat, cSub, cSubSub);
+        if (sameCategory) {
+            const currentVals = getCurrentCardAttributeValues(cIdx);
+            loadRollCategoryAttributes(cIdx, cCat, cSub, cSubSub, currentVals);
         }
     });
-
-    if (!matched && catId) {
-        cards.forEach(card => {
-            const cMatch = card.id.match(/\d+$/);
-            if (!cMatch) return;
-            const cIdx = parseInt(cMatch[0], 10);
-            const cCat = card.querySelector('.roll-cat-select')?.value || '';
-            if (String(cCat) === String(catId)) {
-                loadRollCategoryAttributes(cIdx, cCat, card.querySelector('.roll-subcat-select')?.value || '', card.querySelector('.roll-subsubcat-select')?.value || '');
-            }
-        });
-    }
 }
 
 function handleSaveCategoryAttribute(e) {
     e.preventDefault();
     const btn = document.getElementById('btnSubmitAttrModal');
+    const targetIdx = document.getElementById('attrModalTargetRowIdx').value;
     const catId = document.getElementById('attrModalCategoryId').value;
     const subcatId = document.getElementById('attrModalSubcategoryId').value;
     const subsubcatId = document.getElementById('attrModalSubSubcategoryId').value;
@@ -2358,8 +2371,21 @@ function handleSaveCategoryAttribute(e) {
         btn.innerHTML = '<i class="bi bi-check2-circle me-1"></i> Save Attribute';
 
         if (data.success) {
-            const modal = bootstrap.Modal.getInstance(document.getElementById('modalQuickAddCategoryAttribute'));
+            const modalEl = document.getElementById('modalQuickAddCategoryAttribute');
+            const modal = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl);
             if (modal) modal.hide();
+
+            // 1. Immediately reload target row attributes with currently selected values preserved
+            if (targetIdx) {
+                const targetCard = document.getElementById('program_roll_card_' + targetIdx);
+                const cCat = targetCard?.querySelector('.roll-cat-select')?.value || catId;
+                const cSub = targetCard?.querySelector('.roll-subcat-select')?.value || subcatId;
+                const cSubSub = targetCard?.querySelector('.roll-subsubcat-select')?.value || subsubcatId;
+                const currentVals = getCurrentCardAttributeValues(targetIdx);
+                loadRollCategoryAttributes(targetIdx, cCat, cSub, cSubSub, currentVals);
+            }
+
+            // 2. Also refresh all other matching roll cards
             refreshProgramRollAttributePanels(catId, subcatId, subsubcatId);
         } else {
             alert(data.message || 'Error saving category attribute.');
