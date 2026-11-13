@@ -57,7 +57,7 @@
                             </button>
                         </div>
                         <select name="inspector_id" id="qcInspectorSelect" class="form-select" onchange="handleInspectorSelectChange(this)">
-                            <option value="">Select Inspector Name</option>
+                            <option value="">Select QC Inspector</option>
                             <option value="__NEW__" class="fw-bold text-primary bg-light">+ Add New QC Inspector...</option>
                             <?php foreach ($users as $u): ?>
                                 <option value="<?= $u['id'] ?>"><?= e($u['full_name']) ?></option>

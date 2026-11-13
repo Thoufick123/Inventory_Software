@@ -31,6 +31,11 @@ class User {
             if (!$chanCol) {
                 Database::execute("ALTER TABLE users ADD COLUMN channel_id INT UNSIGNED NULL AFTER shop_id");
             }
+            $staffRoleCol = Database::fetchOne("SHOW COLUMNS FROM users LIKE 'staff_role'");
+            if (!$staffRoleCol) {
+                Database::execute("ALTER TABLE users ADD COLUMN staff_role VARCHAR(50) NULL DEFAULT NULL AFTER department");
+                Database::execute("ALTER TABLE users ADD INDEX idx_users_staff_role (staff_role)");
+            }
             Database::execute("CREATE TABLE IF NOT EXISTS user_permissions (
                 user_id INT UNSIGNED NOT NULL,
                 permission_id INT UNSIGNED NOT NULL,
@@ -158,10 +163,11 @@ class User {
         $puId = ($dept === 'PRODUCTION') ? (!empty($data['production_unit_id']) ? (int)$data['production_unit_id'] : null) : null;
         $whId = ($dept === 'WAREHOUSE') ? (!empty($data['warehouse_id']) ? (int)$data['warehouse_id'] : null) : null;
         $shopId = ($dept === 'SHOP') ? (!empty($data['shop_id']) ? (int)$data['shop_id'] : null) : null;
+        $staffRole = !empty($data['staff_role']) ? strtoupper(trim((string)$data['staff_role'])) : null;
 
         Database::execute(
-            "INSERT INTO users (username, email, password_hash, full_name, phone, role_id, department, production_unit_id, warehouse_id, shop_id, channel_id, reports_access, is_active, created_at, updated_at) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())",
+            "INSERT INTO users (username, email, password_hash, full_name, phone, role_id, department, staff_role, production_unit_id, warehouse_id, shop_id, channel_id, reports_access, is_active, created_at, updated_at) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())",
             [
                 $data['username'],
                 $email,
@@ -170,6 +176,7 @@ class User {
                 $phone,
                 $data['role_id'],
                 $dept,
+                $staffRole,
                 $puId,
                 $whId,
                 $shopId,
@@ -226,7 +233,7 @@ class User {
         $fields = [];
         $params = [];
 
-        foreach (['full_name', 'email', 'phone', 'role_id', 'department', 'production_unit_id', 'warehouse_id', 'shop_id', 'channel_id', 'reports_access', 'is_active'] as $field) {
+        foreach (['full_name', 'email', 'phone', 'role_id', 'department', 'staff_role', 'production_unit_id', 'warehouse_id', 'shop_id', 'channel_id', 'reports_access', 'is_active'] as $field) {
             if (array_key_exists($field, $data)) {
                 $fields[] = "$field = ?";
                 $val = $data[$field];

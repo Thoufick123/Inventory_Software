@@ -6729,7 +6729,7 @@ class ProductionController {
              WHERE c.is_active = 1
              ORDER BY c.sort_order ASC, c.name ASC"
         );
-        $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 ORDER BY full_name ASC");
+        $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 AND (staff_role IS NULL OR staff_role NOT IN ('CUTTING_MASTER', 'TAILOR', 'QC_INSPECTOR')) ORDER BY full_name ASC");
 
         // Fetch raw material rolls from seller_rolls with individual piece QR codes breakdown and live availability
         $rolls = $this->getAvailableSellerRollsWithPieces();
@@ -7011,7 +7011,8 @@ class ProductionController {
         );
         $subcategories = $program['category_id'] ? Database::fetchAll("SELECT * FROM subcategories WHERE category_id = ? AND is_active = 1 ORDER BY sort_order ASC, name ASC", [$program['category_id']]) : [];
         $subSubcategories = $program['subcategory_id'] ? Database::fetchAll("SELECT * FROM sub_subcategories WHERE subcategory_id = ? AND is_active = 1 ORDER BY name ASC", [$program['subcategory_id']]) : [];
-        $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 ORDER BY full_name ASC");
+        $assignedStaffId = (int)($program['assigned_to'] ?? 0);
+        $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 AND ((staff_role IS NULL OR staff_role NOT IN ('CUTTING_MASTER', 'TAILOR', 'QC_INSPECTOR'))" . ($assignedStaffId > 0 ? " OR id = $assignedStaffId" : "") . ") ORDER BY full_name ASC");
         $rolls = Database::fetchAll(
             "SELECT sr.*, s.name as seller_name, s.company as seller_company, s.material_type,
                     COALESCE(u.used_quantity, 0) as used_quantity,
@@ -8170,7 +8171,7 @@ class ProductionController {
         }
 
         $categories = Database::fetchAll("SELECT * FROM categories WHERE is_active = 1 ORDER BY name ASC");
-        $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 ORDER BY full_name ASC");
+        $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 AND staff_role = 'CUTTING_MASTER' ORDER BY full_name ASC");
         $units = function_exists('getScopedProductionUnits') ? getScopedProductionUnits() : Database::fetchAll("SELECT * FROM production_units WHERE is_active = 1 ORDER BY name ASC");
         $rolls = Database::fetchAll(
             "SELECT sr.*, s.name as seller_name, s.company as seller_company, s.material_type
@@ -8454,7 +8455,8 @@ class ProductionController {
 
         $categories = Database::fetchAll("SELECT * FROM categories WHERE is_active = 1 ORDER BY name ASC");
         $items = CuttingBatch::getItems((int)$id);
-        $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 ORDER BY full_name ASC");
+        $assignedOpId = (int)($batch['operator_id'] ?? 0);
+        $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 AND (staff_role = 'CUTTING_MASTER'" . ($assignedOpId > 0 ? " OR id = $assignedOpId" : "") . ") ORDER BY full_name ASC");
         $units = function_exists('getScopedProductionUnits') ? getScopedProductionUnits() : Database::fetchAll("SELECT * FROM production_units WHERE is_active = 1 ORDER BY name ASC");
 
         Response::view('production.cutting.edit', [
@@ -8746,7 +8748,7 @@ class ProductionController {
         );
 
         $categories = Database::fetchAll("SELECT * FROM categories WHERE is_active = 1 ORDER BY name ASC");
-        $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 ORDER BY full_name ASC");
+        $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 AND staff_role = 'TAILOR' ORDER BY full_name ASC");
 
         $selectedProgram = null;
         $selectedCutting = null;
@@ -9071,7 +9073,8 @@ class ProductionController {
             'sub_subcategory_id' => $batch['sub_subcategory_id'] ?? null,
         ], 'stitched_qty');
 
-        $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 ORDER BY full_name ASC");
+        $assignedWorkerId = (int)($batch['worker_id'] ?? 0);
+        $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 AND (staff_role = 'TAILOR'" . ($assignedWorkerId > 0 ? " OR id = $assignedWorkerId" : "") . ") ORDER BY full_name ASC");
 
         Response::view('production.stitching.edit', [
             'pageTitle'           => 'Edit Stitching Batch — ' . ($batch['name'] ?: $batch['batch_number']),
@@ -11908,7 +11911,7 @@ class ProductionController {
              ORDER BY lb.created_at DESC"
         );
 
-        $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 ORDER BY full_name ASC");
+        $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 AND staff_role = 'QC_INSPECTOR' ORDER BY full_name ASC");
 
         $selectedStitching = null;
         $selectedLabel = null;
@@ -12268,8 +12271,8 @@ class ProductionController {
 
         try {
             Database::execute(
-                "INSERT INTO users (username, emp_id, email, password_hash, full_name, phone, role_id, department, is_active, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, 'QUALITY CONTROL', 1, NOW(), NOW())",
+                "INSERT INTO users (username, emp_id, email, password_hash, full_name, phone, role_id, department, staff_role, is_active, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 'QUALITY CONTROL', 'QC_INSPECTOR', 1, NOW(), NOW())",
                 [
                     $username,
                     $empId,
@@ -12346,7 +12349,8 @@ class ProductionController {
 
         $items = QCBatch::getItems($batchId);
         $lockedPieces = $this->getQCLockedPieceStates($batch, $items);
-        $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 ORDER BY full_name ASC");
+        $assignedInspectorId = (int)($batch['inspector_id'] ?? 0);
+        $users = Database::fetchAll("SELECT id, full_name FROM users WHERE is_active = 1 AND (staff_role = 'QC_INSPECTOR'" . ($assignedInspectorId > 0 ? " OR id = $assignedInspectorId" : "") . ") ORDER BY full_name ASC");
 
         $rolls = !empty($batch['stitching_batch_id']) ? StitchingBatch::getRolls((int)$batch['stitching_batch_id']) : (!empty($batch['program_id']) ? ProductionProgram::getRolls((int)$batch['program_id']) : []);
 
@@ -16371,8 +16375,8 @@ class ProductionController {
         $passwordHash = password_hash('Operator@123', PASSWORD_BCRYPT);
 
         Database::execute(
-            "INSERT INTO users (username, full_name, phone, role_id, department, password_hash, is_active, created_at, updated_at) 
-             VALUES (?, ?, ?, ?, 'PRODUCTION', ?, 1, NOW(), NOW())",
+            "INSERT INTO users (username, full_name, phone, role_id, department, staff_role, password_hash, is_active, created_at, updated_at) 
+             VALUES (?, ?, ?, ?, 'PRODUCTION', 'CUTTING_MASTER', ?, 1, NOW(), NOW())",
             [$username, $fullName, $phone ?: null, $roleId, $passwordHash]
         );
 
@@ -16431,8 +16435,8 @@ class ProductionController {
         $scopedUnitId = function_exists('currentProductionUnitId') ? currentProductionUnitId() : null;
 
         Database::execute(
-            "INSERT INTO users (username, full_name, phone, role_id, department, production_unit_id, password_hash, is_active, created_at, updated_at) 
-             VALUES (?, ?, ?, ?, 'PRODUCTION', ?, ?, 1, NOW(), NOW())",
+            "INSERT INTO users (username, full_name, phone, role_id, department, staff_role, production_unit_id, password_hash, is_active, created_at, updated_at) 
+             VALUES (?, ?, ?, ?, 'PRODUCTION', 'TAILOR', ?, ?, 1, NOW(), NOW())",
             [$username, $fullName, $phone ?: null, $roleId, $scopedUnitId, $passwordHash]
         );
 
