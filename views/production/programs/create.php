@@ -2078,11 +2078,6 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
                                 <span>${attrLabelTitle}</span>
                                 ${isReq ? '<span class="text-danger">*</span>' : ''}
                             </label>
-                            <div class="d-flex align-items-center gap-1">
-                                <button type="button" class="btn btn-xs btn-outline-primary py-0.5 px-2 fw-semibold" style="font-size: 11px;" onclick="openQuickAddOptionModal(${idx}, '${escapeHtml(inputAttrName)}', ${attr.id || 0})" title="Add new option to ${escapeHtml(inputAttrName)}">
-                                    <i class="bi bi-plus me-0.5"></i>+ Add Option
-                                </button>
-                            </div>
                         </div>
                         <div class="p-3 px-4 border rounded-3 bg-light d-flex flex-wrap gap-2 align-items-center" id="attr_chips_container_${idx}_${cleanAttrName}" style="min-height: 50px;">`;
 
