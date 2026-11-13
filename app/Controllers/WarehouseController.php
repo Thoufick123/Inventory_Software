@@ -3172,7 +3172,11 @@ class WarehouseController {
             $itemTags = array_filter(array_map('trim', explode(',', (string)($item['tag_code'] ?? ''))));
             foreach ($itemTags as $pieceTag) {
                 $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag($pieceTag);
-                if ($exchangedReplacement) {
+                if ($exchangedReplacement && !WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
+                    $pieceTag,
+                    $warehouseId,
+                    (int)($item['variant_id'] ?? 0)
+                )) {
                     Session::flash('error', "QR code '{$pieceTag}' was already issued to a customer as an exchange replacement and is no longer in warehouse stock.");
                     Response::back();
                     return;
@@ -3665,6 +3669,12 @@ class WarehouseController {
 
         foreach (array_unique(array_merge([$extractedTag], $candidateCodes)) as $scannedPieceTag) {
             $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag((string)$scannedPieceTag);
+            if ($exchangedReplacement && WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
+                (string)$scannedPieceTag,
+                $warehouseId
+            )) {
+                continue;
+            }
             if ($exchangedReplacement) {
                 echo json_encode([
                     'success' => false,
@@ -5679,7 +5689,7 @@ class WarehouseController {
                 if (!empty($item['scanned_qr_codes'])) {
                     foreach (array_filter(array_map('trim', explode(',', $item['scanned_qr_codes']))) as $scannedPieceTag) {
                         $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag($scannedPieceTag);
-                        if ($exchangedReplacement && !WarehouseService::isAvailableExchangedSeriesTagForDirectPurchase(
+                        if ($exchangedReplacement && !WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
                             $scannedPieceTag,
                             $purchaseWarehouseId,
                             (int)$item['variant_id']
@@ -6266,7 +6276,7 @@ class WarehouseController {
                 $isSameProductExchangeScan ? $returnEditId : null
             );
             if ($candidateExchangedReplacement) {
-                if ($isDirectPurchaseScan && WarehouseService::isAvailableExchangedSeriesTagForDirectPurchase(
+                if ($isDirectPurchaseScan && WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
                     (string)$scannedPieceTag,
                     $directPurchaseWarehouseId
                 )) {
@@ -8482,7 +8492,11 @@ class WarehouseController {
                     }
 
                     $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag($stag);
-                    if ($exchangedReplacement) {
+                    if ($exchangedReplacement && !WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
+                        $stag,
+                        $warehouseId,
+                        (int)$vId
+                    )) {
                         Session::flash('error', "QR code '{$stag}' was already issued to a customer as an exchange replacement and cannot be allocated.");
                         Response::redirect(url('warehouse/allocation/create'));
                         return;
@@ -9298,6 +9312,12 @@ class WarehouseController {
 
         foreach (array_unique(array_merge([$extractedTag], $candidateCodes)) as $scannedPieceTag) {
             $exchangedReplacement = WarehouseService::getExchangedReplacementByPieceTag((string)$scannedPieceTag);
+            if ($exchangedReplacement && WarehouseService::isAvailableExchangedSeriesTagInWarehouse(
+                (string)$scannedPieceTag,
+                $warehouseId
+            )) {
+                continue;
+            }
             if ($exchangedReplacement) {
                 echo json_encode([
                     'success' => false,

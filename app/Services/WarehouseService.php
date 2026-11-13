@@ -3332,7 +3332,7 @@ class WarehouseService {
         return Database::fetchOne($sql, $params);
     }
 
-    public static function isAvailableExchangedSeriesTagForDirectPurchase(
+    public static function isAvailableExchangedSeriesTagInWarehouse(
         string $pieceTag,
         int $warehouseId,
         ?int $expectedVariantId = null
@@ -3343,7 +3343,7 @@ class WarehouseService {
         }
 
         $replacement = Database::fetchOne(
-            "SELECT ei.variant_id, pv.qr_type,
+            "SELECT ei.variant_id, pv.qr_type, pv.series_start_code, p.name AS product_name,
                     GREATEST(COALESCE(pv.pack_quantity, 1), COALESCE(wq.pack_quantity, 1)) AS pack_quantity,
                     COALESCE(wc.category_type, 'NORMAL') AS category_type,
                     GREATEST(COALESCE(pv.is_complementary, 0), COALESCE(p.is_complementary, 0)) AS is_complementary
@@ -3371,10 +3371,13 @@ class WarehouseService {
             return false;
         }
 
+        $categoryType = strtoupper((string)($replacement['category_type'] ?? ''));
         $isSeriesOrPack = in_array(strtoupper((string)($replacement['qr_type'] ?? '')), ['SERIES', 'SERIES_BATCH'], true)
-            || strtoupper((string)($replacement['category_type'] ?? '')) === 'SERIES'
+            || in_array($categoryType, ['SERIES', 'COMPLEMENTARY'], true)
             || (int)($replacement['pack_quantity'] ?? 1) > 1
-            || !empty($replacement['is_complementary']);
+            || !empty($replacement['series_start_code'])
+            || !empty($replacement['is_complementary'])
+            || stripos((string)($replacement['product_name'] ?? ''), 'SERIES') !== false;
         if (!$isSeriesOrPack) {
             return false;
         }
