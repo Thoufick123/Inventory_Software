@@ -473,13 +473,10 @@ if (!empty($billItems[0])) {
                     $unitTotal = round((float)($item['total_amount'] ?? 0) / $iQty, 2);
                 ?>
 
-                <!-- Product Name & Variant Header Line -->
+                <!-- Product Name Header Line -->
                 <tr>
                     <td colspan="6" style="padding-top: 5px; padding-bottom: 2px;">
                         <div class="item-title"><?= htmlspecialchars($item['product_name']) ?></div>
-                        <?php if ($varText !== ''): ?>
-                            <div class="item-variant"><?= htmlspecialchars($varText) ?></div>
-                        <?php endif; ?>
                     </td>
                 </tr>
 
@@ -488,7 +485,7 @@ if (!empty($billItems[0])) {
                     <?php foreach ($tags as $tg): ?>
                         <tr>
                             <td>
-                                <span class="tag-single-label">Tag: <?= htmlspecialchars($tg) ?></span>
+                                <span class="tag-single-label"><?= htmlspecialchars($tg) ?></span>
                             </td>
                             <td><?= $hsnCode ?></td>
                             <td class="text-right">1</td>
