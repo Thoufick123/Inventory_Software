@@ -425,7 +425,7 @@
                                 <span class="fs-5 fw-bold text-secondary" id="calcSummaryTaxable">₹0.00</span>
                             </div>
                             <div class="col-6 col-md-3">
-                                <span class="small text-muted text-uppercase fw-bold d-block"><i class="bi bi-percent me-1 text-info"></i>GST Amount</span>
+                                <span class="small text-muted text-uppercase fw-bold d-block"><i class="bi bi-percent me-1 text-info"></i>GST Amount (Incl.)</span>
                                 <span class="fs-5 fw-bold text-primary" id="calcSummaryGst">₹0.00</span>
                             </div>
                             <div class="col-6 col-md-3">
@@ -543,6 +543,7 @@ function handleQCBatchChange(qcBatchId) {
 
 function calcPackedTotal() {
     let totalQty = 0;
+    let totalGross = 0;
     let totalTaxable = 0;
     let totalGst = 0;
 
@@ -556,9 +557,12 @@ function calcPackedTotal() {
         const unitPrice = parseFloat(row.getAttribute('data-unit-price')) || 0;
         const gstRate = parseFloat(row.getAttribute('data-gst-rate')) || 5.0;
 
-        const rowTaxable = qty * unitPrice;
-        const rowGst = rowTaxable * (gstRate / 100);
+        // GST is INCLUSIVE inside unitPrice
+        const rowGross = qty * unitPrice;
+        const rowTaxable = gstRate > 0 ? (rowGross / (1 + (gstRate / 100))) : rowGross;
+        const rowGst = rowGross - rowTaxable;
 
+        totalGross += rowGross;
         totalTaxable += rowTaxable;
         totalGst += rowGst;
     });
@@ -578,7 +582,7 @@ function calcPackedTotal() {
     if (elGst) elGst.innerText = '₹' + totalGst.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
     const elTotal = document.getElementById('calcSummaryTotal');
-    if (elTotal) elTotal.innerText = '₹' + (totalTaxable + totalGst).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    if (elTotal) elTotal.innerText = '₹' + totalGross.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
     return totalQty;
 }

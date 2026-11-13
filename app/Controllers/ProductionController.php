@@ -10820,14 +10820,17 @@ class ProductionController {
 
                 $gstR = (float)($vRow['gst_percentage'] ?: 5.0);
                 $itGross = round($mrp * $qty, 2);
-                $itTaxable = round($unitP * $qty, 2);
-                $itDisc = max(0, $itGross - $itTaxable);
+                $itNet = round($unitP * $qty, 2);
+                $itDisc = max(0, $itGross - $itNet);
+
+                // GST is INCLUSIVE inside product selling price
+                $itTaxable = $gstR > 0 ? round($itNet / (1 + ($gstR / 100)), 2) : $itNet;
+                $itTax = round($itNet - $itTaxable, 2);
 
                 $halfR = round($gstR / 2, 2);
-                $itCgst = round($itTaxable * ($halfR / 100), 2);
-                $itSgst = round($itTaxable * ($halfR / 100), 2);
-                $itTax = $itCgst + $itSgst;
-                $itTotal = $itTaxable + $itTax;
+                $itCgst = round($itTax / 2, 2);
+                $itSgst = round($itTax - $itCgst, 2);
+                $itTotal = $itNet;
 
                 $grossAmt += $itGross;
                 $discAmt += $itDisc;
@@ -11367,13 +11370,16 @@ class ProductionController {
                     $gstR = (float)$bi['gst_percentage'];
 
                     $itGross = round($mrp * $newQ, 2);
-                    $itTaxable = round($unitP * $newQ, 2);
-                    $itDisc = max(0, $itGross - $itTaxable);
+                    $itNet = round($unitP * $newQ, 2);
+                    $itDisc = max(0, $itGross - $itNet);
+
+                    // GST is INCLUSIVE inside unit price
+                    $itTaxable = $gstR > 0 ? round($itNet / (1 + ($gstR / 100)), 2) : $itNet;
+                    $itTax = round($itNet - $itTaxable, 2);
                     $halfR = round($gstR / 2, 2);
-                    $itCgst = round($itTaxable * ($halfR / 100), 2);
-                    $itSgst = round($itTaxable * ($halfR / 100), 2);
-                    $itTax = $itCgst + $itSgst;
-                    $itTot = $itTaxable + $itTax;
+                    $itCgst = round($itTax / 2, 2);
+                    $itSgst = round($itTax - $itCgst, 2);
+                    $itTot = $itNet;
 
                     $totGross += $itGross;
                     $totDisc += $itDisc;

@@ -77,7 +77,7 @@
         <div class="card border-0 shadow-sm"><div class="card-body">
             <div class="d-flex justify-content-between py-1"><span>Gross / MRP</span><strong>₹<?= number_format((float)$bill['gross_amount'], 2) ?></strong></div>
             <div class="d-flex justify-content-between py-1"><span>Discount</span><strong>₹<?= number_format((float)$bill['discount_amount'], 2) ?></strong></div>
-            <div class="d-flex justify-content-between py-1"><span>Selling</span><strong>₹<?= number_format((float)$bill['subtotal'], 2) ?></strong></div>
+            <div class="d-flex justify-content-between py-1"><span>Taxable Base</span><strong>₹<?= number_format((float)$bill['subtotal'], 2) ?></strong></div>
             <?php if ((float)$bill['cgst_amount'] > 0): ?>
                 <div class="d-flex justify-content-between py-1"><span>CGST</span><strong>₹<?= number_format((float)$bill['cgst_amount'], 2) ?></strong></div>
             <?php endif; ?>
@@ -87,7 +87,7 @@
             <?php if ((float)$bill['igst_amount'] > 0): ?>
                 <div class="d-flex justify-content-between py-1"><span>IGST</span><strong>₹<?= number_format((float)$bill['igst_amount'], 2) ?></strong></div>
             <?php endif; ?>
-            <div class="d-flex justify-content-between py-1"><span>Total taxes</span><strong>₹<?= number_format((float)$bill['tax_amount'], 2) ?></strong></div>
+            <div class="d-flex justify-content-between py-1"><span>Total Taxes (Incl.)</span><strong>₹<?= number_format((float)$bill['tax_amount'], 2) ?></strong></div>
             <hr>
             <div class="d-flex justify-content-between fs-5"><span class="fw-bold">Total</span><strong>₹<?= number_format((float)$bill['total_amount'], 2) ?></strong></div>
             <div class="small text-muted mt-2">Payment: <?= htmlspecialchars($bill['payment_method']) ?> · <?= htmlspecialchars($bill['payment_status']) ?></div>

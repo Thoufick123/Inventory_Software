@@ -42,6 +42,28 @@ $cgst = (float)($bill['cgst_amount'] ?? 0);
 $sgst = (float)($bill['sgst_amount'] ?? 0);
 $igst = (float)($bill['igst_amount'] ?? 0);
 $totalAmount = (float)($bill['total_amount'] ?? 0);
+
+// GST Inclusive adjustment: ensure net amount equals gross minus discount, with tax included inside
+$grossAmt = (float)($bill['gross_amount'] ?? 0);
+$netAmount = max(0, $grossAmt - $discount);
+if ($netAmount > 0 && abs($totalAmount - ($netAmount + $taxAmount)) < 1.0) {
+    // If historical bill added tax exclusively on top, convert display to inclusive
+    $totalAmount = $netAmount;
+    $combinedGstRate = ($cgst > 0 || $sgst > 0 || $igst > 0)
+        ? (float)rtrim($cgstRate, '%') + (float)rtrim($sgstRate, '%') + (float)rtrim($igstRate, '%')
+        : 5.0;
+    if ($combinedGstRate > 0) {
+        $subtotal = round($netAmount / (1 + ($combinedGstRate / 100)), 2);
+        $taxAmount = round($netAmount - $subtotal, 2);
+        if ($igst > 0) {
+            $igst = $taxAmount;
+        } else {
+            $cgst = round($taxAmount / 2, 2);
+            $sgst = round($taxAmount - $cgst, 2);
+        }
+    }
+}
+
 $rawTotal = $subtotal + $taxAmount;
 $roundOff = round($totalAmount - $rawTotal, 2);
 
@@ -467,10 +489,17 @@ if (!empty($billItems[0])) {
                     $tags = !empty($item['tags']) && is_array($item['tags']) ? array_values(array_filter(array_map('trim', $item['tags']))) : [];
                     $hsnCode = htmlspecialchars($item['hsn_code'] ?? '6109');
                     
-                    // Single piece unit metrics
+                    // Single piece unit metrics (GST is INCLUSIVE in product amount)
                     $unitPrice = (float)($item['mrp'] ?? 0);
                     $unitDisc = round((float)($item['discount_amount'] ?? 0) / $iQty, 2);
-                    $unitTotal = round((float)($item['total_amount'] ?? 0) / $iQty, 2);
+                    $itemNetLine = max(0, ((float)($item['mrp'] ?? 0) * $iQty) - (float)($item['discount_amount'] ?? 0));
+                    if ($itemNetLine <= 0 && !empty($item['unit_price'])) {
+                        $itemNetLine = round((float)$item['unit_price'] * $iQty, 2);
+                    }
+                    $unitTotal = $iQty > 0 ? round($itemNetLine / $iQty, 2) : 0.0;
+                    if ($unitPrice <= 0) {
+                        $unitPrice = $unitTotal + $unitDisc;
+                    }
                 ?>
 
                 <!-- Product Name Header Line -->
@@ -502,7 +531,7 @@ if (!empty($billItems[0])) {
                         <td class="text-right"><?= (int)($item['quantity'] ?? 1) ?></td>
                         <td class="text-right"><?= number_format($unitPrice, 2) ?></td>
                         <td class="text-right <?= (float)($item['discount_amount'] ?? 0) > 0 ? 'discount-highlight' : '' ?>"><?= number_format((float)($item['discount_amount'] ?? 0), 2) ?></td>
-                        <td class="text-right" style="font-weight: bold;"><?= number_format((float)($item['total_amount'] ?? 0), 2) ?></td>
+                        <td class="text-right" style="font-weight: bold;"><?= number_format($itemNetLine, 2) ?></td>
                     </tr>
                 <?php endif; ?>
             <?php endforeach; ?>
@@ -526,7 +555,7 @@ if (!empty($billItems[0])) {
             <span class="summary-val discount-highlight">-₹ <?= number_format($discount, 2) ?></span>
         </div>
         <div class="summary-row">
-            <span class="summary-label">GST Amount :</span>
+            <span class="summary-label">GST Amount (Incl.) :</span>
             <span class="summary-val">₹ <?= number_format($taxAmount, 2) ?></span>
         </div>
         <?php if ($cgst > 0): ?>

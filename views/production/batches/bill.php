@@ -145,13 +145,22 @@
                     foreach ($items as $idx => $it):
                         $qty = (int)($it['quantity'] ?? 0);
                         $rate = (float)($it['qc_discount_price'] ?: ($it['qc_base_price'] ?: ($it['selling_price'] ?: ($it['mrp'] ?: 0))));
-                        $taxable = $qty * $rate;
+                        $grossValuation = round($qty * $rate, 2);
                         $hsn = !empty($it['hsn_code']) ? $it['hsn_code'] : '6109';
                         $gstPercent = isset($it['gst_rate']) && (float)$it['gst_rate'] > 0 
                             ? (float)$it['gst_rate'] 
                             : (isset($it['gst_percentage']) && (float)$it['gst_percentage'] > 0 ? (float)$it['gst_percentage'] : 5.0);
 
                         $itemGstType = !empty($it['gst_type']) ? strtoupper($it['gst_type']) : ($isInterStateConsignment ? 'IGST' : 'BOTH');
+
+                        // GST is INCLUSIVE: Base = Gross / (1 + GST%), Tax = Gross - Base
+                        if ($itemGstType !== 'EXEMPTED' && $gstPercent > 0) {
+                            $taxable = round($grossValuation / (1 + ($gstPercent / 100)), 2);
+                            $taxAmount = round($grossValuation - $taxable, 2);
+                        } else {
+                            $taxable = $grossValuation;
+                            $taxAmount = 0.0;
+                        }
 
                         $cgstRate = 0.0;
                         $sgstRate = 0.0;
@@ -162,28 +171,24 @@
 
                         if ($itemGstType === 'IGST') {
                             $igstRate = $gstPercent;
-                            $igstAmount = round($taxable * ($igstRate / 100), 2);
-                            $taxAmount = $igstAmount;
+                            $igstAmount = $taxAmount;
                         } elseif ($itemGstType === 'CGST') {
                             $cgstRate = $gstPercent;
-                            $cgstAmount = round($taxable * ($cgstRate / 100), 2);
-                            $taxAmount = $cgstAmount;
+                            $cgstAmount = $taxAmount;
                         } elseif ($itemGstType === 'SGST') {
                             $sgstRate = $gstPercent;
-                            $sgstAmount = round($taxable * ($sgstRate / 100), 2);
-                            $taxAmount = $sgstAmount;
+                            $sgstAmount = $taxAmount;
                         } elseif ($itemGstType === 'EXEMPTED' || $gstPercent <= 0) {
                             $taxAmount = 0.0;
                         } else {
                             $itemGstType = 'BOTH';
                             $cgstRate = round($gstPercent / 2, 2);
                             $sgstRate = round($gstPercent / 2, 2);
-                            $cgstAmount = round($taxable * ($cgstRate / 100), 2);
-                            $sgstAmount = round($taxable * ($sgstRate / 100), 2);
-                            $taxAmount = $cgstAmount + $sgstAmount;
+                            $cgstAmount = round($taxAmount / 2, 2);
+                            $sgstAmount = round($taxAmount - $cgstAmount, 2);
                         }
 
-                        $valuation = $taxable + $taxAmount;
+                        $valuation = $grossValuation;
 
                         $totalQty += $qty;
                         $totalTaxable += $taxable;
@@ -245,7 +250,7 @@
                 <tr class="fw-bold" style="background-color: #f8fafc;">
                     <td colspan="5" class="text-end text-uppercase">Total Packed Goods:</td>
                     <td class="text-center text-primary fs-6"><?= number_format($totalQty) ?> pcs</td>
-                    <td class="text-end font-monospace">₹<?= number_format($totalTaxable, 2) ?></td>
+                    <td class="text-end font-monospace">₹<?= number_format($totalValuation, 2) ?></td>
                     <td class="text-center font-monospace small">
                         <?php if ($totalIgst > 0 && $totalCgst <= 0): ?>
                             <span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size: 10px;">IGST</span>
