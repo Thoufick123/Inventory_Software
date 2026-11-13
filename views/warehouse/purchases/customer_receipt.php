@@ -19,6 +19,7 @@ if ($storeGst === '') {
 $storeEmail = trim((string)($companySettings['company_email'] ?? ''));
 $warehouseLogo = trim((string)($po['warehouse_logo_url'] ?? ''));
 $billNumber = (string)($po['po_number'] ?? $po['id'] ?? '');
+$billId = (int)($po['id'] ?? 0);
 $customerName = trim((string)($po['display_customer_name'] ?? ''));
 if ($customerName === '') {
     $customerName = 'Walk-in Customer';
@@ -116,11 +117,14 @@ foreach ($items as $item) {
 
         .store-header,
         .customer-header {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-            align-items: start;
-            gap: 3mm;
-            text-align: left;
+            display: flex;
+            align-items: center;
+            gap: 2mm;
+            text-align: center;
+        }
+
+        .store-header {
+            flex-direction: column;
         }
 
         .customer-left,
@@ -132,6 +136,14 @@ foreach ($items as $item) {
             text-align: right;
         }
 
+        .customer-header {
+            display: grid;
+            grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
+            align-items: start;
+            gap: 2mm;
+            text-align: left;
+        }
+
         .customer-payment-mode {
             overflow-wrap: anywhere;
         }
@@ -139,8 +151,10 @@ foreach ($items as $item) {
         .store-brand {
             display: flex;
             align-items: center;
+            justify-content: center;
+            width: 100%;
             gap: 3mm;
-            text-align: left;
+            text-align: center;
         }
 
         .store-logo {
@@ -156,7 +170,7 @@ foreach ($items as $item) {
         .store-brand-info {
             flex: 1;
             min-width: 0;
-            text-align: right;
+            text-align: center;
         }
 
         .store-name {
@@ -164,7 +178,8 @@ foreach ($items as $item) {
             font-size: 14px;
             font-weight: 800;
             text-transform: uppercase;
-            overflow-wrap: anywhere;
+            overflow-wrap: break-word;
+            word-break: normal;
         }
 
         .store-details {
@@ -173,10 +188,12 @@ foreach ($items as $item) {
         }
 
         .receipt-title {
+            width: 100%;
             margin: 7px 0 5px;
             font-size: 14px;
             font-weight: 800;
             letter-spacing: .3px;
+            text-align: center;
         }
 
         .rule {
@@ -354,6 +371,9 @@ foreach ($items as $item) {
         <div class="meta-row">
             <span>Bill No: <strong><?= e($billNumber) ?></strong></span>
             <span class="staff-row">Staff: <?= e($staffName !== '' ? $staffName : '-') ?></span>
+        </div>
+        <div class="meta-row">
+            <span>BID: <strong>#<?= e((string)$billId) ?></strong></span>
         </div>
 
         <hr class="rule">

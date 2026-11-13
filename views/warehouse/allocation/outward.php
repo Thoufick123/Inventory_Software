@@ -292,19 +292,6 @@
                             <div class="invalid-feedback">Please enter a valid 10-digit mobile number.</div>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-bold">Transporter / Logistics Name <span class="text-danger">*</span></label>
-                            <input type="text" name="transporter_name" id="outward_transporter_name" class="form-control" placeholder="e.g. VRL Logistics / BlueDart" required>
-                            <div class="invalid-feedback">Transporter / Logistics Name is required.</div>
-                        </div>
-                    </div>
-
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold">LR / Docket / Tracking Number <span class="text-muted small fw-normal">(Optional)</span></label>
-                            <input type="text" name="lr_number" id="outward_lr_number" class="form-control" placeholder="e.g. LR-987654">
-                            <div class="form-text text-muted">Optional tracking reference if available</div>
-                        </div>
-                        <div class="col-md-6">
                             <label class="form-label fw-bold">Total Box / Carton Count <span class="text-danger">*</span></label>
                             <input type="number" name="total_boxes" id="outward_total_boxes" class="form-control" value="1" min="1" required>
                             <div class="invalid-feedback">Total Box / Carton Count must be at least 1.</div>
@@ -342,7 +329,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const vehicleInput = document.getElementById('outward_vehicle_number');
     const driverNameInput = document.getElementById('outward_driver_name');
     const driverContactInput = document.getElementById('outward_driver_contact');
-    const transporterInput = document.getElementById('outward_transporter_name');
     const totalBoxesInput = document.getElementById('outward_total_boxes');
     const dispatchDateInput = document.getElementById('outward_dispatch_date');
 
@@ -392,13 +378,6 @@ document.addEventListener('DOMContentLoaded', function() {
         return isValid;
     }
 
-    function validateTransporter() {
-        if (!transporterInput) return true;
-        const isValid = transporterInput.value.trim().length >= 2;
-        setFieldStatus(transporterInput, isValid, 'Transporter / Logistics Name is required.');
-        return isValid;
-    }
-
     function validateTotalBoxes() {
         if (!totalBoxesInput) return true;
         const val = parseInt(totalBoxesInput.value, 10);
@@ -430,10 +409,6 @@ document.addEventListener('DOMContentLoaded', function() {
         driverContactInput.addEventListener('input', validateDriverContact);
         driverContactInput.addEventListener('blur', validateDriverContact);
     }
-    if (transporterInput) {
-        transporterInput.addEventListener('input', validateTransporter);
-        transporterInput.addEventListener('blur', validateTransporter);
-    }
     if (totalBoxesInput) {
         totalBoxesInput.addEventListener('input', validateTotalBoxes);
         totalBoxesInput.addEventListener('blur', validateTotalBoxes);
@@ -460,11 +435,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const isVehValid = validateVehicle();
         const isDriverValid = validateDriverName();
         const isContactValid = validateDriverContact();
-        const isTransValid = validateTransporter();
         const isBoxesValid = validateTotalBoxes();
         const isDateValid = validateDispatchDate();
 
-        const allValid = isAllocValid && isVehValid && isDriverValid && isContactValid && isTransValid && isBoxesValid && isDateValid;
+        const allValid = isAllocValid && isVehValid && isDriverValid && isContactValid && isBoxesValid && isDateValid;
 
         if (!allValid) {
             e.preventDefault();
@@ -584,7 +558,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                     <div>
                         <h5 class="modal-title fw-bold mb-0 text-white">Edit Warehouse Outward Dispatch</h5>
-                        <small class="text-white-50">Update vehicle details, transporter, boxes, status and tracking notes</small>
+                        <small class="text-white-50">Update vehicle details, driver, boxes, status and notes</small>
                     </div>
                 </div>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
@@ -614,20 +588,12 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <input type="text" id="editAoVehicleNumber" name="vehicle_number" class="form-control form-control-sm text-uppercase fw-semibold" placeholder="e.g. TN38AB1234 or Handover" required>
                                 </div>
                                 <div class="col-md-6 col-12">
-                                    <label class="form-label small fw-bold text-dark mb-1">Transporter / Logistics Name</label>
-                                    <input type="text" id="editAoTransporterName" name="transporter_name" class="form-control form-control-sm" placeholder="e.g. VRL Logistics, Professional Courier">
-                                </div>
-                                <div class="col-md-6 col-12">
                                     <label class="form-label small fw-bold text-dark mb-1">Driver / Courier Person Name</label>
                                     <input type="text" id="editAoDriverName" name="driver_name" class="form-control form-control-sm" placeholder="Driver name">
                                 </div>
                                 <div class="col-md-6 col-12">
                                     <label class="form-label small fw-bold text-dark mb-1">Driver / Dispatch Contact Phone</label>
                                     <input type="tel" id="editAoDriverContact" name="driver_contact" class="form-control form-control-sm font-monospace" placeholder="10-digit mobile number">
-                                </div>
-                                <div class="col-md-6 col-12">
-                                    <label class="form-label small fw-bold text-dark mb-1">LR / Consignment Tracking Number</label>
-                                    <input type="text" id="editAoLrNumber" name="lr_number" class="form-control form-control-sm font-monospace" placeholder="LR / AWB Number">
                                 </div>
                                 <div class="col-md-6 col-12">
                                     <label class="form-label small fw-bold text-dark mb-1">Total Packed Boxes / Cartons <span class="text-danger">*</span></label>
@@ -786,10 +752,8 @@ function openEditAllocationOutwardModal(o) {
     document.getElementById('editAoAllocNumber').textContent = o.allocation_number || ('ALC #' + o.allocation_id);
 
     document.getElementById('editAoVehicleNumber').value = o.vehicle_number || '';
-    document.getElementById('editAoTransporterName').value = o.transporter_name || '';
     document.getElementById('editAoDriverName').value = o.driver_name || '';
     document.getElementById('editAoDriverContact').value = o.driver_contact || '';
-    document.getElementById('editAoLrNumber').value = o.lr_number || '';
     document.getElementById('editAoTotalBoxes').value = o.total_boxes || 1;
 
     // Format dispatch_date for datetime-local (YYYY-MM-DDTHH:MM)

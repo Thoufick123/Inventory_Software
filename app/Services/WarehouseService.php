@@ -1468,7 +1468,8 @@ class WarehouseService {
         Database::beginTransaction();
         try {
             if (empty($poData['po_number'])) {
-                $poData['po_number'] = self::generateSequenceNumber('purchase_orders', 'po_number', 'DPO');
+                $invoicePrefix = !empty($poData['is_direct_purchase']) ? 'PI' : 'DPO';
+                $poData['po_number'] = self::generateSequenceNumber('purchase_orders', 'po_number', $invoicePrefix);
             }
             $poData['created_by'] = $userId;
 

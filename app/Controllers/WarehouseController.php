@@ -11238,8 +11238,8 @@ class WarehouseController {
         $vehicleNumber = strtoupper(trim($_POST['vehicle_number'] ?? ''));
         $driverName = trim($_POST['driver_name'] ?? '');
         $driverContact = preg_replace('/[^0-9]/', '', trim($_POST['driver_contact'] ?? ''));
-        $transporterName = trim($_POST['transporter_name'] ?? '');
-        $lrNumber = trim($_POST['lr_number'] ?? '');
+        $transporterName = null;
+        $lrNumber = null;
         $totalBoxes = (int)($_POST['total_boxes'] ?? 0);
         $dispatchDate = !empty($_POST['dispatch_date']) ? $_POST['dispatch_date'] : date('Y-m-d H:i:s');
         $notes = trim($_POST['notes'] ?? '');
@@ -11265,12 +11265,6 @@ class WarehouseController {
 
         if (empty($driverContact) || strlen($driverContact) !== 10) {
             Session::flash('error', 'Driver Contact Number must be a valid 10-digit mobile number.');
-            Response::redirect(url('warehouse/allocation/outward'));
-            return;
-        }
-
-        if (empty($transporterName)) {
-            Session::flash('error', 'Transporter / Logistics Name is required.');
             Response::redirect(url('warehouse/allocation/outward'));
             return;
         }
@@ -11539,8 +11533,12 @@ class WarehouseController {
         $vehicleNumber   = strtoupper(trim($_POST['vehicle_number'] ?? ''));
         $driverName      = trim($_POST['driver_name'] ?? '');
         $driverContact   = preg_replace('/[^0-9]/', '', trim($_POST['driver_contact'] ?? ''));
-        $transporterName = trim($_POST['transporter_name'] ?? '');
-        $lrNumber        = trim($_POST['lr_number'] ?? '');
+        $transporterName = array_key_exists('transporter_name', $_POST)
+            ? trim((string)$_POST['transporter_name'])
+            : (string)($outward['transporter_name'] ?? '');
+        $lrNumber = array_key_exists('lr_number', $_POST)
+            ? trim((string)$_POST['lr_number'])
+            : (string)($outward['lr_number'] ?? '');
         $totalBoxes      = max(1, (int)($_POST['total_boxes'] ?? $outward['total_boxes'] ?? 1));
         $dispatchDate    = !empty($_POST['dispatch_date']) ? $_POST['dispatch_date'] : ($outward['dispatch_date'] ?? date('Y-m-d H:i:s'));
         $notes           = trim($_POST['notes'] ?? '');
@@ -12319,7 +12317,14 @@ class WarehouseController {
                     sz.name as size_name, c.name as color_name,
                     COALESCE(cat.name, c_old.name, '') as category_name, 
                     COALESCE(subcat.name, sc_old.name, '') as subcategory_name, 
-                    COALESCE(subsubcat.name, ssc_old.name, '') as sub_subcategory_name
+                    COALESCE(subsubcat.name, ssc_old.name, '') as sub_subcategory_name,
+                    EXISTS (
+                        SELECT 1 FROM stock_transactions inward_st
+                        WHERE inward_st.reference_type = 'warehouse_returns'
+                          AND inward_st.reference_id = wr.id
+                          AND inward_st.variant_id = wri.variant_id
+                          AND inward_st.transaction_type = 'RETURN_INWARD'
+                    ) AS is_inwarded
              FROM warehouse_return_items wri
              JOIN warehouse_returns wr ON wri.warehouse_return_id = wr.id
              JOIN product_variants pv ON wri.variant_id = pv.id
