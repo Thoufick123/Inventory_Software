@@ -1070,7 +1070,12 @@ function restoreReturnTransaction(editTransaction) {
                 available_stock: Number(exchangeItem.available_stock) || quantity,
                 quantity,
                 scanned_tags: String(exchangeItem.piece_tag || '').split(',').map(tag => tag.trim()).filter(Boolean),
-                scanned_codes: []
+                scanned_codes: [],
+                is_series: exchangeItem.is_series,
+                is_complementary: exchangeItem.is_complementary,
+                category_type: exchangeItem.category_type,
+                qr_type: exchangeItem.qr_type,
+                pack_quantity: exchangeItem.pack_quantity
             };
             renderReplacementProductCell(targetIndex);
         });
@@ -1316,6 +1321,12 @@ function renderReplacementProductCell(idx) {
     const price = Number(item.unit_price) || 0;
     const quantity = Number(item.quantity) || 0;
     const quantityLimit = getReplacementQuantityLimit(idx, item);
+    const quantityEditable = Number(item.is_series) === 1
+        || Number(item.is_complementary) === 1
+        || Number(item.pack_quantity) > 1
+        || String(item.category_type || '').toUpperCase() === 'SERIES'
+        || String(item.category_type || '').toUpperCase() === 'COMPLEMENTARY'
+        || String(item.qr_type || '').toUpperCase() === 'SERIES_BATCH';
     display.className = 'border rounded-2 bg-light p-2';
     display.innerHTML = `
         <div class="d-flex justify-content-between align-items-start gap-2">
@@ -1331,6 +1342,7 @@ function renderReplacementProductCell(idx) {
             <span class="small text-muted">Available: ${Number(item.available_stock) || 0}</span>
             <input type="number" class="form-control form-control-sm text-center replacement-qty-input"
                    style="width:68px;" min="1" max="${quantityLimit}" value="${quantity}"
+                   ${quantityEditable ? '' : 'disabled'}
                    aria-label="Replacement quantity">
             <span class="small fw-bold text-success text-nowrap">₹${(price * quantity).toFixed(2)}</span>
         </div>
@@ -1497,7 +1509,9 @@ function onModalScanExchangeItem(code) {
                         });
                     const quantityToAdd = mode === 'EXCHANGE_SAME'
                         ? 1
-                        : ((scannedVar.is_series || scannedVar.is_complementary) ? packQuantity : 1);
+                        : ((scannedVar.is_series || scannedVar.is_complementary)
+                            ? Math.min(packQuantity, availableStock)
+                            : 1);
                     const targetReturnQtyInput = targetIndex !== undefined
                         ? document.querySelector(`.return-qty-input[data-idx="${targetIndex}"]`)
                         : null;
@@ -1544,7 +1558,12 @@ function onModalScanExchangeItem(code) {
                                 available_stock: availableStock,
                                 quantity: 0,
                                 scanned_tags: [],
-                                scanned_codes: []
+                                scanned_codes: [],
+                                is_series: scannedVar.is_series,
+                                is_complementary: scannedVar.is_complementary,
+                                category_type: scannedVar.category_type,
+                                qr_type: scannedVar.qr_type,
+                                pack_quantity: scannedVar.pack_quantity
                             };
                             rowReplacements[targetIndex] = item;
                         }

@@ -1074,17 +1074,29 @@ class ReportController {
     private function getProfitabilityMetrics(string $startDate, string $endDate): array {
         // 1. REVENUE
         // A. Direct Customer Purchases in Warehouse
-        $whSales = Database::fetchOne(
-            "SELECT COALESCE(SUM(total_amount), 0) as total,
-                    COALESCE(SUM(discount_amount), 0) as discount,
-                    COALESCE(SUM(tax_amount), 0) as tax,
-                    COALESCE(SUM(paid_amount), 0) as paid,
-                    COUNT(id) as count
+        $warehouseSales = Database::fetchAll(
+            "SELECT total_amount, discount_amount, tax_amount, paid_amount, payment_status, notes,
+                    seller_id, warehouse_supplier_id
              FROM purchase_orders
              WHERE created_at BETWEEN ? AND ?
                AND (customer_id IS NOT NULL OR warehouse_supplier_id IS NULL)",
             [$startDate, $endDate]
         );
+        $whSales = [
+            'total' => array_sum(array_column($warehouseSales, 'total_amount')),
+            'discount' => array_sum(array_column($warehouseSales, 'discount_amount')),
+            'tax' => array_sum(array_column($warehouseSales, 'tax_amount')),
+            'paid' => array_sum(array_map(
+                static function (array $order): float {
+                    if (empty($order['seller_id']) && empty($order['warehouse_supplier_id'])) {
+                        return PurchaseOrder::getEffectivePaidAmount($order);
+                    }
+                    return max(0, (float)$order['paid_amount']);
+                },
+                $warehouseSales
+            )),
+            'count' => count($warehouseSales),
+        ];
 
         // B. Retail Shop POS Sales
         $shopSales = Database::fetchOne(
@@ -1541,8 +1553,8 @@ class ReportController {
         $sql1 = "SELECT po.id, po.po_number as invoice_no, 'Warehouse POS' as channel,
                         c.name as customer_name, c.phone as customer_phone,
                         po.total_amount, po.discount_amount, po.tax_amount, po.paid_amount,
-                        po.payment_method, po.payment_status, po.status, po.created_at,
-                        po.warehouse_id, w.name as location_name
+                        po.payment_method, po.payment_status, po.status, po.notes, po.created_at,
+                        po.warehouse_id, po.seller_id, po.warehouse_supplier_id, w.name as location_name
                  FROM purchase_orders po
                  LEFT JOIN customers c ON po.customer_id = c.id
                  LEFT JOIN warehouses w ON po.warehouse_id = w.id
@@ -1555,6 +1567,16 @@ class ReportController {
         }
         $sql1 .= " ORDER BY po.id DESC";
         $whOrders = Database::fetchAll($sql1, $params1);
+        foreach ($whOrders as &$order) {
+            $order['paid_amount'] = empty($order['seller_id']) && empty($order['warehouse_supplier_id'])
+                ? PurchaseOrder::getEffectivePaidAmount($order)
+                : max(0, (float)$order['paid_amount']);
+            $balanceDue = max(0, (float)$order['total_amount'] - $order['paid_amount']);
+            $order['payment_status'] = $balanceDue <= 0
+                ? 'PAID'
+                : ($order['paid_amount'] > 0 ? 'PARTIAL' : 'PENDING');
+        }
+        unset($order);
 
         // ─── 2. Shop POS Sales (all shops combined, with shop_id) ───
         $sql2 = "SELECT s.id, s.invoice_number as invoice_no, 
@@ -1651,7 +1673,7 @@ class ReportController {
             $pm = strtoupper($row['payment_method'] ?? 'OTHER');
             if (!isset($modes[$pm])) $modes[$pm] = ['count' => 0, 'amount' => 0];
             $modes[$pm]['count']++;
-            $modes[$pm]['amount'] += (float)$row['total_amount'];
+            $modes[$pm]['amount'] += (float)$row['paid_amount'];
         }
 
         // ─── Helper to aggregate channel totals ───

@@ -1041,6 +1041,31 @@ class WarehouseService {
     /**
      * Create Direct Customer Purchase / Order with tax & discount calculation.
      */
+    private static function applyCustomerPurchasePayment(array &$poData, float $grandTotal, ?float $defaultPaidAmount = null): void {
+        if (!array_key_exists('paid_amount', $poData)) {
+            return;
+        }
+
+        $paymentMethod = strtoupper(trim((string)($poData['payment_method'] ?? 'CASH')));
+        $rawPaidAmount = $paymentMethod === 'CREDIT'
+            ? 0
+            : ($poData['paid_amount'] ?? $defaultPaidAmount ?? $grandTotal);
+        if (!is_numeric($rawPaidAmount)) {
+            throw new InvalidArgumentException('Payment received must be a valid amount.');
+        }
+
+        $paidAmount = round((float)$rawPaidAmount, 2);
+        $grandTotal = round($grandTotal, 2);
+        if ($paidAmount < 0 || $paidAmount > $grandTotal) {
+            throw new InvalidArgumentException('Payment received cannot be negative or greater than the bill total.');
+        }
+
+        $poData['paid_amount'] = $paidAmount;
+        $poData['payment_status'] = $paidAmount >= $grandTotal
+            ? 'PAID'
+            : ($paidAmount > 0 ? 'PARTIAL' : 'PENDING');
+    }
+
     public static function createPurchaseOrder(array $poData, array $items, int $userId): int {
         Database::beginTransaction();
         try {
@@ -1157,6 +1182,7 @@ class WarehouseService {
             $poData['igst_amount'] = $totalIgst;
             $poData['tax_amount'] = $totalCgst + $totalSgst + $totalIgst;
             $poData['total_amount'] = $grandTotal;
+            self::applyCustomerPurchasePayment($poData, $grandTotal);
 
             $poId = PurchaseOrder::create($poData);
 
@@ -1307,6 +1333,11 @@ class WarehouseService {
             $poData['igst_amount'] = $totalIgst;
             $poData['tax_amount'] = $totalCgst + $totalSgst + $totalIgst;
             $poData['total_amount'] = $grandTotal;
+            self::applyCustomerPurchasePayment(
+                $poData,
+                $grandTotal,
+                isset($existing['paid_amount']) ? (float)$existing['paid_amount'] : 0.0
+            );
 
             if (!$lockProductItems) {
                 $previousStockTransactions = Database::fetchAll(
@@ -3234,7 +3265,7 @@ class WarehouseService {
     }
 
     /**
-     * Find a piece QR that has already left warehouse stock as a direct-purchase exchange replacement.
+     * Find a piece QR still out of warehouse stock as a direct-purchase exchange replacement.
      */
     public static function getExchangedReplacementByPieceTag(string $pieceTag, ?int $excludeReturnId = null): ?array {
         $pieceTag = trim($pieceTag);
@@ -3250,8 +3281,23 @@ class WarehouseService {
                AND r.source_type = 'WAREHOUSE_PURCHASE'
                AND e.status = 'COMPLETED'
                AND ei.piece_tag IS NOT NULL
-               AND FIND_IN_SET(UPPER(?), REPLACE(UPPER(ei.piece_tag), ' ', '')) > 0";
-        $params = [$pieceTag];
+               AND FIND_IN_SET(UPPER(?), REPLACE(UPPER(ei.piece_tag), ' ', '')) > 0
+               AND NOT EXISTS (
+                    SELECT 1
+                    FROM return_items ri
+                    JOIN `returns` restock_return ON restock_return.id = ri.return_id
+                    WHERE restock_return.id > r.id
+                      AND restock_return.source_type = 'WAREHOUSE_PURCHASE'
+                      AND restock_return.status NOT IN ('CANCELLED', 'REJECTED')
+                      AND ri.item_condition = 'GOOD'
+                      AND ri.destination = 'AVAILABLE'
+                      AND ri.reason LIKE 'Piece Tags:%'
+                      AND FIND_IN_SET(
+                          UPPER(?),
+                          REPLACE(UPPER(SUBSTRING_INDEX(ri.reason, 'Piece Tags: ', -1)), ' ', '')
+                      ) > 0
+               )";
+        $params = [$pieceTag, $pieceTag];
         if ($excludeReturnId !== null && $excludeReturnId > 0) {
             $sql .= " AND r.id != ?";
             $params[] = $excludeReturnId;
@@ -3310,11 +3356,19 @@ class WarehouseService {
         if ($exchange) {
             $exchangeItems = Database::fetchAll(
                 "SELECT ei.*, pv.sku, COALESCE(NULLIF(pv.qr_code, ''), CONCAT('QR-', pv.sku)) as qr_code, pv.selling_price,
+                        pv.qr_type, pv.pack_quantity,
+                        CASE WHEN UPPER(COALESCE(wc.category_type, '')) = 'SERIES'
+                                  OR pv.qr_type = 'SERIES_BATCH'
+                                  OR COALESCE(pv.pack_quantity, 1) > 1
+                             THEN 1 ELSE 0 END AS is_series,
+                        COALESCE(pv.is_complementary, p.is_complementary, 0) AS is_complementary,
+                        wc.category_type,
                         p.name as product_name, p.code as product_code,
                         sz.name as size_name, cl.name as color_name
                  FROM exchange_items ei
                  JOIN product_variants pv ON ei.variant_id = pv.id
                  JOIN products p ON pv.product_id = p.id
+                 LEFT JOIN warehouse_categories wc ON p.warehouse_category_id = wc.id
                  LEFT JOIN sizes sz ON pv.size_id = sz.id
                  LEFT JOIN colors cl ON pv.color_id = cl.id
                  WHERE ei.exchange_id = ?

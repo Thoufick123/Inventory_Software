@@ -8,6 +8,12 @@ if (preg_match('/\[Split Payment:\s*Cash\s*₹([\d\.]+)\s*\+\s*UPI\s*₹([\d\.]+
     $splitUpi = (float)($m[2] ?? 0);
     $splitRef = trim($m[3] ?? '');
 }
+$currentPaidAmount = (float)($po['paid_amount'] ?? 0);
+if ($isSplitPayment && ($splitCash + $splitUpi) > 0) {
+    $currentPaidAmount = $splitCash + $splitUpi;
+} elseif ($currentPaidAmount <= 0 && ($po['payment_status'] ?? '') === 'PAID') {
+    $currentPaidAmount = (float)($po['total_amount'] ?? 0);
+}
 $displayNotes = trim(preg_replace('/\[Split Payment:.*?\]\r?\n?/', '', $po['notes'] ?? ''));
 ?>
 
@@ -216,7 +222,7 @@ $displayNotes = trim(preg_replace('/\[Split Payment:.*?\]\r?\n?/', '', $po['note
                         <input type="hidden" name="expected_date" value="<?= e($po['expected_date'] ?? '') ?>">
                     </div>
 
-                    <!-- Payment mode; payment status is preserved automatically -->
+                    <!-- Payment status is derived automatically from the amount received -->
                     <div class="row g-2 mb-2.5">
                         <div class="col-6">
                             <label class="form-label small fw-semibold mb-1 text-secondary">Payment Mode</label>
@@ -229,7 +235,13 @@ $displayNotes = trim(preg_replace('/\[Split Payment:.*?\]\r?\n?/', '', $po['note
                                 <option value="CREDIT" <?= ($po['payment_method'] ?? '') === 'CREDIT' ? 'selected' : '' ?>>On Account / Credit</option>
                             </select>
                         </div>
-                        <input type="hidden" name="payment_status" value="<?= e($po['payment_status'] ?? 'PAID') ?>">
+                        <input type="hidden" name="payment_status" id="paymentStatusInput" value="<?= e($po['payment_status'] ?? 'PAID') ?>">
+                    </div>
+
+                    <div class="mb-2.5 <?= $isSplitPayment ? 'd-none' : '' ?>" id="paymentAmountSection">
+                        <label class="form-label small fw-semibold mb-1 text-secondary" for="paidAmountInput">Amount Received Now (₹)</label>
+                        <input type="number" step="0.01" min="0" name="paid_amount" id="paidAmountInput" class="form-control form-control-sm text-end fw-bold" value="<?= number_format($currentPaidAmount, 2, '.', '') ?>" data-auto-value="0" oninput="onPaidAmountInput()">
+                        <small class="text-muted">Enter the amount collected now. Any remaining amount will be recorded as due.</small>
                     </div>
 
                     <!-- ============================================================= -->
@@ -302,6 +314,14 @@ $displayNotes = trim(preg_replace('/\[Split Payment:.*?\]\r?\n?/', '', $po['note
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <span class="fw-bold text-dark" style="font-size: 1rem;">Grand Total:</span>
                         <span class="fs-4 fw-bold text-success font-monospace" id="lblTotal">₹<?= number_format($po['total_amount'], 2) ?></span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-1.5 small">
+                        <span class="text-muted">Amount Received:</span>
+                        <span class="fw-semibold text-success font-monospace" id="lblPaidAmount">₹0.00</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-3 small">
+                        <span class="text-muted">Balance Due:</span>
+                        <span class="fw-bold text-danger font-monospace" id="lblBalanceDue">₹0.00</span>
                     </div>
                     <button type="submit" class="btn btn-primary w-100 py-2 fw-bold shadow-sm" id="btnSubmitPurchase">
                         <i class="bi bi-check2-circle me-1.5"></i> Update Customer Purchase
@@ -807,14 +827,46 @@ function playBeep(type = 'success') {
 function onPaymentMethodChange() {
     const sel = document.getElementById('paymentMethodSelect');
     const splitSec = document.getElementById('splitPaymentSection');
+    const amountSec = document.getElementById('paymentAmountSection');
+    const amountInput = document.getElementById('paidAmountInput');
     if (!sel || !splitSec) return;
 
     if (sel.value === 'CASH_UPI') {
         splitSec.classList.remove('d-none');
-        autoBalanceSplit();
     } else {
         splitSec.classList.add('d-none');
     }
+    if (amountSec) amountSec.classList.toggle('d-none', sel.value === 'CASH_UPI');
+    if (amountInput) {
+        amountInput.disabled = sel.value === 'CASH_UPI' || sel.value === 'CREDIT';
+        if (sel.value === 'CREDIT') amountInput.value = '0.00';
+    }
+    calculateTotals();
+}
+
+function onPaidAmountInput() {
+    updatePaidSummary();
+}
+
+function updatePaidSummary(grandTotal = getGrandTotalValue()) {
+    const paymentMethod = document.getElementById('paymentMethodSelect')?.value || 'CASH';
+    const amountInput = document.getElementById('paidAmountInput');
+    let paidAmount = 0;
+    if (paymentMethod === 'CASH_UPI') {
+        paidAmount = (parseFloat(document.getElementById('splitCashInput')?.value) || 0)
+            + (parseFloat(document.getElementById('splitUpiInput')?.value) || 0);
+    } else if (paymentMethod !== 'CREDIT') {
+        paidAmount = parseFloat(amountInput?.value) || 0;
+    }
+
+    const paymentStatus = document.getElementById('paymentStatusInput');
+    if (paymentStatus) {
+        paymentStatus.value = paidAmount >= grandTotal ? 'PAID' : (paidAmount > 0 ? 'PARTIAL' : 'PENDING');
+    }
+    const paidLabel = document.getElementById('lblPaidAmount');
+    const balanceLabel = document.getElementById('lblBalanceDue');
+    if (paidLabel) paidLabel.textContent = '₹' + paidAmount.toFixed(2);
+    if (balanceLabel) balanceLabel.textContent = '₹' + Math.max(0, grandTotal - paidAmount).toFixed(2);
 }
 
 // Auto-balance Split Payment
@@ -832,22 +884,17 @@ function autoBalanceSplit() {
         upiInput.value = remainder.toFixed(2);
     }
     updateSplitSummary();
+    updatePaidSummary(grandTotal);
 }
 
 function onSplitCashChange() {
-    const grandTotal = getGrandTotalValue();
-    const cashInput = document.getElementById('splitCashInput');
-    const upiInput = document.getElementById('splitUpiInput');
-    const cashVal = parseFloat(cashInput.value) || 0;
-    
-    if (cashVal <= grandTotal) {
-        upiInput.value = Math.max(0, grandTotal - cashVal).toFixed(2);
-    }
     updateSplitSummary();
+    updatePaidSummary();
 }
 
 function onSplitUpiChange() {
     updateSplitSummary();
+    updatePaidSummary();
 }
 
 function updateSplitSummary() {
@@ -867,7 +914,7 @@ function updateSplitSummary() {
             lblSplitDiff.textContent = 'Balanced (₹0.00)';
         } else if (diff > 0) {
             lblSplitDiff.className = 'badge bg-warning-subtle text-warning-emphasis border border-warning-subtle';
-            lblSplitDiff.textContent = 'Remaining: ₹' + diff.toFixed(2);
+            lblSplitDiff.textContent = 'Balance Due: ₹' + diff.toFixed(2);
         } else {
             lblSplitDiff.className = 'badge bg-danger-subtle text-danger border border-danger-subtle';
             lblSplitDiff.textContent = 'Excess: +₹' + Math.abs(diff).toFixed(2);
@@ -2246,11 +2293,12 @@ function calculateTotals() {
     if (lblTax) lblTax.textContent = 'Incl. ₹' + totalTax.toFixed(2) + (isIGST ? ' (IGST)' : ' (CGST+SGST)');
     if (lblTotal) lblTotal.textContent = '₹' + grandTotal.toFixed(2);
 
-    // If Cash + UPI is active, adjust split payment
+    // Keep payment collection and balance in sync with the current bill total.
     const paymentMethodSel = document.getElementById('paymentMethodSelect');
     if (paymentMethodSel && paymentMethodSel.value === 'CASH_UPI') {
         updateSplitSummary();
     }
+    updatePaidSummary(grandTotal);
 }
 
 function validateBeforeSubmit(e) {
@@ -2302,24 +2350,21 @@ function validateBeforeSubmit(e) {
         }
     }
 
+    const grandTotal = getGrandTotalValue();
     const paymentMethodSel = document.getElementById('paymentMethodSelect');
-    if (paymentMethodSel && paymentMethodSel.value === 'CASH_UPI') {
-        const grandTotal = getGrandTotalValue();
-        const cashVal = parseFloat(document.getElementById('splitCashInput').value) || 0;
-        const upiVal = parseFloat(document.getElementById('splitUpiInput').value) || 0;
-        const splitSum = cashVal + upiVal;
-        
-        if (Math.abs(grandTotal - splitSum) > 0.05 && grandTotal > 0) {
-            const confirmProceed = confirm(`⚠️ Split Payment Alert:\nCash (₹${cashVal.toFixed(2)}) + UPI (₹${upiVal.toFixed(2)}) = ₹${splitSum.toFixed(2)}\ndoes not match the Grand Total ₹${grandTotal.toFixed(2)}.\n\nDo you want to auto-balance the remainder to UPI before saving?`);
-            if (confirmProceed) {
-                autoBalanceSplit();
-            }
-        }
+    const paidAmount = paymentMethodSel?.value === 'CASH_UPI'
+        ? (parseFloat(document.getElementById('splitCashInput').value) || 0) + (parseFloat(document.getElementById('splitUpiInput').value) || 0)
+        : (paymentMethodSel?.value === 'CREDIT' ? 0 : (parseFloat(document.getElementById('paidAmountInput').value) || 0));
+    if (paidAmount > grandTotal + 0.005) {
+        alert('Amount received cannot be greater than the grand total.');
+        return false;
     }
+    updatePaidSummary(grandTotal);
     return true;
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    onPaymentMethodChange();
     calculateTotals();
     updateItemCount();
 
