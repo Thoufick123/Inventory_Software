@@ -2024,7 +2024,7 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
                     <div class="p-3 bg-white rounded-3 text-center small text-muted border border-dashed" style="font-size: 11px;">
                         <i class="bi bi-sliders me-1 text-secondary"></i>No pre-set attributes for this category level yet. 
                         <a href="javascript:void(0)" onclick="openAddAttributeModal(${idx})" class="fw-semibold text-primary text-decoration-none ms-1">
-                            <i class="bi bi-plus-circle"></i> + Add Attribute
+                            <i class="bi bi-plus-circle"></i> Add Attribute
                         </a>
                     </div>
                 `;
