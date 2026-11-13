@@ -2188,6 +2188,42 @@ function handleAttrTypeChange(type) {
     }
 }
 
+function refreshProgramRollAttributePanels(catId, subcatId = '', subsubcatId = '') {
+    const cards = document.querySelectorAll('.program-roll-card');
+    let matched = false;
+
+    cards.forEach(card => {
+        const cMatch = card.id.match(/\d+$/);
+        if (!cMatch) return;
+
+        const cIdx = parseInt(cMatch[0], 10);
+        const cCat = card.querySelector('.roll-cat-select')?.value || '';
+        const cSub = card.querySelector('.roll-subcat-select')?.value || '';
+        const cSubSub = card.querySelector('.roll-subsubcat-select')?.value || '';
+
+        const sameCategory = String(cCat) === String(catId);
+        const exactHierarchyMatch = sameCategory && (!subcatId || String(cSub) === String(subcatId)) && (!subsubcatId || String(cSubSub) === String(subsubcatId));
+        const categoryLevelMatch = sameCategory && (!subcatId || String(cSub) === String(subcatId) || !cSub || String(cSub) === '');
+
+        if (exactHierarchyMatch || (sameCategory && categoryLevelMatch)) {
+            matched = true;
+            loadRollCategoryAttributes(cIdx, cCat, cSub, cSubSub);
+        }
+    });
+
+    if (!matched && catId) {
+        cards.forEach(card => {
+            const cMatch = card.id.match(/\d+$/);
+            if (!cMatch) return;
+            const cIdx = parseInt(cMatch[0], 10);
+            const cCat = card.querySelector('.roll-cat-select')?.value || '';
+            if (String(cCat) === String(catId)) {
+                loadRollCategoryAttributes(cIdx, cCat, card.querySelector('.roll-subcat-select')?.value || '', card.querySelector('.roll-subsubcat-select')?.value || '');
+            }
+        });
+    }
+}
+
 function handleSaveCategoryAttribute(e) {
     e.preventDefault();
     const btn = document.getElementById('btnSubmitAttrModal');
@@ -2235,20 +2271,7 @@ function handleSaveCategoryAttribute(e) {
         if (data.success) {
             const modal = bootstrap.Modal.getInstance(document.getElementById('modalQuickAddCategoryAttribute'));
             if (modal) modal.hide();
-
-            // Dynamically refresh attributes for all roll cards sharing this category hierarchy!
-            document.querySelectorAll('.program-roll-card').forEach(card => {
-                const cMatch = card.id.match(/\d+$/);
-                if (cMatch) {
-                    const cIdx = parseInt(cMatch[0]);
-                    const cCat = card.querySelector('.roll-cat-select')?.value;
-                    const cSub = card.querySelector('.roll-subcat-select')?.value;
-                    const cSubSub = card.querySelector('.roll-subsubcat-select')?.value;
-                    if (String(cCat) === String(catId)) {
-                        loadRollCategoryAttributes(cIdx, cCat, cSub, cSubSub);
-                    }
-                }
-            });
+            refreshProgramRollAttributePanels(catId, subcatId, subsubcatId);
         } else {
             alert(data.message || 'Error saving category attribute.');
         }

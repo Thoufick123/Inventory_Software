@@ -6154,11 +6154,13 @@ class ProductionController {
                 $formattedOptions = implode(',', $opts);
             }
 
-            // Check if attribute with same name already exists for this scope
-            $existingSql = "SELECT id FROM wh_category_attributes WHERE category_id = ? AND attr_name = ?";
+            // Check if attribute with the same name already exists for this exact hierarchy scope.
+            // This prevents ghost duplicates while still allowing a parent-level attribute to be reused at a more specific level.
+            $existingSql = "SELECT id FROM wh_category_attributes WHERE category_id = ? AND attr_name = ? AND is_active = 1";
             $existingParams = [$categoryId, $attrName];
             if ($subSubcategoryId) {
-                $existingSql .= " AND sub_subcategory_id = ?";
+                $existingSql .= " AND subcategory_id = ? AND sub_subcategory_id = ?";
+                $existingParams[] = $subcategoryId ?: 0;
                 $existingParams[] = $subSubcategoryId;
             } elseif ($subcategoryId) {
                 $existingSql .= " AND subcategory_id = ? AND (sub_subcategory_id IS NULL OR sub_subcategory_id = 0)";
@@ -16050,17 +16052,47 @@ class ProductionController {
             $inwardedMap[$iq['qr_code']] = $iq['inwarded_at'];
         }
 
+        // Query damage records for this purchase prefix
+        $damageRows = Database::fetchAll(
+            "SELECT rd.qr_code, rd.damage_number, rd.damage_reason, rd.loss_amount, rd.damaged_quantity, rd.status, rd.created_at
+             FROM roll_damages rd
+             WHERE rd.qr_code LIKE ? AND rd.status NOT IN ('CANCELLED', 'REJECTED')",
+            [$prefix . '%']
+        );
+        $damageMap = [];
+        foreach ($damageRows as $dr) {
+            $damageMap[$dr['qr_code']] = $dr;
+        }
+
+        // Fetch standard damage reasons for the modal
+        $damageReasons = Database::fetchAll("SELECT reason FROM roll_damage_reasons ORDER BY reason ASC");
+        if (empty($damageReasons)) {
+            $damageReasons = [
+                ['reason' => 'Broken / Crushed in Transit'],
+                ['reason' => 'Color Variation / Bleed'],
+                ['reason' => 'Defective Quality / Substandard'],
+                ['reason' => 'Torn / Cut / Damaged Packaging'],
+                ['reason' => 'Supplier Defect / Manufacturing Flaw'],
+                ['reason' => 'Wrong Specification / Non-conforming']
+            ];
+        }
+
         foreach ($stickers as &$stk) {
-            $isStkInwarded = !empty($inwardedMap[$stk['code']]) || (!empty($purchase['is_inwarded']) && empty($inwardedQrs));
+            $code = $stk['code'];
+            $isDamaged = isset($damageMap[$code]);
+            $isStkInwarded = !$isDamaged && (!empty($inwardedMap[$code]) || (!empty($purchase['is_inwarded']) && empty($inwardedQrs)));
+            $stk['is_damaged'] = $isDamaged;
+            $stk['damage_info'] = $damageMap[$code] ?? null;
             $stk['is_inwarded'] = $isStkInwarded;
-            $stk['inwarded_at'] = $inwardedMap[$stk['code']] ?? ($purchase['inwarded_at'] ?? null);
+            $stk['inwarded_at'] = $inwardedMap[$code] ?? ($purchase['inwarded_at'] ?? null);
         }
         unset($stk);
 
         $allStickersCount = count($stickers);
         $inwardedCount = count(array_filter($stickers, fn($s) => !empty($s['is_inwarded'])));
-        $pendingCount = $allStickersCount - $inwardedCount;
-        $isAllInwarded = $allStickersCount > 0 && $pendingCount === 0;
+        $damagedCount = count(array_filter($stickers, fn($s) => !empty($s['is_damaged'])));
+        $pendingCount = count(array_filter($stickers, fn($s) => empty($s['is_inwarded']) && empty($s['is_damaged'])));
+        $isAllInwarded = $allStickersCount > 0 && ($inwardedCount + $damagedCount) >= $allStickersCount;
 
         $inwardedOnly = !empty($_GET['inwarded_only']) || (isset($_GET['filter']) && $_GET['filter'] === 'inwarded');
         if ($inwardedOnly) {
@@ -16085,6 +16117,9 @@ class ProductionController {
             'isAllInwarded'      => $isAllInwarded,
             'inwardedCount'      => $inwardedCount,
             'pendingInwardCount' => $pendingCount,
+            'damagedCount'       => $damagedCount,
+            'damageMap'          => $damageMap,
+            'damageReasons'      => $damageReasons,
             'inwardedOnly'       => $inwardedOnly,
             'allStickersCount'   => $allStickersCount,
         ]);
@@ -16210,6 +16245,10 @@ class ProductionController {
                 if ($hasSelection) {
                     $selectedForThisItem = array_intersect($thisItemQrs, $selectedQrCodes);
                     foreach ($selectedForThisItem as $qrCode) {
+                        $isDamaged = Database::fetchOne("SELECT id FROM roll_damages WHERE qr_code = ? AND status NOT IN ('CANCELLED', 'REJECTED')", [$qrCode]);
+                        if ($isDamaged) {
+                            continue;
+                        }
                         $existing = Database::fetchOne("SELECT id, inwarded_at FROM warehouse_qr_codes WHERE qr_code = ?", [$qrCode]);
                         if (!$existing || empty($existing['inwarded_at'])) {
                             $qrsToInward[] = $qrCode;
@@ -16217,6 +16256,10 @@ class ProductionController {
                     }
                 } else {
                     foreach ($thisItemQrs as $qrCode) {
+                        $isDamaged = Database::fetchOne("SELECT id FROM roll_damages WHERE qr_code = ? AND status NOT IN ('CANCELLED', 'REJECTED')", [$qrCode]);
+                        if ($isDamaged) {
+                            continue;
+                        }
                         $existing = Database::fetchOne("SELECT id, inwarded_at FROM warehouse_qr_codes WHERE qr_code = ?", [$qrCode]);
                         if (!$existing || empty($existing['inwarded_at'])) {
                             $qrsToInward[] = $qrCode;
