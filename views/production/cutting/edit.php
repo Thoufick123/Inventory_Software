@@ -84,7 +84,7 @@ $canDeleteCutting = hasPermission('cutting', 'delete');
                             </button>
                         </div>
                         <select name="operator_id" id="operatorSelect" class="form-select">
-                            <option value="">Select Operator</option>
+                            <option value="">Select Cutting Master</option>
                             <?php foreach ($users as $u): ?>
                                 <option value="<?= $u['id'] ?>" <?= ($batch['operator_id'] == $u['id']) ? 'selected' : '' ?>><?= e($u['full_name']) ?></option>
                             <?php endforeach; ?>

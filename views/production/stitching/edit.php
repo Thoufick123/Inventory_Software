@@ -99,7 +99,7 @@
                             </button>
                         </div>
                         <select name="worker_id" id="workerSelect" class="form-select">
-                            <option value="">Select Worker / Operator</option>
+                            <option value="">Select Tailor / Stitching Master</option>
                             <?php foreach ($users as $u): ?>
                                 <option value="<?= $u['id'] ?>" <?= ($batch['worker_id'] == $u['id']) ? 'selected' : '' ?>><?= e($u['full_name']) ?></option>
                             <?php endforeach; ?>

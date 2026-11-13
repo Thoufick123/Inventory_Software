@@ -487,6 +487,8 @@ class ProductionBatch {
             "SELECT pbi.*, pbi.piece_tags as packed_piece_tags,
                     pv.sku, pv.qr_code, pv.mrp, pv.selling_price, pv.purchase_price, pv.production_cost,
                     pv.qr_type, pv.pack_quantity, pv.is_complementary as pv_is_comp,
+                    COALESCE(NULLIF(pv.hsn_code, ''), NULLIF(p.hsn_code, ''), '6109') as hsn_code,
+                    COALESCE(NULLIF(pv.gst_rate, 0), NULLIF(p.gst_percentage, 0), 5.00) as gst_rate,
                     p.is_complementary as p_is_comp, wc.category_type as warehouse_category_type,
                     pv.image_url as variant_image, pv.mfg_date as variant_mfg_date, pv.expiry_date as variant_expiry_date,
                     cat.name as category_name, cat.code as category_code,

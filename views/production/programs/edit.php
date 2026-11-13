@@ -231,7 +231,7 @@
                         <div class="col-md-4">
                             <label class="form-label fw-semibold">Supervisor / Manager</label>
                             <select name="assigned_to" class="form-select">
-                                <option value="">Select Staff</option>
+                                <option value="">Select Supervisor / Staff</option>
                                 <?php foreach ($users as $u): ?>
                                     <option value="<?= $u['id'] ?>" <?= ($program['assigned_to'] == $u['id']) ? 'selected' : '' ?>><?= e($u['full_name']) ?></option>
                                 <?php endforeach; ?>
