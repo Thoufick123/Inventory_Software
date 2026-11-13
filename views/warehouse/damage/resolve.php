@@ -123,7 +123,8 @@ if (!empty($damage['replacement_variant_id'])) {
                         <div class="mb-3 p-3 bg-success bg-opacity-10 border border-success-subtle rounded-3" id="replacementProductGroup" style="display:none;">
                             <label class="form-label fw-semibold" for="replacementVariant">Replacement product</label>
                             <select class="form-select" name="replacement_variant_id" id="replacementVariant" onchange="updateDamageReplacementDetails()">
-                                <option value="">Select a replacement product</option>
+                                <option value="">Select an existing product or choose manual entry</option>
+                                <option value="__MANUAL__">Enter a new replacement product manually</option>
                                 <?php foreach ($variants as $variant): ?>
                                     <?php
                                         $categoryHierarchy = implode(' › ', array_filter([
@@ -147,6 +148,7 @@ if (!empty($damage['replacement_variant_id'])) {
                                     </option>
                                 <?php endforeach; ?>
                             </select>
+                            <small class="text-muted d-block mt-2">Existing products auto-fill their catalog details. Manual entry creates a new catalog product using the row below.</small>
                             <div id="replacementProductDetails" class="mt-3" style="display:none;">
                                 <div class="small fw-bold text-muted mb-2">Replacement product details</div>
                                 <div class="table-responsive">
@@ -179,6 +181,93 @@ if (!empty($damage['replacement_variant_id'])) {
                                 </div>
                                 <small class="text-muted">Details are loaded from the selected catalog variant. The QR is reserved for <?= number_format((int)$damage['quantity']) ?> pcs; stock is updated only when you inward it from Warehouse Labels.</small>
                             </div>
+                            <div id="replacementManualEntry" class="mt-3" style="display:none;">
+                                <div class="small fw-bold text-muted mb-2">Enter replacement product details</div>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-bordered align-middle text-nowrap mb-2">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>#</th><th>Category hierarchy</th><th>Category type</th><th>Product name</th>
+                                                <th>HSN</th><th>GST (%)</th><th>Weight (kg)</th><th>Variant / size</th>
+                                                <th>Base MRP (₹)</th><th>Selling price (₹)</th><th>Supplier cost (₹)</th>
+                                                <th>Qty</th><th>Line retail value (₹)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td>1</td>
+                                                <td>
+                                                    <div class="d-flex gap-1">
+                                                        <select class="form-select form-select-sm" id="manualCategoryId" name="manual_category_id" data-required-manual style="min-width:110px;">
+                                                            <option value="">Category</option>
+                                                            <?php foreach ($replacementCategories as $category): ?>
+                                                                <option value="<?= (int)$category['id'] ?>"
+                                                                    data-category-type="<?= e(strtoupper((string)$category['category_type'])) ?>"
+                                                                    data-hsn="<?= e($category['hsn_code'] ?? '') ?>"
+                                                                    data-gst="<?= e($category['gst_rate'] ?? '5.00') ?>">
+                                                                    <?= e($category['name']) ?>
+                                                                </option>
+                                                            <?php endforeach; ?>
+                                                        </select>
+                                                        <select class="form-select form-select-sm" id="manualSubcategoryId" name="manual_subcategory_id" style="min-width:110px;">
+                                                            <option value="">Subcategory</option>
+                                                            <?php foreach ($replacementSubcategories as $subcategory): ?>
+                                                                <option value="<?= (int)$subcategory['id'] ?>" data-category-id="<?= (int)$subcategory['category_id'] ?>">
+                                                                    <?= e($subcategory['name']) ?>
+                                                                </option>
+                                                            <?php endforeach; ?>
+                                                        </select>
+                                                        <select class="form-select form-select-sm" id="manualSubSubcategoryId" name="manual_sub_subcategory_id" style="min-width:110px;">
+                                                            <option value="">Sub-subcategory</option>
+                                                            <?php foreach ($replacementSubSubcategories as $subSubcategory): ?>
+                                                                <option value="<?= (int)$subSubcategory['id'] ?>" data-subcategory-id="<?= (int)$subSubcategory['subcategory_id'] ?>">
+                                                                    <?= e($subSubcategory['name']) ?>
+                                                                </option>
+                                                            <?php endforeach; ?>
+                                                        </select>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <select class="form-select form-select-sm" id="manualCategoryType" name="manual_category_type" data-required-manual>
+                                                        <option value="NORMAL">Normal</option>
+                                                        <option value="SERIES">Series</option>
+                                                        <option value="COMPLEMENTARY">Complementary</option>
+                                                    </select>
+                                                </td>
+                                                <td><input class="form-control form-control-sm" id="manualProductName" name="manual_product_name" data-required-manual maxlength="300" autocomplete="off"></td>
+                                                <td><input class="form-control form-control-sm" id="manualHsn" name="manual_hsn_code" data-required-manual maxlength="20"></td>
+                                                <td><input class="form-control form-control-sm" id="manualGst" name="manual_gst_percentage" data-required-manual type="number" min="0" max="100" step="0.01" value="5.00"></td>
+                                                <td><input class="form-control form-control-sm" id="manualWeight" name="manual_weight" data-required-manual type="number" min="0.001" step="0.001"></td>
+                                                <td><input class="form-control form-control-sm" id="manualSizeName" name="manual_size_name" maxlength="50" placeholder="XS"></td>
+                                                <td><input class="form-control form-control-sm" id="manualMrp" name="manual_mrp" data-required-manual type="number" min="0.01" step="0.01"></td>
+                                                <td><input class="form-control form-control-sm" id="manualSellingPrice" name="manual_selling_price" data-required-manual type="number" min="0.01" step="0.01"></td>
+                                                <td><input class="form-control form-control-sm" id="manualSupplierCost" name="manual_purchase_price" data-required-manual type="number" min="0.01" step="0.01"></td>
+                                                <td><input class="form-control form-control-sm" value="<?= (int)$damage['quantity'] ?>" readonly></td>
+                                                <td><input class="form-control form-control-sm" id="manualLineRetailValue" readonly value="0.00"></td>
+                                            </tr>
+                                        </tbody>
+                                        <tfoot class="table-light fw-semibold">
+                                            <tr>
+                                                <td colspan="6" class="text-end">Retail totals:</td>
+                                                <td id="manualTotalWeight" class="text-end">0.000 kg</td>
+                                                <td colspan="4"></td>
+                                                <td class="text-end"><?= number_format((int)$damage['quantity']) ?> pcs</td>
+                                                <td id="manualRetailTotal" class="text-end text-primary">₹0.00</td>
+                                            </tr>
+                                            <tr>
+                                                <td colspan="13" class="text-end">
+                                                    Supplier net cost: <span id="manualNetCost">₹0.00</span>
+                                                    <span class="mx-2">|</span>
+                                                    Total GST: <span id="manualTotalGst" class="text-danger">₹0.00</span>
+                                                    <span class="mx-2">|</span>
+                                                    Supplier product total: <span id="manualSupplierTotal" class="text-success">₹0.00</span>
+                                                </td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                                <small class="text-muted">The replacement quantity is fixed to the damaged quantity (<?= number_format((int)$damage['quantity']) ?> pcs), and the new product inherits this case's supplier. The product and variant are saved to the catalog; warehouse stock is added only after inwarding the generated QR in Labels.</small>
+                            </div>
                         </div>
                         <div class="mb-3" id="resolutionAmountGroup" style="display:none;">
                             <label class="form-label fw-semibold" for="resolutionAmount">Refund / credit amount (₹)</label>
@@ -208,13 +297,17 @@ if (!empty($damage['replacement_variant_id'])) {
                     const action = document.getElementById('resolutionAction').value;
                     const replacementGroup = document.getElementById('replacementProductGroup');
                     const replacementSelect = document.getElementById('replacementVariant');
+                    const isReplacement = action === 'REPLACEMENT';
                     const amountGroup = document.getElementById('resolutionAmountGroup');
                     const amount = document.getElementById('resolutionAmount');
                     const reworkGroup = document.getElementById('reworkUnitGroup');
                     const unitSelect = document.getElementById('productionUnit');
-                    replacementGroup.style.display = action === 'REPLACEMENT' ? '' : 'none';
-                    replacementSelect.required = action === 'REPLACEMENT';
-                    document.getElementById('damageResolveSubmit').innerHTML = action === 'REPLACEMENT'
+                    replacementGroup.style.display = isReplacement ? '' : 'none';
+                    replacementSelect.required = isReplacement;
+                    document.querySelectorAll('#replacementManualEntry [data-required-manual]').forEach(function(input) {
+                        input.required = isReplacement && replacementSelect.value === '__MANUAL__';
+                    });
+                    document.getElementById('damageResolveSubmit').innerHTML = isReplacement
                         ? '<i class="bi bi-qr-code me-1"></i> Generate Replacement QR'
                         : '<i class="bi bi-check2-circle me-1"></i> Save Resolution';
                     amountGroup.style.display = ['REFUND', 'SUPPLIER_CREDIT'].includes(action) ? '' : 'none';
@@ -231,6 +324,18 @@ if (!empty($damage['replacement_variant_id'])) {
                     const select = document.getElementById('replacementVariant');
                     const option = select.options[select.selectedIndex];
                     const details = document.getElementById('replacementProductDetails');
+                    const manualEntry = document.getElementById('replacementManualEntry');
+                    const isReplacement = document.getElementById('resolutionAction').value === 'REPLACEMENT';
+                    const isManual = option && option.value === '__MANUAL__';
+                    manualEntry.style.display = isReplacement && isManual ? '' : 'none';
+                    document.querySelectorAll('#replacementManualEntry [data-required-manual]').forEach(function(input) {
+                        input.required = isReplacement && isManual;
+                    });
+                    if (isManual) {
+                        details.style.display = 'none';
+                        updateManualReplacementTotals();
+                        return;
+                    }
                     if (!option || !option.value) {
                         details.style.display = 'none';
                         return;
@@ -255,6 +360,65 @@ if (!empty($damage['replacement_variant_id'])) {
                     document.getElementById('replacementRetailValue').value = (mrp * quantity).toFixed(2);
                     details.style.display = '';
                 }
+                function updateManualSubSubcategories() {
+                    const subcategoryId = document.getElementById('manualSubcategoryId').value;
+                    const subSubcategory = document.getElementById('manualSubSubcategoryId');
+                    Array.from(subSubcategory.options).forEach(function(option) {
+                        if (!option.value) return;
+                        option.hidden = !!subcategoryId && option.dataset.subcategoryId !== subcategoryId;
+                    });
+                    if (subSubcategory.selectedOptions.length && subSubcategory.selectedOptions[0].hidden) {
+                        subSubcategory.value = '';
+                    }
+                }
+                function updateManualCategoryHierarchy() {
+                    const category = document.getElementById('manualCategoryId');
+                    const categoryOption = category.options[category.selectedIndex];
+                    const categoryId = category.value;
+                    const subcategory = document.getElementById('manualSubcategoryId');
+                    Array.from(subcategory.options).forEach(function(option) {
+                        if (!option.value) return;
+                        option.hidden = !!categoryId && option.dataset.categoryId !== categoryId;
+                    });
+                    if (subcategory.selectedOptions.length && subcategory.selectedOptions[0].hidden) {
+                        subcategory.value = '';
+                    }
+                    updateManualSubSubcategories();
+                    if (categoryOption && categoryOption.value) {
+                        const categoryType = (categoryOption.dataset.categoryType || 'NORMAL').toUpperCase();
+                        document.getElementById('manualCategoryType').value = ['NORMAL', 'SERIES', 'COMPLEMENTARY'].includes(categoryType)
+                            ? categoryType
+                            : 'NORMAL';
+                        if (categoryOption.dataset.hsn) {
+                            document.getElementById('manualHsn').value = categoryOption.dataset.hsn;
+                        }
+                        if (categoryOption.dataset.gst !== undefined) {
+                            document.getElementById('manualGst').value = categoryOption.dataset.gst;
+                        }
+                    }
+                }
+                function updateManualReplacementTotals() {
+                    const quantity = <?= (int)$damage['quantity'] ?>;
+                    const mrp = Number(document.getElementById('manualMrp').value || 0);
+                    const cost = Number(document.getElementById('manualSupplierCost').value || 0);
+                    const gstRate = Number(document.getElementById('manualGst').value || 0);
+                    const weight = Number(document.getElementById('manualWeight').value || 0);
+                    const retail = mrp * quantity;
+                    const netCost = cost * quantity;
+                    const gst = netCost * gstRate / 100;
+                    document.getElementById('manualLineRetailValue').value = retail.toFixed(2);
+                    document.getElementById('manualTotalWeight').textContent = (weight * quantity).toFixed(3) + ' kg';
+                    document.getElementById('manualRetailTotal').textContent = '₹' + retail.toFixed(2);
+                    document.getElementById('manualNetCost').textContent = '₹' + netCost.toFixed(2);
+                    document.getElementById('manualTotalGst').textContent = '₹' + gst.toFixed(2);
+                    document.getElementById('manualSupplierTotal').textContent = '₹' + (netCost + gst).toFixed(2);
+                }
+                document.getElementById('manualCategoryId').addEventListener('change', updateManualCategoryHierarchy);
+                document.getElementById('manualSubcategoryId').addEventListener('change', updateManualSubSubcategories);
+                ['manualMrp', 'manualSupplierCost', 'manualGst', 'manualWeight'].forEach(function(id) {
+                    document.getElementById(id).addEventListener('input', updateManualReplacementTotals);
+                });
+                updateManualReplacementTotals();
                 updateDamageResolutionFields();
             </script>
         <?php endif; ?>
