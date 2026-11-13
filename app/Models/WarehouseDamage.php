@@ -26,7 +26,7 @@ class WarehouseDamage {
                     COALESCE(pu_target.code, pu_out.code, pu.code, 'PU1') as production_unit_code,
                     COALESCE(pu_target.manager_name, pu_out.manager_name, pu.manager_name, '') as production_unit_manager,
                     COALESCE(pu_target.phone, pu_out.phone, pu.phone, '') as production_unit_phone,
-                    po.outward_number, po.dispatch_date as outward_dispatch_date, po.vehicle_number, po.driver_name
+                    po.id as production_outward_id, po.outward_number, po.dispatch_date as outward_dispatch_date, po.vehicle_number, po.driver_name
              FROM warehouse_damages wd
              JOIN warehouses w ON wd.warehouse_id = w.id
              JOIN product_variants pv ON wd.variant_id = pv.id
@@ -79,7 +79,7 @@ class WarehouseDamage {
                 LEFT JOIN production_units pu ON pp.production_unit_id = pu.id
                 LEFT JOIN production_outwards po ON po.production_batch_id = pb.id
                 LEFT JOIN production_units pu_out ON po.production_unit_id = pu_out.id
-                WHERE 1=1";
+                WHERE wd.deleted_at IS NULL";
         $params = [];
 
         if (!empty($filters['status'])) {
@@ -201,7 +201,12 @@ class WarehouseDamage {
         $fields = [];
         $params = [];
 
-        $allowed = ['status', 'tag_code', 'defect_notes', 'damage_reason', 'quantity', 'cost_per_unit', 'total_loss', 'photo_url', 'production_unit_id'];
+        $allowed = [
+            'status', 'tag_code', 'defect_notes', 'damage_reason', 'quantity', 'cost_per_unit',
+            'total_loss', 'photo_url', 'production_unit_id', 'variant_id', 'resolution_action',
+            'resolution_reason', 'resolution_notes', 'resolution_amount', 'replacement_variant_id',
+            'replacement_qr_code', 'replacement_inwarded_at', 'deleted_at', 'deleted_by'
+        ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
                 $fields[] = "`$field` = ?";
@@ -225,7 +230,9 @@ class WarehouseDamage {
         if ($warehouseId === null && function_exists('currentWarehouseId')) {
             $warehouseId = currentWarehouseId();
         }
-        $where = $warehouseId ? " WHERE wd.warehouse_id = " . (int)$warehouseId : "";
+        $where = $warehouseId
+            ? " WHERE wd.warehouse_id = " . (int)$warehouseId . " AND wd.deleted_at IS NULL"
+            : " WHERE wd.deleted_at IS NULL";
         $stats = Database::fetchOne(
             "SELECT 
                 COUNT(*) as total_records,

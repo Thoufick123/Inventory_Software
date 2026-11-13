@@ -1,10 +1,17 @@
 <?php
 // Group warehouse piece items by variant_id for quick in-list QR lookup
 $pieceQrsByVariant = [];
+$returnedQrCodeSetByVariant = [];
+foreach (($returnedQrCodesByVariant ?? []) as $variantId => $returnedQrCodes) {
+    foreach ($returnedQrCodes as $returnedQrCode) {
+        $returnedQrCodeSetByVariant[(int)$variantId][strtoupper(trim((string)$returnedQrCode))] = true;
+    }
+}
 if (!empty($pieceItems) && is_array($pieceItems)) {
     foreach ($pieceItems as $pi) {
         $vId = (int)($pi['variant_id'] ?? 0);
-        if ($vId > 0 && !empty($pi['tag_code'])) {
+        $tagCode = strtoupper(trim((string)($pi['tag_code'] ?? '')));
+        if ($vId > 0 && $tagCode !== '' && !isset($returnedQrCodeSetByVariant[$vId][$tagCode])) {
             $pieceQrsByVariant[$vId][] = $pi;
         }
     }
@@ -392,6 +399,9 @@ if (!function_exists('renderCategoryTypeBadge')) {
                                 <th>Product Style &amp; Category</th>
                                 <th>Category Type</th>
                                 <th>Variant (Size / Color)</th>
+                                <?php if ($currTab === 'returned'): ?>
+                                    <th>Returned QR Codes</th>
+                                <?php endif; ?>
                                 <th>Stock State</th>
                                 <th>Current Balance</th>
                                 <th class="text-end">MRP / Base Price (₹)</th>
@@ -402,7 +412,12 @@ if (!function_exists('renderCategoryTypeBadge')) {
                         </thead>
                         <tbody>
                             <?php foreach ($displayItems as $item): ?>
-                                <tr id="stock-row-<?= $item['variant_id'] ?>" data-variant-qrs="<?= e(implode(' ', array_column($pieceQrsByVariant[(int)$item['variant_id']] ?? [], 'tag_code'))) ?>">
+                                <?php
+                                    $rowQrCodes = $currTab === 'returned'
+                                        ? ($item['returned_qr_codes'] ?? [])
+                                        : array_column($pieceQrsByVariant[(int)$item['variant_id']] ?? [], 'tag_code');
+                                ?>
+                                <tr id="stock-row-<?= $item['variant_id'] ?>" data-variant-qrs="<?= e(implode(' ', $rowQrCodes)) ?>">
                                     <td class="price-checkbox-col text-center" style="display: none;">
                                         <input type="checkbox" class="form-check-input price-item-checkbox" 
                                                value="<?= (int)$item['variant_id'] ?>" 
@@ -449,6 +464,19 @@ if (!function_exists('renderCategoryTypeBadge')) {
                                             <span class="small"><?= e($item['color_name']) ?></span>
                                         </span>
                                     </td>
+                                    <?php if ($currTab === 'returned'): ?>
+                                        <td>
+                                            <?php if (!empty($item['returned_qr_codes'])): ?>
+                                                <div class="d-flex flex-wrap gap-1" style="max-width: 340px; max-height: 76px; overflow-y: auto;">
+                                                    <?php foreach ($item['returned_qr_codes'] as $returnedQrCode): ?>
+                                                        <span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle font-monospace"><?= e($returnedQrCode) ?></span>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            <?php else: ?>
+                                                <span class="small text-muted">No inwarded return QR label recorded</span>
+                                            <?php endif; ?>
+                                        </td>
+                                    <?php endif; ?>
                                     <td>
                                         <span class="badge bg-<?= match ($item['display_stock_state']) { 'AVAILABLE' => 'success', 'RESERVED' => 'warning', 'OUT OF STOCK' => 'secondary', default => 'danger' } ?><?= $item['display_stock_state'] === 'RESERVED' ? ' text-dark' : '' ?>">
                                             <?= e($item['display_stock_state']) ?>

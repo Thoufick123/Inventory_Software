@@ -4177,6 +4177,15 @@ class WarehouseService {
             ORDER BY pbi.id ASC
         ", [$warehouseId]);
 
+        $returnedQuantitiesByVariant = array_column(Database::fetchAll(
+            "SELECT variant_id, COALESCE(SUM(quantity), 0) AS returned_quantity
+             FROM stock_transactions
+             WHERE location_type = 'WAREHOUSE' AND location_id = ?
+               AND stock_state = 'AVAILABLE' AND transaction_type = 'RETURN_INWARD' AND quantity > 0
+             GROUP BY variant_id",
+            [$warehouseId]
+        ), 'returned_quantity', 'variant_id');
+
         $pbiByVariantId = [];
         $pbiByAttributes = [];
         foreach ($prodBatchItems as $pbi) {
@@ -4201,6 +4210,15 @@ class WarehouseService {
         foreach ($balances as $bal) {
             $bal['quantity'] = (float)($bal['warehouse_quantity'] ?? $bal['quantity'] ?? 0);
             $qty = (int)$bal['quantity'];
+            if (($bal['stock_state'] ?? '') === 'AVAILABLE') {
+                $variantId = (int)$bal['variant_id'];
+                $returnedQty = min($qty, max(0, (int)($returnedQuantitiesByVariant[$variantId] ?? 0)));
+                $qty -= $returnedQty;
+                $returnedQuantitiesByVariant[$variantId] = max(
+                    0,
+                    (int)($returnedQuantitiesByVariant[$variantId] ?? 0) - $returnedQty
+                );
+            }
             if ($qty <= 0) continue;
 
             $vId = (int)$bal['variant_id'];

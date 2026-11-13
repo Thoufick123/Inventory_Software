@@ -1413,12 +1413,33 @@ class WarehouseController {
         $normalItems = [];
         $seriesItems = [];
         $returnedItems = [];
-        $returnedVariantIds = array_fill_keys(array_map('intval', array_column(Database::fetchAll(
-            "SELECT DISTINCT variant_id
+        $returnedQuantitiesByVariant = array_column(Database::fetchAll(
+            "SELECT variant_id, COALESCE(SUM(quantity), 0) AS returned_quantity
              FROM stock_transactions
-             WHERE location_type = 'WAREHOUSE' AND location_id = ? AND transaction_type = 'RETURN_INWARD'",
+             WHERE location_type = 'WAREHOUSE' AND location_id = ?
+               AND stock_state = 'AVAILABLE' AND transaction_type = 'RETURN_INWARD' AND quantity > 0
+             GROUP BY variant_id",
             [$selectedWarehouseId]
-        ), 'variant_id')), true);
+        ), 'returned_quantity', 'variant_id');
+        $returnedQrCodesByVariant = [];
+        foreach (Database::fetchAll(
+            "SELECT variant_id, qr_code, series_end_code
+             FROM warehouse_qr_codes
+             WHERE warehouse_id = ? AND inwarded_at IS NOT NULL
+               AND UPPER(qr_code) LIKE 'R%'
+             ORDER BY variant_id ASC, id ASC",
+            [$selectedWarehouseId]
+        ) as $returnedQrCode) {
+            $variantId = (int)($returnedQrCode['variant_id'] ?? 0);
+            $qrCode = trim((string)($returnedQrCode['qr_code'] ?? ''));
+            if ($variantId <= 0 || $qrCode === '') {
+                continue;
+            }
+            $seriesEndCode = trim((string)($returnedQrCode['series_end_code'] ?? ''));
+            $returnedQrCodesByVariant[$variantId][] = $seriesEndCode !== '' && $seriesEndCode !== $qrCode
+                ? $qrCode . ' - ' . $seriesEndCode
+                : $qrCode;
+        }
         $prodAvailableQty = 0;
         $prodValuation = 0.0;
         $tpAvailableQty = 0;
@@ -1431,12 +1452,25 @@ class WarehouseController {
         foreach ($stockItems as $item) {
             $allocatedQty = (float)($item['allocated_quantity'] ?? 0);
             $rawQty = (float)($item['quantity'] ?? 0);
-            $netAvailableQty = max(0, $rawQty - $allocatedQty);
+            $variantId = (int)$item['variant_id'];
+            $returnedQty = ($item['stock_state'] ?? '') === 'AVAILABLE'
+                ? min(
+                    max(0, $rawQty - $allocatedQty),
+                    max(0, (float)($returnedQuantitiesByVariant[$variantId] ?? 0))
+                )
+                : 0;
+            if ($returnedQty > 0) {
+                $returnedQuantitiesByVariant[$variantId] = max(
+                    0,
+                    (float)$returnedQuantitiesByVariant[$variantId] - $returnedQty
+                );
+            }
+            $netAvailableQty = max(0, $rawQty - $returnedQty - $allocatedQty);
             $item['allocated_quantity'] = $allocatedQty;
 
             // Once allocated product, don't show in available stock
             if (($item['stock_state'] ?? '') === 'AVAILABLE') {
-                if ($netAvailableQty <= 0) {
+                if ($netAvailableQty <= 0 && $returnedQty <= 0) {
                     continue;
                 }
                 $item['quantity'] = $netAvailableQty;
@@ -1481,11 +1515,16 @@ class WarehouseController {
             $item['cost_rate'] = $costRate;
             $item['valuation'] = $valuation;
 
-            // Add the fully calculated row to the Returned tab. Previously it
-            // was copied before display prices and valuation were assigned,
-            // which made returned rows show ₹0.00.
-            if (isset($returnedVariantIds[(int)$item['variant_id']])) {
-                $returnedItems[] = $item;
+            if ($returnedQty > 0) {
+                $returnedItem = $item;
+                $returnedItem['quantity'] = $returnedQty;
+                $returnedItem['display_stock_state'] = 'AVAILABLE';
+                $returnedItem['valuation'] = $returnedQty * (($isComp || !$isProd) ? $itemSellingPrice : $costRate);
+                $returnedItem['returned_qr_codes'] = $returnedQrCodesByVariant[$variantId] ?? [];
+                $returnedItems[] = $returnedItem;
+            }
+
+            if (($item['stock_state'] ?? '') === 'AVAILABLE' && $netAvailableQty <= 0) {
                 continue;
             }
 
@@ -1605,6 +1644,7 @@ class WarehouseController {
             'normalItems'            => $normalItems,
             'seriesItems'            => $seriesItems,
             'returnedItems'          => $returnedItems,
+            'returnedQrCodesByVariant' => $returnedQrCodesByVariant,
             'pieceItems'             => $pieceItems,
             'viewMode'               => $viewMode,
             'prodAvailableQty'       => $prodAvailableQty,
@@ -3145,6 +3185,735 @@ class WarehouseController {
         ]);
     }
 
+    public function editDamage(string $id): void {
+        if (!hasPermission('damage', 'edit')) {
+            Session::flash('error', 'Access denied: You do not have permission to edit damage records.');
+            Response::redirect(url('warehouse/damage'));
+            return;
+        }
+
+        $damage = WarehouseDamage::find((int)$id);
+        $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+        if (!$damage || !empty($damage['deleted_at'])) {
+            Response::redirect(url('warehouse/damage'), 'error', 'Damage record not found.');
+            return;
+        }
+        if ($scopedWarehouseId !== null && (int)$damage['warehouse_id'] !== (int)$scopedWarehouseId) {
+            Response::redirect(url('warehouse/damage'), 'error', 'You cannot edit damage records from another warehouse.');
+            return;
+        }
+        if (
+            !in_array(strtoupper((string)$damage['status']), ['LOGGED', 'INSPECTED'], true)
+            || !empty($damage['resolution_action'])
+        ) {
+            Response::redirect(url('warehouse/damage/view/' . (int)$damage['id']), 'error', 'Only unresolved quarantined damage records can be edited.');
+            return;
+        }
+
+        $variants = Database::fetchAll(
+            "SELECT pv.id, pv.sku, p.name AS product_name, sz.name AS size_name, col.name AS color_name
+             FROM product_variants pv
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN sizes sz ON sz.id = pv.size_id
+             LEFT JOIN colors col ON col.id = pv.color_id
+             WHERE pv.is_active = 1
+             ORDER BY p.name ASC, pv.sku ASC"
+        );
+
+        Response::view('warehouse.damage.edit', [
+            'pageTitle'    => 'Edit Damage Case: ' . $damage['damage_number'],
+            'activeModule' => 'warehouse',
+            'activeMenu'   => 'wh-damage',
+            'damage'       => $damage,
+            'variants'     => $variants,
+            'breadcrumb'   => [
+                ['label' => 'Warehouse', 'url' => url('warehouse/dashboard')],
+                ['label' => 'Damage Management', 'url' => url('warehouse/damage')],
+                ['label' => $damage['damage_number'], 'url' => url('warehouse/damage/view/' . (int)$damage['id'])],
+                ['label' => 'Edit'],
+            ],
+        ]);
+    }
+
+    public function updateDamage(string $id): void {
+        if (!hasPermission('damage', 'edit')) {
+            Session::flash('error', 'Access denied: You do not have permission to edit damage records.');
+            Response::redirect(url('warehouse/damage'));
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::back();
+            return;
+        }
+
+        $damageId = (int)$id;
+        $damage = WarehouseDamage::find($damageId);
+        $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+        if (!$damage || !empty($damage['deleted_at'])) {
+            Response::redirect(url('warehouse/damage'), 'error', 'Damage record not found.');
+            return;
+        }
+        if ($scopedWarehouseId !== null && (int)$damage['warehouse_id'] !== (int)$scopedWarehouseId) {
+            Response::redirect(url('warehouse/damage'), 'error', 'You cannot edit damage records from another warehouse.');
+            return;
+        }
+        if (
+            !in_array(strtoupper((string)$damage['status']), ['LOGGED', 'INSPECTED'], true)
+            || !empty($damage['resolution_action'])
+        ) {
+            Session::flash('error', 'Only unresolved quarantined damage records can be edited.');
+            Response::redirect(url('warehouse/damage/view/' . $damageId));
+            return;
+        }
+
+        $variantId = filter_var($_POST['variant_id'] ?? null, FILTER_VALIDATE_INT);
+        $quantityValue = $_POST['quantity'] ?? null;
+        $quantity = filter_var($quantityValue, FILTER_VALIDATE_INT);
+        $tagCode = trim((string)($_POST['tag_code'] ?? ''));
+        $damageReason = trim((string)($_POST['damage_reason'] ?? ''));
+        $defectNotes = trim((string)($_POST['defect_notes'] ?? ''));
+        $costValue = $_POST['cost_per_unit'] ?? '';
+        $costPerUnit = is_numeric($costValue) ? (float)$costValue : -1;
+
+        if (!$variantId || $quantity === false || $quantity < 1 || $quantity > 500 || $damageReason === '' || $costPerUnit < 0) {
+            Session::flash('error', 'Select a product, enter a valid quantity and cost, and provide a damage reason.');
+            Response::redirect(url('warehouse/damage/edit/' . $damageId));
+            return;
+        }
+        if (strlen($tagCode) > 100) {
+            Session::flash('error', 'Scanned QR tags cannot exceed 100 characters.');
+            Response::redirect(url('warehouse/damage/edit/' . $damageId));
+            return;
+        }
+
+        $variant = Database::fetchOne(
+            "SELECT id, sku FROM product_variants WHERE id = ? AND is_active = 1",
+            [(int)$variantId]
+        );
+        if (!$variant) {
+            Session::flash('error', 'The selected replacement scan product is not active.');
+            Response::redirect(url('warehouse/damage/edit/' . $damageId));
+            return;
+        }
+
+        $oldVariantId = (int)$damage['variant_id'];
+        $oldQuantity = (int)$damage['quantity'];
+        $warehouseId = (int)$damage['warehouse_id'];
+        $userId = Session::userId() ?? 1;
+        Database::beginTransaction();
+        try {
+            $lockedDamage = Database::fetchOne(
+                "SELECT id, status, resolution_action, replacement_qr_code
+                 FROM warehouse_damages WHERE id = ? AND deleted_at IS NULL FOR UPDATE",
+                [$damageId]
+            );
+            if (
+                !$lockedDamage
+                || !in_array(strtoupper((string)$lockedDamage['status']), ['LOGGED', 'INSPECTED'], true)
+                || !empty($lockedDamage['resolution_action'])
+                || !empty($lockedDamage['replacement_qr_code'])
+            ) {
+                throw new DomainException('This damage case already has a resolution or replacement QR.');
+            }
+
+            if ($oldVariantId !== (int)$variantId) {
+                StockService::decrease(
+                    $oldVariantId,
+                    'WAREHOUSE',
+                    $warehouseId,
+                    'DAMAGED',
+                    (float)$oldQuantity,
+                    'DAMAGE_EDIT_OUT',
+                    'warehouse_damage',
+                    $damageId,
+                    $userId,
+                    "Damage case {$damage['damage_number']} product changed to SKU {$variant['sku']}"
+                );
+                StockService::increase(
+                    (int)$variantId,
+                    'WAREHOUSE',
+                    $warehouseId,
+                    'DAMAGED',
+                    (float)$quantity,
+                    'DAMAGE_EDIT_IN',
+                    'warehouse_damage',
+                    $damageId,
+                    $userId,
+                    "Damage case {$damage['damage_number']} scanned product updated"
+                );
+            } elseif ((int)$quantity !== $oldQuantity) {
+                $quantityDelta = abs((int)$quantity - $oldQuantity);
+                if ((int)$quantity > $oldQuantity) {
+                    StockService::increase(
+                        (int)$variantId,
+                        'WAREHOUSE',
+                        $warehouseId,
+                        'DAMAGED',
+                        (float)$quantityDelta,
+                        'DAMAGE_EDIT_IN',
+                        'warehouse_damage',
+                        $damageId,
+                        $userId,
+                        "Damage case {$damage['damage_number']} quantity increased"
+                    );
+                } else {
+                    StockService::decrease(
+                        (int)$variantId,
+                        'WAREHOUSE',
+                        $warehouseId,
+                        'DAMAGED',
+                        (float)$quantityDelta,
+                        'DAMAGE_EDIT_OUT',
+                        'warehouse_damage',
+                        $damageId,
+                        $userId,
+                        "Damage case {$damage['damage_number']} quantity reduced"
+                    );
+                }
+            }
+
+            WarehouseDamage::update($damageId, [
+                'variant_id'    => (int)$variantId,
+                'quantity'      => (int)$quantity,
+                'tag_code'      => $tagCode !== '' ? $tagCode : null,
+                'damage_reason' => $damageReason,
+                'defect_notes'  => $defectNotes !== '' ? $defectNotes : null,
+                'cost_per_unit' => $costPerUnit,
+                'total_loss'    => round($costPerUnit * (int)$quantity, 2),
+            ]);
+            AuditService::logStrict('warehouse', 'damage_updated', 'warehouse_damages', $damageId, [
+                'variant_id' => $oldVariantId,
+                'quantity' => $oldQuantity,
+                'tag_code' => $damage['tag_code'],
+                'damage_reason' => $damage['damage_reason'],
+            ], [
+                'variant_id' => (int)$variantId,
+                'sku' => $variant['sku'],
+                'quantity' => (int)$quantity,
+                'tag_code' => $tagCode,
+                'damage_reason' => $damageReason,
+            ], $userId);
+            Database::commit();
+            Session::flash('success', 'Damage case updated and quarantined stock synchronized.');
+            Response::redirect(url('warehouse/damage/view/' . $damageId));
+        } catch (Throwable $e) {
+            if (Database::inTransaction()) {
+                Database::rollback();
+            }
+            error_log('Warehouse damage update failed: ' . $e->getMessage());
+            Session::flash('error', 'Could not update this damage case: ' . $e->getMessage());
+            Response::redirect(url('warehouse/damage/edit/' . $damageId));
+        }
+    }
+
+    public function deleteDamage(string $id): void {
+        if (!hasPermission('damage', 'delete')) {
+            Session::flash('error', 'Access denied: You do not have permission to delete damage records.');
+            Response::redirect(url('warehouse/damage'));
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::back();
+            return;
+        }
+
+        $damageId = (int)$id;
+        $damage = WarehouseDamage::find($damageId);
+        $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+        if (!$damage || !empty($damage['deleted_at'])) {
+            Response::redirect(url('warehouse/damage'), 'error', 'Damage record not found.');
+            return;
+        }
+        if ($scopedWarehouseId !== null && (int)$damage['warehouse_id'] !== (int)$scopedWarehouseId) {
+            Response::redirect(url('warehouse/damage'), 'error', 'You cannot delete damage records from another warehouse.');
+            return;
+        }
+
+        $userId = Session::userId() ?? 1;
+        Database::beginTransaction();
+        try {
+            Database::execute(
+                "UPDATE warehouse_damages SET deleted_at = NOW(), deleted_by = ? WHERE id = ? AND deleted_at IS NULL",
+                [$userId, $damageId]
+            );
+            AuditService::logStrict('warehouse', 'damage_deleted', 'warehouse_damages', $damageId, [
+                'damage_number' => $damage['damage_number'],
+                'status' => $damage['status'],
+                'quantity' => (int)$damage['quantity'],
+            ], ['deleted' => true], $userId);
+            Database::commit();
+            Session::flash('success', 'Damage case removed from the active list. Inventory and audit history were retained.');
+        } catch (Throwable $e) {
+            if (Database::inTransaction()) {
+                Database::rollback();
+            }
+            error_log('Warehouse damage deletion failed: ' . $e->getMessage());
+            Session::flash('error', 'Could not delete this damage case: ' . $e->getMessage());
+        }
+        Response::redirect(url('warehouse/damage'));
+    }
+
+    public function resolveDamageForm(string $id): void {
+        if (!hasPermission('damage', 'resolve')) {
+            Session::flash('error', 'Access denied: You do not have permission to resolve damage cases.');
+            Response::redirect(url('warehouse/damage'));
+            return;
+        }
+        $damage = WarehouseDamage::find((int)$id);
+        $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+        if (!$damage || !empty($damage['deleted_at'])) {
+            Response::redirect(url('warehouse/damage'), 'error', 'Damage record not found.');
+            return;
+        }
+        if ($scopedWarehouseId !== null && (int)$damage['warehouse_id'] !== (int)$scopedWarehouseId) {
+            Response::redirect(url('warehouse/damage'), 'error', 'You cannot resolve damage records from another warehouse.');
+            return;
+        }
+
+        $variants = Database::fetchAll(
+            "SELECT pv.id, pv.sku, pv.mrp, pv.selling_price, pv.purchase_price,
+                    p.name AS product_name, p.warehouse_supplier_id,
+                    COALESCE(ws.company, ws.name, 'No supplier') AS supplier_name,
+                    sz.name AS size_name, col.name AS color_name
+             FROM product_variants pv
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN warehouse_suppliers ws ON ws.id = p.warehouse_supplier_id
+             LEFT JOIN sizes sz ON sz.id = pv.size_id
+             LEFT JOIN colors col ON col.id = pv.color_id
+             WHERE pv.is_active = 1
+             ORDER BY p.name ASC, pv.sku ASC"
+        );
+        $productionUnits = Database::fetchAll(
+            "SELECT id, name, code FROM production_units WHERE is_active = 1 ORDER BY code ASC, name ASC"
+        );
+
+        Response::view('warehouse.damage.resolve', [
+            'pageTitle' => 'Resolve Damage Case: ' . $damage['damage_number'],
+            'activeModule' => 'warehouse',
+            'activeMenu' => 'wh-damage',
+            'damage' => $damage,
+            'variants' => $variants,
+            'productionUnits' => $productionUnits,
+            'breadcrumb' => [
+                ['label' => 'Warehouse', 'url' => url('warehouse/dashboard')],
+                ['label' => 'Damage Management', 'url' => url('warehouse/damage')],
+                ['label' => $damage['damage_number'], 'url' => url('warehouse/damage/view/' . (int)$damage['id'])],
+                ['label' => 'Resolve'],
+            ],
+        ]);
+    }
+
+    public function resolveDamage(string $id): void {
+        if (!hasPermission('damage', 'resolve')) {
+            Session::flash('error', 'Access denied: You do not have permission to resolve damage cases.');
+            Response::redirect(url('warehouse/damage'));
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::back();
+            return;
+        }
+
+        $damageId = (int)$id;
+        $damage = WarehouseDamage::find($damageId);
+        $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+        if (!$damage || !empty($damage['deleted_at'])) {
+            Response::redirect(url('warehouse/damage'), 'error', 'Damage record not found.');
+            return;
+        }
+        if ($scopedWarehouseId !== null && (int)$damage['warehouse_id'] !== (int)$scopedWarehouseId) {
+            Response::redirect(url('warehouse/damage'), 'error', 'You cannot resolve damage records from another warehouse.');
+            return;
+        }
+        if (!in_array(strtoupper((string)$damage['status']), ['LOGGED', 'INSPECTED'], true) || !empty($damage['resolution_action'])) {
+            Session::flash('error', 'This damage case has already been resolved or is no longer awaiting a resolution.');
+            Response::redirect(url('warehouse/damage/view/' . $damageId));
+            return;
+        }
+
+        $action = strtoupper(trim((string)($_POST['resolution_action'] ?? '')));
+        $reason = trim((string)($_POST['resolution_reason'] ?? ''));
+        $notes = trim((string)($_POST['resolution_notes'] ?? ''));
+        $userId = Session::userId() ?? 1;
+        $allowedActions = ['REPLACEMENT', 'REFUND', 'SUPPLIER_CREDIT', 'REWORK', 'WRITE_OFF'];
+        $allowedReasons = ['QUALITY_ISSUE', 'TRANSIT_DAMAGE', 'MANUFACTURING_DEFECT', 'WRONG_ITEM', 'OTHER'];
+        if (!in_array($action, $allowedActions, true) || !in_array($reason, $allowedReasons, true)) {
+            Session::flash('error', 'Choose a valid resolution action and reason.');
+            Response::redirect(url('warehouse/damage/resolve/' . $damageId));
+            return;
+        }
+
+        if ($action === 'REPLACEMENT') {
+            $replacementVariantId = filter_var($_POST['replacement_variant_id'] ?? null, FILTER_VALIDATE_INT);
+            if (!$replacementVariantId || (int)$damage['quantity'] < 1) {
+                Session::flash('error', 'Select a replacement product before generating its QR.');
+                Response::redirect(url('warehouse/damage/resolve/' . $damageId));
+                return;
+            }
+            $replacementVariant = Database::fetchOne(
+                "SELECT pv.id, pv.sku, p.name AS product_name
+                 FROM product_variants pv
+                 JOIN products p ON p.id = pv.product_id
+                 WHERE pv.id = ? AND pv.is_active = 1",
+                [(int)$replacementVariantId]
+            );
+            if (!$replacementVariant) {
+                Session::flash('error', 'The selected replacement product is not active.');
+                Response::redirect(url('warehouse/damage/resolve/' . $damageId));
+                return;
+            }
+
+            Database::beginTransaction();
+            try {
+                $lockedDamage = Database::fetchOne(
+                    "SELECT id, status, resolution_action, replacement_qr_code
+                     FROM warehouse_damages WHERE id = ? AND deleted_at IS NULL FOR UPDATE",
+                    [$damageId]
+                );
+                if (
+                    !$lockedDamage
+                    || !in_array(strtoupper((string)$lockedDamage['status']), ['LOGGED', 'INSPECTED'], true)
+                    || !empty($lockedDamage['resolution_action'])
+                    || !empty($lockedDamage['replacement_qr_code'])
+                ) {
+                    throw new DomainException('This damage case already has a resolution or replacement QR.');
+                }
+                $existingQr = Database::fetchOne(
+                    "SELECT id FROM warehouse_qr_codes WHERE extra_reason = ? LIMIT 1",
+                    ['Damage replacement for ' . $damage['damage_number']]
+                );
+                if ($existingQr || !empty($damage['replacement_qr_code'])) {
+                    throw new DomainException('A replacement QR has already been generated for this case.');
+                }
+
+                $qrCode = '';
+                for ($attempt = 0; $attempt < 5; $attempt++) {
+                    $candidate = 'DREP-' . $damageId . '-' . random_int(100000, 999999);
+                    $exists = Database::fetchOne(
+                        "SELECT id FROM warehouse_qr_codes WHERE qr_code = ?
+                         UNION ALL
+                         SELECT id FROM product_variants WHERE qr_code = ?
+                         LIMIT 1",
+                        [$candidate, $candidate]
+                    );
+                    if (!$exists) {
+                        $qrCode = $candidate;
+                        break;
+                    }
+                }
+                if ($qrCode === '') {
+                    throw new RuntimeException('Could not generate a unique replacement QR code. Please try again.');
+                }
+
+                Database::execute(
+                    "INSERT INTO warehouse_qr_codes
+                        (qr_code, variant_id, warehouse_id, created_by, pack_quantity, is_extra, extra_reason)
+                     VALUES (?, ?, ?, ?, ?, 1, ?)",
+                    [
+                        $qrCode,
+                        (int)$replacementVariantId,
+                        (int)$damage['warehouse_id'],
+                        $userId,
+                        max(1, (int)$damage['quantity']),
+                        'Damage replacement for ' . $damage['damage_number'],
+                    ]
+                );
+                WarehouseDamage::update($damageId, [
+                    'resolution_action' => $action,
+                    'resolution_reason' => $reason,
+                    'resolution_notes' => $notes !== '' ? $notes : null,
+                    'replacement_variant_id' => (int)$replacementVariantId,
+                    'replacement_qr_code' => $qrCode,
+                ]);
+                AuditService::logStrict('warehouse', 'damage_replacement_qr_generated', 'warehouse_damages', $damageId, null, [
+                    'damage_number' => $damage['damage_number'],
+                    'replacement_variant_id' => (int)$replacementVariantId,
+                    'replacement_sku' => $replacementVariant['sku'],
+                    'replacement_qr_code' => $qrCode,
+                    'quantity' => (int)$damage['quantity'],
+                    'reason' => $reason,
+                    'notes' => $notes,
+                ], $userId);
+                Database::commit();
+                Session::flash('success', 'Replacement QR generated. Scan and confirm it to inward the replacement stock.');
+                Response::redirect(url('warehouse/damage/resolve/' . $damageId));
+                return;
+            } catch (Throwable $e) {
+                if (Database::inTransaction()) {
+                    Database::rollback();
+                }
+                error_log('Damage replacement QR generation failed: ' . $e->getMessage());
+                Session::flash('error', 'Could not generate the replacement QR: ' . $e->getMessage());
+                Response::redirect(url('warehouse/damage/resolve/' . $damageId));
+                return;
+            }
+        }
+
+        $productionUnitId = null;
+        if ($action === 'REWORK') {
+            $productionUnitId = filter_var($_POST['production_unit_id'] ?? null, FILTER_VALIDATE_INT);
+            if (!$productionUnitId || !Database::fetchOne(
+                "SELECT id FROM production_units WHERE id = ? AND is_active = 1",
+                [(int)$productionUnitId]
+            )) {
+                Session::flash('error', 'Select an active production unit for rework.');
+                Response::redirect(url('warehouse/damage/resolve/' . $damageId));
+                return;
+            }
+        }
+
+        $amount = null;
+        if (in_array($action, ['REFUND', 'SUPPLIER_CREDIT'], true)) {
+            $amountValue = $_POST['resolution_amount'] ?? null;
+            if (!is_numeric($amountValue) || (float)$amountValue < 0) {
+                Session::flash('error', 'Enter a valid refund or supplier-credit amount.');
+                Response::redirect(url('warehouse/damage/resolve/' . $damageId));
+                return;
+            }
+            $amount = round((float)$amountValue, 2);
+        }
+
+        Database::beginTransaction();
+        try {
+            $lockedDamage = Database::fetchOne(
+                "SELECT id, status, resolution_action FROM warehouse_damages WHERE id = ? AND deleted_at IS NULL FOR UPDATE",
+                [$damageId]
+            );
+            if (
+                !$lockedDamage
+                || !in_array(strtoupper((string)$lockedDamage['status']), ['LOGGED', 'INSPECTED'], true)
+                || !empty($lockedDamage['resolution_action'])
+            ) {
+                throw new DomainException('This damage case has already been resolved or is no longer awaiting a resolution.');
+            }
+            if (!$lockedDamage) {
+                throw new DomainException('Damage case not found.');
+            }
+            if ($action !== 'REWORK') {
+                $damagedBalance = (float)(Database::fetchOne(
+                    "SELECT quantity FROM stock_balances
+                     WHERE variant_id = ? AND location_type = 'WAREHOUSE'
+                       AND location_id = ? AND stock_state = 'DAMAGED' FOR UPDATE",
+                    [(int)$damage['variant_id'], (int)$damage['warehouse_id']]
+                )['quantity'] ?? 0);
+                if ($damagedBalance < (int)$damage['quantity']) {
+                    throw new DomainException('The quarantined stock balance is lower than this damage case quantity; reconcile stock before resolving it.');
+                }
+                StockService::decrease(
+                    (int)$damage['variant_id'],
+                    'WAREHOUSE',
+                    (int)$damage['warehouse_id'],
+                    'DAMAGED',
+                    (float)$damage['quantity'],
+                    $action === 'WRITE_OFF' ? 'DAMAGE_DISPOSAL' : 'DAMAGE_SUPPLIER_SETTLEMENT',
+                    'warehouse_damage',
+                    $damageId,
+                    $userId,
+                    "Damage case {$damage['damage_number']} resolved as {$action}. Reason: {$reason}"
+                );
+            }
+
+            $newStatus = $action === 'REWORK' ? 'REWORK' : 'WRITTEN_OFF';
+            WarehouseDamage::update($damageId, [
+                'status' => $newStatus,
+                'resolution_action' => $action,
+                'resolution_reason' => $reason,
+                'resolution_notes' => $notes !== '' ? $notes : null,
+                'resolution_amount' => $amount,
+                'production_unit_id' => $productionUnitId,
+            ]);
+
+            if ($action === 'REWORK') {
+                $existingRework = Database::fetchOne(
+                    "SELECT id FROM production_warehouse_reworks WHERE warehouse_damage_id = ?",
+                    [$damageId]
+                );
+                $reworkData = [
+                    'rework_number' => str_starts_with((string)$damage['damage_number'], 'DMG-')
+                        ? str_replace('DMG-', 'RWK-', (string)$damage['damage_number'])
+                        : 'RWK-' . $damage['damage_number'],
+                    'warehouse_id' => (int)$damage['warehouse_id'],
+                    'production_batch_id' => !empty($damage['batch_id']) ? (int)$damage['batch_id'] : null,
+                    'production_outward_id' => !empty($damage['production_outward_id']) ? (int)$damage['production_outward_id'] : null,
+                    'warehouse_damage_id' => $damageId,
+                    'variant_id' => (int)$damage['variant_id'],
+                    'production_unit_id' => (int)$productionUnitId,
+                    'quantity' => (int)$damage['quantity'],
+                    'defect_type' => $damage['defect_type'] ?? 'OTHER',
+                    'damage_reason' => $damage['damage_reason'],
+                    'defect_notes' => $notes !== '' ? $notes : ($damage['defect_notes'] ?? ''),
+                    'photo_url' => $damage['photo_url'] ?? null,
+                    'received_date' => date('Y-m-d'),
+                    'received_by' => $userId,
+                    'status' => 'RECEIVED',
+                    'created_by' => $userId,
+                ];
+                if ($existingRework) {
+                    ProductionWarehouseRework::update((int)$existingRework['id'], [
+                        'production_unit_id' => (int)$productionUnitId,
+                        'quantity' => (int)$damage['quantity'],
+                        'defect_notes' => $reworkData['defect_notes'],
+                        'status' => 'RECEIVED',
+                    ]);
+                } else {
+                    ProductionWarehouseRework::create($reworkData);
+                }
+            }
+
+            AuditService::logStrict('warehouse', 'damage_resolved', 'warehouse_damages', $damageId, [
+                'status' => $damage['status'],
+                'resolution_action' => null,
+            ], [
+                'status' => $newStatus,
+                'resolution_action' => $action,
+                'resolution_reason' => $reason,
+                'resolution_amount' => $amount,
+                'production_unit_id' => $productionUnitId,
+                'notes' => $notes,
+            ], $userId);
+            Database::commit();
+            Session::flash('success', 'Damage case resolved as ' . str_replace('_', ' ', strtolower($action)) . '.');
+            Response::redirect(url('warehouse/damage/view/' . $damageId));
+        } catch (Throwable $e) {
+            if (Database::inTransaction()) {
+                Database::rollback();
+            }
+            error_log('Damage case resolution failed: ' . $e->getMessage());
+            Session::flash('error', 'Could not resolve this damage case: ' . $e->getMessage());
+            Response::redirect(url('warehouse/damage/resolve/' . $damageId));
+        }
+    }
+
+    public function inwardDamageReplacement(string $id): void {
+        if (!hasPermission('damage', 'resolve')) {
+            Session::flash('error', 'Access denied: You do not have permission to inward replacement stock.');
+            Response::redirect(url('warehouse/damage'));
+            return;
+        }
+        if (!CSRF::validateRequest()) {
+            Session::flash('error', 'Invalid security token. Please try again.');
+            Response::back();
+            return;
+        }
+
+        $damageId = (int)$id;
+        $damage = WarehouseDamage::find($damageId);
+        $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
+        if (
+            !$damage || !empty($damage['deleted_at'])
+            || strtoupper((string)($damage['resolution_action'] ?? '')) !== 'REPLACEMENT'
+            || empty($damage['replacement_variant_id'])
+            || empty($damage['replacement_qr_code'])
+        ) {
+            Response::redirect(url('warehouse/damage'), 'error', 'A pending replacement QR was not found for this damage case.');
+            return;
+        }
+        if ($scopedWarehouseId !== null && (int)$damage['warehouse_id'] !== (int)$scopedWarehouseId) {
+            Response::redirect(url('warehouse/damage'), 'error', 'You cannot inward stock into another warehouse.');
+            return;
+        }
+        if (!empty($damage['replacement_inwarded_at'])) {
+            Response::redirect(url('warehouse/damage/view/' . $damageId), 'error', 'This replacement QR has already been inwarded.');
+            return;
+        }
+
+        $userId = Session::userId() ?? 1;
+        Database::beginTransaction();
+        try {
+            $lockedDamage = Database::fetchOne(
+                "SELECT id, variant_id, warehouse_id, quantity, status, resolution_action,
+                        replacement_variant_id, replacement_qr_code, replacement_inwarded_at
+                 FROM warehouse_damages WHERE id = ? AND deleted_at IS NULL FOR UPDATE",
+                [$damageId]
+            );
+            if (
+                !$lockedDamage
+                || strtoupper((string)$lockedDamage['resolution_action']) !== 'REPLACEMENT'
+                || !empty($lockedDamage['replacement_inwarded_at'])
+                || !in_array(strtoupper((string)$lockedDamage['status']), ['LOGGED', 'INSPECTED'], true)
+            ) {
+                throw new DomainException('This replacement is no longer pending inward.');
+            }
+
+            $qr = Database::fetchOne(
+                "SELECT id, inwarded_at FROM warehouse_qr_codes
+                 WHERE qr_code = ? AND variant_id = ? AND warehouse_id = ? FOR UPDATE",
+                [
+                    $lockedDamage['replacement_qr_code'],
+                    (int)$lockedDamage['replacement_variant_id'],
+                    (int)$lockedDamage['warehouse_id'],
+                ]
+            );
+            if (!$qr || !empty($qr['inwarded_at'])) {
+                throw new DomainException('The replacement QR is missing or has already been inwarded.');
+            }
+
+            $damagedBalance = (float)(Database::fetchOne(
+                "SELECT quantity FROM stock_balances
+                 WHERE variant_id = ? AND location_type = 'WAREHOUSE'
+                   AND location_id = ? AND stock_state = 'DAMAGED' FOR UPDATE",
+                [(int)$lockedDamage['variant_id'], (int)$lockedDamage['warehouse_id']]
+            )['quantity'] ?? 0);
+            if ($damagedBalance < (int)$lockedDamage['quantity']) {
+                throw new DomainException('The quarantined stock balance is lower than this case quantity; reconcile stock before inwarding the replacement.');
+            }
+
+            StockService::decrease(
+                (int)$lockedDamage['variant_id'],
+                'WAREHOUSE',
+                (int)$lockedDamage['warehouse_id'],
+                'DAMAGED',
+                (float)$lockedDamage['quantity'],
+                'DAMAGE_SUPPLIER_RETURN',
+                'warehouse_damage',
+                $damageId,
+                $userId,
+                "Damaged goods returned to supplier for case {$damage['damage_number']}"
+            );
+            StockService::increase(
+                (int)$lockedDamage['replacement_variant_id'],
+                'WAREHOUSE',
+                (int)$lockedDamage['warehouse_id'],
+                'AVAILABLE',
+                (float)$lockedDamage['quantity'],
+                'DAMAGE_REPLACEMENT_INWARD',
+                'warehouse_damage',
+                $damageId,
+                $userId,
+                "Replacement stock inwarded for damage case {$damage['damage_number']} using QR {$lockedDamage['replacement_qr_code']}"
+            );
+            Database::execute(
+                "UPDATE warehouse_qr_codes SET inwarded_at = NOW(), created_by = ? WHERE id = ?",
+                [$userId, (int)$qr['id']]
+            );
+            WarehouseDamage::update($damageId, [
+                'status' => 'REPAIRED',
+                'replacement_inwarded_at' => date('Y-m-d H:i:s'),
+            ]);
+            AuditService::logStrict('warehouse', 'damage_replacement_inwarded', 'warehouse_damages', $damageId, [
+                'replacement_inwarded_at' => null,
+            ], [
+                'replacement_variant_id' => (int)$lockedDamage['replacement_variant_id'],
+                'replacement_qr_code' => $lockedDamage['replacement_qr_code'],
+                'quantity' => (int)$lockedDamage['quantity'],
+                'replacement_inwarded_at' => date('Y-m-d H:i:s'),
+            ], $userId);
+            Database::commit();
+            Session::flash('success', 'Replacement QR inwarded and stock updated successfully.');
+            Response::redirect(url('warehouse/damage/view/' . $damageId));
+        } catch (Throwable $e) {
+            if (Database::inTransaction()) {
+                Database::rollback();
+            }
+            error_log('Damage replacement inward failed: ' . $e->getMessage());
+            Session::flash('error', 'Could not inward the replacement stock: ' . $e->getMessage());
+            Response::redirect(url('warehouse/damage/resolve/' . $damageId));
+        }
+    }
+
     public function createDamage(): void {
         if (!hasPermission('damage', 'create')) {
             Session::flash('error', 'Access denied: You do not have permission to log damaged stock.');
@@ -3200,6 +3969,7 @@ class WarehouseController {
         if (!CSRF::validateRequest()) {
             Session::flash('error', 'Invalid security token. Please try again.');
             Response::back();
+            return;
         }
 
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
@@ -3562,6 +4332,15 @@ class WarehouseController {
                     'status'        => $status,
                     'reported_by'   => $userId,
                 ]);
+                AuditService::logStrict('warehouse', 'damage_logged', 'warehouse_damages', $damageId, null, [
+                    'damage_number' => $damageNumber,
+                    'variant_id' => $variantId,
+                    'sku' => $packInfo['sku'] ?? null,
+                    'quantity' => $qty,
+                    'tag_code' => $tagCode,
+                    'damage_reason' => $damageReason,
+                    'status' => $status,
+                ], $userId);
 
                 if ($actionType === 'rework') {
                     // Deduct from available stock and dispatch out to factory for rework
@@ -4979,8 +5758,9 @@ class WarehouseController {
         }
         $damageId = (int)$id;
         $damage = WarehouseDamage::find($damageId);
-        if (!$damage) {
+        if (!$damage || !empty($damage['deleted_at'])) {
             Response::redirect(url('warehouse/damage'), 'error', 'Damage record not found.');
+            return;
         }
 
         // Fetch audit logs for this damage case
@@ -5026,12 +5806,22 @@ class WarehouseController {
         if (!CSRF::validateRequest()) {
             Session::flash('error', 'Invalid security token. Please try again.');
             Response::back();
+            return;
         }
 
         $damageId = (int)$id;
         $damage = WarehouseDamage::find($damageId);
-        if (!$damage) {
+        if (!$damage || !empty($damage['deleted_at'])) {
             Response::redirect(url('warehouse/damage'), 'error', 'Damage record not found.');
+            return;
+        }
+        if (
+            !empty($damage['resolution_action'])
+            && strtoupper((string)$damage['resolution_action']) !== 'REWORK'
+        ) {
+            Session::flash('error', 'This case is being handled by a supplier resolution and cannot use the standard disposition form.');
+            Response::redirect(url('warehouse/damage/view/' . $damageId));
+            return;
         }
 
         $status = $_POST['status'] ?? 'LOGGED';
@@ -17070,6 +17860,26 @@ class WarehouseController {
         }
         unset($pp);
 
+        $damageAuditLogs = Database::fetchAll(
+            "SELECT al.id, al.action, al.previous_value, al.new_value, al.created_at,
+                    u.full_name AS user_name,
+                    wd.damage_number, wd.status AS damage_status,
+                    pv.sku AS damaged_sku, p.name AS damaged_product_name,
+                    rpv.sku AS replacement_sku, rp.name AS replacement_product_name
+             FROM audit_logs al
+             JOIN warehouse_damages wd
+               ON al.reference_type = 'warehouse_damages' AND al.reference_id = wd.id
+             JOIN product_variants pv ON pv.id = wd.variant_id
+             JOIN products p ON p.id = pv.product_id
+             LEFT JOIN product_variants rpv ON rpv.id = wd.replacement_variant_id
+             LEFT JOIN products rp ON rp.id = rpv.product_id
+             LEFT JOIN users u ON u.id = al.user_id
+             WHERE al.module = 'warehouse'
+               AND (p.warehouse_supplier_id = ? OR rp.warehouse_supplier_id = ?)
+             ORDER BY al.created_at DESC, al.id DESC",
+            [$id, $id]
+        );
+
         $scopedWarehouseId = function_exists('currentWarehouseId') ? currentWarehouseId() : null;
         $warehouses = function_exists('getScopedWarehouses') ? getScopedWarehouses() : Warehouse::getAll(['is_active' => 1]);
         $hsnCodes = Database::fetchAll("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
@@ -17090,6 +17900,7 @@ class WarehouseController {
             'seller'            => $seller,
             'orders'            => $orders,
             'purchasedProducts' => $purchasedProducts,
+            'damageAuditLogs'   => $damageAuditLogs,
             'warehouses'        => $warehouses,
             'stats'             => $stats,
             'breadcrumb'        => [
