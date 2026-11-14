@@ -2424,7 +2424,23 @@ class ShopService {
                 }
 
                 if ($receivedTags) {
-                    $inventoryTags = array_slice($receivedTags, 0, $receivedQty ?: count($receivedTags));
+                    $batchDamagedTags = array_values(array_filter(
+                        $receivedTags,
+                        static fn(string $tag): bool => isset($damagedTagsMap[$tag])
+                    ));
+                    $batchDamagedTags = array_slice($batchDamagedTags, 0, min(
+                        (int)($ai['damaged_qty'] ?? 0),
+                        $receivedQty
+                    ));
+                    $goodTagLimit = max(0, $receivedQty - count($batchDamagedTags));
+                    $batchGoodTags = array_values(array_filter(
+                        $receivedTags,
+                        static fn(string $tag): bool => !isset($damagedTagsMap[$tag])
+                    ));
+                    $inventoryTags = array_merge(
+                        array_slice($batchGoodTags, 0, $goodTagLimit),
+                        $batchDamagedTags
+                    );
                 } elseif ($receivedQty > 0) {
                     $batchDamagedTags = array_values(array_intersect($batchTags, array_keys($damagedTagsMap)));
                     $batchDamagedTags = array_slice($batchDamagedTags, 0, min(

@@ -2467,7 +2467,7 @@ function submitSupplierAddHsn(e) {
     p.append('description', desc || `HSN ${hsn}`);
     p.append('gst_rate', gst);
 
-    fetch(`${APP_URL}/api/hsn-codes/store`, {
+    fetch(<?= json_encode(url('api/hsn-codes/store')) ?>, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
         body: p.toString()
