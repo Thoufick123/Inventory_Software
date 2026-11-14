@@ -146,7 +146,7 @@ $existingItems = array_map(static function (array $item): array {
             <div class="card border-0 shadow-sm mb-3">
                 <div class="table-responsive">
                     <table class="table align-middle mb-0">
-                        <thead class="table-light"><tr><th>Product / QR codes</th><th class="text-end">MRP</th><th style="width:100px">Discount %</th><th style="width:120px">Price / piece<br><small>before tax</small></th><th style="min-width:330px">GST / Tax details</th><th class="text-end">Tax</th><th class="text-end">Total incl. tax</th><th></th></tr></thead>
+                        <thead class="table-light"><tr><th>Product / QR codes</th><th class="text-end">MRP</th><th style="width:100px">Discount %</th><th style="width:120px">Price / piece<br><small>incl. tax</small></th><th style="min-width:330px">GST / Tax details</th><th class="text-end">Tax (Incl.)</th><th class="text-end">Total</th><th></th></tr></thead>
                         <tbody id="billCart"><tr><td colspan="7" class="text-center text-muted py-5">Scan or search for items to add to this bill.</td></tr></tbody>
                     </table>
                 </div>
@@ -158,8 +158,8 @@ $existingItems = array_map(static function (array $item): array {
                         <div class="col-lg-6">
                             <div class="d-flex justify-content-between py-1"><span class="text-muted">Gross / MRP</span><strong id="grossTotal">₹0.00</strong></div>
                             <div class="d-flex justify-content-between py-1"><span class="text-muted">Discount</span><strong id="discountTotal">₹0.00</strong></div>
-                            <div class="d-flex justify-content-between py-1"><span class="text-muted">Subtotal before GST</span><strong id="subtotal">₹0.00</strong></div>
-                            <div class="d-flex justify-content-between py-1"><span class="text-muted">Total GST</span><strong id="taxTotal">₹0.00</strong></div>
+                            <div class="d-flex justify-content-between py-1"><span class="text-muted">Taxable Base</span><strong id="subtotal">₹0.00</strong></div>
+                            <div class="d-flex justify-content-between py-1"><span class="text-muted">Total GST (Incl.)</span><strong id="taxTotal">₹0.00</strong></div>
                             <hr>
                             <div class="d-flex justify-content-between fs-5"><span class="fw-bold">Total</span><strong id="grandTotal">₹0.00</strong></div>
                             <div id="splitBalance" class="small text-muted text-end mt-2"></div>
@@ -463,7 +463,7 @@ $existingItems = array_map(static function (array $item): array {
         [...cart.values()].forEach(item => {
             const quantity = item.tags.length;
             const lineGross = Number(item.mrp || 0) * quantity;
-            const taxable = Number(item.unit_price || 0) * quantity;
+            const netLine = Number(item.unit_price || 0) * quantity;
             const inputType = item.tax_input_type || 'PERCENT';
             const gstType = item.gst_type || 'BOTH';
             const rates = {
@@ -472,14 +472,27 @@ $existingItems = array_map(static function (array $item): array {
                 IGST: Number(item.igst_rate || 0)
             };
             const includedTypes = gstType === 'BOTH' ? ['SGST', 'CGST'] : (gstType === 'EXEMPTED' ? [] : [gstType]);
-            const lineTax = includedTypes.reduce((sum, type) => {
-                const rate = rates[type] || 0;
-                const componentTax = inputType === 'PERCENT' ? taxable * rate / 100 : rate * quantity;
-                return sum + Math.round((componentTax + Number.EPSILON) * 100) / 100;
-            }, 0);
-            const lineTotal = taxable + lineTax;
+            
+            let totalRatePct = 0;
+            includedTypes.forEach(type => {
+                totalRatePct += rates[type] || 0;
+            });
+
+            // GST is INCLUSIVE inside selling price
+            let taxable = netLine;
+            let lineTax = 0;
+            if (inputType === 'PERCENT' && totalRatePct > 0) {
+                taxable = Math.round((netLine / (1 + (totalRatePct / 100)) + Number.EPSILON) * 100) / 100;
+                lineTax = Math.round((netLine - taxable + Number.EPSILON) * 100) / 100;
+            } else if (inputType !== 'PERCENT') {
+                const perPieceTax = includedTypes.reduce((sum, type) => sum + (rates[type] || 0), 0);
+                lineTax = Math.round((perPieceTax * quantity + Number.EPSILON) * 100) / 100;
+                taxable = Math.max(0, netLine - lineTax);
+            }
+
+            const lineTotal = netLine;
             gross += lineGross;
-            discount += Math.max(0, lineGross - taxable);
+            discount += Math.max(0, lineGross - netLine);
             subtotal += taxable;
             taxes += lineTax;
             grandTotal += lineTotal;

@@ -430,6 +430,7 @@ class Role {
             ['damage', 'create', 'Log Warehouse Damages & Salvage Records', 'damage.create', null],
             ['damage', 'edit', 'Edit Damage Records & Salvage Status', 'damage.edit', null],
             ['damage', 'delete', 'Delete Warehouse Damage Records', 'damage.delete', null],
+            ['damage', 'resolve', 'Resolve Warehouse Damage Cases', 'damage.resolve', null],
 
             ['returns', 'view', 'View Warehouse Return Packages & RTO', 'returns.view', null],
             ['returns', 'create', 'Process Shop Return Packages & Restock', 'returns.create', null],

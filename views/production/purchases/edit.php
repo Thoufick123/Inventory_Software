@@ -237,7 +237,11 @@ $taxValueForItem = static function (array $item, string $type): float {
                             <input type="hidden" name="items[<?= $key ?>][id]" value="<?= $key ?>">
                             <input type="hidden" name="items[<?= $key ?>][item_type]" value="GENERAL_SUPPLY">
                             <div class="row g-3">
-                                <div class="col-lg-3 col-md-6">
+                                <div class="col-lg-2 col-md-4">
+                                    <label class="form-label">Other Product No/Code</label>
+                                    <input name="items[<?= $key ?>][product_code]" class="form-control supply-product-code font-monospace text-uppercase" maxlength="50" value="<?= e($item['product_code'] ?? ($item['roll_number'] ?? '')) ?>" placeholder="e.g. OTH-001 or Code">
+                                </div>
+                                <div class="col-lg-3 col-md-5">
                                     <label class="form-label required">Item Name / Description *</label>
                                     <input name="items[<?= $key ?>][item_name]" class="form-control supply-name text-uppercase" maxlength="255" value="<?= e($item['item_name']) ?>" required>
                                 </div>
@@ -308,7 +312,7 @@ $taxValueForItem = static function (array $item, string $type): float {
             <div class="card border shadow-sm mt-3">
                 <div class="card-header bg-light py-2 px-3 d-flex align-items-center justify-content-between"><span class="fw-bold small"><i class="bi bi-table me-1 text-success"></i>Other Garment Supplies Details Table</span><span class="badge bg-secondary-subtle text-secondary border" id="supplyTableCountBadge">0 Items</span></div>
                 <div class="table-responsive"><table class="table table-hover table-bordered align-middle mb-0" style="font-size:13px">
-                    <thead class="table-light small text-uppercase"><tr><th class="text-center">#</th><th>Item Name / Description</th><th>HSN</th><th class="text-end">Quantity</th><th>Unit</th><th class="text-end">Unit Price</th><th class="text-end">Base Value</th><th>GST Type</th><th class="text-end">Tax</th><th class="text-end bg-success-subtle text-success">Total Value</th></tr></thead>
+                    <thead class="table-light small text-uppercase"><tr><th class="text-center">#</th><th>Other Product No/Code</th><th>Item Name / Description</th><th>HSN</th><th class="text-end">Quantity</th><th>Unit</th><th class="text-end">Unit Price</th><th class="text-end">Base Value</th><th>GST Type</th><th class="text-end">Tax</th><th class="text-end bg-success-subtle text-success">Total Value</th></tr></thead>
                     <tbody id="supplyDetailsTableBody"></tbody><tfoot id="supplyDetailsTableFoot" class="table-light fw-bold"></tfoot>
                 </table></div>
             </div>
@@ -507,7 +511,11 @@ $taxValueForItem = static function (array $item, string $type): float {
         </div>
         <div class="card-body p-3">
             <div class="row g-3">
-                <div class="col-lg-3 col-md-6">
+                <div class="col-lg-2 col-md-4">
+                    <label class="form-label">Other Product No/Code</label>
+                    <input class="form-control supply-product-code font-monospace text-uppercase" maxlength="50" placeholder="e.g. OTH-001 or Code">
+                </div>
+                <div class="col-lg-3 col-md-5">
                     <label class="form-label required">Item Name / Description *</label>
                     <input class="form-control supply-name text-uppercase" maxlength="255" placeholder="E.G. SEWING NEEDLES, THREAD, BUTTONS" required>
                 </div>
@@ -1119,11 +1127,12 @@ $taxValueForItem = static function (array $item, string $type): float {
             supplyBase += base;
             supplyTax += tax.amount;
             supplyTotal += base + tax.amount;
-            supplyTableRows.push(`<tr><td class="text-center">${index + 1}</td><td>${safe(row.querySelector('.supply-name').value.trim() || '—')}</td><td><span class="badge bg-light text-dark border font-monospace">${safe(hsn)}</span></td><td class="text-end">${quantity.toLocaleString('en-IN', {maximumFractionDigits: 3})}</td><td>${safe(unit)}</td><td class="text-end">${money(unitPrice)}</td><td class="text-end">${money(base)}</td><td>${tax.type === 'BOTH' ? 'SGST + CGST' : tax.type}</td><td class="text-end">${money(tax.amount)}</td><td class="text-end fw-bold text-success">${money(base + tax.amount)}</td></tr>`);
+            const prodCode = row.querySelector('.supply-product-code')?.value?.trim() || '—';
+            supplyTableRows.push(`<tr><td class="text-center">${index + 1}</td><td><span class="badge bg-light text-dark border font-monospace">${safe(prodCode)}</span></td><td>${safe(row.querySelector('.supply-name').value.trim() || '—')}</td><td><span class="badge bg-light text-dark border font-monospace">${safe(hsn)}</span></td><td class="text-end">${quantity.toLocaleString('en-IN', {maximumFractionDigits: 3})}</td><td>${safe(unit)}</td><td class="text-end">${money(unitPrice)}</td><td class="text-end">${money(base)}</td><td>${tax.type === 'BOTH' ? 'SGST + CGST' : tax.type}</td><td class="text-end">${money(tax.amount)}</td><td class="text-end fw-bold text-success">${money(base + tax.amount)}</td></tr>`);
         });
         document.getElementById('supplyTableCountBadge').textContent = `${supplyRows.length} ${supplyRows.length === 1 ? 'Item' : 'Items'}`;
-        supplyTableBody.innerHTML = supplyTableRows.length ? supplyTableRows.join('') : '<tr><td colspan="10" class="text-center text-muted py-4">Add garment supplies to see their purchase details.</td></tr>';
-        supplyTableFoot.innerHTML = supplyTableRows.length ? `<tr><td colspan="6" class="text-end">Totals</td><td class="text-end">${money(supplyBase)}</td><td></td><td class="text-end">${money(supplyTax)}</td><td class="text-end text-success">${money(supplyTotal)}</td></tr>` : '';
+        supplyTableBody.innerHTML = supplyTableRows.length ? supplyTableRows.join('') : '<tr><td colspan="11" class="text-center text-muted py-4">Add garment supplies to see their purchase details.</td></tr>';
+        supplyTableFoot.innerHTML = supplyTableRows.length ? `<tr><td colspan="7" class="text-end">Totals</td><td class="text-end">${money(supplyBase)}</td><td></td><td class="text-end">${money(supplyTax)}</td><td class="text-end text-success">${money(supplyTotal)}</td></tr>` : '';
 
         subtotal += supplyBase;
         taxes += supplyTax;
@@ -1145,7 +1154,7 @@ $taxValueForItem = static function (array $item, string $type): float {
         const row = document.getElementById('editSupplyTemplate').content.firstElementChild.cloneNode(true);
         const key = `new-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
         const itemKey = `new_${key.replace(/[^A-Za-z0-9_]/g, '')}`;
-        const names = {'.supply-name':'item_name','.supply-hsn':'hsn_code','.supply-quantity':'quantity','.supply-unit':'unit','.supply-price':'unit_price','.item-gst-type':'gst_type','.item-tax-mode':'tax_mode','.item-tax-value':'tax_value','.item-cgst-value':'cgst_tax_value'};
+        const names = {'.supply-product-code':'product_code', '.supply-name':'item_name','.supply-hsn':'hsn_code','.supply-quantity':'quantity','.supply-unit':'unit','.supply-price':'unit_price','.item-gst-type':'gst_type','.item-tax-mode':'tax_mode','.item-tax-value':'tax_value','.item-cgst-value':'cgst_tax_value'};
         Object.entries(names).forEach(([selector, field]) => {
             const input = row.querySelector(selector);
             if (input) input.name = `items[${itemKey}][${field}]`;

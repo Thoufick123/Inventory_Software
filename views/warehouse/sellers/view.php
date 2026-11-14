@@ -243,6 +243,11 @@
                             <i class="bi bi-receipt-cutoff me-2 text-success"></i>Purchase Bills &amp; Inward Receipts (<?= count($orders) ?>)
                         </button>
                     </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link fw-semibold" id="damage-audit-tab" data-bs-toggle="tab" data-bs-target="#damageAuditTabPane" type="button" role="tab" aria-controls="damageAuditTabPane" aria-selected="false">
+                            <i class="bi bi-clipboard2-data me-2 text-danger"></i>Damage &amp; Resolution Audit (<?= count($damageAuditLogs) ?>)
+                        </button>
+                    </li>
                 </ul>
             </div>
 
@@ -470,6 +475,71 @@
                                                             </span>
                                                         <?php endif; ?>
                                                     </div>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+
+                    <div class="tab-pane fade" id="damageAuditTabPane" role="tabpanel" aria-labelledby="damage-audit-tab">
+                        <?php if (empty($damageAuditLogs)): ?>
+                            <div class="text-center py-5">
+                                <i class="bi bi-clipboard2-check fs-1 text-muted d-block mb-3"></i>
+                                <h6 class="text-muted">No damage or resolution events for this supplier.</h6>
+                                <p class="text-muted small mb-0">Damage cases and supplier resolutions for linked products will appear here.</p>
+                            </div>
+                        <?php else: ?>
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th class="ps-3">Date / User</th>
+                                            <th>Damage Case</th>
+                                            <th>Event</th>
+                                            <th>Product / Replacement</th>
+                                            <th>Audit Details</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($damageAuditLogs as $audit): ?>
+                                            <?php
+                                                $oldAuditData = json_decode((string)($audit['previous_value'] ?? ''), true);
+                                                $newAuditData = json_decode((string)($audit['new_value'] ?? ''), true);
+                                            ?>
+                                            <tr>
+                                                <td class="ps-3 text-nowrap">
+                                                    <div class="fw-semibold"><?= e(date('d M Y, h:i A', strtotime($audit['created_at']))) ?></div>
+                                                    <small class="text-muted"><?= e($audit['user_name'] ?? 'System') ?></small>
+                                                </td>
+                                                <td>
+                                                    <div class="font-monospace fw-semibold text-danger"><?= e($audit['damage_number']) ?></div>
+                                                    <small class="text-muted">Current: <?= e($audit['damage_status']) ?></small>
+                                                </td>
+                                                <td>
+                                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle">
+                                                        <?= e(ucwords(strtolower(str_replace('_', ' ', $audit['action'])))) ?>
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <div class="fw-semibold"><?= e($audit['damaged_product_name']) ?></div>
+                                                    <small class="font-monospace text-muted"><?= e($audit['damaged_sku']) ?></small>
+                                                    <?php if (!empty($audit['replacement_sku'])): ?>
+                                                        <div class="small text-success mt-1">
+                                                            Replacement: <?= e($audit['replacement_product_name']) ?>
+                                                            <span class="font-monospace">(<?= e($audit['replacement_sku']) ?>)</span>
+                                                        </div>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td class="small text-break" style="min-width:220px; max-width:360px;">
+                                                    <?php if (!empty($oldAuditData)): ?>
+                                                        <div><span class="text-muted">Before:</span> <?= e(json_encode($oldAuditData, JSON_UNESCAPED_UNICODE)) ?></div>
+                                                    <?php endif; ?>
+                                                    <?php if (!empty($newAuditData)): ?>
+                                                        <div><span class="text-muted">After:</span> <?= e(json_encode($newAuditData, JSON_UNESCAPED_UNICODE)) ?></div>
+                                                    <?php endif; ?>
                                                 </td>
                                             </tr>
                                         <?php endforeach; ?>

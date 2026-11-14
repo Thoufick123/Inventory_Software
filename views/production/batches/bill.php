@@ -14,7 +14,7 @@
             font-size: 13px;
         }
         .bill-container {
-            max-width: 850px;
+            max-width: 960px;
             margin: 20px auto;
             background: #fff;
             padding: 30px;
@@ -114,25 +114,89 @@
         <table class="table table-bordered table-bill align-middle mb-0">
             <thead>
                 <tr>
-                    <th class="text-center" style="width: 5%;">#</th>
+                    <th class="text-center" style="width: 4%;">#</th>
                     <th>Product &amp; SKU</th>
-                    <th class="text-center" style="width: 12%;">Size</th>
-                    <th class="text-center" style="width: 12%;">Color</th>
-                    <th class="text-center" style="width: 15%;">Quantity</th>
-                    <th class="text-end" style="width: 15%;">Rate (₹)</th>
-                    <th class="text-end" style="width: 18%;">Valuation (₹)</th>
+                    <th class="text-center" style="width: 9%;">HSN Code</th>
+                    <th class="text-center" style="width: 7%;">Size</th>
+                    <th class="text-center" style="width: 8%;">Color</th>
+                    <th class="text-center" style="width: 9%;">Quantity</th>
+                    <th class="text-end" style="width: 10%;">Rate (₹)</th>
+                    <th class="text-center" style="width: 12%;">GST Format</th>
+                    <th class="text-end" style="width: 13%;">Tax Amount (₹)</th>
+                    <th class="text-end" style="width: 14%;">Valuation (₹)</th>
                 </tr>
             </thead>
             <tbody>
                 <?php 
+                    $puGstin = trim((string)($prodUnit['gst_number'] ?? ($batch['production_unit_gstin'] ?? '33AAACS1429B1ZQ')));
+                    $whGstin = trim((string)($batch['warehouse_gstin'] ?? ''));
+                    $puStateCode = strlen($puGstin) >= 2 ? substr($puGstin, 0, 2) : '33';
+                    $whStateCode = strlen($whGstin) >= 2 ? substr($whGstin, 0, 2) : $puStateCode;
+                    $isInterStateConsignment = ($whStateCode !== '' && $puStateCode !== '' && $whStateCode !== $puStateCode);
+
                     $totalQty = 0;
-                    $totalAmt = 0.0;
+                    $totalTaxable = 0.0;
+                    $totalCgst = 0.0;
+                    $totalSgst = 0.0;
+                    $totalIgst = 0.0;
+                    $totalTax = 0.0;
+                    $totalValuation = 0.0;
+
                     foreach ($items as $idx => $it):
                         $qty = (int)($it['quantity'] ?? 0);
                         $rate = (float)($it['qc_discount_price'] ?: ($it['qc_base_price'] ?: ($it['selling_price'] ?: ($it['mrp'] ?: 0))));
-                        $amt = $qty * $rate;
+                        $grossValuation = round($qty * $rate, 2);
+                        $hsn = !empty($it['hsn_code']) ? $it['hsn_code'] : '6109';
+                        $gstPercent = isset($it['gst_rate']) && (float)$it['gst_rate'] > 0 
+                            ? (float)$it['gst_rate'] 
+                            : (isset($it['gst_percentage']) && (float)$it['gst_percentage'] > 0 ? (float)$it['gst_percentage'] : 5.0);
+
+                        $itemGstType = !empty($it['gst_type']) ? strtoupper($it['gst_type']) : ($isInterStateConsignment ? 'IGST' : 'BOTH');
+
+                        // GST is INCLUSIVE: Base = Gross / (1 + GST%), Tax = Gross - Base
+                        if ($itemGstType !== 'EXEMPTED' && $gstPercent > 0) {
+                            $taxable = round($grossValuation / (1 + ($gstPercent / 100)), 2);
+                            $taxAmount = round($grossValuation - $taxable, 2);
+                        } else {
+                            $taxable = $grossValuation;
+                            $taxAmount = 0.0;
+                        }
+
+                        $cgstRate = 0.0;
+                        $sgstRate = 0.0;
+                        $igstRate = 0.0;
+                        $cgstAmount = 0.0;
+                        $sgstAmount = 0.0;
+                        $igstAmount = 0.0;
+
+                        if ($itemGstType === 'IGST') {
+                            $igstRate = $gstPercent;
+                            $igstAmount = $taxAmount;
+                        } elseif ($itemGstType === 'CGST') {
+                            $cgstRate = $gstPercent;
+                            $cgstAmount = $taxAmount;
+                        } elseif ($itemGstType === 'SGST') {
+                            $sgstRate = $gstPercent;
+                            $sgstAmount = $taxAmount;
+                        } elseif ($itemGstType === 'EXEMPTED' || $gstPercent <= 0) {
+                            $taxAmount = 0.0;
+                        } else {
+                            $itemGstType = 'BOTH';
+                            $cgstRate = round($gstPercent / 2, 2);
+                            $sgstRate = round($gstPercent / 2, 2);
+                            $cgstAmount = round($taxAmount / 2, 2);
+                            $sgstAmount = round($taxAmount - $cgstAmount, 2);
+                        }
+
+                        $valuation = $grossValuation;
+
                         $totalQty += $qty;
-                        $totalAmt += $amt;
+                        $totalTaxable += $taxable;
+                        $totalCgst += $cgstAmount;
+                        $totalSgst += $sgstAmount;
+                        $totalIgst += $igstAmount;
+                        $totalTax += $taxAmount;
+                        $totalValuation += $valuation;
                 ?>
                     <tr>
                         <td class="text-center"><?= $idx + 1 ?></td>
@@ -140,20 +204,73 @@
                             <div class="fw-bold"><?= htmlspecialchars($it['product_name'] ?? 'Finished Product') ?></div>
                             <div class="small text-muted font-monospace"><?= htmlspecialchars($it['sku'] ?? '—') ?></div>
                         </td>
+                        <td class="text-center font-monospace small"><?= htmlspecialchars($hsn) ?></td>
                         <td class="text-center fw-semibold"><?= htmlspecialchars($it['size_name'] ?: 'Std') ?></td>
                         <td class="text-center fw-semibold"><?= htmlspecialchars($it['color_name'] ?: 'Std') ?></td>
                         <td class="text-center fw-bold text-dark fs-6"><?= number_format($qty) ?> pcs</td>
                         <td class="text-end font-monospace">₹<?= number_format($rate, 2) ?></td>
-                        <td class="text-end fw-bold font-monospace">₹<?= number_format($amt, 2) ?></td>
+                        <td class="text-center font-monospace">
+                            <?php if ($itemGstType === 'IGST'): ?>
+                                <div class="fw-bold text-dark"><?= rtrim(rtrim(number_format($igstRate, 2), '0'), '.') ?>%</div>
+                                <span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size: 10px;">IGST</span>
+                            <?php elseif ($itemGstType === 'BOTH'): ?>
+                                <div class="fw-bold text-dark"><?= rtrim(rtrim(number_format($gstPercent, 2), '0'), '.') ?>%</div>
+                                <div class="small text-muted mt-0.5" style="font-size: 10px; line-height: 1.25;">
+                                    <span>CGST: <?= rtrim(rtrim(number_format($cgstRate, 2), '0'), '.') ?>%</span><br>
+                                    <span>SGST: <?= rtrim(rtrim(number_format($sgstRate, 2), '0'), '.') ?>%</span>
+                                </div>
+                            <?php elseif ($itemGstType === 'CGST'): ?>
+                                <div class="fw-bold text-dark"><?= rtrim(rtrim(number_format($cgstRate, 2), '0'), '.') ?>%</div>
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 10px;">CGST</span>
+                            <?php elseif ($itemGstType === 'SGST'): ?>
+                                <div class="fw-bold text-dark"><?= rtrim(rtrim(number_format($sgstRate, 2), '0'), '.') ?>%</div>
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 10px;">SGST</span>
+                            <?php else: ?>
+                                <span class="text-muted small">0% (Exempt)</span>
+                            <?php endif; ?>
+                        </td>
+                        <td class="text-end font-monospace">
+                            <div class="fw-bold text-dark">₹<?= number_format($taxAmount, 2) ?></div>
+                            <?php if ($itemGstType === 'BOTH' && $taxAmount > 0): ?>
+                                <div class="small text-muted mt-0.5" style="font-size: 10px; line-height: 1.25;">
+                                    <span>CGST: ₹<?= number_format($cgstAmount, 2) ?></span><br>
+                                    <span>SGST: ₹<?= number_format($sgstAmount, 2) ?></span>
+                                </div>
+                            <?php elseif ($itemGstType === 'IGST' && $taxAmount > 0): ?>
+                                <div class="small text-muted mt-0.5" style="font-size: 10px;">
+                                    <span>IGST: ₹<?= number_format($igstAmount, 2) ?></span>
+                                </div>
+                            <?php endif; ?>
+                        </td>
+                        <td class="text-end fw-bold font-monospace">₹<?= number_format($valuation, 2) ?></td>
                     </tr>
                 <?php endforeach; ?>
             </tbody>
             <tfoot>
                 <tr class="fw-bold" style="background-color: #f8fafc;">
-                    <td colspan="4" class="text-end text-uppercase">Total Packed Goods:</td>
+                    <td colspan="5" class="text-end text-uppercase">Total Packed Goods:</td>
                     <td class="text-center text-primary fs-6"><?= number_format($totalQty) ?> pcs</td>
-                    <td class="text-end">Est. Valuation:</td>
-                    <td class="text-end text-success fs-6">₹<?= number_format($totalAmt, 2) ?></td>
+                    <td class="text-end font-monospace">₹<?= number_format($totalValuation, 2) ?></td>
+                    <td class="text-center font-monospace small">
+                        <?php if ($totalIgst > 0 && $totalCgst <= 0): ?>
+                            <span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size: 10px;">IGST</span>
+                        <?php else: ?>
+                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 10px;">CGST + SGST</span>
+                        <?php endif; ?>
+                    </td>
+                    <td class="text-end font-monospace text-primary">
+                        <div>₹<?= number_format($totalTax, 2) ?></div>
+                        <?php if ($totalCgst > 0 || $totalSgst > 0): ?>
+                            <div class="small text-muted fw-normal" style="font-size: 10px; line-height: 1.2;">
+                                CGST: ₹<?= number_format($totalCgst, 2) ?><br>SGST: ₹<?= number_format($totalSgst, 2) ?>
+                            </div>
+                        <?php elseif ($totalIgst > 0): ?>
+                            <div class="small text-muted fw-normal" style="font-size: 10px;">
+                                IGST: ₹<?= number_format($totalIgst, 2) ?>
+                            </div>
+                        <?php endif; ?>
+                    </td>
+                    <td class="text-end text-success fs-6 font-monospace">₹<?= number_format($totalValuation, 2) ?></td>
                 </tr>
             </tfoot>
         </table>
@@ -175,8 +292,8 @@
         </div>
         <div class="col-4">
             <div class="signature-box">
-                <div class="fw-bold text-dark">___________________</div>
-                <div class="small text-muted">Warehouse Receiver Sign &amp; Date</div>
+                <div class="fw-bold text-dark">Warehouse Receiver Sign &amp; Date</div>
+                <div class="small text-muted">Quality / Warehouse Approved</div>
             </div>
         </div>
     </div>

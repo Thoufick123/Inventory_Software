@@ -266,6 +266,16 @@ if (empty($currentDept)) $currentDept = 'all';
                                             <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2 py-1 me-1">
                                                 <i class="bi bi-shield-check me-1"></i><?= e($s['role_name'] ?? 'Unassigned') ?>
                                             </span>
+                                            <?php if (!empty($s['staff_role'])): ?>
+                                                <span class="badge bg-secondary bg-opacity-10 text-dark border px-2 py-1">
+                                                    <?= match($s['staff_role']) {
+                                                        'CUTTING_MASTER' => '<i class="bi bi-scissors text-danger me-1"></i>Cutting Master',
+                                                        'TAILOR'         => '<i class="bi bi-person-workspace text-primary me-1"></i>Tailor',
+                                                        'QC_INSPECTOR'   => '<i class="bi bi-patch-check-fill text-success me-1"></i>QC Inspector',
+                                                        default          => e($s['staff_role'])
+                                                    } ?>
+                                                </span>
+                                            <?php endif; ?>
                                         </div>
                                         <div class="text-muted small mt-1">
                                             <?php if (!empty($s['production_unit_name'])): ?>

@@ -42,6 +42,28 @@ $cgst = (float)($bill['cgst_amount'] ?? 0);
 $sgst = (float)($bill['sgst_amount'] ?? 0);
 $igst = (float)($bill['igst_amount'] ?? 0);
 $totalAmount = (float)($bill['total_amount'] ?? 0);
+
+// GST Inclusive adjustment: ensure net amount equals gross minus discount, with tax included inside
+$grossAmt = (float)($bill['gross_amount'] ?? 0);
+$netAmount = max(0, $grossAmt - $discount);
+if ($netAmount > 0 && abs($totalAmount - ($netAmount + $taxAmount)) < 1.0) {
+    // If historical bill added tax exclusively on top, convert display to inclusive
+    $totalAmount = $netAmount;
+    $combinedGstRate = ($cgst > 0 || $sgst > 0 || $igst > 0)
+        ? (float)rtrim($cgstRate, '%') + (float)rtrim($sgstRate, '%') + (float)rtrim($igstRate, '%')
+        : 5.0;
+    if ($combinedGstRate > 0) {
+        $subtotal = round($netAmount / (1 + ($combinedGstRate / 100)), 2);
+        $taxAmount = round($netAmount - $subtotal, 2);
+        if ($igst > 0) {
+            $igst = $taxAmount;
+        } else {
+            $cgst = round($taxAmount / 2, 2);
+            $sgst = round($taxAmount - $cgst, 2);
+        }
+    }
+}
+
 $rawTotal = $subtotal + $taxAmount;
 $roundOff = round($totalAmount - $rawTotal, 2);
 
@@ -131,55 +153,72 @@ if (!empty($billItems[0])) {
             border-radius: 4px;
         }
 
-        /* Header Logo Box */
-        .logo-box {
-            border: 1.5px solid #000;
-            padding: 8px;
-            text-align: center;
-            max-width: 170px;
-            margin: 0 auto 8px auto;
-            background: #fff;
+        /* Header Split: Left side Logo & Unit Name, Right side Unit Details */
+        .header-split {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 8px;
+            margin-bottom: 6px;
         }
-        .logo-box img {
-            max-width: 140px;
-            max-height: 55px;
+        .header-left {
+            flex: 0 0 46%;
+            max-width: 46%;
+            text-align: left;
+        }
+        .header-left .logo-box {
+            border: 1.5px solid #000;
+            padding: 3px 5px;
+            text-align: center;
+            background: #fff;
+            margin-bottom: 4px;
+            display: inline-block;
+            max-width: 100%;
+        }
+        .header-left .logo-box img {
+            max-width: 110px;
+            max-height: 48px;
             object-fit: contain;
             display: block;
             margin: 0 auto;
         }
-        .logo-box .brand-text {
-            font-size: 16px;
+        .header-left .logo-box .brand-text {
+            font-size: 13px;
             font-weight: bold;
-            letter-spacing: 1px;
+            letter-spacing: 0.5px;
             text-transform: uppercase;
+        }
+        .header-left .store-title {
+            font-size: 13px;
+            font-weight: bold;
+            text-transform: uppercase;
+            line-height: 1.25;
+            word-break: break-word;
+            margin-top: 2px;
         }
 
-        .store-header {
-            text-align: center;
-            margin-bottom: 8px;
+        .header-right {
+            flex: 0 0 52%;
+            max-width: 52%;
+            text-align: right;
+            font-size: 10.5px;
+            line-height: 1.35;
         }
-        .store-title {
-            font-size: 15px;
-            font-weight: bold;
-            text-transform: uppercase;
-            margin-bottom: 3px;
-        }
-        .store-address {
-            font-size: 11px;
-            margin-bottom: 3px;
+        .header-right .store-address {
             word-break: break-word;
+            margin-bottom: 2px;
         }
-        .store-contact {
-            font-size: 11px;
+        .header-right .store-contact {
+            word-break: break-word;
+            margin-bottom: 1px;
+        }
+        .header-right .store-gstin {
+            font-weight: bold;
         }
 
         /* Dashed Separators */
         .dashed-line {
             border-top: 1px dashed #000;
-            margin: 7px 0;
-        }
-        .double-line {
-            border-top: 2px solid #000;
             margin: 7px 0;
         }
 
@@ -217,9 +256,10 @@ if (!empty($billItems[0])) {
             font-weight: bold;
             padding: 4px 2px;
             border-bottom: 1px dashed #000;
+            font-size: 11px;
         }
         .pos-table td {
-            padding: 4px 2px 2px 2px;
+            padding: 3px 2px;
             vertical-align: top;
         }
         .text-right {
@@ -238,16 +278,13 @@ if (!empty($billItems[0])) {
             font-size: 10.5px;
             color: #333;
             margin-top: 1px;
+            margin-bottom: 2px;
         }
-        .item-tags {
-            font-size: 10px;
-            color: #222;
-            margin-top: 3px;
-            line-height: 1.25;
-            padding-left: 2px;
-        }
-        .item-tags .tag-line {
-            display: block;
+        .tag-single-label {
+            font-family: inherit;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
         }
 
         /* Totals / Summary */
@@ -339,42 +376,45 @@ if (!empty($billItems[0])) {
 <!-- Receipt Paper Body -->
 <main class="pos-receipt">
 
-    <!-- 1. Header Logo in Bordered Box -->
-    <div class="logo-box">
-        <?php if (!empty($prodUnit['logo_url'])): ?>
-            <img src="<?= htmlspecialchars($prodUnit['logo_url'], ENT_QUOTES, 'UTF-8') ?>" alt="Logo">
-        <?php elseif (!empty($sellerCompany['company_logo'])): ?>
-            <img src="<?= htmlspecialchars($sellerCompany['company_logo'], ENT_QUOTES, 'UTF-8') ?>" alt="Logo">
-        <?php else: ?>
-            <div class="brand-text"><?= htmlspecialchars($prodUnit['name'] ?? ($seller('company_name') ?: 'GRM APPARELS')) ?></div>
-        <?php endif; ?>
-    </div>
-
-    <!-- 2. Store / Facility Address & GST -->
-    <div class="store-header">
-        <div class="store-title"><?= htmlspecialchars($prodUnit['name'] ?? ($seller('company_name') ?: 'Production Unit')) ?></div>
-        <?php if (!empty($prodUnit['address'])): ?>
-            <div class="store-address"><?= htmlspecialchars($prodUnit['address']) ?></div>
-        <?php elseif ($seller('address')): ?>
-            <div class="store-address"><?= $seller('address') ?></div>
-        <?php endif; ?>
-
-        <div class="store-contact">
-            <?php if (!empty($prodUnit['phone'])): ?>
-                Phone: <?= htmlspecialchars($prodUnit['phone']) ?>
-            <?php elseif ($seller('phone')): ?>
-                Phone: <?= $seller('phone') ?>
+    <!-- 1 & 2. Header: Logo & Production Unit Name on LEFT, Details on RIGHT -->
+    <div class="header-split">
+        <div class="header-left">
+            <div class="logo-box">
+                <?php if (!empty($prodUnit['logo_url'])): ?>
+                    <img src="<?= htmlspecialchars($prodUnit['logo_url'], ENT_QUOTES, 'UTF-8') ?>" alt="Logo">
+                <?php elseif (!empty($sellerCompany['company_logo'])): ?>
+                    <img src="<?= htmlspecialchars($sellerCompany['company_logo'], ENT_QUOTES, 'UTF-8') ?>" alt="Logo">
+                <?php else: ?>
+                    <div class="brand-text"><?= htmlspecialchars($prodUnit['name'] ?? ($seller('company_name') ?: 'GRM APPARELS')) ?></div>
+                <?php endif; ?>
+            </div>
+            <div class="store-title"><?= htmlspecialchars($prodUnit['name'] ?? ($seller('company_name') ?: 'Production Unit')) ?></div>
+        </div>
+        <div class="header-right">
+            <?php if (!empty($prodUnit['address'])): ?>
+                <div class="store-address"><?= htmlspecialchars($prodUnit['address']) ?></div>
+            <?php elseif ($seller('address')): ?>
+                <div class="store-address"><?= $seller('address') ?></div>
             <?php endif; ?>
+
+            <div class="store-contact">
+                <?php if (!empty($prodUnit['phone'])): ?>
+                    Phone: <?= htmlspecialchars($prodUnit['phone']) ?>
+                <?php elseif ($seller('phone')): ?>
+                    Phone: <?= $seller('phone') ?>
+                <?php endif; ?>
+            </div>
+
             <?php if (!empty($prodUnit['code'])): ?>
-                · Unit: <?= htmlspecialchars($prodUnit['code']) ?>
+                <div class="store-contact">Unit: <?= htmlspecialchars($prodUnit['code']) ?></div>
+            <?php endif; ?>
+            
+            <?php if (!empty($prodUnit['gst_number'])): ?>
+                <div class="store-contact store-gstin">GSTIN: <?= htmlspecialchars($prodUnit['gst_number']) ?></div>
+            <?php elseif ($seller('gstin')): ?>
+                <div class="store-contact store-gstin">GSTIN: <?= $seller('gstin') ?></div>
             <?php endif; ?>
         </div>
-        
-        <?php if (!empty($prodUnit['gst_number'])): ?>
-            <div class="store-contact">GSTIN: <?= htmlspecialchars($prodUnit['gst_number']) ?></div>
-        <?php elseif ($seller('gstin')): ?>
-            <div class="store-contact">GSTIN: <?= $seller('gstin') ?></div>
-        <?php endif; ?>
     </div>
 
     <div class="dashed-line"></div>
@@ -429,53 +469,70 @@ if (!empty($billItems[0])) {
 
     <div class="dashed-line"></div>
 
-    <!-- 5. Items Table -->
+    <!-- 5. Items Table (Each piece QR tag rendered as its own single detail row) -->
     <table class="pos-table">
         <thead>
             <tr>
-                <th style="width: 32%;">Item</th>
-                <th style="width: 14%;">HSN</th>
-                <th style="width: 10%; text-align: right;">Qty</th>
+                <th style="width: 34%;">Item</th>
+                <th style="width: 12%;">HSN</th>
+                <th style="width: 8%; text-align: right;">Qty</th>
                 <th style="width: 15%; text-align: right;">Price</th>
                 <th style="width: 13%; text-align: right;">Disc</th>
-                <th style="width: 16%; text-align: right;">Amount</th>
+                <th style="width: 18%; text-align: right;">Amount</th>
             </tr>
         </thead>
         <tbody>
             <?php foreach ($billItems as $item): ?>
                 <?php
-                    $iQty = (int)($item['quantity'] ?? 0);
-                    $iPrice = (float)($item['mrp'] ?? 0);
-                    $iDisc = (float)($item['discount_amount'] ?? 0);
-                    $iAmount = (float)($item['total_amount'] ?? 0);
+                    $iQty = max(1, (int)($item['quantity'] ?? 1));
                     $varText = trim(($item['sku'] ?? '') . ' ' . ($item['size_name'] ?? '') . ' ' . ($item['color_name'] ?? ''));
+                    $tags = !empty($item['tags']) && is_array($item['tags']) ? array_values(array_filter(array_map('trim', $item['tags']))) : [];
+                    $hsnCode = htmlspecialchars($item['hsn_code'] ?? '6109');
+                    
+                    // Single piece unit metrics (GST is INCLUSIVE in product amount)
+                    $unitPrice = (float)($item['mrp'] ?? 0);
+                    $unitDisc = round((float)($item['discount_amount'] ?? 0) / $iQty, 2);
+                    $itemNetLine = max(0, ((float)($item['mrp'] ?? 0) * $iQty) - (float)($item['discount_amount'] ?? 0));
+                    if ($itemNetLine <= 0 && !empty($item['unit_price'])) {
+                        $itemNetLine = round((float)$item['unit_price'] * $iQty, 2);
+                    }
+                    $unitTotal = $iQty > 0 ? round($itemNetLine / $iQty, 2) : 0.0;
+                    if ($unitPrice <= 0) {
+                        $unitPrice = $unitTotal + $unitDisc;
+                    }
                 ?>
+
+                <!-- Product Name Header Line -->
                 <tr>
-                    <td colspan="6" style="padding-top: 6px; padding-bottom: 2px;">
+                    <td colspan="6" style="padding-top: 5px; padding-bottom: 2px;">
                         <div class="item-title"><?= htmlspecialchars($item['product_name']) ?></div>
-                        <?php if ($varText !== ''): ?>
-                            <div class="item-variant"><?= htmlspecialchars($varText) ?></div>
-                        <?php endif; ?>
                     </td>
                 </tr>
-                <tr>
-                    <td></td>
-                    <td><?= htmlspecialchars($item['hsn_code'] ?? '6109') ?></td>
-                    <td class="text-right"><?= $iQty ?></td>
-                    <td class="text-right"><?= number_format($iPrice, 2) ?></td>
-                    <td class="text-right <?= $iDisc > 0 ? 'discount-highlight' : '' ?>"><?= number_format($iDisc, 2) ?></td>
-                    <td class="text-right" style="font-weight: bold;"><?= number_format($iAmount, 2) ?></td>
-                </tr>
-                <?php if (!empty($item['tags']) && is_array($item['tags'])): ?>
-                <tr>
-                    <td colspan="6" style="padding-top: 1px; padding-bottom: 6px;">
-                        <div class="item-tags">
-                            <?php foreach ($item['tags'] as $tg): ?>
-                                <span class="tag-line">Tag: <?= htmlspecialchars($tg) ?></span>
-                            <?php endforeach; ?>
-                        </div>
-                    </td>
-                </tr>
+
+                <?php if (!empty($tags)): ?>
+                    <!-- Single detail row for each QR code tag -->
+                    <?php foreach ($tags as $tg): ?>
+                        <tr>
+                            <td>
+                                <span class="tag-single-label"><?= htmlspecialchars($tg) ?></span>
+                            </td>
+                            <td><?= $hsnCode ?></td>
+                            <td class="text-right">1</td>
+                            <td class="text-right"><?= number_format($unitPrice, 2) ?></td>
+                            <td class="text-right <?= $unitDisc > 0 ? 'discount-highlight' : '' ?>"><?= number_format($unitDisc, 2) ?></td>
+                            <td class="text-right" style="font-weight: bold;"><?= number_format($unitTotal, 2) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <!-- Single detail row for non-tagged/bulk line -->
+                    <tr>
+                        <td><span class="tag-single-label">—</span></td>
+                        <td><?= $hsnCode ?></td>
+                        <td class="text-right"><?= (int)($item['quantity'] ?? 1) ?></td>
+                        <td class="text-right"><?= number_format($unitPrice, 2) ?></td>
+                        <td class="text-right <?= (float)($item['discount_amount'] ?? 0) > 0 ? 'discount-highlight' : '' ?>"><?= number_format((float)($item['discount_amount'] ?? 0), 2) ?></td>
+                        <td class="text-right" style="font-weight: bold;"><?= number_format($itemNetLine, 2) ?></td>
+                    </tr>
                 <?php endif; ?>
             <?php endforeach; ?>
         </tbody>
@@ -498,7 +555,7 @@ if (!empty($billItems[0])) {
             <span class="summary-val discount-highlight">-₹ <?= number_format($discount, 2) ?></span>
         </div>
         <div class="summary-row">
-            <span class="summary-label">GST Amount :</span>
+            <span class="summary-label">GST Amount (Incl.) :</span>
             <span class="summary-val">₹ <?= number_format($taxAmount, 2) ?></span>
         </div>
         <?php if ($cgst > 0): ?>
@@ -554,7 +611,6 @@ if (!empty($billItems[0])) {
 
 <script>
 window.addEventListener('DOMContentLoaded', () => {
-    // Auto-focus print if opened in dedicated print window
     if (window.location.search.includes('autoprint=1')) {
         window.print();
     }

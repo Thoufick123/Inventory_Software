@@ -845,6 +845,390 @@ class WarehouseService {
     }
 
     /**
+     * Update inward QR mappings without changing received quantities or stock.
+     *
+     * @throws Throwable
+     */
+    public static function updateInwardQrCodes(int $batchId, int $userId, array $qrItems, string $editReason): bool {
+        $editReason = trim($editReason);
+        if ($editReason === '') {
+            throw new Exception('A reason is required to edit inward QR codes.');
+        }
+
+        Database::beginTransaction();
+        try {
+            $batch = Database::fetchOne(
+                "SELECT * FROM production_batches WHERE id = ? FOR UPDATE",
+                [$batchId]
+            );
+            if (!$batch) {
+                throw new Exception("Production batch #$batchId not found.");
+            }
+
+            Database::fetchAll(
+                "SELECT id FROM production_batch_items WHERE production_batch_id = ? FOR UPDATE",
+                [$batchId]
+            );
+            $items = ProductionBatch::getItems($batchId);
+            if (empty($items)) {
+                throw new Exception("No variant items found in batch #$batchId.");
+            }
+
+            $normalizeStoredTags = static function ($values): array {
+                if (!is_array($values)) {
+                    if (!is_string($values) || trim($values) === '') {
+                        return [];
+                    }
+                    $decoded = json_decode($values, true);
+                    $values = is_array($decoded) ? $decoded : preg_split('/[\r\n,]+/', $values);
+                }
+
+                $tags = [];
+                foreach ($values as $value) {
+                    if (is_scalar($value)) {
+                        $tag = strtoupper(trim((string)$value));
+                        if ($tag !== '') {
+                            $tags[] = $tag;
+                        }
+                    }
+                }
+                return array_values($tags);
+            };
+
+            $parseInputTags = static function ($value, string $field, string $sku): array {
+                if (!is_string($value)) {
+                    throw new Exception("Invalid {$field} QR list for SKU {$sku}.");
+                }
+
+                $parts = preg_split('/[\r\n,]+/', trim($value));
+                $tags = [];
+                foreach ($parts as $part) {
+                    $tag = strtoupper(trim((string)$part));
+                    if ($tag === '') {
+                        continue;
+                    }
+                    if (strlen($tag) > 128 || preg_match('/^[^\s,]+$/u', $tag) !== 1) {
+                        throw new Exception("Invalid QR code in {$field} list for SKU {$sku}.");
+                    }
+                    if (in_array($tag, $tags, true)) {
+                        throw new Exception("Duplicate QR code {$tag} in {$field} list for SKU {$sku}.");
+                    }
+                    $tags[] = $tag;
+                }
+                return $tags;
+            };
+
+            $oldExpectedById = [];
+            $currentBatchTagOwners = [];
+            $newExpectedById = [];
+            $editableItems = [];
+            $previousSnapshot = [
+                'batch_number' => $batch['batch_number'] ?? '',
+                'items' => [],
+            ];
+            $newSnapshot = [
+                'updated_by' => $userId,
+                'updated_at' => date('Y-m-d H:i:s'),
+                'edit_reason' => $editReason,
+                'items' => [],
+            ];
+
+            foreach ($items as $item) {
+                $itemId = (int)$item['id'];
+                $sku = (string)($item['sku'] ?? $item['product_name'] ?? $itemId);
+                $oldExpected = $normalizeStoredTags($item['outward_piece_tags'] ?? []);
+                $oldReceived = $normalizeStoredTags($item['received_tags'] ?? []);
+                $oldDamaged = $normalizeStoredTags($item['damaged_tags'] ?? []);
+                $oldExpectedById[$itemId] = $oldExpected;
+                $newExpectedById[$itemId] = $oldExpected;
+                foreach (array_merge($oldExpected, $oldReceived, $oldDamaged) as $tag) {
+                    $currentBatchTagOwners[$tag][$itemId] = true;
+                }
+
+                $isEditable = !empty($item['is_series']) || !empty($item['is_complementary']);
+                if (!$isEditable || !array_key_exists($itemId, $qrItems)) {
+                    continue;
+                }
+                if (!is_array($qrItems[$itemId])) {
+                    throw new Exception("Invalid QR data for SKU {$sku}.");
+                }
+
+                $input = $qrItems[$itemId];
+                $newExpected = $parseInputTags($input['expected_tags'] ?? null, 'expected', $sku);
+                $newReceived = $parseInputTags($input['received_tags'] ?? null, 'received', $sku);
+                $newDamaged = $parseInputTags($input['damaged_tags'] ?? null, 'damaged', $sku);
+                $expectedQty = max(0, (int)($item['quantity'] ?? 0));
+                $receivedQty = max(0, (int)($item['received_qty'] ?? 0));
+                $damagedQty = max(0, (int)($item['damaged_qty'] ?? 0));
+                $missingQty = isset($item['missing_qty'])
+                    ? (int)$item['missing_qty']
+                    : max(0, $expectedQty - ($receivedQty + $damagedQty));
+                if ($batch['status'] === 'RECEIVED' && $receivedQty === 0 && $damagedQty === 0 && $missingQty === 0) {
+                    $receivedQty = $expectedQty;
+                }
+
+                if ($expectedQty > 0 && empty($newExpected)) {
+                    throw new Exception("Expected QR count for SKU {$sku} must be between 1 and {$expectedQty}.");
+                }
+                if (count($newExpected) > $expectedQty && count($newExpected) !== count($oldExpected)) {
+                    throw new Exception("Expected QR count for SKU {$sku} cannot exceed the dispatched quantity of {$expectedQty}.");
+                }
+                if (
+                    (count($newReceived) > $receivedQty && count($newReceived) !== count($oldReceived))
+                    || (count($newDamaged) > $damagedQty && count($newDamaged) !== count($oldDamaged))
+                ) {
+                    throw new Exception("Received or damaged QR counts exceed the recorded quantities for SKU {$sku}.");
+                }
+                if (array_intersect($newReceived, $newDamaged)) {
+                    throw new Exception("A QR code cannot be both received and damaged for SKU {$sku}.");
+                }
+                if (array_diff($newReceived, $newExpected) || array_diff($newDamaged, $newExpected)) {
+                    throw new Exception("Received and damaged QR codes must belong to the expected QR list for SKU {$sku}.");
+                }
+
+                $newExpectedById[$itemId] = $newExpected;
+                $editableItems[$itemId] = [
+                    'item' => $item,
+                    'old_expected' => $oldExpected,
+                    'old_received' => $oldReceived,
+                    'old_damaged' => $oldDamaged,
+                    'new_expected' => $newExpected,
+                    'new_received' => $newReceived,
+                    'new_damaged' => $newDamaged,
+                ];
+            }
+
+            if (empty($editableItems)) {
+                throw new Exception('This batch has no editable Series or Complementary QR data.');
+            }
+
+            $oldExpectedOwners = [];
+            $newExpectedOwners = [];
+            foreach ($oldExpectedById as $itemId => $tags) {
+                foreach ($tags as $tag) {
+                    $oldExpectedOwners[$tag][] = (int)$itemId;
+                }
+            }
+            foreach ($newExpectedById as $itemId => $tags) {
+                foreach ($tags as $tag) {
+                    $newExpectedOwners[$tag][] = (int)$itemId;
+                }
+            }
+
+            $newTagsToCheck = [];
+            foreach ($editableItems as $itemId => $data) {
+                foreach ($data['new_expected'] as $tag) {
+                    if (!in_array($tag, $data['old_expected'], true)) {
+                        foreach (array_keys($currentBatchTagOwners[$tag] ?? []) as $ownerId) {
+                            if ((int)$ownerId !== (int)$itemId) {
+                                throw new Exception("QR code {$tag} is already assigned to another item in this batch.");
+                            }
+                        }
+                        $newTagsToCheck[$tag] = (int)($data['item']['variant_id'] ?? 0);
+                    }
+                }
+            }
+
+            foreach ($newExpectedOwners as $tag => $owners) {
+                if (count($owners) < 2) {
+                    continue;
+                }
+                $previousOwners = $oldExpectedOwners[$tag] ?? [];
+                sort($owners, SORT_NUMERIC);
+                sort($previousOwners, SORT_NUMERIC);
+                if ($owners !== $previousOwners) {
+                    throw new Exception("QR code {$tag} is assigned to more than one item in this batch.");
+                }
+            }
+
+            if (!empty($newTagsToCheck)) {
+                $escapeLike = static function (string $value): string {
+                    return strtr($value, ['!' => '!!', '%' => '!%', '_' => '!_']);
+                };
+                $conditions = [];
+                $params = [$batchId];
+                foreach (array_keys($newTagsToCheck) as $tag) {
+                    $encodedTag = json_encode($tag, JSON_UNESCAPED_UNICODE);
+                    $encodedTagNoSlashEscape = json_encode($tag, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    $conditions[] = "(piece_tags LIKE ? ESCAPE '!' OR piece_tags LIKE ? ESCAPE '!' OR received_qr_codes LIKE ? ESCAPE '!' OR damaged_qr_codes LIKE ? ESCAPE '!')";
+                    $params[] = '%' . $escapeLike((string)$encodedTag) . '%';
+                    $params[] = '%' . $escapeLike((string)$encodedTagNoSlashEscape) . '%';
+                    $params[] = '%' . $escapeLike($tag) . '%';
+                    $params[] = '%' . $escapeLike($tag) . '%';
+                }
+
+                $matchingRows = Database::fetchAll(
+                    "SELECT id, piece_tags, received_qr_codes, damaged_qr_codes
+                     FROM production_batch_items
+                     WHERE production_batch_id <> ? AND (" . implode(' OR ', $conditions) . ")",
+                    $params
+                );
+                foreach ($matchingRows as $row) {
+                    $otherTags = array_merge(
+                        $normalizeStoredTags($row['piece_tags'] ?? ''),
+                        $normalizeStoredTags($row['received_qr_codes'] ?? ''),
+                        $normalizeStoredTags($row['damaged_qr_codes'] ?? '')
+                    );
+                    foreach ($otherTags as $tag) {
+                        if (isset($newTagsToCheck[$tag])) {
+                            throw new Exception("QR code {$tag} is already assigned to another production batch item.");
+                        }
+                    }
+                }
+
+                $candidateTags = array_keys($newTagsToCheck);
+                $upperCandidates = array_map('strtoupper', $candidateTags);
+                $placeholders = implode(',', array_fill(0, count($candidateTags), '?'));
+                $prefixPatterns = [];
+                foreach ($candidateTags as $tag) {
+                    if (preg_match('/^(.*?)(\d+)$/', $tag, $tagMatch) && $tagMatch[1] !== '') {
+                        $prefixPatterns[$escapeLike($tagMatch[1]) . '%'] = true;
+                    }
+                }
+
+                $warehouseQrConditions = [
+                    "UPPER(TRIM(qr_code)) IN ($placeholders)",
+                    "UPPER(TRIM(COALESCE(series_end_code, ''))) IN ($placeholders)",
+                ];
+                $warehouseQrParams = array_merge($upperCandidates, $upperCandidates);
+                foreach (array_keys($prefixPatterns) as $prefixPattern) {
+                    $warehouseQrConditions[] = "(UPPER(qr_code) LIKE ? ESCAPE '!' OR UPPER(COALESCE(series_end_code, '')) LIKE ? ESCAPE '!')";
+                    $warehouseQrParams[] = $prefixPattern;
+                    $warehouseQrParams[] = $prefixPattern;
+                }
+
+                $variantQrConditions = [
+                    "UPPER(TRIM(COALESCE(qr_code, ''))) IN ($placeholders)",
+                    "UPPER(TRIM(COALESCE(series_start_code, ''))) IN ($placeholders)",
+                    "UPPER(TRIM(COALESCE(series_end_code, ''))) IN ($placeholders)",
+                ];
+                $variantQrParams = array_merge($upperCandidates, $upperCandidates, $upperCandidates);
+                foreach (array_keys($prefixPatterns) as $prefixPattern) {
+                    $variantQrConditions[] = "(UPPER(COALESCE(qr_code, '')) LIKE ? ESCAPE '!' OR UPPER(COALESCE(series_start_code, '')) LIKE ? ESCAPE '!' OR UPPER(COALESCE(series_end_code, '')) LIKE ? ESCAPE '!')";
+                    $variantQrParams[] = $prefixPattern;
+                    $variantQrParams[] = $prefixPattern;
+                    $variantQrParams[] = $prefixPattern;
+                }
+
+                $registeredQrRows = Database::fetchAll(
+                    "SELECT variant_id, warehouse_id, qr_code, qr_code AS range_start,
+                            series_end_code, 0 AS is_variant_qr
+                     FROM warehouse_qr_codes
+                     WHERE " . implode(' OR ', $warehouseQrConditions) . "
+                     UNION ALL
+                     SELECT id AS variant_id, NULL AS warehouse_id, qr_code,
+                            COALESCE(NULLIF(series_start_code, ''), qr_code) AS range_start,
+                            series_end_code, 1 AS is_variant_qr
+                     FROM product_variants
+                     WHERE " . implode(' OR ', $variantQrConditions),
+                    array_merge($warehouseQrParams, $variantQrParams)
+                );
+
+                $matchesRegisteredQr = static function (string $tag, array $row): bool {
+                    $tag = strtoupper(trim($tag));
+                    $start = strtoupper(trim((string)($row['range_start'] ?? '')));
+                    $end = strtoupper(trim((string)($row['series_end_code'] ?? '')));
+                    if ($end === '') {
+                        $end = $start;
+                    }
+                    if ($tag !== '' && ($tag === $start || $tag === $end)) {
+                        return true;
+                    }
+                    if (
+                        !preg_match('/^(.*?)(\d+)$/', $tag, $tagMatch)
+                        || !preg_match('/^(.*?)(\d+)$/', $start, $startMatch)
+                        || !preg_match('/^(.*?)(\d+)$/', $end, $endMatch)
+                        || $tagMatch[1] !== $startMatch[1]
+                        || $tagMatch[1] !== $endMatch[1]
+                    ) {
+                        return false;
+                    }
+
+                    $tagSequence = (int)$tagMatch[2];
+                    $rangeStart = (int)$startMatch[2];
+                    $rangeEnd = (int)$endMatch[2];
+                    return $tagSequence >= min($rangeStart, $rangeEnd) && $tagSequence <= max($rangeStart, $rangeEnd);
+                };
+
+                foreach ($registeredQrRows as $row) {
+                    foreach ($candidateTags as $tag) {
+                        if (!$matchesRegisteredQr($tag, $row)) {
+                            continue;
+                        }
+                        $sameVariant = (int)($row['variant_id'] ?? 0) === (int)$newTagsToCheck[$tag];
+                        $sameWarehouse = !empty($row['is_variant_qr'])
+                            || (int)($row['warehouse_id'] ?? 0) === (int)($batch['destination_warehouse_id'] ?? 0);
+                        if (!$sameVariant || !$sameWarehouse) {
+                            throw new Exception("QR code {$tag} is already registered to another product or warehouse.");
+                        }
+                    }
+                }
+            }
+
+            foreach ($editableItems as $itemId => $data) {
+                if (
+                    $data['old_expected'] === $data['new_expected']
+                    && $data['old_received'] === $data['new_received']
+                    && $data['old_damaged'] === $data['new_damaged']
+                ) {
+                    continue;
+                }
+
+                $pieceTags = json_encode($data['new_expected'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                if ($pieceTags === false) {
+                    throw new Exception("Could not encode expected QR codes for SKU " . ($data['item']['sku'] ?? $itemId) . ".");
+                }
+                Database::execute(
+                    "UPDATE production_batch_items
+                     SET piece_tags = ?, received_qr_codes = ?, damaged_qr_codes = ?
+                     WHERE id = ? AND production_batch_id = ?",
+                    [
+                        $pieceTags,
+                        empty($data['new_received']) ? null : implode(',', $data['new_received']),
+                        empty($data['new_damaged']) ? null : implode(',', $data['new_damaged']),
+                        $itemId,
+                        $batchId,
+                    ]
+                );
+
+                $previousSnapshot['items'][] = [
+                    'item_id' => $itemId,
+                    'sku' => $data['item']['sku'] ?? '',
+                    'expected_tags' => $data['old_expected'],
+                    'received_tags' => $data['old_received'],
+                    'damaged_tags' => $data['old_damaged'],
+                ];
+                $newSnapshot['items'][] = [
+                    'item_id' => $itemId,
+                    'sku' => $data['item']['sku'] ?? '',
+                    'expected_tags' => $data['new_expected'],
+                    'received_tags' => $data['new_received'],
+                    'damaged_tags' => $data['new_damaged'],
+                ];
+            }
+
+            if (!empty($newSnapshot['items'])) {
+                AuditService::logStrict(
+                    'warehouse',
+                    'UPDATE_INWARD_QR_CODES',
+                    'production_batch',
+                    $batchId,
+                    $previousSnapshot,
+                    $newSnapshot,
+                    $userId
+                );
+            }
+
+            Database::commit();
+            return true;
+        } catch (Throwable $e) {
+            Database::rollback();
+            error_log("WarehouseService::updateInwardQrCodes failed: " . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
      * Delete / Revert an Inward GRN receipt.
      * Safely rolls back warehouse inventory (available & damaged),
      * cancels associated quarantine damages, resets batch & item counts,
@@ -1084,7 +1468,8 @@ class WarehouseService {
         Database::beginTransaction();
         try {
             if (empty($poData['po_number'])) {
-                $poData['po_number'] = self::generateSequenceNumber('purchase_orders', 'po_number', 'DPO');
+                $invoicePrefix = !empty($poData['is_direct_purchase']) ? 'PI' : 'DPO';
+                $poData['po_number'] = self::generateSequenceNumber('purchase_orders', 'po_number', $invoicePrefix);
             }
             $poData['created_by'] = $userId;
 
@@ -3792,6 +4177,15 @@ class WarehouseService {
             ORDER BY pbi.id ASC
         ", [$warehouseId]);
 
+        $returnedQuantitiesByVariant = array_column(Database::fetchAll(
+            "SELECT variant_id, COALESCE(SUM(quantity), 0) AS returned_quantity
+             FROM stock_transactions
+             WHERE location_type = 'WAREHOUSE' AND location_id = ?
+               AND stock_state = 'AVAILABLE' AND transaction_type = 'RETURN_INWARD' AND quantity > 0
+             GROUP BY variant_id",
+            [$warehouseId]
+        ), 'returned_quantity', 'variant_id');
+
         $pbiByVariantId = [];
         $pbiByAttributes = [];
         foreach ($prodBatchItems as $pbi) {
@@ -3816,6 +4210,15 @@ class WarehouseService {
         foreach ($balances as $bal) {
             $bal['quantity'] = (float)($bal['warehouse_quantity'] ?? $bal['quantity'] ?? 0);
             $qty = (int)$bal['quantity'];
+            if (($bal['stock_state'] ?? '') === 'AVAILABLE') {
+                $variantId = (int)$bal['variant_id'];
+                $returnedQty = min($qty, max(0, (int)($returnedQuantitiesByVariant[$variantId] ?? 0)));
+                $qty -= $returnedQty;
+                $returnedQuantitiesByVariant[$variantId] = max(
+                    0,
+                    (int)($returnedQuantitiesByVariant[$variantId] ?? 0) - $returnedQty
+                );
+            }
             if ($qty <= 0) continue;
 
             $vId = (int)$bal['variant_id'];

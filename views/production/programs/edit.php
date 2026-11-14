@@ -231,7 +231,7 @@
                         <div class="col-md-4">
                             <label class="form-label fw-semibold">Supervisor / Manager</label>
                             <select name="assigned_to" class="form-select">
-                                <option value="">Select Staff</option>
+                                <option value="">Select Supervisor / Staff</option>
                                 <?php foreach ($users as $u): ?>
                                     <option value="<?= $u['id'] ?>" <?= ($program['assigned_to'] == $u['id']) ? 'selected' : '' ?>><?= e($u['full_name']) ?></option>
                                 <?php endforeach; ?>
@@ -703,7 +703,7 @@ function addProgramRollRow(rollData = null) {
                         <span>Category Attributes &amp; Specifications</span>
                     </span>
                     <button type="button" class="btn btn-xs btn-outline-primary py-1 px-2.5 fw-semibold btn-add-attr-trigger" style="font-size: 11px;" onclick="openAddAttributeModal(${idx})" title="Add new attribute for this category level">
-                        <i class="bi bi-plus-circle me-1"></i>+ Add Attribute
+                        <i class="bi bi-plus-circle me-1"></i>Add Attribute
                     </button>
                 </div>
                 <div id="roll_attrs_container_${idx}" class="roll-attributes-container d-flex flex-column gap-3">
@@ -2029,7 +2029,7 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
                     <div class="p-3 bg-white rounded-3 text-center small text-muted border border-dashed" style="font-size: 11px;">
                         <i class="bi bi-sliders me-1 text-secondary"></i>No pre-set attributes for this category level yet. 
                         <a href="javascript:void(0)" onclick="openAddAttributeModal(${idx})" class="fw-semibold text-primary text-decoration-none ms-1">
-                            <i class="bi bi-plus-circle"></i> + Add Attribute
+                            <i class="bi bi-plus-circle"></i> Add Attribute
                         </a>
                     </div>
                 `;
@@ -2083,11 +2083,6 @@ function loadRollCategoryAttributes(idx, catId, subcatId = '', subSubcatId = '',
                                 <span>${attrLabelTitle}</span>
                                 ${isReq ? '<span class="text-danger">*</span>' : ''}
                             </label>
-                            <div class="d-flex align-items-center gap-1">
-                                <button type="button" class="btn btn-xs btn-outline-primary py-0.5 px-2 fw-semibold" style="font-size: 11px;" onclick="openQuickAddOptionModal(${idx}, '${escapeHtml(inputAttrName)}', ${attr.id || 0})" title="Add new option to ${escapeHtml(inputAttrName)}">
-                                    <i class="bi bi-plus me-0.5"></i>+ Add Option
-                                </button>
-                            </div>
                         </div>
                         <div class="p-3 px-4 border rounded-3 bg-light d-flex flex-wrap gap-2 align-items-center" id="attr_chips_container_${idx}_${cleanAttrName}" style="min-height: 50px;">`;
 

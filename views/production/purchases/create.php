@@ -197,10 +197,10 @@
                 <div class="table-responsive">
                     <table class="table table-hover table-bordered align-middle mb-0" style="font-size:13px">
                         <thead class="table-light small text-uppercase">
-                            <tr><th class="text-center">#</th><th>Item Name / Description</th><th>HSN</th><th class="text-end">Quantity</th><th>Unit</th><th class="text-end">Unit Price</th><th class="text-end">Base Value</th><th>GST Type</th><th class="text-end">Tax</th><th class="text-end bg-success-subtle text-success">Total Value</th></tr>
+                            <tr><th class="text-center">#</th><th>Other Product No/Code</th><th>Item Name / Description</th><th>HSN</th><th class="text-end">Quantity</th><th>Unit</th><th class="text-end">Unit Price</th><th class="text-end">Base Value</th><th>GST Type</th><th class="text-end">Tax</th><th class="text-end bg-success-subtle text-success">Total Value</th></tr>
                         </thead>
                         <tbody id="supplyDetailsTableBody">
-                            <tr><td colspan="10" class="text-center text-muted py-4">Add garment supplies to see their purchase details.</td></tr>
+                            <tr><td colspan="11" class="text-center text-muted py-4">Add garment supplies to see their purchase details.</td></tr>
                         </tbody>
                         <tfoot id="supplyDetailsTableFoot" class="table-light fw-bold"></tfoot>
                     </table>
@@ -482,7 +482,11 @@
         </div>
         <div class="card-body p-3">
             <div class="row g-3">
-                <div class="col-lg-3 col-md-6">
+                <div class="col-lg-2 col-md-4">
+                    <label class="form-label">Other Product No/Code</label>
+                    <input class="form-control supply-product-code font-monospace text-uppercase" maxlength="50" placeholder="e.g. OTH-001 or Code">
+                </div>
+                <div class="col-lg-3 col-md-5">
                     <label class="form-label required">Item Name / Description *</label>
                     <input class="form-control supply-name text-uppercase" maxlength="255" placeholder="E.G. SEWING NEEDLES, THREAD, BUTTONS" required>
                 </div>
@@ -1155,9 +1159,10 @@
                 supplyTotals.tax += tax.amount;
                 supplyTotals.total += total;
                 const taxLabel = tax.type === 'BOTH' ? 'SGST + CGST' : tax.type;
-                return `<tr><td class="text-center">${index + 1}</td><td>${safe(row.querySelector('.supply-name').value.trim() || '—')}</td><td><span class="badge bg-light text-dark border font-monospace">${safe(hsn)}</span></td><td class="text-end">${quantity.toLocaleString('en-IN', {maximumFractionDigits:3})}</td><td>${safe(row.querySelector('.supply-unit').selectedOptions[0].textContent)}</td><td class="text-end">${money(unitPrice)}</td><td class="text-end">${money(base)}</td><td>${taxLabel}</td><td class="text-end">${money(tax.amount)}</td><td class="text-end fw-bold text-success">${money(total)}</td></tr>`;
+                const prodCode = row.querySelector('.supply-product-code')?.value?.trim() || '—';
+                return `<tr><td class="text-center">${index + 1}</td><td><span class="badge bg-light text-dark border font-monospace">${safe(prodCode)}</span></td><td>${safe(row.querySelector('.supply-name').value.trim() || '—')}</td><td><span class="badge bg-light text-dark border font-monospace">${safe(hsn)}</span></td><td class="text-end">${quantity.toLocaleString('en-IN', {maximumFractionDigits:3})}</td><td>${safe(row.querySelector('.supply-unit').selectedOptions[0].textContent)}</td><td class="text-end">${money(unitPrice)}</td><td class="text-end">${money(base)}</td><td>${taxLabel}</td><td class="text-end">${money(tax.amount)}</td><td class="text-end fw-bold text-success">${money(total)}</td></tr>`;
             }).join('');
-            tableFoot.innerHTML = `<tr><td colspan="6" class="text-end">Totals</td><td class="text-end">${money(supplyTotals.base)}</td><td></td><td class="text-end">${money(supplyTotals.tax)}</td><td class="text-end text-success">${money(supplyTotals.total)}</td></tr>`;
+            tableFoot.innerHTML = `<tr><td colspan="7" class="text-end">Totals</td><td class="text-end">${money(supplyTotals.base)}</td><td></td><td class="text-end">${money(supplyTotals.tax)}</td><td class="text-end text-success">${money(supplyTotals.total)}</td></tr>`;
         }
         const subtotal = rollTotals.base + supplyTotals.base;
         const totalTax = rollTotals.tax + supplyTotals.tax;
@@ -1256,6 +1261,9 @@
     function addSupply() {
         const index = supplyIndex++;
         const row = supplyTemplate.content.firstElementChild.cloneNode(true);
+        if (row.querySelector('.supply-product-code')) {
+            row.querySelector('.supply-product-code').name = `items[${index + 1000}][product_code]`;
+        }
         row.querySelector('.supply-name').name = `items[${index + 1000}][item_name]`;
         row.querySelector('.supply-hsn').name = `items[${index + 1000}][hsn_code]`;
         row.querySelector('.supply-quantity').name = `items[${index + 1000}][quantity]`;

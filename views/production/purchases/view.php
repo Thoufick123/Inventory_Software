@@ -93,6 +93,13 @@
                         <?php if ($item['item_type'] === 'FABRIC_ROLL'): ?>
                             <small class="text-muted"><?= e($item['roll_number'] ?: '—') ?> · <?= e($item['color'] ?: '—') ?> · <?= e($item['design_name'] ?: '—') ?></small>
                             <?php if (!empty($item['start_code'])): ?><small class="d-block font-monospace"><?= e($item['start_code']) ?><?= $item['end_code'] !== $item['start_code'] ? '–' . e($item['end_code']) : '' ?></small><?php endif; ?>
+                        <?php else: ?>
+                            <?php if (!empty($item['product_code']) || !empty($item['roll_number'])): ?>
+                                <small class="text-muted font-monospace"><span class="badge bg-light text-dark border me-1">Code: <?= e($item['product_code'] ?: $item['roll_number']) ?></span></small>
+                            <?php endif; ?>
+                            <?php if (!empty($item['start_code'])): ?>
+                                <small class="d-block font-monospace text-primary"><?= e($item['start_code']) ?><?= (!empty($item['end_code']) && $item['end_code'] !== $item['start_code']) ? '–' . e($item['end_code']) : '' ?></small>
+                            <?php endif; ?>
                         <?php endif; ?>
                     </td>
                     <td><span class="badge bg-light text-dark border font-monospace"><?= e($item['hsn_code'] ?: '—') ?></span></td>

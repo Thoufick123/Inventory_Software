@@ -406,7 +406,7 @@
                     <div class="d-flex align-items-center justify-content-between mb-1">
                         <label class="form-label fs-8 text-muted mb-0 fw-bold">HSN Code:</label>
                         <button type="button" class="btn btn-link p-0 fs-8 text-primary fw-bold text-decoration-none" onclick="openSupplierAddHsnModal()" title="Add New HSN Code">
-                            <i class="bi bi-plus-circle me-0.5"></i>+ New HSN
+                            New HSN
                         </button>
                     </div>
                     <select class="form-select form-select-sm font-monospace fw-bold" id="qfHsnSelect" onchange="onQfHsnSelect(this.value)">
@@ -607,6 +607,7 @@
 <!-- JAVASCRIPT: PHASE 2 DIRECT TABLE GENERATION & INLINE EDITING -->
 <!-- ========================================================================= -->
 <script>
+const APP_URL = <?= json_encode(rtrim(url(''), '/')) ?>;
 const CATEGORIES_DATA = <?= json_encode($categories ?? [], JSON_UNESCAPED_UNICODE) ?>;
 const ATTRIBUTES_DATA = <?= json_encode($allAttributes ?? [], JSON_UNESCAPED_UNICODE) ?>;
 const DEFAULT_PRODUCTS_DATA = <?= json_encode($allDefaultProducts ?? [], JSON_UNESCAPED_UNICODE) ?>;
@@ -2446,7 +2447,7 @@ function openSupplierAddHsnModal() {
     }, 400);
 }
 
-function submitSupplierAddHsn(e) {
+async function submitSupplierAddHsn(e) {
     e.preventDefault();
     const hsn = (document.getElementById('supplierHsnCodeInput').value || '').trim().toUpperCase();
     const desc = (document.getElementById('supplierHsnDescInput').value || '').trim();
@@ -2467,6 +2468,7 @@ function submitSupplierAddHsn(e) {
     p.append('description', desc || `HSN ${hsn}`);
     p.append('gst_rate', gst);
 
+<<<<<<< HEAD
     fetch(<?= json_encode(url('api/hsn-codes/store')) ?>, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
@@ -2523,13 +2525,70 @@ function submitSupplierAddHsn(e) {
             });
         } else {
             alert(data.message || 'Error saving HSN code');
+=======
+    try {
+        const response = await fetch(`${APP_URL}/api/hsn-codes/store`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+            body: p.toString()
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success || !data.data) {
+            throw new Error(data.message || 'The HSN code could not be saved.');
+>>>>>>> a4745f11a684f1fc6834d3b5d56aa8a96a217e8a
         }
-    })
-    .catch(err => {
+
+        const modalElement = document.getElementById('modalSupplierAddHsn');
+        const modalInstance = bootstrap.Modal.getInstance(modalElement);
+        if (modalInstance) modalInstance.hide();
+
+        const newHsn = data.data.hsn_code;
+        const parsedGst = Number(data.data.gst_rate);
+        const newGst = Number.isFinite(parsedGst) ? parsedGst : 5.00;
+        const newDesc = data.data.description || '';
+        const existingHsn = HSN_OPTIONS.find(h => String(h.hsn_code).toUpperCase() === String(newHsn).toUpperCase());
+        if (existingHsn) {
+            existingHsn.description = newDesc;
+            existingHsn.gst_rate = newGst;
+        } else {
+            HSN_OPTIONS.push({ hsn_code: newHsn, description: newDesc, gst_rate: newGst });
+        }
+
+        const sel = document.getElementById('qfHsnSelect');
+        if (sel) {
+            let existingOpt = Array.from(sel.options).find(o => o.value === newHsn);
+            if (!existingOpt) {
+                existingOpt = document.createElement('option');
+                existingOpt.value = newHsn;
+                sel.appendChild(existingOpt);
+            }
+            existingOpt.dataset.gst = newGst;
+            existingOpt.textContent = `${newHsn}${newDesc ? ' • ' + newDesc : ''} (${newGst}%)`;
+            sel.value = newHsn;
+        }
+
+        const qfGst = document.getElementById('qfGst');
+        if (qfGst) qfGst.value = newGst.toFixed(2);
+
+        addedProductsList.forEach(item => {
+            const rowSel = document.getElementById(`hsn_${item.id}`);
+            if (!rowSel) return;
+            let opt = Array.from(rowSel.options).find(o => o.value === newHsn);
+            if (!opt) {
+                opt = document.createElement('option');
+                opt.value = newHsn;
+                rowSel.appendChild(opt);
+            }
+            opt.dataset.gst = newGst;
+            opt.textContent = `${newHsn}${newDesc ? ' • ' + newDesc : ''} (${newGst}%)`;
+        });
+        showSupplierToast('HSN Saved', `${newHsn} is saved and ready to use.`, 'success');
+    } catch (err) {
+        alert('Error saving HSN code: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
         btn.disabled = false;
         btn.innerHTML = orig;
-        alert('Error: ' + err.message);
-    });
+    }
 }
 
 function onQfHsnSelect(val) {

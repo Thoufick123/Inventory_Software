@@ -1145,29 +1145,40 @@ class ProductionBillingController
             $mrp = max(0, (float)$stock['mrp']);
             $unitPrice = $item['unit_price'];
             $gross = round($mrp * $qty, 2);
-            $taxable = round($unitPrice * $qty, 2);
-            $discount = max(0, round($gross - $taxable, 2));
-            $taxAmount = static function (float $rate) use ($item, $taxable, $qty): float {
-                if ($rate <= 0) {
-                    return 0.0;
-                }
-                return round(
-                    $item['tax_input_type'] === 'PERCENT' ? $taxable * $rate / 100 : $rate * $qty,
-                    2
-                );
-            };
-            $cgst = $taxAmount($item['cgst_rate']);
-            $sgst = $taxAmount($item['sgst_rate']);
-            $igst = $taxAmount($item['igst_rate']);
-            $tax = round($cgst + $sgst + $igst, 2);
-            $lineTotal = round($taxable + $tax, 2);
-            $gstPercentage = $item['tax_input_type'] === 'PERCENT'
-                ? $item['cgst_rate'] + $item['sgst_rate'] + $item['igst_rate']
+            $netLine = round($unitPrice * $qty, 2);
+            $discount = max(0, round($gross - $netLine, 2));
+
+            $totalRate = ($item['tax_input_type'] === 'PERCENT')
+                ? ($item['cgst_rate'] + $item['sgst_rate'] + $item['igst_rate'])
                 : 0.0;
+
+            if ($item['tax_input_type'] === 'PERCENT' && $totalRate > 0) {
+                // GST is INCLUSIVE inside selling price
+                $taxable = round($netLine / (1 + ($totalRate / 100)), 2);
+                $tax = round($netLine - $taxable, 2);
+                $cgst = $item['cgst_rate'] > 0 ? round($tax * ($item['cgst_rate'] / $totalRate), 2) : 0.0;
+                $sgst = $item['sgst_rate'] > 0 ? round($tax * ($item['sgst_rate'] / $totalRate), 2) : 0.0;
+                $igst = round($tax - ($cgst + $sgst), 2);
+            } elseif ($item['tax_input_type'] !== 'PERCENT') {
+                $tax = round(($item['cgst_rate'] + $item['sgst_rate'] + $item['igst_rate']) * $qty, 2);
+                $taxable = max(0, round($netLine - $tax, 2));
+                $cgst = round($item['cgst_rate'] * $qty, 2);
+                $sgst = round($item['sgst_rate'] * $qty, 2);
+                $igst = round($item['igst_rate'] * $qty, 2);
+            } else {
+                $taxable = $netLine;
+                $tax = 0.0;
+                $cgst = 0.0;
+                $sgst = 0.0;
+                $igst = 0.0;
+            }
+
+            $lineTotal = $netLine;
+            $gstPercentage = $item['tax_input_type'] === 'PERCENT' ? $totalRate : 0.0;
             $item['gst_percentage'] = round($gstPercentage, 3);
             $item['amounts'] = [
                 'mrp' => $mrp,
-                'discount_percentage' => $mrp > 0 ? round(($discount / $gross) * 100, 3) : 0,
+                'discount_percentage' => $gross > 0 ? round(($discount / $gross) * 100, 3) : 0,
                 'discount_amount' => $discount,
                 'taxable_amount' => $taxable,
                 'cgst_amount' => $cgst,

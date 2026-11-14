@@ -354,6 +354,7 @@ class Router {
         $this->get('production/sellers/roll-labels/{id}', 'ProductionController', 'printSellerRollLabel', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
         $this->post('production/sellers/add-extra-label/{id}', 'ProductionController', 'addExtraRollLabel', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'edit']]);
         $this->post('production/sellers/delete-extra-label/{id}', 'ProductionController', 'deleteExtraRollLabel', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'delete']]);
+        $this->get('production/sellers/export-replaced', 'ProductionController', 'exportReplacedRolls', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
         $this->get('api/sellers/{id}/roll-labels-ajax', 'ProductionController', 'ajaxSellerRollLabels', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
         $this->get('api/sellers/next-roll-codes', 'ProductionController', 'ajaxNextFabricRollCodes', ['AuthMiddleware']);
         $this->get('api/sellers/{id}/rolls', 'ProductionController', 'ajaxSellerRolls', ['AuthMiddleware', ['PermissionMiddleware', 'sellers', 'view']]);
@@ -558,6 +559,8 @@ class Router {
         $this->post('warehouse/inward/store', 'WarehouseController', 'storeInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'create']]);
         $this->get('warehouse/inward/view/{id}', 'WarehouseController', 'viewInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'view']]);
         $this->post('warehouse/inward/verify/{id}', 'WarehouseController', 'verifyInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'create']]);
+        $this->get('warehouse/inward/edit-qr/{id}', 'WarehouseController', 'viewInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'edit']]);
+        $this->post('warehouse/inward/update-qr/{id}', 'WarehouseController', 'updateInwardQr', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'edit']]);
         $this->get('warehouse/inward/edit/{id}', 'WarehouseController', 'editInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'edit']]);
         $this->post('warehouse/inward/update/{id}', 'WarehouseController', 'updateInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'edit']]);
         $this->post('warehouse/inward/delete/{id}', 'WarehouseController', 'deleteInward', ['AuthMiddleware', ['PermissionMiddleware', 'inward', 'delete']]);
@@ -580,7 +583,13 @@ class Router {
         $this->get('warehouse/damage', 'WarehouseController', 'damageList', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'view']]);
         $this->get('warehouse/damage/create', 'WarehouseController', 'createDamage', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'create']]);
         $this->post('warehouse/damage/store', 'WarehouseController', 'storeDamage', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'create']]);
+        $this->get('warehouse/damage/edit/{id}', 'WarehouseController', 'editDamage', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'edit']]);
+        $this->post('warehouse/damage/update/{id}', 'WarehouseController', 'updateDamage', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'edit']]);
+        $this->post('warehouse/damage/delete/{id}', 'WarehouseController', 'deleteDamage', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'delete']]);
         $this->get('warehouse/damage/view/{id}', 'WarehouseController', 'viewDamage', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'view']]);
+        $this->get('warehouse/damage/resolve/{id}', 'WarehouseController', 'resolveDamageForm', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'resolve']]);
+        $this->post('warehouse/damage/resolve/{id}', 'WarehouseController', 'resolveDamage', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'resolve']]);
+        $this->post('warehouse/damage/inward-replacement/{id}', 'WarehouseController', 'inwardDamageReplacement', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'resolve']]);
         $this->post('warehouse/damage/update-status/{id}', 'WarehouseController', 'updateDamageStatus', ['AuthMiddleware', ['PermissionMiddleware', 'damage', 'resolve']]);
         $this->get('api/warehouse/damage/lookup-scan', 'WarehouseController', 'ajaxLookupDamageProduct', ['AuthMiddleware']);
         $this->post('api/warehouse/damage/lookup-scan', 'WarehouseController', 'ajaxLookupDamageProduct', ['AuthMiddleware']);
@@ -673,7 +682,7 @@ class Router {
         $this->post('warehouse/returns/classify/{id}', 'WarehouseController', 'classifyReturn', ['AuthMiddleware', ['PermissionMiddleware', 'returns', 'classify']]);
 
         // Labels/QR Codes
-        $this->get('warehouse/labels', 'WarehouseController', 'labels', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'view']]);
+        $this->get('warehouse/labels', 'WarehouseController', 'labels', ['AuthMiddleware']);
         $this->get('warehouse/labels/ajax-source/{type}/{id}', 'WarehouseController', 'ajaxLabelSourceData', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'view']]);
         $this->post('warehouse/labels/generate', 'WarehouseController', 'generateLabels', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'create']]);
         $this->post('warehouse/labels/produce-new-qr', 'WarehouseController', 'produceNewQrAjax', ['AuthMiddleware', ['PermissionMiddleware', 'wh_labels', 'edit']]);

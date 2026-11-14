@@ -19,10 +19,12 @@ if ($storeGst === '') {
 $storeEmail = trim((string)($companySettings['company_email'] ?? ''));
 $warehouseLogo = trim((string)($po['warehouse_logo_url'] ?? ''));
 $billNumber = (string)($po['po_number'] ?? $po['id'] ?? '');
+$billId = (int)($po['id'] ?? 0);
 $customerName = trim((string)($po['display_customer_name'] ?? ''));
 if ($customerName === '') {
     $customerName = 'Walk-in Customer';
 }
+$customerPhone = trim((string)($po['display_customer_phone'] ?? $po['customer_phone'] ?? ''));
 $customerGst = trim((string)($po['customer_gst'] ?? ''));
 $staffName = trim((string)($po['created_by_name'] ?? ''));
 $paymentMethod = trim((string)($po['payment_method'] ?? 'CASH'));
@@ -115,14 +117,44 @@ foreach ($items as $item) {
 
         .store-header,
         .customer-header {
+            display: flex;
+            align-items: center;
+            gap: 2mm;
             text-align: center;
+        }
+
+        .store-header {
+            flex-direction: column;
+        }
+
+        .customer-left,
+        .customer-right {
+            min-width: 0;
+        }
+
+        .customer-right {
+            text-align: right;
+        }
+
+        .customer-header {
+            display: grid;
+            grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
+            align-items: start;
+            gap: 2mm;
+            text-align: left;
+        }
+
+        .customer-payment-mode {
+            overflow-wrap: anywhere;
         }
 
         .store-brand {
             display: flex;
             align-items: center;
+            justify-content: center;
+            width: 100%;
             gap: 3mm;
-            text-align: left;
+            text-align: center;
         }
 
         .store-logo {
@@ -138,7 +170,7 @@ foreach ($items as $item) {
         .store-brand-info {
             flex: 1;
             min-width: 0;
-            text-align: right;
+            text-align: center;
         }
 
         .store-name {
@@ -146,7 +178,8 @@ foreach ($items as $item) {
             font-size: 14px;
             font-weight: 800;
             text-transform: uppercase;
-            overflow-wrap: anywhere;
+            overflow-wrap: break-word;
+            word-break: normal;
         }
 
         .store-details {
@@ -155,10 +188,12 @@ foreach ($items as $item) {
         }
 
         .receipt-title {
+            width: 100%;
             margin: 7px 0 5px;
             font-size: 14px;
             font-weight: 800;
             letter-spacing: .3px;
+            text-align: center;
         }
 
         .rule {
@@ -185,12 +220,23 @@ foreach ($items as $item) {
         }
 
         .customer-name {
-            margin: 3px 0;
+            margin: 0 0 2px;
             font-weight: 700;
+            overflow-wrap: anywhere;
+        }
+
+        .customer-phone {
+            overflow-wrap: anywhere;
         }
 
         .customer-date {
             font-size: 10px;
+            margin-top: 2px;
+        }
+
+        .customer-status {
+            font-size: 9px;
+            font-weight: 700;
         }
 
         table {
@@ -324,19 +370,28 @@ foreach ($items as $item) {
         <hr class="rule">
         <div class="meta-row">
             <span>Bill No: <strong><?= e($billNumber) ?></strong></span>
-            <span>BID: <strong><?= e((string)($po['id'] ?? '')) ?></strong></span>
+            <span class="staff-row">Staff: <?= e($staffName !== '' ? $staffName : '-') ?></span>
         </div>
-        <div class="meta-row staff-row">
-            <span>Staff: <?= e($staffName !== '' ? $staffName : '-') ?></span>
+        <div class="meta-row">
+            <span>BID: <strong>#<?= e((string)$billId) ?></strong></span>
         </div>
 
         <hr class="rule">
         <section class="customer-header">
-            <div class="customer-name"><?= e($customerName) ?></div>
-            <div class="customer-date">Date: <?= e(formatDateTime($po['created_at'] ?? null)) ?></div>
-            <?php if ($customerGst !== ''): ?>
-                <div>GST No: <?= e($customerGst) ?></div>
-            <?php endif; ?>
+            <div class="customer-left">
+                <div class="customer-name"><?= e($customerName) ?></div>
+                <?php if ($customerPhone !== ''): ?>
+                    <div class="customer-phone">Ph: <?= e($customerPhone) ?></div>
+                <?php endif; ?>
+                <?php if ($customerGst !== ''): ?>
+                    <div>GST No: <?= e($customerGst) ?></div>
+                <?php endif; ?>
+            </div>
+            <div class="customer-right">
+                <div class="customer-payment-mode">Pay Mode: <strong><?= e($paymentMethod) ?></strong></div>
+                <div class="customer-date">Date: <?= e(formatDateTime($po['created_at'] ?? null, 'd/m/y h:i A')) ?></div>
+                <div class="customer-status"><?= e($paymentStatus) ?></div>
+            </div>
         </section>
 
         <hr class="rule">
@@ -444,14 +499,6 @@ foreach ($items as $item) {
 
         <hr class="rule">
         <section class="payment-details">
-            <div class="meta-row">
-                <span>Pay Mode: <strong><?= e($paymentMethod) ?></strong></span>
-                <span><?= e($paymentStatus) ?></span>
-            </div>
-            <div class="meta-row">
-                <span>Amount Received (Applied to Bill)</span>
-                <strong>₹ <?= e(number_format($paidAmount, 2)) ?></strong>
-            </div>
             <?php if ($cashTendered > $paidAmount): ?>
                 <div class="meta-row">
                     <span>Cash Given by Customer</span>
@@ -462,10 +509,6 @@ foreach ($items as $item) {
                     <strong>₹ <?= e(number_format($changeAmount, 2)) ?></strong>
                 </div>
             <?php endif; ?>
-            <div class="meta-row">
-                <span>Balance Due</span>
-                <strong>₹ <?= e(number_format($balanceDue, 2)) ?></strong>
-            </div>
             <?php if ($cashAmount !== null && $upiAmount !== null): ?>
                 <div class="meta-row">
                     <span>Cash: ₹ <?= e(number_format($cashAmount, 2)) ?></span>

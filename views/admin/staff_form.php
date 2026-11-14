@@ -285,6 +285,16 @@ foreach ($hierarchicalModules as $m) {
                                             <?php endforeach; ?>
                                         </select>
                                     </div>
+                                    <div class="mt-3">
+                                        <label for="staff_role" class="form-label fw-semibold">Production Staff Designation</label>
+                                        <select id="staff_role" name="staff_role" class="form-select">
+                                            <option value="">-- General Staff / Supervisor / Manager --</option>
+                                            <option value="CUTTING_MASTER" <?= ($staff['staff_role'] ?? '') === 'CUTTING_MASTER' ? 'selected' : '' ?>>Cutting Master / Operator</option>
+                                            <option value="TAILOR" <?= ($staff['staff_role'] ?? '') === 'TAILOR' ? 'selected' : '' ?>>Tailor / Stitching Master</option>
+                                            <option value="QC_INSPECTOR" <?= ($staff['staff_role'] ?? '') === 'QC_INSPECTOR' ? 'selected' : '' ?>>QC Inspector</option>
+                                        </select>
+                                        <small class="text-muted">Designates which production operation dropdown (Cutting, Stitching, or QC) this staff member appears in.</small>
+                                    </div>
                                 </div>
 
                                 <!-- Warehouse Block -->

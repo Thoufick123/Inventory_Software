@@ -61,7 +61,7 @@ $returnQrDate = !empty($return['created_at']) ? date('my', strtotime($return['cr
                                 <div class="my-1"><span class="badge bg-light text-primary border small font-monospace"><i class="bi bi-diagram-3-fill me-1 text-warning"></i><?= htmlspecialchars(implode(' › ', $catParts)) ?></span></div>
                             <?php endif; ?>
                             <code><?= htmlspecialchars($item['sku']) ?></code>
-                            <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
+                            <div class="mt-2 d-flex align-items-start gap-2 flex-wrap">
                                 <?php
                                     $initial = static function ($value): string {
                                         $clean = trim((string)$value);
@@ -85,11 +85,16 @@ $returnQrDate = !empty($return['created_at']) ? date('my', strtotime($return['cr
                                     if ($rawTagCode === '') continue;
                                     $returnQrValue = (str_starts_with(strtoupper($rawTagCode), 'R') ? '' : 'R') . $rawTagCode;
                                 ?>
-                                    <div class="return-item-qr rounded bg-white d-flex align-items-center justify-content-center"
-                                         data-qr-value="<?= htmlspecialchars($returnQrValue) ?>"
-                                         title="<?= htmlspecialchars($returnQrValue) ?>"
-                                         aria-label="Return QR code"
-                                         style="width:58px;height:58px;"></div>
+                                    <div class="d-flex flex-column align-items-center" style="width:76px;">
+                                        <div class="return-item-qr rounded bg-white d-flex align-items-center justify-content-center"
+                                             data-qr-value="<?= htmlspecialchars($returnQrValue) ?>"
+                                             title="<?= htmlspecialchars($returnQrValue) ?>"
+                                             aria-label="Return QR code"
+                                             style="width:58px;height:58px;"></div>
+                                        <small class="mt-1 text-center text-break font-monospace"
+                                               style="font-size:.65rem;line-height:1.15;"
+                                               title="<?= htmlspecialchars($returnQrValue) ?>"><?= htmlspecialchars($returnQrValue) ?></small>
+                                    </div>
                                 <?php endforeach; ?>
                             </div>
                         </td>
@@ -100,9 +105,16 @@ $returnQrDate = !empty($return['created_at']) ? date('my', strtotime($return['cr
                                    class="form-control text-success fw-bold good-qty-input"
                                    min="0"
                                    max="<?= $item['returned_qty'] ?>"
+                                   step="1"
                                    value="<?= (int)$item['good_qty'] ?>"
                                    data-returned="<?= (int)$item['returned_qty'] ?>"
-                                   <?= !$canClassify ? 'readonly disabled' : '' ?>>
+                                   data-allow-edit="<?= !empty($item['is_series_or_complementary']) ? '1' : '0' ?>"
+                                   <?= (!$canClassify || empty($item['is_series_or_complementary'])) ? 'readonly' : '' ?>
+                                   <?= !$canClassify ? 'disabled' : '' ?>>
+                            <div class="good-qty-error small text-danger mt-1" aria-live="polite"></div>
+                            <?php if ($canClassify && empty($item['is_series_or_complementary'])): ?>
+                                <small class="text-muted">Fixed to returned quantity for individual products.</small>
+                            <?php endif; ?>
                         </td>
                         <td>
                             <input type="number"
@@ -110,6 +122,7 @@ $returnQrDate = !empty($return['created_at']) ? date('my', strtotime($return['cr
                                    class="form-control fw-bold damaged-qty-input"
                                    min="0"
                                    max="<?= $item['returned_qty'] ?>"
+                                   step="1"
                                    value="<?= max(0, (int)$item['returned_qty'] - (int)$item['good_qty']) ?>"
                                    style="color:#fd7e14;"
                                    <?= !$canClassify ? 'readonly disabled' : '' ?>>
@@ -184,6 +197,9 @@ document.addEventListener('DOMContentLoaded', function () {
         const val      = sel.value;
         const cfg      = classConfig[val] || classConfig['GOOD'];
         const returned = parseInt(goodInput.getAttribute('data-returned')) || 0;
+        if (goodInput.dataset.allowEdit !== '1') {
+            goodInput.value = val === 'GOOD' ? returned : 0;
+        }
         const good     = Math.min(Math.max(0, parseInt(goodInput.value) || 0), returned);
 
         // Row left-border highlight
@@ -215,6 +231,33 @@ document.addEventListener('DOMContentLoaded', function () {
             dmgInput.style.borderColor = cfg.rowBorder;
             if (dmgCell) dmgCell.style.opacity = '1';
         }
+        validateGoodQty(goodInput);
+    }
+
+    function validateGoodQty(input) {
+        const row = input.closest('tr');
+        const error = row.querySelector('.good-qty-error');
+        const returned = parseInt(input.dataset.returned, 10) || 0;
+        const value = input.value.trim();
+        let message = '';
+
+        if (input.dataset.allowEdit === '1' && value !== '') {
+            if (!/^\d+$/.test(value)) {
+                message = 'Enter a whole number of pieces.';
+            } else {
+                const quantity = Number(value);
+                if (quantity < 0 || quantity > returned) {
+                    message = 'Good quantity must be between 0 and the returned quantity (' + returned + ').';
+                }
+            }
+        } else if (input.dataset.allowEdit === '1' && value === '') {
+            message = 'Good quantity is required.';
+        }
+
+        error.textContent = message;
+        input.setCustomValidity(message);
+        input.classList.toggle('is-invalid', Boolean(message));
+        return message === '';
     }
 
     // When good qty changes: recalculate non-good remainder
@@ -232,6 +275,9 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             applyClassificationUI(row);
         });
+        goodInput.addEventListener('change', function () {
+            validateGoodQty(this);
+        });
     });
 
     // When classification changes: update all UI
@@ -242,6 +288,20 @@ document.addEventListener('DOMContentLoaded', function () {
         // Apply on page load for pre-saved state
         applyClassificationUI(sel.closest('tr'));
     });
+
+    const classifyForm = document.querySelector('form');
+    if (classifyForm) {
+        classifyForm.addEventListener('submit', function (event) {
+            let valid = true;
+            document.querySelectorAll('.good-qty-input').forEach(function (input) {
+                if (!validateGoodQty(input)) valid = false;
+            });
+            if (!valid) {
+                event.preventDefault();
+                this.reportValidity();
+            }
+        });
+    }
 
 });
 </script>

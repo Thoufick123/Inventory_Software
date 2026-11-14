@@ -653,7 +653,9 @@ class SalesController {
             return;
         }
 
-        $customers = Database::fetchAll("SELECT * FROM customers ORDER BY name ASC");
+        $customers = Database::fetchAll(
+            "SELECT * FROM customers WHERE COALESCE(source_channel, 'SHOP') <> 'WAREHOUSE' ORDER BY name ASC"
+        );
         $users = Database::fetchAll("SELECT id, full_name, username FROM users WHERE is_active = 1 ORDER BY full_name ASC");
         $variants = Database::fetchAll(
             "SELECT pv.id, pv.product_id, pv.sku, pv.qr_code, pv.mrp, pv.selling_price, pv.qr_type, pv.pack_quantity,
@@ -1059,7 +1061,9 @@ class SalesController {
         }
 
         ShopService::ensureSalesOnlineFlagColumn();
-        $customers = Database::fetchAll("SELECT * FROM customers ORDER BY name ASC");
+        $customers = Database::fetchAll(
+            "SELECT * FROM customers WHERE COALESCE(source_channel, 'SHOP') <> 'WAREHOUSE' ORDER BY name ASC"
+        );
         $users = Database::fetchAll("SELECT id, full_name, username FROM users WHERE is_active = 1 ORDER BY full_name ASC");
         $variants = Database::fetchAll(
             "SELECT pv.id, pv.product_id, pv.sku, pv.qr_code, pv.mrp, pv.selling_price, pv.qr_type, pv.pack_quantity,
@@ -1398,7 +1402,10 @@ class SalesController {
             return;
         }
 
-        if ($customerId > 0 && !Database::fetchOne("SELECT id FROM customers WHERE id = ?", [$customerId])) {
+        if ($customerId > 0 && !Database::fetchOne(
+            "SELECT id FROM customers WHERE id = ? AND COALESCE(source_channel, 'SHOP') <> 'WAREHOUSE'",
+            [$customerId]
+        )) {
             $customerId = 0;
         }
 
@@ -1436,7 +1443,10 @@ class SalesController {
                 return;
             }
             $customerId = (int)($editSale['customer_id'] ?? 0);
-            if ($customerId > 0 && !Database::fetchOne("SELECT id FROM customers WHERE id = ?", [$customerId])) {
+            if ($customerId > 0 && !Database::fetchOne(
+                "SELECT id FROM customers WHERE id = ? AND COALESCE(source_channel, 'SHOP') <> 'WAREHOUSE'",
+                [$customerId]
+            )) {
                 $customerId = 0;
             }
         }

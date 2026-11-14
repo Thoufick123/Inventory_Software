@@ -389,17 +389,17 @@ $canDelete = hasPermission('inward', 'delete');
                                                 <?php endif; ?>
                                             </td>
                                             <td class="text-end">
-                                                <div class="d-inline-flex gap-1 align-items-center">
-                                                    <button type="button" class="btn btn-sm btn-outline-info btn-batch-history" data-batch-id="<?= $b['id'] ?>" data-batch-number="<?= e($b['batch_number']) ?>" title="Batch History &amp; Traceability Logs">
+                                                <div class="inward-row-actions d-inline-flex gap-1 align-items-center justify-content-end flex-nowrap">
+                                                    <button type="button" class="btn btn-sm btn-outline-info btn-batch-history p-0" style="width:36px;height:36px;" data-batch-id="<?= $b['id'] ?>" data-batch-number="<?= e($b['batch_number']) ?>" title="Batch History &amp; Traceability Logs" aria-label="Batch history and traceability logs">
                                                         <i class="bi bi-clock-history"></i>
                                                     </button>
                                                     <?php if ($canEdit): ?>
-                                                        <a href="<?= url('warehouse/inward/edit/' . $b['id']) ?>" class="btn btn-sm btn-warning fw-semibold" title="Edit Inward Shipment">
-                                                            <i class="bi bi-pencil-square me-1"></i>Edit Inward
+                                                        <a href="<?= url('warehouse/inward/view/' . $b['id']) ?>" class="btn btn-sm btn-warning p-0" style="width:36px;height:36px;" title="Edit / verify inward batch" aria-label="Edit or verify inward batch">
+                                                            <i class="bi bi-pencil-square"></i>
                                                         </a>
                                                     <?php endif; ?>
                                                     <?php if ($canDelete): ?>
-                                                        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-inward" 
+                                                        <button type="button" class="btn btn-sm btn-outline-danger btn-delete-inward p-0" style="width:36px;height:36px;"
                                                                 data-id="<?= $b['id'] ?>" 
                                                                 data-number="<?= e($b['batch_number']) ?>" 
                                                                 data-product="<?= e($b['product_name']) ?>" 
@@ -407,13 +407,16 @@ $canDelete = hasPermission('inward', 'delete');
                                                                 data-received="<?= $bRec ?>" 
                                                                 data-damaged="<?= $bDmg ?>" 
                                                                 data-status="<?= e($b['status']) ?>" 
-                                                                title="Delete / Reverse Inward Receipt">
+                                                                title="Delete / Reverse Inward Receipt"
+                                                                aria-label="Delete or reverse inward receipt">
                                                             <i class="bi bi-trash3"></i>
                                                         </button>
                                                     <?php endif; ?>
-                                                    <a href="<?= url('warehouse/inward/view/' . $b['id']) ?>" class="btn btn-sm <?= ($canVerify && ($b['status'] === 'DISPATCHED' || $bIsPartial)) ? ($bIsPartial ? 'btn-warning text-dark fw-bold' : 'btn-primary fw-semibold') : 'btn-outline-primary' ?>">
-                                                        <i class="bi <?= ($canVerify && ($b['status'] === 'DISPATCHED' || $bIsPartial)) ? 'bi-qr-code-scan' : 'bi-eye' ?> me-1"></i>
-                                                        <?= ($canVerify && $b['status'] === 'DISPATCHED') ? 'Cross-Check &amp; Inward' : (($canVerify && $bIsPartial) ? "Scan Remaining ($bMis)" : 'View Inward') ?>
+                                                    <a href="<?= url('warehouse/inward/view/' . $b['id']) ?>" class="btn btn-sm <?= ($canVerify && ($b['status'] === 'DISPATCHED' || $bIsPartial)) ? ($bIsPartial ? 'btn-warning text-dark fw-bold' : 'btn-primary fw-semibold') : 'btn-outline-primary' ?> d-inline-flex align-items-center gap-1 px-2 text-nowrap"
+                                                       title="<?= ($canVerify && $b['status'] === 'DISPATCHED') ? 'Cross-check QR codes and inward this batch' : (($canVerify && $bIsPartial) ? "Scan remaining {$bMis} pieces" : 'View inward details') ?>"
+                                                       aria-label="<?= ($canVerify && $b['status'] === 'DISPATCHED') ? 'Cross-check and inward batch' : (($canVerify && $bIsPartial) ? "Scan remaining {$bMis} pieces" : 'View inward details') ?>">
+                                                        <i class="bi <?= ($canVerify && ($b['status'] === 'DISPATCHED' || $bIsPartial)) ? 'bi-qr-code-scan' : 'bi-eye' ?>"></i>
+                                                        <span><?= ($canVerify && $b['status'] === 'DISPATCHED') ? 'Inward' : (($canVerify && $bIsPartial) ? "Scan ($bMis)" : 'View') ?></span>
                                                     </a>
                                                 </div>
                                             </td>
@@ -604,17 +607,17 @@ $canDelete = hasPermission('inward', 'delete');
 
                                         <!-- Card Footer -->
                                         <div class="card-footer bg-light py-2 px-3 d-flex justify-content-between align-items-center gap-1 flex-wrap">
-                                            <div class="d-inline-flex gap-1">
-                                                <button type="button" class="btn btn-sm btn-outline-info py-1 px-2 btn-batch-history" data-batch-id="<?= $b['id'] ?>" data-batch-number="<?= e($b['batch_number']) ?>" title="Batch History &amp; Traceability Logs">
-                                                    <i class="bi bi-clock-history"></i> Logs
+                                            <div class="d-inline-flex gap-1 align-items-center">
+                                                <button type="button" class="btn btn-sm btn-outline-info btn-batch-history p-0" style="width:36px;height:36px;" data-batch-id="<?= $b['id'] ?>" data-batch-number="<?= e($b['batch_number']) ?>" title="Batch History &amp; Traceability Logs" aria-label="Batch history and traceability logs">
+                                                    <i class="bi bi-clock-history"></i>
                                                 </button>
                                                 <?php if ($canEdit): ?>
-                                                    <a href="<?= url('warehouse/inward/edit/' . $b['id']) ?>" class="btn btn-sm btn-warning py-1 px-2 fw-semibold" title="Edit Inward">
-                                                        <i class="bi bi-pencil-square me-1"></i>Edit
+                                                    <a href="<?= url('warehouse/inward/view/' . $b['id']) ?>" class="btn btn-sm btn-warning p-0" style="width:36px;height:36px;" title="Edit / verify inward batch" aria-label="Edit or verify inward batch">
+                                                        <i class="bi bi-pencil-square"></i>
                                                     </a>
                                                 <?php endif; ?>
                                                 <?php if ($canDelete): ?>
-                                                    <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2 btn-delete-inward" 
+                                                    <button type="button" class="btn btn-sm btn-outline-danger btn-delete-inward p-0" style="width:36px;height:36px;"
                                                             data-id="<?= $b['id'] ?>" 
                                                             data-number="<?= e($b['batch_number']) ?>" 
                                                             data-product="<?= e($b['product_name']) ?>" 
@@ -622,14 +625,17 @@ $canDelete = hasPermission('inward', 'delete');
                                                             data-received="<?= $recQty ?>" 
                                                             data-damaged="<?= $dmgQty ?>" 
                                                             data-status="<?= e($b['status']) ?>" 
-                                                            title="Delete Inward">
+                                                            title="Delete Inward"
+                                                            aria-label="Delete inward">
                                                         <i class="bi bi-trash3"></i>
                                                     </button>
                                                 <?php endif; ?>
                                             </div>
-                                            <a href="<?= url('warehouse/inward/view/' . $b['id']) ?>" class="btn btn-sm <?= ($canVerify && $misQty > 0) ? 'btn-danger fw-semibold' : 'btn-outline-primary' ?> py-1 px-3">
-                                                <i class="bi <?= ($canVerify && $misQty > 0) ? 'bi-qr-code-scan' : 'bi-eye' ?> me-1"></i>
-                                                <?= ($canVerify && $misQty > 0) ? 'Cross-Check &amp; Inward' : 'View Inward' ?>
+                                            <a href="<?= url('warehouse/inward/view/' . $b['id']) ?>" class="btn btn-sm <?= ($canVerify && $misQty > 0) ? 'btn-danger fw-semibold' : 'btn-outline-primary' ?> d-inline-flex align-items-center gap-1 px-2 text-nowrap"
+                                               title="<?= ($canVerify && $misQty > 0) ? 'Cross-check QR codes and inward this batch' : 'View inward details' ?>"
+                                               aria-label="<?= ($canVerify && $misQty > 0) ? 'Cross-check and inward batch' : 'View inward details' ?>">
+                                                <i class="bi <?= ($canVerify && $misQty > 0) ? 'bi-qr-code-scan' : 'bi-eye' ?>"></i>
+                                                <span><?= ($canVerify && $b['status'] === 'DISPATCHED') ? 'Inward' : (($canVerify && $misQty > 0) ? "Scan ($misQty)" : 'View') ?></span>
                                             </a>
                                         </div>
                                     </div>
